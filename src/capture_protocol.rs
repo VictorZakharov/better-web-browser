@@ -74,6 +74,27 @@ pub(crate) enum CaptureFailure {
     Internal,
 }
 
+/// The capture child reports its actual token and inherited environment before hardware can
+/// start. The browser compares both capability bits with the single grant it launched.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CaptureContainmentReport {
+    pub(crate) app_container: bool,
+    pub(crate) no_console_window: bool,
+    pub(crate) minimal_environment: bool,
+    pub(crate) camera_capability: bool,
+    pub(crate) microphone_capability: bool,
+}
+
+impl CaptureContainmentReport {
+    pub(crate) fn satisfies(self, devices: CaptureDevices) -> bool {
+        self.app_container
+            && self.no_console_window
+            && self.minimal_environment
+            && self.camera_capability == devices.camera
+            && self.microphone_capability == devices.microphone
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum BrowserCaptureMessage {
     Hello {
@@ -93,6 +114,7 @@ pub(crate) enum BrowserCaptureMessage {
 pub(crate) enum WorkerCaptureMessage {
     Ready {
         nonce: Nonce,
+        containment: CaptureContainmentReport,
     },
     Started {
         capture_id: u64,

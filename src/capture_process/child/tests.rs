@@ -3,6 +3,16 @@ use crate::capture_protocol::CaptureSampleKind;
 use crate::renderer_process::windows::{InheritedOutputPipe, PipeSet};
 use std::sync::Condvar;
 
+fn contained(devices: CaptureDevices) -> CaptureContainmentReport {
+    CaptureContainmentReport {
+        app_container: true,
+        no_console_window: true,
+        minimal_environment: true,
+        camera_capability: devices.camera,
+        microphone_capability: devices.microphone,
+    }
+}
+
 #[test]
 fn fake_provider_requires_grant_handshake_and_stops_both_tracks() {
     let session = CaptureSessionId::new(91).unwrap();
@@ -25,6 +35,7 @@ fn fake_provider_requires_grant_handshake_and_stops_both_tracks() {
                 devices,
                 test_mode: true,
             },
+            contained(devices),
             testing::FakeCapture::default(),
         )
     });
@@ -37,7 +48,10 @@ fn fake_provider_requires_grant_handshake_and_stops_both_tracks() {
         .unwrap();
     assert_eq!(
         events.read_worker().unwrap(),
-        WorkerCaptureMessage::Ready { nonce }
+        WorkerCaptureMessage::Ready {
+            nonce,
+            containment: contained(devices)
+        }
     );
     commands
         .send_browser(&BrowserCaptureMessage::Start { capture_id: 42 })
@@ -83,6 +97,7 @@ fn stale_nonce_never_starts_a_capture_source() {
                 devices,
                 test_mode: true,
             },
+            contained(devices),
             testing::FakeCapture::default(),
         )
     });
@@ -151,6 +166,7 @@ fn blocked_sample_sink_cannot_block_stop_control() {
                 devices,
                 test_mode: true,
             },
+            contained(devices),
             testing::FakeCapture::default(),
         );
         finished.send(outcome).unwrap();
@@ -162,7 +178,10 @@ fn blocked_sample_sink_cannot_block_stop_control() {
         .unwrap();
     assert_eq!(
         events.read_worker().unwrap(),
-        WorkerCaptureMessage::Ready { nonce }
+        WorkerCaptureMessage::Ready {
+            nonce,
+            containment: contained(devices)
+        }
     );
     commands
         .send_browser(&BrowserCaptureMessage::Start { capture_id: 44 })

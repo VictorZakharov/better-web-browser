@@ -1,7 +1,7 @@
 use super::{
-    BrowserCaptureMessage, CaptureDevices, CaptureFailure, CaptureSample, CaptureSampleKind,
-    CaptureSessionId, HEADER_LENGTH, MAGIC, MAX_CONTROL_BYTES, MAX_SAMPLE_BYTES, PROTOCOL_MAJOR,
-    PROTOCOL_MINOR, WorkerCaptureMessage,
+    BrowserCaptureMessage, CaptureContainmentReport, CaptureDevices, CaptureFailure, CaptureSample,
+    CaptureSampleKind, CaptureSessionId, HEADER_LENGTH, MAGIC, MAX_CONTROL_BYTES, MAX_SAMPLE_BYTES,
+    PROTOCOL_MAJOR, PROTOCOL_MINOR, WorkerCaptureMessage,
 };
 use crate::renderer_protocol::Nonce;
 use std::fmt;
@@ -100,7 +100,17 @@ impl<W: Write> CaptureFrameWriter<W> {
         message: &WorkerCaptureMessage,
     ) -> Result<(), CaptureProtocolError> {
         let (kind, payload) = match message {
-            WorkerCaptureMessage::Ready { nonce } => (READY, nonce.as_bytes().to_vec()),
+            WorkerCaptureMessage::Ready { nonce, containment } => {
+                let mut bytes = nonce.as_bytes().to_vec();
+                bytes.extend_from_slice(&[
+                    containment.app_container.into(),
+                    containment.no_console_window.into(),
+                    containment.minimal_environment.into(),
+                    containment.camera_capability.into(),
+                    containment.microphone_capability.into(),
+                ]);
+                (READY, bytes)
+            }
             WorkerCaptureMessage::Started { capture_id } => {
                 (STARTED, nonzero(*capture_id)?.to_le_bytes().to_vec())
             }
@@ -218,8 +228,15 @@ impl<R: Read> CaptureFrameReader<R> {
     pub(crate) fn read_worker(&mut self) -> Result<WorkerCaptureMessage, CaptureProtocolError> {
         let (kind, bytes) = self.read_frame(false)?;
         match kind {
-            READY if bytes.len() == 32 => Ok(WorkerCaptureMessage::Ready {
-                nonce: Nonce::new(bytes.try_into().expect("checked length")),
+            READY if bytes.len() == 37 => Ok(WorkerCaptureMessage::Ready {
+                nonce: Nonce::new(bytes[..32].try_into().expect("checked length")),
+                containment: CaptureContainmentReport {
+                    app_container: boolean(bytes[32])?,
+                    no_console_window: boolean(bytes[33])?,
+                    minimal_environment: boolean(bytes[34])?,
+                    camera_capability: boolean(bytes[35])?,
+                    microphone_capability: boolean(bytes[36])?,
+                },
             }),
             STARTED if bytes.len() == 8 => Ok(WorkerCaptureMessage::Started {
                 capture_id: nonzero(u64_at(&bytes, 0))?,
@@ -323,6 +340,14 @@ fn nonzero(value: u64) -> Result<u64, CaptureProtocolError> {
         ))
     } else {
         Ok(value)
+    }
+}
+
+fn boolean(value: u8) -> Result<bool, CaptureProtocolError> {
+    match value {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(CaptureProtocolError::InvalidPayload("containment flag")),
     }
 }
 

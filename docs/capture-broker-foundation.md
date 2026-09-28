@@ -11,6 +11,9 @@ kill-on-close Job, a restricted child-process policy, an explicit handle allowli
 `CREATE_NO_WINDOW`. The child receives a fresh nonce and session ID and will not activate
 hardware before the browser proves both and sends `Start`. A grant is one-shot: a stopped or
 failed child cannot be reused for another origin, document, or device request.
+Before sending `Ready`, the child checks its actual `TokenIsAppContainer`, exact webcam/microphone
+`TokenCapabilities`, absence of a console window, and allowlisted environment. The broker checks
+that report against its grant and kills the Job on any mismatch.
 
 Samples travel through a separate one-way pipe. Framing has fixed size/version/session/sequence
 checks before payload allocation. Video is bounded to 1280×720 NV12 and the newest frame replaces

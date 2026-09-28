@@ -70,6 +70,13 @@ fn worker_control_never_crosses_sample_pipe() {
     CaptureFrameWriter::new(&mut bytes, session())
         .send_worker(&WorkerCaptureMessage::Ready {
             nonce: Nonce::new([7; 32]),
+            containment: CaptureContainmentReport {
+                app_container: true,
+                no_console_window: true,
+                minimal_environment: true,
+                camera_capability: true,
+                microphone_capability: false,
+            },
         })
         .unwrap();
     let mut reader = CaptureFrameReader::new(Cursor::new(bytes), session());

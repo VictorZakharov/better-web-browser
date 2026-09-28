@@ -1,4 +1,63 @@
 use super::*;
+use std::io::Cursor;
+
+#[test]
+fn ready_rejects_missing_or_extra_token_capabilities() {
+    let nonce = Nonce::new([11; 32]);
+    let devices = CaptureDevices {
+        camera: true,
+        microphone: false,
+    };
+    let good = CaptureContainmentReport {
+        app_container: true,
+        no_console_window: true,
+        minimal_environment: true,
+        camera_capability: true,
+        microphone_capability: false,
+    };
+    validate_ready(nonce, nonce, devices, good).unwrap();
+    assert!(validate_ready(nonce, Nonce::new([12; 32]), devices, good).is_err());
+    let mut bad = good;
+    bad.app_container = false;
+    assert!(validate_ready(nonce, nonce, devices, bad).is_err());
+    bad = good;
+    bad.no_console_window = false;
+    assert!(validate_ready(nonce, nonce, devices, bad).is_err());
+    bad = good;
+    bad.minimal_environment = false;
+    assert!(validate_ready(nonce, nonce, devices, bad).is_err());
+    for bad in [
+        CaptureContainmentReport {
+            camera_capability: false,
+            ..good
+        },
+        CaptureContainmentReport {
+            microphone_capability: true,
+            ..good
+        },
+    ] {
+        // The wrong capability bits remain a well-formed Ready frame. The broker rejects them
+        // before launch can return a session on which Start could be invoked; Drop kills its Job.
+        let session = crate::capture_protocol::CaptureSessionId::new(1).unwrap();
+        let mut bytes = Vec::new();
+        CaptureFrameWriter::new(&mut bytes, session)
+            .send_worker(&WorkerCaptureMessage::Ready {
+                nonce,
+                containment: bad,
+            })
+            .unwrap();
+        let WorkerCaptureMessage::Ready {
+            nonce: actual,
+            containment,
+        } = CaptureFrameReader::new(Cursor::new(bytes), session)
+            .read_worker()
+            .unwrap()
+        else {
+            panic!("expected decoded Ready");
+        };
+        assert!(validate_ready(nonce, actual, devices, containment).is_err());
+    }
+}
 
 fn video(capture_id: u64, sequence: u64, timestamp: u64) -> CaptureSample {
     CaptureSample {
@@ -91,6 +150,7 @@ fn contained_fake_child_handshake_samples_and_stop() {
     );
     options.test_mode = true;
     let mut session = CaptureSession::launch(&options).unwrap();
+    assert!(session.containment().satisfies(options.devices));
     session.start(77).unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     let mut video = None;

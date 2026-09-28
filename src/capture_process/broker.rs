@@ -3,12 +3,13 @@
 
 use super::launcher::{self, CaptureLaunchOptions};
 use crate::capture_protocol::{
-    BrowserCaptureMessage, CaptureDevices, CaptureFrameReader, CaptureFrameWriter, CaptureSample,
-    CaptureSampleKind, WorkerCaptureMessage,
+    BrowserCaptureMessage, CaptureContainmentReport, CaptureDevices, CaptureFrameReader,
+    CaptureFrameWriter, CaptureSample, CaptureSampleKind, WorkerCaptureMessage,
 };
 use crate::renderer_process::windows::{
     raw, terminate_job, terminate_job_checked, wait_for_process,
 };
+use crate::renderer_protocol::Nonce;
 use std::collections::VecDeque;
 use std::os::windows::io::OwnedHandle;
 use std::sync::{Arc, Mutex, mpsc};
@@ -32,6 +33,7 @@ pub(crate) struct CaptureSession {
     samples: Arc<Mutex<SampleMailbox>>,
     readers: Vec<JoinHandle<()>>,
     used: bool,
+    containment: Option<CaptureContainmentReport>,
 }
 
 impl CaptureSession {
@@ -62,6 +64,7 @@ impl CaptureSession {
             samples,
             readers: vec![event_reader, sample_reader],
             used: false,
+            containment: None,
         };
         session
             .writer
@@ -71,8 +74,12 @@ impl CaptureSession {
             })
             .map_err(|error| error.to_string())?;
         match session.events.recv_timeout(STARTUP_TIMEOUT) {
-            Ok(Ok(WorkerCaptureMessage::Ready { nonce })) if nonce == launched.nonce => Ok(session),
-            Ok(Ok(_)) => Err("capture worker replied with a stale startup nonce".into()),
+            Ok(Ok(WorkerCaptureMessage::Ready { nonce, containment })) => {
+                validate_ready(launched.nonce, nonce, launched.devices, containment)?;
+                session.containment = Some(containment);
+                Ok(session)
+            }
+            Ok(Ok(_)) => Err("capture worker returned an invalid startup response".into()),
             Ok(Err(error)) => Err(error),
             Err(_) => Err("capture worker startup timed out".into()),
         }
@@ -108,6 +115,11 @@ impl CaptureSession {
             self.terminate(0x4c09);
         }
         result
+    }
+
+    pub(crate) fn containment(&self) -> CaptureContainmentReport {
+        self.containment
+            .expect("validated before CaptureSession::launch returns")
     }
 
     pub(crate) fn latest_video(&self) -> Result<Option<CaptureSample>, String> {
@@ -295,6 +307,21 @@ fn spawn_sample_reader(
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|poison| poison.into_inner())
+}
+
+fn validate_ready(
+    expected_nonce: Nonce,
+    actual_nonce: Nonce,
+    devices: CaptureDevices,
+    containment: CaptureContainmentReport,
+) -> Result<(), String> {
+    if expected_nonce != actual_nonce {
+        return Err("capture worker replied with a stale startup nonce".into());
+    }
+    if !containment.satisfies(devices) {
+        return Err("capture worker did not satisfy its token containment contract".into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]

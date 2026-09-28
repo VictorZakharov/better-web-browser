@@ -1,6 +1,6 @@
 use crate::capture_protocol::{
-    BrowserCaptureMessage, CaptureDevices, CaptureFailure, CaptureFrameReader, CaptureFrameWriter,
-    CaptureSample, CaptureSessionId, WorkerCaptureMessage,
+    BrowserCaptureMessage, CaptureContainmentReport, CaptureDevices, CaptureFailure,
+    CaptureFrameReader, CaptureFrameWriter, CaptureSample, CaptureSessionId, WorkerCaptureMessage,
 };
 use crate::renderer_protocol::Nonce;
 use std::fs::File;
@@ -12,6 +12,7 @@ use std::time::Duration;
 use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::System::Console::{GetStdHandle, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE};
 
+mod containment;
 mod options;
 #[cfg(test)]
 mod tests;
@@ -36,6 +37,8 @@ pub(super) trait CaptureProvider {
 
 pub(super) fn run(arguments: &[String]) -> Result<(), String> {
     let options = ChildOptions::parse(arguments)?;
+    // This check precedes the private handshake and every native device activation.
+    let containment = containment::report(options.devices)?;
     let input_handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
     let output_handle = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
     let sample_handle = options.sample_handle as HANDLE;
@@ -51,6 +54,7 @@ pub(super) fn run(arguments: &[String]) -> Result<(), String> {
             output,
             samples,
             options,
+            containment,
             testing::FakeCapture::default(),
         )
     } else {
@@ -59,6 +63,7 @@ pub(super) fn run(arguments: &[String]) -> Result<(), String> {
             output,
             samples,
             options,
+            containment,
             super::native::NativeCapture::default(),
         )
     }
@@ -74,6 +79,7 @@ fn run_protocol<
     control: C,
     samples: S,
     options: ChildOptions,
+    containment: CaptureContainmentReport,
     mut provider: P,
 ) -> Result<(), String> {
     let mut reader = CaptureFrameReader::new(input, options.session);
@@ -87,6 +93,7 @@ fn run_protocol<
     control
         .send_worker(&WorkerCaptureMessage::Ready {
             nonce: options.nonce,
+            containment,
         })
         .map_err(|error| error.to_string())?;
     let commands = spawn_command_reader(reader)?;
