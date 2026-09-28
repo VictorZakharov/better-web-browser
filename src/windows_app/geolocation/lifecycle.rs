@@ -1,6 +1,7 @@
 //! UI-thread event delivery, visibility pause, and acquisition deadlines.
 
 use super::*;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 impl GeolocationService {
     fn process_event(
@@ -33,6 +34,22 @@ impl GeolocationService {
                 }
                 match result {
                     Ok(position) => {
+                        if !position_is_current(
+                            &position,
+                            active.acquisition_started_millis,
+                            active.maximum_age_millis,
+                        ) {
+                            // WinRT may return a fix older than the requested maximumAge.
+                            // A one-shot has no further native callback to await, while a
+                            // watch can still receive a fresh PositionChanged event.
+                            if !active.watch {
+                                active
+                                    .context
+                                    .emit(error(GeoFailure::PositionUnavailable), true);
+                                self.active.remove(&key);
+                            }
+                            return;
+                        }
                         if active.last_timestamp_millis == Some(position.timestamp_millis) {
                             return;
                         }
@@ -187,5 +204,26 @@ pub(super) fn error(failure: GeoFailure) -> GeolocationEvent {
     GeolocationEvent::Error {
         code,
         message: message.into(),
+    }
+}
+
+pub(super) fn unix_time_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn position_is_current(position: &GeolocationPosition, started: u64, maximum_age: u64) -> bool {
+    let now = unix_time_millis();
+    if position.timestamp_millis > now {
+        return false;
+    }
+    if maximum_age == 0 {
+        // WinRT can return an older fix even when requested maximumAge is zero.
+        // Millisecond timestamps permit a fix from the request's starting millisecond.
+        position.timestamp_millis >= started
+    } else {
+        maximum_age == u64::MAX || now - position.timestamp_millis <= maximum_age
     }
 }

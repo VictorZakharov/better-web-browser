@@ -8,6 +8,7 @@ use better_web_browser::renderer_protocol::GeolocationPosition;
 use std::sync::{Arc, Mutex};
 use windows::Devices::Geolocation::{
     GeolocationAccessStatus, Geolocator, Geoposition, PositionAccuracy, PositionChangedEventArgs,
+    PositionStatus, StatusChangedEventArgs,
 };
 use windows::Foundation::{TimeSpan, TypedEventHandler};
 use windows_future::AsyncOperationCompletedHandler;
@@ -64,7 +65,12 @@ impl GeoProvider for WinRtGeoProvider {
                 PositionAccuracy::Default
             })
             .map_err(map_error)?;
-        let token = if watch {
+        let mut handle = WinRtGeoHandle {
+            locator,
+            position_token: None,
+            status_token: None,
+        };
+        if watch {
             let receiver = Arc::clone(&deliver);
             let handler =
                 TypedEventHandler::<Geolocator, PositionChangedEventArgs>::new(move |_, args| {
@@ -79,10 +85,34 @@ impl GeoProvider for WinRtGeoProvider {
                     receiver(result);
                     Ok(())
                 });
-            Some(locator.PositionChanged(&handler).map_err(map_error)?)
-        } else {
-            None
-        };
+            handle.position_token = Some(
+                handle
+                    .locator
+                    .PositionChanged(&handler)
+                    .map_err(map_error)?,
+            );
+
+            let receiver = Arc::clone(&deliver);
+            let handler =
+                TypedEventHandler::<Geolocator, StatusChangedEventArgs>::new(move |_, args| {
+                    // Windows sends permission and availability changes on a callback thread.
+                    // Only the browser UI thread will retire the watch after this delivery.
+                    let failure = match WinRtApartment::initialize_callback() {
+                        Ok(_apartment) => args
+                            .as_ref()
+                            .ok_or(GeoFailure::PositionUnavailable)
+                            .and_then(|args| args.Status().map_err(map_error))
+                            .map(status_failure)
+                            .unwrap_or(Some(GeoFailure::PositionUnavailable)),
+                        Err(_) => Some(GeoFailure::PositionUnavailable),
+                    };
+                    if let Some(failure) = failure {
+                        receiver(Err(failure));
+                    }
+                    Ok(())
+                });
+            handle.status_token = Some(handle.locator.StatusChanged(&handler).map_err(map_error)?);
+        }
         let age = TimeSpan {
             Duration: millis_to_ticks(maximum_age_millis),
         };
@@ -92,7 +122,8 @@ impl GeoProvider for WinRtGeoProvider {
         let timeout = TimeSpan {
             Duration: millis_to_ticks(timeout_millis).max(10_000_000),
         };
-        let operation = locator
+        let operation = handle
+            .locator
             .GetGeopositionAsyncWithAgeAndTimeout(age, timeout)
             .map_err(map_error)?;
         let handler = AsyncOperationCompletedHandler::<Geoposition>::new(move |sender, _| {
@@ -108,22 +139,36 @@ impl GeoProvider for WinRtGeoProvider {
             Ok(())
         });
         operation.SetCompleted(&handler).map_err(map_error)?;
-        Ok(Box::new(WinRtGeoHandle { locator, token }))
+        Ok(Box::new(handle))
     }
 }
 
 struct WinRtGeoHandle {
     locator: Geolocator,
-    token: Option<i64>,
+    position_token: Option<i64>,
+    status_token: Option<i64>,
 }
 
 impl GeoHandle for WinRtGeoHandle {}
 
 impl Drop for WinRtGeoHandle {
     fn drop(&mut self) {
-        if let Some(token) = self.token.take() {
+        if let Some(token) = self.position_token.take() {
             let _ = self.locator.RemovePositionChanged(token);
         }
+        if let Some(token) = self.status_token.take() {
+            let _ = self.locator.RemoveStatusChanged(token);
+        }
+    }
+}
+
+fn status_failure(status: PositionStatus) -> Option<GeoFailure> {
+    if status == PositionStatus::Disabled {
+        Some(GeoFailure::PermissionDenied)
+    } else if status == PositionStatus::NoData || status == PositionStatus::NotAvailable {
+        Some(GeoFailure::PositionUnavailable)
+    } else {
+        None
     }
 }
 
@@ -173,5 +218,23 @@ fn map_error(error: windows::core::Error) -> GeoFailure {
         0x8007_0005 | 0x8007_0490 => GeoFailure::PermissionDenied,
         0x8007_05b4 => GeoFailure::Timeout,
         _ => GeoFailure::PositionUnavailable,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn location_status_distinguishes_revocation_from_temporary_unavailability() {
+        assert_eq!(
+            status_failure(PositionStatus::Disabled),
+            Some(GeoFailure::PermissionDenied)
+        );
+        assert_eq!(
+            status_failure(PositionStatus::NoData),
+            Some(GeoFailure::PositionUnavailable)
+        );
+        assert_eq!(status_failure(PositionStatus::Ready), None);
     }
 }

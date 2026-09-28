@@ -4,7 +4,7 @@
 //! visibility-gated acquisition, optional cache reuse, and document cancellation.
 mod dispatch;
 mod lifecycle;
-use lifecycle::error;
+use lifecycle::{error, unix_time_millis};
 mod native;
 #[cfg(test)]
 mod tests;
@@ -19,7 +19,7 @@ use better_web_browser::renderer_protocol::{
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 pub(super) const WM_APP_GEOLOCATION: u32 = WM_APP + 20;
 const MAX_ACTIVE_REQUESTS: usize = 64;
@@ -111,6 +111,7 @@ struct ActiveGeo {
     remaining: Option<Duration>,
     retry_after: Option<Instant>,
     last_timestamp_millis: Option<u64>,
+    acquisition_started_millis: u64,
 }
 
 pub(super) struct GeolocationService {
@@ -202,19 +203,19 @@ impl GeolocationService {
         let mut pending = events
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let NativeEvent::Position(key, generation, result) = &event {
-            if let Some(existing) = pending.iter_mut().find(|existing| matches!(existing,
+        if let NativeEvent::Position(key, generation, result) = &event
+            && let Some(existing) = pending.iter_mut().find(|existing| matches!(existing,
                 NativeEvent::Position(old_key, old_generation, _) if old_key == key && old_generation == generation
-            )) {
-                // The latest sample wins, except that an OS permission revocation
-                // must not be replaced by a later location sample.
-                if !matches!(existing, NativeEvent::Position(_, _, Err(GeoFailure::PermissionDenied))) {
-                    *existing = NativeEvent::Position(*key, *generation, result.clone());
-                }
-                drop(pending);
-                unsafe { PostMessageW(window as Hwnd, WM_APP_GEOLOCATION, 0, 0); }
-                return;
+            ))
+        {
+            // The latest sample wins, except that an OS permission revocation
+            // must not be replaced by a later location sample.
+            if !matches!(existing, NativeEvent::Position(_, _, Err(GeoFailure::PermissionDenied))) {
+                *existing = NativeEvent::Position(*key, *generation, result.clone());
             }
+            drop(pending);
+            unsafe { PostMessageW(window as Hwnd, WM_APP_GEOLOCATION, 0, 0); }
+            return;
         }
         if pending.len() >= MAX_QUEUED_EVENTS {
             // An explicit terminal error on the UI thread is safer than an
@@ -262,6 +263,7 @@ impl GeolocationService {
                 remaining: finite_timeout(timeout_millis),
                 retry_after: None,
                 last_timestamp_millis: None,
+                acquisition_started_millis: 0,
             },
         );
         let events = Arc::clone(&self.events);
@@ -276,10 +278,10 @@ impl GeolocationService {
                 NativeEvent::Access(key, result),
             );
         }));
-        if let Err(failure) = result {
-            if let Some(active) = self.active.remove(&key) {
-                active.context.emit(error(failure), true);
-            }
+        if let Err(failure) = result
+            && let Some(active) = self.active.remove(&key)
+        {
+            active.context.emit(error(failure), true);
         }
     }
 
@@ -295,16 +297,15 @@ impl GeolocationService {
             &active.context.origin,
             active.high_accuracy,
             active.maximum_age_millis,
-        ) {
-            if active.last_timestamp_millis != Some(cached.timestamp_millis) {
-                active.last_timestamp_millis = Some(cached.timestamp_millis);
-                active
-                    .context
-                    .emit(GeolocationEvent::Position(cached), !active.watch);
-                if !active.watch {
-                    self.active.remove(&key);
-                    return;
-                }
+        ) && active.last_timestamp_millis != Some(cached.timestamp_millis)
+        {
+            active.last_timestamp_millis = Some(cached.timestamp_millis);
+            active
+                .context
+                .emit(GeolocationEvent::Position(cached), !active.watch);
+            if !active.watch {
+                self.active.remove(&key);
+                return;
             }
         }
         if active.timeout_millis == 0 && active.last_timestamp_millis.is_none() {
@@ -317,6 +318,7 @@ impl GeolocationService {
             }
         }
         active.generation = active.generation.wrapping_add(1);
+        active.acquisition_started_millis = unix_time_millis();
         let generation = active.generation;
         let events = Arc::clone(&self.events);
         let overflow = Arc::clone(&self.events_overflow);
@@ -375,10 +377,7 @@ fn cache_hit(
         return None;
     }
     let position = cache.get(&(origin.to_owned(), high_accuracy))?;
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()?
-        .as_millis() as u64;
+    let now = unix_time_millis();
     (position.timestamp_millis <= now && now - position.timestamp_millis <= maximum_age_millis)
         .then(|| position.clone())
 }

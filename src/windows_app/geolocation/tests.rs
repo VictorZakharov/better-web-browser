@@ -2,10 +2,13 @@ use super::*;
 use crate::windows_app::platform::Hwnd;
 use better_web_browser::fetch::RequestClient;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+type FakeReceiver = Arc<dyn Fn(GeoResult) + Send + Sync>;
 
 #[derive(Default)]
 struct FakeState {
-    receivers: Mutex<Vec<Arc<dyn Fn(GeoResult) + Send + Sync>>>,
+    receivers: Mutex<Vec<FakeReceiver>>,
     starts: AtomicUsize,
     start_failure: Mutex<Option<GeoFailure>>,
 }
@@ -132,6 +135,63 @@ fn fake_provider_fulfills_one_shot_and_reuses_only_authorized_fresh_cache() {
 }
 
 #[test]
+fn stale_native_fix_does_not_satisfy_a_fresh_one_shot_or_poison_cache() {
+    let (mut service, fake, router, tab, window) = harness();
+    let updates = Arc::new(Mutex::new(Vec::new()));
+    service.start(context(tab, 1, false, 0, Arc::clone(&updates)), &router);
+    service.drain_events(&router, window, Some(tab));
+    let mut stale = position();
+    stale.timestamp_millis = unix_time_millis().saturating_sub(20_000);
+    fake.receivers.lock().unwrap()[0](Ok(stale));
+    service.drain_events(&router, window, Some(tab));
+    let sent = updates.lock().unwrap();
+    assert_eq!(sent.len(), 1);
+    assert!(sent[0].terminal);
+    assert!(matches!(
+        sent[0].event,
+        GeolocationEvent::Error {
+            code: GeolocationErrorCode::PositionUnavailable,
+            ..
+        }
+    ));
+    assert!(service.cache.is_empty());
+    assert!(service.active.is_empty());
+}
+
+#[test]
+fn stale_watch_fix_waits_for_fresh_update_and_permission_revocation_wins() {
+    let (mut service, fake, router, tab, window) = harness();
+    let updates = Arc::new(Mutex::new(Vec::new()));
+    service.start(context(tab, 1, true, 10_000, Arc::clone(&updates)), &router);
+    service.drain_events(&router, window, Some(tab));
+    let callback = Arc::clone(&fake.receivers.lock().unwrap()[0]);
+    let mut stale = position();
+    stale.timestamp_millis = unix_time_millis().saturating_sub(20_000);
+    callback(Ok(stale));
+    service.drain_events(&router, window, Some(tab));
+    assert!(updates.lock().unwrap().is_empty());
+    callback(Ok(position()));
+    service.drain_events(&router, window, Some(tab));
+    assert_eq!(updates.lock().unwrap().len(), 1);
+    assert!(!updates.lock().unwrap()[0].terminal);
+
+    callback(Err(GeoFailure::PermissionDenied));
+    callback(Ok(position()));
+    service.drain_events(&router, window, Some(tab));
+    let sent = updates.lock().unwrap();
+    assert_eq!(sent.len(), 2);
+    assert!(sent[1].terminal);
+    assert!(matches!(
+        sent[1].event,
+        GeolocationEvent::Error {
+            code: GeolocationErrorCode::PermissionDenied,
+            ..
+        }
+    ));
+    assert!(service.active.is_empty());
+}
+
+#[test]
 fn fake_watch_pauses_when_hidden_and_clear_discards_late_os_callbacks() {
     let (mut service, fake, router, tab, window) = harness();
     let updates = Arc::new(Mutex::new(Vec::new()));
@@ -254,10 +314,11 @@ fn hidden_deferred_requests_are_bounded_and_overload_is_reported() {
 fn rapid_os_position_events_coalesce_to_latest_sample() {
     let (mut service, fake, router, tab, window) = harness();
     let updates = Arc::new(Mutex::new(Vec::new()));
-    service.start(context(tab, 1, true, 0, Arc::clone(&updates)), &router);
+    service.start(context(tab, 1, true, 60_000, Arc::clone(&updates)), &router);
     service.drain_events(&router, window, Some(tab));
     let callback = Arc::clone(&fake.receivers.lock().unwrap()[0]);
-    let base = position();
+    let mut base = position();
+    base.timestamp_millis = unix_time_millis().saturating_sub(1000);
     for offset in 0..300 {
         let mut next = base.clone();
         next.timestamp_millis += offset;

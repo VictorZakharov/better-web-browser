@@ -19,8 +19,11 @@ retire their native watches and late callbacks.
 The API honors `enableHighAccuracy`, `maximumAge`, and `timeout` within bounded
 request and event queues. A cached position is keyed by origin and requested
 accuracy, and is returned only while it meets the requested maximum age. WinRT
-timestamps are converted to Unix milliseconds; optional altitude, heading, and
-speed fields stay nullable when Windows does not provide them. Position failures
+can return an older fix despite the requested age; Breeze rejects that fix
+instead of reporting it as current. Its timestamps are converted to Unix
+milliseconds; optional altitude, heading, and speed fields stay nullable when
+Windows does not provide them. Active watches observe Windows location-status
+changes, so permission revocation ends the watch. Position failures
 are reported with the standard permission-denied, position-unavailable, or
 timeout codes. A denied Windows location permission is not bypassed or replaced
 with IP-based synthetic coordinates.
