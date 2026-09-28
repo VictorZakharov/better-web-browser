@@ -2,6 +2,22 @@
 use super::*;
 
 impl Context {
+    /// Invoke only a callback captured from trusted bootstrap code. Never fall back to a
+    /// page-replaceable global if a realm was initialized without the expected hook.
+    pub(in crate::engine::script) fn call_private_hook(
+        &mut self,
+        name: &str,
+        arguments: &[JsValue],
+    ) -> JsResult<JsValue> {
+        if !self.private_hooks.contains_key(name) {
+            return Err(JsError {
+                kind: JsErrorKind::Type,
+                message: format!("{name} private hook is unavailable"),
+            });
+        }
+        self.call_global(name, arguments)
+    }
+
     pub(in crate::engine::script) fn capture_hook(&mut self, name: &str) -> JsResult<()> {
         let context = self.context.clone();
         let function = self.agent.borrow_mut().run(|isolate| {

@@ -446,6 +446,7 @@ unsafe fn dispatch_window_message(
             }
             state.retire_speech_for_window();
             state.retire_notifications_for_window();
+            state.retire_permissions_for_window();
             state.retire_geolocation_for_window();
             state.retire_media_devices_for_window();
             state.retire_capture_for_window();

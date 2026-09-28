@@ -18,6 +18,7 @@ mod inserted_scripts;
 mod media_devices;
 mod notification;
 mod protocol_handler;
+mod permission;
 mod scheduling;
 mod sensor;
 mod speech;

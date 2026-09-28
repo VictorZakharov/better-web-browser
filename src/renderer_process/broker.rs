@@ -47,7 +47,8 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 pub use stream::{
     ClipboardUpdateSink, DatabaseEventSink, FetchResponseSink, GeolocationUpdateSink,
-    MediaDeviceUpdateSink, NotificationUpdateSink, SensorUpdateSink, SpeechUpdateSink,
+    MediaDeviceUpdateSink, NotificationUpdateSink, PermissionUpdateSink, SensorUpdateSink,
+    SpeechUpdateSink,
     WebSocketEventSink,
 };
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,6 +121,7 @@ pub enum RendererEvent {
     SpeechRequest(crate::renderer_protocol::SpeechRequest),
     NotificationRequest(crate::renderer_protocol::NotificationRequest),
     ProtocolHandlerRequest(crate::renderer_protocol::ProtocolHandlerRequest),
+    PermissionRequest(crate::renderer_protocol::PermissionRequest),
     GeolocationRequest(crate::renderer_protocol::GeolocationRequest),
     MediaDeviceRequest(crate::renderer_protocol::MediaDeviceRequest),
     SensorRequest(crate::renderer_protocol::SensorRequest),
@@ -142,6 +144,8 @@ pub struct RendererSession {
     database_overflow: Arc<std::sync::atomic::AtomicBool>,
     notification_updates: mpsc::SyncSender<crate::renderer_protocol::NotificationUpdate>,
     notification_overflow: Arc<std::sync::atomic::AtomicBool>,
+    permission_updates: mpsc::SyncSender<crate::renderer_protocol::PermissionUpdate>,
+    permission_overflow: Arc<std::sync::atomic::AtomicBool>,
     geolocation_updates: mpsc::SyncSender<crate::renderer_protocol::GeolocationUpdate>,
     geolocation_overflow: Arc<std::sync::atomic::AtomicBool>,
     media_device_updates: mpsc::SyncSender<crate::renderer_protocol::MediaDeviceUpdate>,
@@ -267,6 +271,8 @@ impl RendererSession {
         // They cannot compete with bulk Fetch chunks in the lossy UI-thread lane.
         let (notification_updates_tx, notification_updates_rx) = mpsc::sync_channel(256);
         let notification_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (permission_updates_tx, permission_updates_rx) = mpsc::sync_channel(256);
+        let permission_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (geolocation_updates_tx, geolocation_updates_rx) = mpsc::sync_channel(256);
         let geolocation_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (media_device_updates_tx, media_device_updates_rx) = mpsc::sync_channel(256);
@@ -284,6 +290,7 @@ impl RendererSession {
         let worker_command_depth = command_depth.clone();
         let worker_incoming_depth = incoming_depth.clone();
         let worker_notification_overflow = Arc::clone(&notification_overflow);
+        let worker_permission_overflow = Arc::clone(&permission_overflow);
         let worker_geolocation_overflow = Arc::clone(&geolocation_overflow);
         let worker_media_device_overflow = Arc::clone(&media_device_overflow);
         let worker_sensor_overflow = Arc::clone(&sensor_overflow);
@@ -315,6 +322,8 @@ impl RendererSession {
                     database_overflow: worker_database_overflow,
                     notification_updates: notification_updates_rx,
                     notification_overflow: worker_notification_overflow,
+                    permission_updates: permission_updates_rx,
+                    permission_overflow: worker_permission_overflow,
                     geolocation_updates: geolocation_updates_rx,
                     geolocation_overflow: worker_geolocation_overflow,
                     media_device_updates: media_device_updates_rx,
@@ -345,6 +354,8 @@ impl RendererSession {
             database_overflow,
             notification_updates: notification_updates_tx,
             notification_overflow,
+            permission_updates: permission_updates_tx,
+            permission_overflow,
             geolocation_updates: geolocation_updates_tx,
             geolocation_overflow,
             media_device_updates: media_device_updates_tx,

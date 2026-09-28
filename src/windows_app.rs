@@ -28,6 +28,7 @@ mod paint_index;
 mod paint_primitives;
 mod painting;
 mod performance_monitor;
+mod permissions;
 mod platform;
 mod pointer_cursor;
 mod pointer_lock;

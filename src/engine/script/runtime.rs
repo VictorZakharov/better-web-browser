@@ -25,6 +25,7 @@ mod memory;
 mod module_preparation;
 pub(crate) mod parser;
 pub(crate) mod parser_queue;
+mod permission;
 mod restart;
 pub(crate) use restart::RestartState;
 mod storage;

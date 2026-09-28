@@ -110,6 +110,9 @@ pub(super) fn finish_host(
         .clipboard_actions
         .append(&mut state.pending_clipboard_actions);
     outcome
+        .permission_actions
+        .append(&mut state.pending_permission_actions);
+    outcome
         .geolocation_actions
         .append(&mut state.pending_geolocation_actions);
     outcome

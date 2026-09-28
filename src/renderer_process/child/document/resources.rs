@@ -8,6 +8,7 @@ mod installation;
 mod lifecycle;
 mod media_devices;
 mod notifications;
+mod permissions;
 pub(super) mod preloads;
 mod protocol_handlers;
 mod sensors;

@@ -11,6 +11,7 @@ mod mutations;
 mod navigation;
 mod notification;
 mod protocol_handler;
+mod permission;
 mod runtime;
 mod sensor;
 mod speech;
@@ -245,6 +246,7 @@ impl ChildConnection {
             BrowserMessage::DatabaseEvent(event) => self.deliver_database_event(event),
             BrowserMessage::SpeechUpdate(update) => self.deliver_speech_update(update),
             BrowserMessage::NotificationUpdate(update) => self.deliver_notification_update(update),
+            BrowserMessage::PermissionUpdate(update) => self.deliver_permission_update(update),
             BrowserMessage::GeolocationUpdate(update) => self.deliver_geolocation_update(update),
             BrowserMessage::MediaDeviceUpdate(update) => self.deliver_media_device_update(update),
             BrowserMessage::SensorUpdate(update) => self.deliver_sensor_update(update),

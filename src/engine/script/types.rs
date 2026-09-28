@@ -129,6 +129,7 @@ pub struct ScriptOutcome {
     pub notification_actions: Vec<ScriptNotificationAction>,
     pub protocol_handler_actions: Vec<ScriptProtocolHandlerAction>,
     pub clipboard_actions: Vec<ScriptClipboardAction>,
+    pub permission_actions: Vec<crate::renderer_protocol::PermissionRequest>,
     pub geolocation_actions: Vec<ScriptGeolocationAction>,
     pub media_device_actions: Vec<ScriptMediaDeviceAction>,
     pub sensor_actions: Vec<ScriptSensorAction>,

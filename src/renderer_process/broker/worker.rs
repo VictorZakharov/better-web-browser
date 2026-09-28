@@ -81,6 +81,8 @@ pub(super) struct BrokerResources {
     pub(super) database_overflow: Arc<std::sync::atomic::AtomicBool>,
     pub(super) notification_updates: mpsc::Receiver<crate::renderer_protocol::NotificationUpdate>,
     pub(super) notification_overflow: Arc<std::sync::atomic::AtomicBool>,
+    pub(super) permission_updates: mpsc::Receiver<crate::renderer_protocol::PermissionUpdate>,
+    pub(super) permission_overflow: Arc<std::sync::atomic::AtomicBool>,
     pub(super) geolocation_updates: mpsc::Receiver<crate::renderer_protocol::GeolocationUpdate>,
     pub(super) geolocation_overflow: Arc<std::sync::atomic::AtomicBool>,
     pub(super) media_device_updates: mpsc::Receiver<crate::renderer_protocol::MediaDeviceUpdate>,
@@ -165,6 +167,7 @@ impl Broker {
             self.process_database_events();
             self.process_fetch_stream();
             self.process_notification_updates();
+            self.process_permission_updates();
             self.process_geolocation_updates();
             self.process_media_device_updates();
             self.process_sensor_updates();

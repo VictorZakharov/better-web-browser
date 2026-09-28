@@ -210,6 +210,12 @@ impl Broker {
                     self.emit_event(RendererEvent::ProtocolHandlerRequest(request))?;
                 }
             }
+            RendererMessage::PermissionRequest(request) => {
+                request.validate()?;
+                if self.active_document == Some(request.document) {
+                    self.emit_event(RendererEvent::PermissionRequest(request))?;
+                }
+            }
             RendererMessage::GeolocationRequest(request) => {
                 request.validate()?;
                 if self.active_document == Some(request.document) {

@@ -54,6 +54,11 @@ pub(super) fn merge_outcome(
     target
         .protocol_handler_actions
         .append(&mut source.protocol_handler_actions);
+        .protocol_handler_actions
+        .append(&mut source.protocol_handler_actions);
+    target
+        .permission_actions
+        .append(&mut source.permission_actions);
     target
         .geolocation_actions
         .append(&mut source.geolocation_actions);

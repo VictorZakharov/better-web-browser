@@ -16,6 +16,7 @@ mod module_completion;
 pub(super) mod navigation;
 pub(in crate::engine::script) mod notification;
 mod protocol_handler;
+pub(in crate::engine::script) mod permission;
 pub(in crate::engine::script) mod sensor;
 pub(in crate::engine::script) mod speech;
 mod storage;
@@ -64,6 +65,9 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     if let Some(value) = super::wake_lock_host::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = permission::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = graph_audio::dispatch(operation, args, state)? {

@@ -143,6 +143,15 @@ impl RendererSession {
         )
     }
 
+    pub fn permission_update_sink(&self, document: DocumentId) -> super::PermissionUpdateSink {
+        super::PermissionUpdateSink::new(
+            document,
+            self.permission_updates.clone(),
+            Arc::clone(&self.permission_overflow),
+            self.wake.clone(),
+        )
+    }
+
     pub fn geolocation_update_sink(&self, document: DocumentId) -> super::GeolocationUpdateSink {
         super::GeolocationUpdateSink::new(
             document,

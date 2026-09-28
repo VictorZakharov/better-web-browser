@@ -510,6 +510,10 @@ rows remain excluded for an unrecognized browser identity, although trusted
 pointer-drag lifecycle tests exercise the new behavior. These are partial APIs,
 not claims of full Geolocation, Media Capture, Web Audio, or DnD conformance.
 
+A separate browser-owned [Permissions API subset](docs/permissions-api.md) now
+queries existing notification, geolocation, and sensor grants without prompting;
+it does not imply full API coverage or an unmeasured HTML5test score increase.
+
 The 2026-09-28 [physical sensor batch](docs/sensors.md) rendered
 **465–468 / 588** across three identical hidden runs with Breeze's default
 identity, up **7–10** from the merged PR #199 **458 / 588** baseline. All

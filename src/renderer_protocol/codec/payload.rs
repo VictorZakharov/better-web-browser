@@ -8,6 +8,7 @@ mod input;
 mod media_devices;
 mod notification;
 mod protocol_handler;
+mod permission;
 mod sensor;
 mod speech;
 mod state;
@@ -44,6 +45,9 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
     }
     if let BrowserMessage::NotificationUpdate(update) = message {
         return notification::encode_update(update).map(|bytes| (0x01a1, bytes));
+    }
+    if let BrowserMessage::PermissionUpdate(update) = message {
+        return permission::encode_update(update).map(|bytes| (0x0221, bytes));
     }
     if let BrowserMessage::GeolocationUpdate(update) = message {
         return geolocation::encode_update(update).map(|bytes| (0x01b1, bytes));
@@ -116,6 +120,7 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
         BrowserMessage::DatabaseEvent(_) => unreachable!("encoded above"),
         BrowserMessage::SpeechUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::NotificationUpdate(_) => unreachable!("encoded above"),
+        BrowserMessage::PermissionUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::GeolocationUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::MediaDeviceUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::SensorUpdate(_) => unreachable!("encoded above"),
@@ -194,6 +199,7 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
         0x0181 => database::decode_event(payload).map(BrowserMessage::DatabaseEvent),
         0x0191 => speech::decode_update(payload).map(BrowserMessage::SpeechUpdate),
         0x01a1 => notification::decode_update(payload).map(BrowserMessage::NotificationUpdate),
+        0x0221 => permission::decode_update(payload).map(BrowserMessage::PermissionUpdate),
         0x01b1 => geolocation::decode_update(payload).map(BrowserMessage::GeolocationUpdate),
         0x01c1 => media_devices::decode_update(payload).map(BrowserMessage::MediaDeviceUpdate),
         0x01d1 => sensor::decode_update(payload).map(BrowserMessage::SensorUpdate),
@@ -225,6 +231,9 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
     if let RendererMessage::ProtocolHandlerRequest(request) = message {
         return protocol_handler::encode_request(request).map(|bytes| (0x01e0, bytes));
     }
+    if let RendererMessage::PermissionRequest(request) = message {
+        return permission::encode_request(request).map(|bytes| (0x0220, bytes));
+    }
     if let RendererMessage::GeolocationRequest(request) = message {
         return geolocation::encode_request(request).map(|bytes| (0x01b0, bytes));
     }
@@ -254,6 +263,7 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
         RendererMessage::SpeechRequest(_) => unreachable!("encoded above"),
         RendererMessage::NotificationRequest(_) => unreachable!("encoded above"),
         RendererMessage::ProtocolHandlerRequest(_) => unreachable!("encoded above"),
+        RendererMessage::PermissionRequest(_) => unreachable!("encoded above"),
         RendererMessage::GeolocationRequest(_) => unreachable!("encoded above"),
         RendererMessage::MediaDeviceRequest(_) => unreachable!("encoded above"),
         RendererMessage::SensorRequest(_) => unreachable!("encoded above"),
@@ -330,6 +340,7 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
         0x01e0 => {
             protocol_handler::decode_request(payload).map(RendererMessage::ProtocolHandlerRequest)
         }
+        0x0220 => permission::decode_request(payload).map(RendererMessage::PermissionRequest),
         0x01b0 => geolocation::decode_request(payload).map(RendererMessage::GeolocationRequest),
         0x01c0 => media_devices::decode_request(payload).map(RendererMessage::MediaDeviceRequest),
         0x01d0 => sensor::decode_request(payload).map(RendererMessage::SensorRequest),

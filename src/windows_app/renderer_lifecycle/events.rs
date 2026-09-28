@@ -133,6 +133,9 @@ impl BrowserState {
                 RendererEvent::ProtocolHandlerRequest(request) => {
                     self.handle_protocol_handler_request(id, request);
                 }
+                RendererEvent::PermissionRequest(request) => {
+                    self.handle_permission_request(id, request);
+                }
                 RendererEvent::GeolocationRequest(request) => {
                     self.handle_geolocation_request(id, request);
                 }
@@ -320,6 +323,7 @@ impl BrowserState {
             // can detach this renderer session or start its replacement.
             self.retire_sensors_for_tab(id);
             self.retire_wake_locks_for_tab(id);
+            self.retire_permissions_for_tab(id);
             let crash_surface = exit.crash_surface();
             let task_budget_exceeded =
                 matches!(exit.reason, RendererExitReason::TaskBudgetExceeded(_));

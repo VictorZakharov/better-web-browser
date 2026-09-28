@@ -22,6 +22,7 @@ impl BrowserState {
         let status =
             format!("Page engine stopped after an internal error: {detail}. Reload to try again.");
         self.retire_database_for_tab(id);
+        self.retire_permissions_for_tab(id);
         self.retire_sensors_for_tab(id);
         self.retire_wake_locks_for_tab(id);
         if let Some(tab) = self.tabs.get_mut(id) {
