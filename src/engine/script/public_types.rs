@@ -5,5 +5,5 @@ pub use super::types::{
     ScriptFontAction, ScriptFullscreenAction, ScriptGeolocationAction, ScriptGraphAudioAction,
     ScriptHistoryAction, ScriptInput, ScriptKind, ScriptMediaAction, ScriptMediaCommand,
     ScriptMediaDeviceAction, ScriptNotificationAction, ScriptOutcome, ScriptPointerLockAction,
-    ScriptSpeechAction, UserInputEvent, UserInputModifiers, UserInputResult,
+    ScriptSensorAction, ScriptSpeechAction, UserInputEvent, UserInputModifiers, UserInputResult,
 };

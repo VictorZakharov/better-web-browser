@@ -51,6 +51,7 @@ pub(super) struct BrowserApplication {
     pub(super) storage_coordinator: better_web_browser::storage::StorageCoordinator,
     pub(super) database_worker: super::renderer_fetch::DatabaseWorker,
     pub(super) speech_service: super::speech_synthesis::SpeechSynthesisService,
+    pub(super) sensor_service: super::sensors::SensorService,
     pub(super) notifications: RefCell<super::notifications::NotificationService>,
     pub(super) geolocation: RefCell<super::geolocation::GeolocationService>,
     pub(super) media_devices: RefCell<super::media_devices::MediaDeviceService>,
@@ -86,6 +87,7 @@ impl BrowserApplication {
         let database_worker =
             super::renderer_fetch::DatabaseWorker::new(indexed_db, cache_storage)?;
         let speech_service = super::speech_synthesis::SpeechSynthesisService::spawn()?;
+        let sensor_service = super::sensors::SensorService::spawn()?;
         Ok(Rc::new(Self {
             instance,
             profile: profile.clone(),
@@ -101,6 +103,7 @@ impl BrowserApplication {
             ),
             database_worker,
             speech_service,
+            sensor_service,
             notifications: RefCell::new(super::notifications::NotificationService::default()),
             geolocation: RefCell::new(super::geolocation::GeolocationService::default()),
             media_devices: RefCell::new(super::media_devices::MediaDeviceService::default()),

@@ -133,6 +133,9 @@ impl BrowserState {
                 RendererEvent::MediaDeviceRequest(request) => {
                     self.handle_media_device_request(id, request);
                 }
+                RendererEvent::SensorRequest(request) => {
+                    self.handle_sensor_request(id, request);
+                }
                 RendererEvent::Presentation(presentation) => {
                     self.process_for_tab(id, |state| {
                         state.activate_renderer_presentation(*presentation)

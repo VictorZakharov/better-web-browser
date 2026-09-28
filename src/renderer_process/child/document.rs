@@ -83,6 +83,7 @@ pub(super) struct DocumentRuntime {
     pending_notification_requests: Vec<crate::engine::ScriptNotificationAction>,
     pending_geolocation_requests: Vec<crate::engine::ScriptGeolocationAction>,
     pending_media_device_requests: Vec<crate::engine::ScriptMediaDeviceAction>,
+    pending_sensor_requests: Vec<crate::engine::ScriptSensorAction>,
     active_script_fetches: HashMap<u64, u32>,
     pending_worker_actions: Vec<ScriptWorkerAction>,
     deferred_network_load: PageLoadReport,

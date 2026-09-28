@@ -7,6 +7,7 @@ mod lifecycle;
 mod media_devices;
 mod notifications;
 pub(super) mod preloads;
+mod sensors;
 mod streaming;
 mod stylesheets;
 

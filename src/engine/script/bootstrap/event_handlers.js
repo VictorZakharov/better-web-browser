@@ -20,6 +20,7 @@
         'pagehide pagereveal pageshow pageswap popstate rejectionhandled storage unhandledrejection unload ' +
         'gamepadconnected gamepaddisconnected'
     ).split(/\s+/);
+    if (host('sensorAvailable')) windowHandlerTypes.push('deviceorientation', 'devicemotion');
     const reflectedBodyHandlerTypes = new Set([
         ...windowHandlerTypes, 'blur', 'error', 'focus', 'load', 'resize', 'scroll'
     ]);

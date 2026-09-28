@@ -39,6 +39,7 @@ mod renderer_lifecycle;
 mod rendering_resources;
 mod runtime;
 mod scrolling;
+mod sensors;
 mod speech_synthesis;
 mod tab_drag;
 mod tab_management;

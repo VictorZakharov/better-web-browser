@@ -56,6 +56,8 @@ mod presentation;
 mod resize_observers;
 #[path = "renderer_process/runtime_reporting.rs"]
 mod runtime_reporting;
+#[path = "renderer_process/sensors.rs"]
+mod sensors;
 #[path = "renderer_process/startup.rs"]
 mod startup;
 #[path = "renderer_process/state.rs"]

@@ -279,6 +279,9 @@ impl ScriptRuntime {
             .notification_actions
             .append(&mut self.host.borrow_mut().pending_notification_actions);
         outcome
+            .sensor_actions
+            .append(&mut self.host.borrow_mut().pending_sensor_actions);
+        outcome
             .worker_actions
             .append(&mut self.host.borrow_mut().pending_worker_actions);
         outcome

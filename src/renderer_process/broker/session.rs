@@ -141,6 +141,15 @@ impl RendererSession {
         )
     }
 
+    pub fn sensor_update_sink(&self, document: DocumentId) -> super::SensorUpdateSink {
+        super::SensorUpdateSink::new(
+            document,
+            self.sensor_updates.clone(),
+            Arc::clone(&self.sensor_overflow),
+            self.wake.clone(),
+        )
+    }
+
     pub fn load_streaming_document(
         &self,
         start: DocumentStart,

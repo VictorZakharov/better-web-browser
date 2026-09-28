@@ -102,6 +102,7 @@ impl Broker {
                     | RendererMessage::NotificationRequest(_)
                     | RendererMessage::GeolocationRequest(_)
                     | RendererMessage::MediaDeviceRequest(_)
+                    | RendererMessage::SensorRequest(_)
                     | RendererMessage::StateSnapshotApplied(_)),
                 ) => {
                     if let Err(error) = self.process_document_message(message) {

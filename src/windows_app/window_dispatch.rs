@@ -86,6 +86,7 @@ unsafe fn dispatch_window_message(
             .unwrap_or_else(|| DefWindowProcW(window, message, wparam, lparam)),
         WM_ACTIVATE => {
             state.update_accessibility_window_focus(wparam & 0xffff != 0);
+            state.sync_sensor_visibility();
             if wparam & 0xffff == 0 {
                 state.exit_pointer_lock();
                 state.retire_capture_for_window();
@@ -437,6 +438,7 @@ unsafe fn dispatch_window_message(
             state.retire_geolocation_for_window();
             state.retire_media_devices_for_window();
             state.retire_capture_for_window();
+            state.retire_sensors_for_window();
             state.release_pointer_lock(false);
             KillTimer(window, ID_PERFORMANCE_MONITOR_TIMER);
             KillTimer(window, ID_SCROLL_ANIMATION_TIMER);

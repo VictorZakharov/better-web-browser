@@ -67,6 +67,7 @@ impl EventSender {
                 | RendererEvent::NotificationRequest(_)
                 | RendererEvent::GeolocationRequest(_)
                 | RendererEvent::MediaDeviceRequest(_)
+                | RendererEvent::SensorRequest(_)
         ) {
             self.send_lossless(event)
         } else {
@@ -237,6 +238,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::NotificationRequest(request) => Some(request.document),
         RendererEvent::GeolocationRequest(request) => Some(request.document),
         RendererEvent::MediaDeviceRequest(request) => Some(request.document),
+        RendererEvent::SensorRequest(request) => Some(request.document),
         RendererEvent::FullscreenRequested(request) => Some(request.document),
         RendererEvent::PointerLockRequested(request) => Some(request.document),
         RendererEvent::Diagnostic { .. }

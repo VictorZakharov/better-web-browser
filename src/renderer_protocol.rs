@@ -14,6 +14,7 @@ mod media_devices;
 mod message;
 mod notification;
 mod presentation;
+mod sensor;
 mod speech;
 mod state;
 mod video;
@@ -30,6 +31,10 @@ pub use media_devices::{
 pub use notification::{
     NotificationAction, NotificationEvent, NotificationPermission, NotificationRequest,
     NotificationUpdate,
+};
+pub use sensor::{
+    SensorAction, SensorError, SensorEvent, SensorKind, SensorPermission, SensorReading,
+    SensorRequest, SensorUpdate,
 };
 pub use speech::{
     MAX_SPEECH_TEXT_BYTES, SpeechAction, SpeechEvent, SpeechRequest, SpeechUpdate, SpeechVoiceInfo,
@@ -81,7 +86,7 @@ pub use state::{
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
 pub const PROTOCOL_MAJOR: u16 = 14;
-pub const PROTOCOL_MINOR: u16 = 6;
+pub const PROTOCOL_MINOR: u16 = 7;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

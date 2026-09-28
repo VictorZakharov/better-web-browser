@@ -110,6 +110,9 @@ pub(super) fn finish_host(
         .media_device_actions
         .append(&mut state.pending_media_device_actions);
     outcome
+        .sensor_actions
+        .append(&mut state.pending_sensor_actions);
+    outcome
         .worker_actions
         .append(&mut state.pending_worker_actions);
     outcome
