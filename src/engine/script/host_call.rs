@@ -4,6 +4,7 @@ use super::binding_helpers::*;
 use super::*;
 mod canvas_presentation;
 pub(super) mod compression_host;
+mod dom_queries;
 mod font_host;
 pub(in crate::engine::script) mod geolocation;
 mod graph_audio;
@@ -99,122 +100,15 @@ pub(super) fn dispatch_host_call(
     if let Some(value) = super::history_host::history_host_call(operation, args, state)? {
         return Ok(value);
     }
+    if let Some(value) = dom_queries::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
 
     match operation {
         "windowName" => Ok(js_string(state.browsing_context_name.borrow().clone())),
         "setWindowName" => {
             *state.browsing_context_name.borrow_mut() = argument_string(args, 1)?;
             Ok(JsValue::undefined())
-        }
-        "parent" => {
-            let parent = state
-                .node(argument_id(args, 1))
-                .and_then(|node| node.parent());
-            Ok(JsValue::from(
-                parent.map(|node| state.id_for(&node)).unwrap_or_default(),
-            ))
-        }
-        "firstChild" => {
-            let child = state
-                .node(argument_id(args, 1))
-                .and_then(|node| node.children.borrow().first().cloned());
-            Ok(JsValue::from(
-                child.map(|node| state.id_for(&node)).unwrap_or_default(),
-            ))
-        }
-        "lastChild" => {
-            let child = state
-                .node(argument_id(args, 1))
-                .and_then(|node| node.children.borrow().last().cloned());
-            Ok(JsValue::from(
-                child.map(|node| state.id_for(&node)).unwrap_or_default(),
-            ))
-        }
-        "nextSibling" => Ok(JsValue::from(sibling_id(state, args, true))),
-        "previousSibling" => Ok(JsValue::from(sibling_id(state, args, false))),
-        "children" => {
-            let children = state
-                .node(argument_id(args, 1))
-                .map(|node| node.children.borrow().clone())
-                .unwrap_or_default();
-            Ok(js_string(join_node_ids(state, &children, false)))
-        }
-        "inclusiveAncestors" => {
-            let mut nodes = Vec::new();
-            let mut current = state.node(argument_id(args, 1));
-            while let Some(node) = current {
-                current = node.parent();
-                nodes.push(node);
-            }
-            Ok(js_string(join_node_ids(state, &nodes, false)))
-        }
-        "elementChildren" => {
-            let children = state
-                .node(argument_id(args, 1))
-                .map(|node| node.children.borrow().clone())
-                .unwrap_or_default();
-            Ok(js_string(join_node_ids(state, &children, true)))
-        }
-        "textGet" => {
-            let value = state
-                .node(argument_id(args, 1))
-                .map(|node| node.text_content())
-                .unwrap_or_default();
-            Ok(js_string(value))
-        }
-        "query" => {
-            let selector = argument_string(args, 2)?;
-            let node = state
-                .node(argument_id(args, 1))
-                .and_then(|root| query_selector(&root, &selector));
-            Ok(JsValue::from(
-                node.map(|node| state.id_for(&node)).unwrap_or_default(),
-            ))
-        }
-        "queryAll" => {
-            let selector = argument_string(args, 2)?;
-            let nodes = state
-                .node(argument_id(args, 1))
-                .map(|root| query_selector_all(&root, &selector))
-                .unwrap_or_default();
-            Ok(js_string(join_node_ids(state, &nodes, false)))
-        }
-        "matches" => {
-            let selector = argument_string(args, 2)?;
-            let matches = state
-                .node(argument_id(args, 1))
-                .is_some_and(|node| matches_selector_list(&node, &selector));
-            Ok(JsValue::from(matches))
-        }
-        "setFocus" => {
-            let next = state
-                .node(argument_id(args, 1))
-                .filter(|node| node.element().is_some());
-            state.set_focus_target(next);
-            Ok(JsValue::undefined())
-        }
-        "closest" => {
-            let selector = argument_string(args, 2)?;
-            let closest = state
-                .node(argument_id(args, 1))
-                .and_then(|node| closest_matching_element(&node, &selector));
-            Ok(JsValue::from(
-                closest.map(|node| state.id_for(&node)).unwrap_or_default(),
-            ))
-        }
-        "layoutRect" => {
-            state.flush_layout_if_needed();
-            let rect = state
-                .node(argument_id(args, 1))
-                .and_then(|node| state.layout_geometry.get(&node.id()).copied());
-            Ok(rect.map_or_else(JsValue::null, |rect| {
-                JsValue::Array(vec![
-                    JsValue::from(rect.x as f64),
-                    JsValue::from(rect.y as f64),
-                    JsValue::from(rect.width as f64),
-                    JsValue::from(rect.height as f64),
-                ])
-            }))
         }
         "cookieGet" => Ok(js_string(state.cookie_header())),
         "cookieSet" => {
