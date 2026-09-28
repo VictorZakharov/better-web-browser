@@ -159,6 +159,7 @@ pub enum BrowserMessage {
     NotificationUpdate(super::NotificationUpdate),
     GeolocationUpdate(super::GeolocationUpdate),
     MediaDeviceUpdate(super::MediaDeviceUpdate),
+    SensorUpdate(super::SensorUpdate),
     AdvanceTime {
         document: DocumentId,
         elapsed_micros: u64,
@@ -199,6 +200,7 @@ pub enum RendererMessage {
     NotificationRequest(super::NotificationRequest),
     GeolocationRequest(super::GeolocationRequest),
     MediaDeviceRequest(super::MediaDeviceRequest),
+    SensorRequest(super::SensorRequest),
     VideoFrame(super::VideoFrameChunk),
     Ready {
         nonce: Nonce,

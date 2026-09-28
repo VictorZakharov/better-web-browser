@@ -250,6 +250,7 @@ impl Direction {
                     | 0x01a1
                     | 0x01b1
                     | 0x01c1
+                    | 0x01d1
                     | 0x8001
             ),
             Self::Renderer => matches!(
@@ -283,6 +284,7 @@ impl Direction {
                     | 0x01a0
                     | 0x01b0
                     | 0x01c0
+                    | 0x01d0
                     | 0x8002
             ),
         }

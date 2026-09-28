@@ -16,6 +16,7 @@ mod inserted_scripts;
 mod media_devices;
 mod notification;
 mod scheduling;
+mod sensor;
 mod speech;
 mod storage_sync;
 mod storage_values;

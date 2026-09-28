@@ -3,7 +3,7 @@
 mod agent;
 mod bridge;
 mod control_validation;
-mod crypto;
+pub(in crate::engine::script) mod crypto;
 mod dynamic_imports;
 mod event_handlers;
 pub(super) mod frames;

@@ -119,6 +119,7 @@ impl BrowserState {
         self.retire_geolocation_for_tab(id);
         self.retire_media_devices_for_tab(id);
         self.retire_capture_for_tab(id);
+        self.retire_sensors_for_tab(id);
         let session = self.tabs.get_mut(id).and_then(|tab| {
             tab.storage_subscription = None;
             tab.deferred_renderer_events.clear();
@@ -259,6 +260,7 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn poll_renderers(&mut self) {
+        self.sync_sensor_visibility();
         let ids = self
             .tabs
             .iter()
@@ -372,6 +374,7 @@ impl BrowserState {
 
     unsafe fn record_renderer_launch_failure(&mut self, id: TabId, error: String) {
         self.retire_database_for_tab(id);
+        self.retire_sensors_for_tab(id);
         let title = if let Some(tab) = self.tabs.get_mut(id) {
             tab.mark_crashed(format!(
                 "Renderer unavailable: {error}. Reload to try again."

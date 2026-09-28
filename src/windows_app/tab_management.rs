@@ -95,6 +95,7 @@ impl BrowserState {
         self.retire_geolocation_for_tab(id);
         self.retire_media_devices_for_tab(id);
         self.retire_capture_for_tab(id);
+        self.retire_sensors_for_tab(id);
         if close_tab_action(self.tabs.len(), self.tabs.active_id() == id)
             == CloseTabAction::CloseWindow
         {
@@ -163,7 +164,8 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn suspend_active_tab_ui(&mut self) {
-        // Hiding or moving a tab revokes capture immediately, even if the document survives.
+        // Revoke hardware access before any activation change or modal UI can run.
+        self.clear_visible_sensor_tab(self.tabs.active_id());
         self.retire_capture_for_tab(self.tabs.active_id());
         self.exit_pointer_lock();
         self.exit_page_fullscreen();
@@ -243,6 +245,7 @@ impl BrowserState {
             }
         }
         self.refresh_accessibility_full();
+        self.sync_sensor_visibility();
         InvalidateRect(self.window, null(), 0);
     }
 

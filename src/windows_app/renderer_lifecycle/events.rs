@@ -133,6 +133,9 @@ impl BrowserState {
                 RendererEvent::MediaDeviceRequest(request) => {
                     self.handle_media_device_request(id, request);
                 }
+                RendererEvent::SensorRequest(request) => {
+                    self.handle_sensor_request(id, request);
+                }
                 RendererEvent::Presentation(presentation) => {
                     self.process_for_tab(id, |state| {
                         state.activate_renderer_presentation(*presentation)
@@ -278,6 +281,9 @@ impl BrowserState {
         session.finish_event_drain();
 
         if let Some(exit) = exit {
+            // Retire the browser-owned hardware stream before any recovery path
+            // can detach this renderer session or start its replacement.
+            self.retire_sensors_for_tab(id);
             let crash_surface = exit.crash_surface();
             let task_budget_exceeded =
                 matches!(exit.reason, RendererExitReason::TaskBudgetExceeded(_));

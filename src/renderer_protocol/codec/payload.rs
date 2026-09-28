@@ -5,6 +5,7 @@ mod geolocation;
 mod input;
 mod media_devices;
 mod notification;
+mod sensor;
 mod speech;
 mod state;
 mod storage_sync;
@@ -42,6 +43,9 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
     }
     if let BrowserMessage::MediaDeviceUpdate(update) = message {
         return media_devices::encode_update(update).map(|bytes| (0x01c1, bytes));
+    }
+    if let BrowserMessage::SensorUpdate(update) = message {
+        return sensor::encode_update(update).map(|bytes| (0x01d1, bytes));
     }
     if let BrowserMessage::WebSocketEvent(event) = message {
         return websocket::encode_event(event).map(|bytes| (0x0171, bytes));
@@ -101,6 +105,7 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
         BrowserMessage::NotificationUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::GeolocationUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::MediaDeviceUpdate(_) => unreachable!("encoded above"),
+        BrowserMessage::SensorUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::Test(command) => {
             match command {
                 TestCommand::InternalError => payload.push(10),
@@ -175,6 +180,7 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
         0x01a1 => notification::decode_update(payload).map(BrowserMessage::NotificationUpdate),
         0x01b1 => geolocation::decode_update(payload).map(BrowserMessage::GeolocationUpdate),
         0x01c1 => media_devices::decode_update(payload).map(BrowserMessage::MediaDeviceUpdate),
+        0x01d1 => sensor::decode_update(payload).map(BrowserMessage::SensorUpdate),
         0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d | 0x014f | 0x0151 | 0x0153
         | 0x0155 => decode_browser_input(kind, payload),
         0x8001 => decode_test_command(payload).map(BrowserMessage::Test),
@@ -198,6 +204,9 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
     if let RendererMessage::MediaDeviceRequest(request) = message {
         return media_devices::encode_request(request).map(|bytes| (0x01c0, bytes));
     }
+    if let RendererMessage::SensorRequest(request) = message {
+        return sensor::encode_request(request).map(|bytes| (0x01d0, bytes));
+    }
     if let RendererMessage::WebSocketCommand(command) = message {
         return websocket::encode_command(command).map(|bytes| (0x0170, bytes));
     }
@@ -213,6 +222,7 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
         RendererMessage::NotificationRequest(_) => unreachable!("encoded above"),
         RendererMessage::GeolocationRequest(_) => unreachable!("encoded above"),
         RendererMessage::MediaDeviceRequest(_) => unreachable!("encoded above"),
+        RendererMessage::SensorRequest(_) => unreachable!("encoded above"),
         RendererMessage::Ready {
             nonce,
             context,
@@ -282,6 +292,7 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
         0x01a0 => notification::decode_request(payload).map(RendererMessage::NotificationRequest),
         0x01b0 => geolocation::decode_request(payload).map(RendererMessage::GeolocationRequest),
         0x01c0 => media_devices::decode_request(payload).map(RendererMessage::MediaDeviceRequest),
+        0x01d0 => sensor::decode_request(payload).map(RendererMessage::SensorRequest),
         0x0170 => websocket::decode_command(payload).map(RendererMessage::WebSocketCommand),
         2 => {
             require_length(payload, NONCE_LENGTH + 11)?;

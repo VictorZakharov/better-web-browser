@@ -35,7 +35,7 @@ fn random_bytes_with(
     Ok(JsValue::Bytes(bytes))
 }
 
-pub(super) fn trustworthy_url(value: &str) -> bool {
+pub(in crate::engine::script) fn trustworthy_url(value: &str) -> bool {
     let Ok(url) = url::Url::parse(value) else {
         return false;
     };

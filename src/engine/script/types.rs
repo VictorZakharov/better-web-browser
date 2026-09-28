@@ -128,6 +128,7 @@ pub struct ScriptOutcome {
     pub notification_actions: Vec<ScriptNotificationAction>,
     pub geolocation_actions: Vec<ScriptGeolocationAction>,
     pub media_device_actions: Vec<ScriptMediaDeviceAction>,
+    pub sensor_actions: Vec<ScriptSensorAction>,
     pub worker_actions: Vec<ScriptWorkerAction>,
     pub fullscreen_actions: Vec<ScriptFullscreenAction>,
     pub pointer_lock_actions: Vec<ScriptPointerLockAction>,
@@ -169,6 +170,14 @@ pub struct ScriptGeolocationAction {
 pub struct ScriptMediaDeviceAction {
     pub request_id: u64,
     pub client: crate::fetch::RequestClient,
+}
+
+#[derive(Clone, Debug)]
+pub struct ScriptSensorAction {
+    pub request_id: u64,
+    pub client: crate::fetch::RequestClient,
+    pub user_activation: bool,
+    pub action: crate::renderer_protocol::SensorAction,
 }
 
 #[derive(Debug, Clone)]

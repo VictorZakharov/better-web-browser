@@ -13,6 +13,9 @@ use std::sync::mpsc;
 mod control_updates;
 mod database;
 pub use control_updates::{GeolocationUpdateSink, MediaDeviceUpdateSink};
+mod sensor;
+pub(crate) use sensor::QueuedSensorUpdate;
+pub use sensor::{SensorDeliveryGate, SensorSinkError, SensorUpdateSink};
 
 pub(super) const MAX_QUEUED_DATABASE_RESPONSE_BYTES: usize =
     4 * crate::limits::MAX_INDEXED_DB_IPC_BYTES;
@@ -365,3 +368,7 @@ mod tests {
 #[cfg(test)]
 #[path = "stream/notification_tests.rs"]
 mod notification_tests;
+
+#[cfg(test)]
+#[path = "stream/sensor_tests.rs"]
+mod sensor_tests;

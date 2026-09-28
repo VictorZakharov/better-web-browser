@@ -126,6 +126,11 @@
     const proxyStorage = new WeakMap();
     const storageProxy = new WeakMap();
     const legacyEventTargets = new WeakMap();
+    let sensorListenerChanged = null;
+    Object.defineProperty(globalThis, '__installSensorListenerHook', {
+        configurable: true,
+        value(callback) { sensorListenerChanged = callback; }
+    });
     let isNativeAbortSignal = () => false;
     Object.defineProperty(globalThis, '__installAbortSignalBrand', {
         configurable: true, value: checker => { isNativeAbortSignal = checker; }
@@ -158,6 +163,8 @@
         const listeners = listenerStore.get(target);
         const index = listeners?.indexOf(listener) ?? -1;
         if (index >= 0) listeners.splice(index, 1);
+        if (index >= 0 && sensorListenerChanged)
+            sensorListenerChanged(receiverFor(target), listener.type, -1);
         if (listener.abortRecord) removeListener(storageFor(listener.signal), listener.abortRecord);
     };
     const addListener = (target, type, callback, options) => {
@@ -172,6 +179,7 @@
             listener.callback === callback && listener.capture === flattened.capture)) return;
         const listener = { type, callback, ...flattened, removed: false };
         listeners.push(listener);
+        if (sensorListenerChanged) sensorListenerChanged(receiverFor(target), type, 1);
         // A signal removes the precise listener record, including during a dispatch
         // snapshot. The abort observer is unregistered when once/manual removal wins.
         // https://dom.spec.whatwg.org/#concept-event-listener-add

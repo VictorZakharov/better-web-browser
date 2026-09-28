@@ -13,6 +13,7 @@ pub(in crate::engine::script) mod media_devices;
 mod module_completion;
 pub(super) mod navigation;
 pub(in crate::engine::script) mod notification;
+pub(in crate::engine::script) mod sensor;
 pub(in crate::engine::script) mod speech;
 mod storage;
 mod task_scheduling;

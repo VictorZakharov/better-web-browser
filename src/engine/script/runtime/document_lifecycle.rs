@@ -201,6 +201,8 @@ impl ScriptRuntime {
         host.pending_notification_actions.clear();
         host.pending_geolocation_actions.clear();
         host.pending_media_device_actions.clear();
+        host.pending_sensor_actions.clear();
+        host.pending_sensor_update = None;
         host.pending_worker_actions.clear();
         host.pending_fullscreen_actions.clear();
         host.pending_pointer_lock_actions.clear();

@@ -338,6 +338,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | ECMAScript modules | Static graphs, top-level `await`, [dynamic document JavaScript modules](docs/dynamic-modules.md), and parser-inserted [inline import maps](docs/import-maps.md) are implemented. Script-created maps, map integrity enforcement, import attributes, other module types, and dynamic worker imports remain gaps. |
 | ◩ | Web Workers | Isolated classic and module dedicated workers are implemented. Shared Workers and Service Workers are not. |
 | ◩ | Web Crypto and Gamepad | Secure Window and dedicated-worker realms expose CNG-backed digests, HMAC, AES, key derivation, NIST-curve ECDH/ECDSA, and RSA-OAEP/PSS/PKCS#1 v1.5 with bounded key import/export. The Windows Gamepad API polls XInput controllers after user interaction. Other algorithms, hardware-backed key storage, non-XInput devices, and haptics remain gaps; see the [current standards slice](docs/html5test-indexes-crypto-media.md). |
+| ◩ | Device sensors | Windows WinRT-backed relative/absolute Device Orientation and Motion events plus Generic Accelerometer, Linear Acceleration, Gravity, Gyroscope, Magnetometer, Relative/Absolute Orientation, and Ambient Light sensors deliver permissioned physical readings to visible secure top-level documents through bounded IPC. Screen-reference transforms, iframe delegation, and persistent grants remain open; see the [sensor contract](docs/sensors.md). |
 | ◩ | Script scheduling | Streaming parsing, [synchronous writes](docs/synchronous-document-write.md), [document replacement](docs/document-streams-and-pre-wrap.md), [synchronous dynamic inline classics](docs/inline-scripts-and-table-geometry.md), parser mutation notifications, autonomous custom-element construction/reactions, independently ready classic `async` scripts, deferred/module readiness, [dynamic module insertion](docs/dynamic-modules.md), and document load tasks are implemented slices. Stylesheets have separate parser-script and paint gates. Customized built-ins and the complete HTML rendering/event-loop model remain incomplete. |
 | ◩ | Images and fonts | Document images, CSS backgrounds, SVG, alpha compositing, detached JavaScript-created `Image` fetch/decode, and webfonts are supported. The sandboxed renderer owns font parsing, advanced shaping, fallback, and glyph rasterization; the browser validates and composites only bounded raster assets and placements, so remote font bytes never enter the privileged process. CSS Fonts coverage, variable-font controls, vertical text, and broader image resource-selection behavior remain incomplete. |
 | ◩ | Resource hints and CSP | Connected `dns-prefetch` and `preconnect` links perform bounded origin-only DNS warmup; `preconnect` does not yet establish a reusable connection. Bounded same-origin document `prefetch` warms the private navigation cache. Response and eligible `head` meta CSP govern resource admission and eval/Wasm generation, including inherited worker policy; inline script hashes use SHA-256/384/512. Cross-origin prefetch, report-only delivery, style hashes, and full CSP3 remain open; see the [implementation contract](docs/html-media-hints-csp.md). |
@@ -504,6 +505,18 @@ rows remain excluded for an unrecognized browser identity, although trusted
 pointer-drag lifecycle tests exercise the new behavior. These are partial APIs,
 not claims of full Geolocation, Media Capture, Web Audio, or DnD conformance.
 
+The 2026-09-28 [physical sensor batch](docs/sensors.md) rendered
+**465–468 / 588** across three identical hidden runs with Breeze's default
+identity, up **7–10** from the merged PR #199 **458 / 588** baseline. All
+used a fresh-profile Windows x64 release run at 1280×720, 125% scale,
+`en-US`, and a 10-second settle, returning HTTP 200 with zero JavaScript
+errors or renderer exits. The two 468-point runs executed seven page scripts;
+the 465-point run executed six. The score observes API availability, not
+sensor hardware or permission conformance. Fake-provider, protocol, and
+hidden-renderer tests exercise the physical-data contract without accessing
+the user's devices. The adapter uses existing locked Windows API crates,
+without adding dependencies or copied upstream code.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -512,8 +525,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-28-batch11-after.json `
-  -Screenshot target/html5test/2026-09-28-batch11-after.png
+  -Output target/html5test/2026-09-28-sensors-final-post199.json `
+  -Screenshot target/html5test/2026-09-28-sensors-final-post199.png
 ```
 
 New releases must refresh or explicitly date these observations using the
