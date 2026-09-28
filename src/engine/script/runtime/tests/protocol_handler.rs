@@ -74,3 +74,32 @@ fn insecure_document_does_not_expose_handler_methods() {
     );
     assert!(outcome.protocol_handler_actions.is_empty());
 }
+
+#[test]
+fn inherited_origin_srcdoc_frame_cannot_register_a_handler() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><script>
+            const frame = document.createElement('iframe');
+            document.body.append(frame);
+            frame.srcdoc = '<script>parent.document.body.dataset.handlerAvailable = String("registerProtocolHandler" in navigator)<\/script>';
+        </script></body>"#,
+        true,
+    );
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.test/page");
+    let setup = runtime.execute_initial_before_document_completion(&script_inputs(&dom), None);
+    assert!(setup.errors.is_empty(), "{:?}", setup.errors);
+    assert!(setup.protocol_handler_actions.is_empty());
+    for _ in 0..30 {
+        let outcome = runtime.advance_time(Duration::ZERO, 1);
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert!(outcome.protocol_handler_actions.is_empty());
+    }
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-handler-available")
+            .as_deref(),
+        Some("false")
+    );
+}

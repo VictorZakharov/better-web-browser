@@ -200,7 +200,7 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
         return notification::encode_request(request).map(|bytes| (0x01a0, bytes));
     }
     if let RendererMessage::ProtocolHandlerRequest(request) = message {
-        return protocol_handler::encode_request(request).map(|bytes| (0x01d0, bytes));
+        return protocol_handler::encode_request(request).map(|bytes| (0x01e0, bytes));
     }
     if let RendererMessage::GeolocationRequest(request) = message {
         return geolocation::encode_request(request).map(|bytes| (0x01b0, bytes));
@@ -295,7 +295,7 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
         0x0180 => database::decode_command(payload).map(RendererMessage::DatabaseCommand),
         0x0190 => speech::decode_request(payload).map(RendererMessage::SpeechRequest),
         0x01a0 => notification::decode_request(payload).map(RendererMessage::NotificationRequest),
-        0x01d0 => {
+        0x01e0 => {
             protocol_handler::decode_request(payload).map(RendererMessage::ProtocolHandlerRequest)
         }
         0x01b0 => geolocation::decode_request(payload).map(RendererMessage::GeolocationRequest),

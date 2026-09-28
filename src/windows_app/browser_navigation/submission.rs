@@ -8,7 +8,7 @@ impl BrowserState {
         report: &RuntimeReport,
         presentation: Option<(better_web_browser::renderer_protocol::DocumentId, u64)>,
     ) -> bool {
-        let Some(url) = report.navigation_url.as_ref() else {
+        let Some(requested_url) = report.navigation_url.as_ref() else {
             return false;
         };
         let options = &report.navigation_options;
@@ -24,6 +24,14 @@ impl BrowserState {
             self.set_status("Navigation to a named browsing context is not supported yet");
             return false;
         }
+        // Reject an unhandled custom scheme before `_blank` creates a tab.
+        let url = match self.approved_navigation_target(requested_url) {
+            Ok(url) => url,
+            Err(error) => {
+                self.set_status(error);
+                return false;
+            }
+        };
         let mut history = if options.user_initiated {
             if options.replace_history {
                 HistoryMode::Script
@@ -43,7 +51,7 @@ impl BrowserState {
                 HistoryMode::ScriptPush
             }
         } else {
-            if !self.allow_script_navigation(url) {
+            if !self.allow_script_navigation(&url) {
                 return false;
             }
             if options.replace_history {

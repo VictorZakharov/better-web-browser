@@ -13,13 +13,18 @@ pub(super) fn dispatch(
 ) -> JsResult<Option<JsValue>> {
     if operation == "protocolHandlerAvailable" {
         return Ok(Some(JsValue::from(
-            state.fetch_client.id == 0 && state.document_origin.is_potentially_trustworthy(),
+            !state.embedded
+                && state.fetch_client.id == 0
+                && state.document_origin.is_potentially_trustworthy(),
         )));
     }
     if operation != "protocolHandlerRequest" {
         return Ok(None);
     }
-    if state.fetch_client.id != 0 || !state.document_origin.is_potentially_trustworthy() {
+    if state.embedded
+        || state.fetch_client.id != 0
+        || !state.document_origin.is_potentially_trustworthy()
+    {
         return Ok(Some(js_string("SecurityError".into())));
     }
     let action = match argument_string(args, 1)?.as_str() {

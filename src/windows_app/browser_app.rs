@@ -6,6 +6,7 @@ use super::tabs::{RecentlyClosedTabs, TabId};
 use super::*;
 use better_web_browser::branding::UserAgentMode;
 use std::cell::{Cell, RefCell};
+use std::fs::File;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -44,6 +45,7 @@ impl TabMessageRouter {
 pub(super) struct BrowserApplication {
     pub(super) instance: Hinstance,
     pub(super) profile: PathBuf,
+    _profile_lock: File,
     pub(super) active_user_agent_mode: UserAgentMode,
     pub(super) selected_user_agent_mode: Cell<UserAgentMode>,
     pub(super) metrics: Arc<BrowserMetrics>,
@@ -70,6 +72,7 @@ impl BrowserApplication {
         metrics: Arc<BrowserMetrics>,
     ) -> Result<Rc<Self>, String> {
         let profile = super::profile::directory()?;
+        let profile_lock = super::profile::acquire_exclusive_lock(&profile)?;
         let user_agent_mode = super::user_agent_preferences::load(&profile)?;
         let local_storage = Arc::new(
             better_web_browser::storage::LocalStorage::open(profile.join("local-storage.json"))
@@ -93,6 +96,7 @@ impl BrowserApplication {
         Ok(Rc::new(Self {
             instance,
             profile: profile.clone(),
+            _profile_lock: profile_lock,
             active_user_agent_mode: user_agent_mode,
             selected_user_agent_mode: Cell::new(user_agent_mode),
             metrics,

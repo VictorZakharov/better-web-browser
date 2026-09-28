@@ -22,15 +22,19 @@ and origin after the modal loop before saving a grant. Denials are remembered to
 avoid repeat prompts. Only one accepted handler is active per scheme, and
 approval never changes Windows' default applications. The profile store is
 bounded and replaced from a synced same-directory temporary file; malformed or
-ambiguous grants fail closed. `unregisterProtocolHandler` removes only the
-calling origin's matching grant.
+ambiguous grants fail closed. Breeze holds an exclusive profile lock for the
+browser process lifetime, preventing another process with a stale registry from
+restoring a revoked grant. A second process must use a different profile or wait
+until the first exits. `unregisterProtocolHandler` removes only the calling
+origin's matching grant.
 
 Trusted and synthetic anchor navigation, and address-bar navigation, can pass
 eligible custom schemes to the browser boundary; Fetch and subresource loading
 still reject them. Only an approved handler routes. Routing strips embedded URL
 credentials, UTF-8 component-encodes the serialized input URL, substitutes its
 first `%s`, and navigates to the resulting web URL. Unknown schemes leave the
-current page intact. This is not operating-system protocol registration, and
+current page intact, including `target="_blank"` links (no empty tab is opened).
+This is not operating-system protocol registration, and
 there is not yet a management UI for editing saved choices. Embedded frames and
 headless runs do not prompt. The API's presence alone is not a conformance or
 HTML5test score claim; a measured score is recorded only after a fresh hidden

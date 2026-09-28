@@ -46,6 +46,7 @@ pub(super) fn decode_request(bytes: &[u8]) -> Result<ProtocolHandlerRequest, Pro
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::renderer_protocol::{FrameReader, FrameWriter, RendererMessage, RendererSessionId};
 
     #[test]
     fn request_round_trips_and_rejects_oversized_or_invalid_actions() {
@@ -61,6 +62,18 @@ mod tests {
         };
         let bytes = encode_request(&request).unwrap();
         assert_eq!(decode_request(&bytes).unwrap(), request);
+        let session = RendererSessionId::new(9).unwrap();
+        let mut writer = FrameWriter::new(Vec::new(), session);
+        writer
+            .send_renderer(&RendererMessage::ProtocolHandlerRequest(request.clone()))
+            .unwrap();
+        let frame = writer.into_inner();
+        assert_eq!(
+            FrameReader::new(frame.as_slice(), session)
+                .read_renderer()
+                .unwrap(),
+            RendererMessage::ProtocolHandlerRequest(request.clone())
+        );
         let mut invalid = bytes;
         invalid[17] = 9;
         assert!(decode_request(&invalid).is_err());

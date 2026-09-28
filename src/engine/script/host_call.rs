@@ -2,7 +2,6 @@
 
 use super::binding_helpers::*;
 use super::*;
-
 mod canvas_presentation;
 pub(super) mod compression_host;
 mod font_host;

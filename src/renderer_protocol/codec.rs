@@ -285,6 +285,7 @@ impl Direction {
                     | 0x01b0
                     | 0x01c0
                     | 0x01d0
+                    | 0x01e0
                     | 0x8002
             ),
         }
