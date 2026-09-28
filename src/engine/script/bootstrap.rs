@@ -7,6 +7,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     "(function (__hostCall) {\n'use strict';\n",
     include_str!("bootstrap/dom_exception.js"),
     include_str!("bootstrap/web_url.js"),
+    include_str!("bootstrap/url_pattern_compile.js"),
     include_str!("bootstrap/url_pattern.js"),
     include_str!("bootstrap/core.js"),
     include_str!("bootstrap/collections.js"),

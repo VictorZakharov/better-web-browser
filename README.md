@@ -341,7 +341,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | BroadcastChannel | Same-origin top-level documents can exchange structured-cloned messages across tabs through browser-owned, bounded membership and delivery queues. Embedded documents and workers await storage-key/lifecycle integration; see the [BroadcastChannel contract](docs/broadcast-channel.md). |
 | ◩ | File API | Memory-backed `Blob` slices share private immutable chunks, byte streams pull bounded chunks with BYOB readers, and dedicated workers can use all four `FileReaderSync` read formats. File-backed streaming and complete File API coverage remain open; see the [File API contract](docs/file-api-worker-reads.md). |
 | ◩ | Location and media-device discovery | Secure top-level pages can request real Windows location readings after an origin-scoped session permission prompt. `navigator.mediaDevices.enumerateDevices()` reports only the presence of microphones and cameras, without identifying them before a capture grant. Background/minimized requests wait, and navigation retires outstanding work. Child-frame permissions policy, camera/microphone capture, and device-change events remain unavailable; see the [location](docs/geolocation.md) and [device enumeration](docs/media-devices-enumeration.md) contracts. |
-| ◩ | URLPattern | A bounded Window `URLPattern` subset matches and extracts fixed URL components, named path segments, and a terminal wildcard. Full pattern syntax, base-URL forms, and worker exposure remain open; see the [URLPattern contract](docs/url-pattern.md). |
+| ◩ | URLPattern | A bounded Window `URLPattern` subset matches fixed URL components, named and repeated path segments, literal-affixed captures, hostname labels, and a terminal wildcard. Custom regular expressions, full constructor-string grammar, and worker exposure remain open; see the [URLPattern contract](docs/url-pattern.md). |
 | ◩ | ECMAScript modules | Static graphs, top-level `await`, [dynamic document JavaScript modules](docs/dynamic-modules.md), and parser-inserted [inline import maps](docs/import-maps.md) are implemented. Script-created maps, map integrity enforcement, import attributes, other module types, and dynamic worker imports remain gaps. |
 | ◩ | Web Workers | Isolated classic and module dedicated workers are implemented. Shared Workers and Service Workers are not. |
 | ◩ | Web Crypto and Gamepad | Secure Window and dedicated-worker realms expose CNG-backed digests, HMAC, AES, key derivation, NIST-curve ECDH/ECDSA, and RSA-OAEP/PSS/PKCS#1 v1.5 with bounded key import/export. The Windows Gamepad API polls XInput controllers after user interaction. Other algorithms, hardware-backed key storage, non-XInput devices, and haptics remain gaps; see the [current standards slice](docs/html5test-indexes-crypto-media.md). |
@@ -550,6 +550,13 @@ exits. The score is unchanged from the preceding 469-point observation; the
 new browser-owned storage, power, and permission contracts are covered by
 focused unit and hidden integration tests, not established by HTML5test.
 
+The following 2026-09-28 [URLPattern grammar slice](docs/url-pattern.md) also
+rendered **469 / 588** in three identical hidden fresh-profile release runs.
+Each returned HTTP 200, executed seven page scripts, and had no JavaScript
+errors or renderer exits. The score is unchanged; HTML5test does not exercise
+the new repeated and literal-affixed capture behavior, which is covered by
+focused tests. No dependency or copied upstream code was added.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -558,8 +565,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-28-browser-apis-batch18-run1.json `
-  -Screenshot target/html5test/2026-09-28-browser-apis-batch18-run1.png
+  -Output target/html5test/2026-09-28-urlpattern-batch19-run1.json `
+  -Screenshot target/html5test/2026-09-28-urlpattern-batch19-run1.png
 ```
 
 New releases must refresh or explicitly date these observations using the
