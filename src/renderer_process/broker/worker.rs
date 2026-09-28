@@ -39,6 +39,7 @@ pub(super) enum BrokerCommand {
     BroadcastDelivery(crate::renderer_protocol::BroadcastDelivery),
     FullscreenResponse(crate::renderer_protocol::FullscreenResponse),
     PointerLockResponse(crate::renderer_protocol::PointerLockResponse),
+    WakeLockUpdate(crate::renderer_protocol::WakeLockUpdate),
     Shutdown(mpsc::Sender<Result<RendererExit, String>>),
     Terminate,
     CloseJobForTest(mpsc::Sender<Result<(), String>>),

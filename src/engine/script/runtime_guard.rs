@@ -128,6 +128,9 @@ pub(super) fn finish_host(
         .fullscreen_actions
         .append(&mut state.pending_fullscreen_actions);
     outcome
+        .wake_lock_actions
+        .append(&mut state.pending_wake_lock_actions);
+    outcome
         .pointer_lock_actions
         .append(&mut state.pending_pointer_lock_actions);
     outcome

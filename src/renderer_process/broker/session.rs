@@ -252,6 +252,14 @@ impl RendererSession {
         self.send_command(worker::BrokerCommand::FullscreenResponse(response))
     }
 
+    pub fn update_wake_lock(
+        &self,
+        update: crate::renderer_protocol::WakeLockUpdate,
+    ) -> Result<(), String> {
+        update.validate().map_err(|error| error.to_string())?;
+        self.send_command(worker::BrokerCommand::WakeLockUpdate(update))
+    }
+
     pub fn respond_pointer_lock(
         &self,
         response: crate::renderer_protocol::PointerLockResponse,

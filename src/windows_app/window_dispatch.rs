@@ -113,6 +113,7 @@ unsafe fn dispatch_window_message(
             if wparam == 1 {
                 // SIZE_MINIMIZED: capture must not persist in a hidden window.
                 state.retire_capture_for_window();
+                state.retire_wake_locks_for_window();
             }
             state.track_media_viewport_resize();
             state.mark_all_tab_layouts_dirty();
@@ -121,6 +122,10 @@ unsafe fn dispatch_window_message(
             state.refresh_accessibility_full();
             InvalidateRect(window, null(), 0);
             0
+        }
+        WM_SHOWWINDOW if wparam == 0 => {
+            state.retire_wake_locks_for_window();
+            DefWindowProcW(window, message, wparam, lparam)
         }
         WM_DPICHANGED => {
             state.exit_pointer_lock();
@@ -445,6 +450,7 @@ unsafe fn dispatch_window_message(
             state.retire_media_devices_for_window();
             state.retire_capture_for_window();
             state.retire_sensors_for_window();
+            state.retire_wake_locks_for_window();
             state.release_pointer_lock(false);
             KillTimer(window, ID_PERFORMANCE_MONITOR_TIMER);
             KillTimer(window, ID_SCROLL_ANIMATION_TIMER);

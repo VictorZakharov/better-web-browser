@@ -63,6 +63,9 @@ pub(super) fn dispatch_host_call(
     if let Some(value) = clipboard::dispatch(operation, args, state)? {
         return Ok(value);
     }
+    if let Some(value) = super::wake_lock_host::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
     if let Some(value) = graph_audio::dispatch(operation, args, state)? {
         return Ok(value);
     }

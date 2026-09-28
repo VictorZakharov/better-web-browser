@@ -24,6 +24,7 @@ mod reporting;
 mod resources;
 mod scheduling;
 mod text;
+mod wake_lock;
 mod workers;
 
 use self::accessibility::RendererAccessibility;

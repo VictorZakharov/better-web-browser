@@ -4,6 +4,7 @@ mod dom_parser;
 mod serialization;
 mod url_pattern;
 mod url_resolution;
+mod wake_lock;
 mod xhr_document;
 
 fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {

@@ -55,6 +55,7 @@ mod user_agent_options;
 mod user_agent_preferences;
 mod video_presentation;
 mod viewport;
+mod wake_lock;
 mod win32_helpers;
 mod window_dispatch;
 mod winrt_apartment;

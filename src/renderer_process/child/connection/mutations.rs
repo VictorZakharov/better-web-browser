@@ -65,6 +65,18 @@ impl ChildConnection {
                 ))
                 .map_err(|error| error.to_string())?;
         }
+        for action in outcome.wake_lock_actions.drain(..) {
+            self.writer
+                .send_renderer(&RendererMessage::WakeLockRequest(
+                    crate::renderer_protocol::WakeLockRequest {
+                        document,
+                        request_id: action.request_id,
+                        client: action.client,
+                        action: action.action,
+                    },
+                ))
+                .map_err(|error| error.to_string())?;
+        }
         for action in outcome.pointer_lock_actions.drain(..) {
             self.writer
                 .send_renderer(&RendererMessage::PointerLockRequest(

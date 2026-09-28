@@ -250,6 +250,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::ClipboardRequest(request) => Some(request.document),
         RendererEvent::FullscreenRequested(request) => Some(request.document),
         RendererEvent::PointerLockRequested(request) => Some(request.document),
+        RendererEvent::WakeLockRequested(request) => Some(request.document),
         RendererEvent::Diagnostic { .. }
         | RendererEvent::Unresponsive
         | RendererEvent::Exited(_) => None,

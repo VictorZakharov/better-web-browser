@@ -72,6 +72,9 @@ pub(super) fn merge_outcome(
         .fullscreen_actions
         .append(&mut source.fullscreen_actions);
     target
+        .wake_lock_actions
+        .append(&mut source.wake_lock_actions);
+    target
         .pointer_lock_actions
         .append(&mut source.pointer_lock_actions);
     target.media_actions.append(&mut source.media_actions);

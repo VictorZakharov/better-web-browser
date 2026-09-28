@@ -162,6 +162,7 @@ pub enum BrowserMessage {
     MediaDeviceUpdate(super::MediaDeviceUpdate),
     SensorUpdate(super::SensorUpdate),
     BroadcastDelivery(BroadcastDelivery),
+    WakeLockUpdate(super::WakeLockUpdate),
     AdvanceTime {
         document: DocumentId,
         elapsed_micros: u64,
@@ -206,6 +207,7 @@ pub enum RendererMessage {
     MediaDeviceRequest(super::MediaDeviceRequest),
     SensorRequest(super::SensorRequest),
     BroadcastCommand(BroadcastCommand),
+    WakeLockRequest(super::WakeLockRequest),
     VideoFrame(super::VideoFrameChunk),
     Ready {
         nonce: Nonce,

@@ -219,6 +219,9 @@ impl BrowserState {
                 RendererEvent::PointerLockRequested(request) => {
                     self.handle_pointer_lock_request(id, request);
                 }
+                RendererEvent::WakeLockRequested(request) => {
+                    self.handle_wake_lock_request(id, request);
+                }
                 RendererEvent::CookieMutation(mutation) => {
                     let mut correction_error = None;
                     self.process_for_tab(id, |state| {
@@ -316,6 +319,7 @@ impl BrowserState {
             // Retire the browser-owned hardware stream before any recovery path
             // can detach this renderer session or start its replacement.
             self.retire_sensors_for_tab(id);
+            self.retire_wake_locks_for_tab(id);
             let crash_surface = exit.crash_surface();
             let task_budget_exceeded =
                 matches!(exit.reason, RendererExitReason::TaskBudgetExceeded(_));

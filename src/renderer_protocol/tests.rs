@@ -334,6 +334,44 @@ fn rejects_messages_from_the_wrong_direction() {
 }
 
 #[test]
+fn wake_lock_frames_round_trip_and_reject_the_wrong_direction() {
+    let document = DocumentId::new(42).unwrap();
+    let request = RendererMessage::WakeLockRequest(WakeLockRequest {
+        document,
+        request_id: 7,
+        client: crate::fetch::RequestClient::default(),
+        action: WakeLockAction::Acquire,
+    });
+    let update = BrowserMessage::WakeLockUpdate(WakeLockUpdate {
+        document,
+        request_id: 7,
+        disposition: WakeLockDisposition::Granted,
+    });
+    let request_frame = encoded_renderer(&request);
+    let update_frame = encoded_browser(&update);
+    assert_eq!(
+        FrameReader::new(Cursor::new(request_frame.clone()), session())
+            .read_renderer()
+            .unwrap(),
+        request
+    );
+    assert_eq!(
+        FrameReader::new(Cursor::new(update_frame.clone()), session())
+            .read_browser()
+            .unwrap(),
+        update
+    );
+    assert!(matches!(
+        FrameReader::new(Cursor::new(request_frame), session()).read_browser(),
+        Err(ProtocolError::UnexpectedMessage(0x0210))
+    ));
+    assert!(matches!(
+        FrameReader::new(Cursor::new(update_frame), session()).read_renderer(),
+        Err(ProtocolError::UnexpectedMessage(0x0211))
+    ));
+}
+
+#[test]
 fn rejects_invalid_boolean_and_utf8_payloads() {
     let mut ready = Vec::new();
     let mut writer = FrameWriter::new(&mut ready, session());

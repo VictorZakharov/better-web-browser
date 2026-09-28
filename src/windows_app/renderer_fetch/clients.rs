@@ -98,6 +98,13 @@ impl Clients {
         Ok(client)
     }
 
+    pub fn committed_root(&self, document: DocumentId) -> Result<Client, FetchError> {
+        self.check_document(document)?;
+        self.root
+            .clone()
+            .ok_or_else(|| invalid("top-level Fetch client is not committed"))
+    }
+
     pub fn reserve(
         &mut self,
         document: DocumentId,

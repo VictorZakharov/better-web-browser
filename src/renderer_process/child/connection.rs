@@ -15,6 +15,7 @@ mod runtime;
 mod sensor;
 mod speech;
 mod state;
+mod wake_lock;
 mod websocket;
 mod writer;
 
@@ -263,6 +264,7 @@ impl ChildConnection {
             }
             BrowserMessage::FullscreenResponse(response) => self.fullscreen_response(response),
             BrowserMessage::PointerLockResponse(response) => self.pointer_lock_response(response),
+            BrowserMessage::WakeLockUpdate(update) => self.deliver_wake_lock_update(update),
             BrowserMessage::CancelDocument(document) => self.cancel_navigation(document),
             message @ (BrowserMessage::FetchResponseStart(_)
             | BrowserMessage::FetchResponseChunk(_)

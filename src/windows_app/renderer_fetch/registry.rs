@@ -13,6 +13,17 @@ pub(in crate::windows_app) struct RendererFetchRegistry {
 }
 
 impl RendererFetchRegistry {
+    pub(in crate::windows_app) fn committed_root(
+        &self,
+        document: DocumentId,
+    ) -> Result<super::clients::Client, String> {
+        self.clients
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .committed_root(document)
+            .map_err(|error| error.to_string())
+    }
+
     pub(in crate::windows_app) fn append_meta_policy(
         &self,
         mutation: PolicyMutation,

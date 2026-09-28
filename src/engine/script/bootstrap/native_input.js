@@ -221,6 +221,7 @@
                     const next = input.state === 'active' ? 'visible' : 'hidden';
                     if (next !== nativeVisibilityState) {
                         nativeVisibilityState = next;
+                        if (next === 'hidden' && typeof releaseAllWakeLocks === 'function') releaseAllWakeLocks();
                         document.dispatchEvent(markTrusted(new Event('visibilitychange')));
                     }
                     if (input.state === 'frozen') document.dispatchEvent(markTrusted(new Event('freeze')));
@@ -229,6 +230,7 @@
                 }
                 case 'fullscreen': return applyFullscreenResponse(input);
                 case 'pointerLock': return applyPointerLockResponse(input);
+                case 'wakeLock': return typeof applyWakeLockUpdate === 'function' && applyWakeLockUpdate(input);
                 case 'media': return applyMediaResponse(input);
                 case 'mediaSource': return applyOrdinaryMediaSourceEvent(input);
                 default: return false;

@@ -21,6 +21,7 @@ mod sensor;
 mod speech;
 mod state;
 mod video;
+mod wake_lock;
 mod websocket;
 mod wire;
 pub use broadcast_channel::{BroadcastCommand, BroadcastDelivery, BroadcastOperation};
@@ -49,6 +50,7 @@ pub use speech::{
     MAX_SPEECH_TEXT_BYTES, SpeechAction, SpeechEvent, SpeechRequest, SpeechUpdate, SpeechVoiceInfo,
 };
 pub use video::{VideoFrameAssembler, VideoFrameChunk, VideoFrameIdentity, VideoFrameUpdate};
+pub use wake_lock::{WakeLockAction, WakeLockDisposition, WakeLockRequest, WakeLockUpdate};
 pub use websocket::{WebSocketCommand, WebSocketEvent, WebSocketEventKind, WebSocketOperation};
 
 pub use accessibility::{

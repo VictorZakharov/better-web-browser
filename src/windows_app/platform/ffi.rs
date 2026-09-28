@@ -26,6 +26,7 @@ unsafe extern "system" {
     ) -> Lresult;
     pub(in crate::windows_app) fn ShowWindow(window: Hwnd, command: i32) -> i32;
     pub(in crate::windows_app) fn IsWindowVisible(window: Hwnd) -> i32;
+    pub(in crate::windows_app) fn IsIconic(window: Hwnd) -> i32;
     pub(in crate::windows_app) fn UpdateWindow(window: Hwnd) -> i32;
     pub(in crate::windows_app) fn GetMessageW(
         message: *mut Msg,

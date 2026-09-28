@@ -31,6 +31,7 @@ pub(super) const WM_SETFOCUS: u32 = 0x0007;
 pub(super) const WM_KILLFOCUS: u32 = 0x0008;
 pub(super) const WM_PAINT: u32 = 0x000F;
 pub(super) const WM_CLOSE: u32 = 0x0010;
+pub(super) const WM_SHOWWINDOW: u32 = 0x0018;
 pub(super) const WM_ERASEBKGND: u32 = 0x0014;
 pub(super) const WM_CANCELMODE: u32 = 0x001F;
 pub(super) const WM_SETCURSOR: u32 = 0x0020;

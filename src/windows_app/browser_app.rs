@@ -61,6 +61,8 @@ pub(super) struct BrowserApplication {
     pub(super) geolocation: RefCell<super::geolocation::GeolocationService>,
     pub(super) media_devices: RefCell<super::media_devices::MediaDeviceService>,
     pub(super) capture: RefCell<super::capture::CaptureCoordinator>,
+    pub(super) wake_locks:
+        RefCell<super::wake_lock::WakeLockService<super::wake_lock::native::DisplayPowerRequest>>,
     pub(super) renderer_registry: SharedRendererRegistry,
     pub(super) tab_router: TabMessageRouter,
     pub(super) prefers_dark_color_scheme: Cell<bool>,
@@ -121,6 +123,7 @@ impl BrowserApplication {
             geolocation: RefCell::new(super::geolocation::GeolocationService::default()),
             media_devices: RefCell::new(super::media_devices::MediaDeviceService::default()),
             capture: RefCell::new(super::capture::CaptureCoordinator::default()),
+            wake_locks: RefCell::new(super::wake_lock::WakeLockService::new(Default::default())),
             renderer_registry: Arc::new(Mutex::new(RendererTaskRegistry::default())),
             tab_router: TabMessageRouter::default(),
             prefers_dark_color_scheme: Cell::new(super::color_scheme::prefers_dark_color_scheme()),
