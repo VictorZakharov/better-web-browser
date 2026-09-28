@@ -6,6 +6,7 @@ mod broadcast_channel;
 mod geolocation;
 mod input;
 mod media_devices;
+mod permission;
 mod state;
 
 fn session() -> RendererSessionId {

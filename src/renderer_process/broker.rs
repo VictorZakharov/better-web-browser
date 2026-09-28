@@ -48,8 +48,7 @@ use std::time::{Duration, Instant};
 pub use stream::{
     ClipboardUpdateSink, DatabaseEventSink, FetchResponseSink, GeolocationUpdateSink,
     MediaDeviceUpdateSink, NotificationUpdateSink, PermissionUpdateSink, SensorUpdateSink,
-    SpeechUpdateSink,
-    WebSocketEventSink,
+    SpeechUpdateSink, WebSocketEventSink,
 };
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RendererState {

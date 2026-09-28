@@ -13,7 +13,8 @@ trusting a renderer-supplied origin. Insecure or opaque origins resolve `denied`
 frames also resolve `denied` until Permissions Policy delegation and a browser-owned
 frame authority model are implemented; this intentionally denies some legitimate
 same-origin frame cases. An inactive child document rejects with `InvalidStateError`.
-Unsupported names, including `clipboard-read`, reject with `TypeError`. Queries are
+Unsupported names, including `clipboard-read`, `clipboard-write`, and
+`screen-wake-lock`, reject with `TypeError`. Queries are
 limited to 64 per document and 4096 live browser subscriptions overall; overflow
 rejects with `QuotaExceededError`, and navigation, renderer replacement, crash, tab
 close, or window close retire subscriptions.

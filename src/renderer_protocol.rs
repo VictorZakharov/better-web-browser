@@ -42,8 +42,8 @@ pub use notification::{
     NotificationAction, NotificationEvent, NotificationPermission, NotificationRequest,
     NotificationUpdate,
 };
-pub use protocol_handler::{ProtocolHandlerAction, ProtocolHandlerRequest};
 pub use permission::{PermissionName, PermissionRequest, PermissionState, PermissionUpdate};
+pub use protocol_handler::{ProtocolHandlerAction, ProtocolHandlerRequest};
 pub use sensor::{
     SensorAction, SensorError, SensorEvent, SensorKind, SensorPermission, SensorReading,
     SensorRequest, SensorUpdate,

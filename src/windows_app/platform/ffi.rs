@@ -119,7 +119,6 @@ unsafe extern "system" {
     pub(in crate::windows_app) fn SetClipboardData(format: u32, memory: Handle) -> Handle;
     pub(in crate::windows_app) fn GetClipboardData(format: u32) -> Handle;
     pub(in crate::windows_app) fn IsClipboardFormatAvailable(format: u32) -> i32;
-    pub(in crate::windows_app) fn IsIconic(window: Hwnd) -> i32;
     pub(in crate::windows_app) fn EnableWindow(window: Hwnd, enabled: i32) -> i32;
     pub(in crate::windows_app) fn SetWindowPos(
         window: Hwnd,

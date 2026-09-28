@@ -33,7 +33,7 @@ are not implemented, so this does not claim service-worker support.
 Each origin has a 16 MiB serialized quota; the store has a 64 MiB serialized
 quota and individual response bodies are capped at 2 MiB. Storage uses an atomic
 profile snapshot with a backup. Loading occurs on the origin-storage worker's
-first Cache operation, not on the browser UI startup path. Each mutation still
+first Cache operation or storage estimate, not on the browser UI startup path. Each mutation still
 serializes and commits the bounded snapshot; a database-backed incremental
 format will be needed before materially larger quotas. A deleted named cache is
 currently not retained by pre-existing `Cache` objects, and HTTP cache modes are
