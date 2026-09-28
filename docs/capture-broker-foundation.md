@@ -30,8 +30,18 @@ initial formats, not a claim of full constraint support. The camera and micropho
 have independent timestamps; a future stream consumer must synchronize them. The adapter is only
 compile-checked; hardware success and Windows privacy behavior remain unverified.
 
-Before exposing the web API, implement browser-owned origin/document permission and prompt
-lifecycle; choose a specific device after permission; enforce constraints and Permissions Policy;
+The browser now has a private, session-only capture admission ledger. Camera and microphone
+decisions are separate and keyed by the browser-resolved `Origin`. One-shot tickets bind a
+request to tab, document, renderer session, top-level client, request ID, and generation;
+foreground and identity are rechecked after prompting and before attaching a session. Navigation,
+renderer replacement, tab close/suspend, window deactivation/minimization, and window teardown
+retire pending tickets and active leases. Rejected late attachments revoke their lease. Tests
+inject counting revokers; the future caller must supply a **nonblocking** broker-Job revoker, not
+drop a capture session on the UI thread. No renderer capture request, permission dialog, or real
+broker session is connected to this ledger yet.
+
+Before exposing the web API, connect browser-resolved request IPC and a foreground permission UI;
+choose a specific device after permission; enforce constraints and Permissions Policy;
 deliver tracks and audio/video frames into renderer media elements; stop on track `stop()`,
 navigation, permission revocation, renderer death, and window close; and verify hidden end-to-end
 capture/preview on actual hardware. A `getUserMedia` shim that returns inert tracks must not be

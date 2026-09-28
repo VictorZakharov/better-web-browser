@@ -88,6 +88,7 @@ unsafe fn dispatch_window_message(
             state.update_accessibility_window_focus(wparam & 0xffff != 0);
             if wparam & 0xffff == 0 {
                 state.exit_pointer_lock();
+                state.retire_capture_for_window();
             }
             DefWindowProcW(window, message, wparam, lparam)
         }
@@ -102,6 +103,10 @@ unsafe fn dispatch_window_message(
         WM_SETCURSOR if state.apply_page_cursor_for_hit_test(lparam) => 1,
         WM_SIZE => {
             state.exit_pointer_lock();
+            if wparam == 1 {
+                // SIZE_MINIMIZED: capture must not persist in a hidden window.
+                state.retire_capture_for_window();
+            }
             state.track_media_viewport_resize();
             state.mark_all_tab_layouts_dirty();
             state.resize_controls();
@@ -431,6 +436,7 @@ unsafe fn dispatch_window_message(
             state.retire_notifications_for_window();
             state.retire_geolocation_for_window();
             state.retire_media_devices_for_window();
+            state.retire_capture_for_window();
             state.release_pointer_lock(false);
             KillTimer(window, ID_PERFORMANCE_MONITOR_TIMER);
             KillTimer(window, ID_SCROLL_ANIMATION_TIMER);
