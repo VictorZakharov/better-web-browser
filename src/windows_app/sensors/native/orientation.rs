@@ -4,7 +4,20 @@ use super::{NativeSensors, Sample, SensorError, SensorReading, current, rounded}
 
 impl NativeSensors {
     pub(super) fn orientation_angles(&mut self) -> Result<Option<Sample>, SensorError> {
-        let Some(reading) = current(self.orientation()?.GetCurrentReading())? else {
+        self.orientation_angles_from(false)
+    }
+
+    pub(super) fn absolute_orientation_angles(&mut self) -> Result<Option<Sample>, SensorError> {
+        self.orientation_angles_from(true)
+    }
+
+    fn orientation_angles_from(&mut self, absolute: bool) -> Result<Option<Sample>, SensorError> {
+        let device = if absolute {
+            self.absolute_orientation()?
+        } else {
+            self.orientation()?
+        };
+        let Some(reading) = current(device.GetCurrentReading())? else {
             return Ok(None);
         };
         let stamp = reading
@@ -35,7 +48,7 @@ impl NativeSensors {
                 alpha: Some(alpha),
                 beta: Some(beta),
                 gamma: Some(gamma),
-                absolute: false,
+                absolute,
             },
             raw_light_lux: None,
         }))

@@ -32,8 +32,11 @@ enum Command {
 fn sensor_kind(name: &str) -> Option<SensorKind> {
     match name {
         "orientation" => Some(SensorKind::Orientation),
+        "orientationAbsoluteLegacy" => Some(SensorKind::OrientationAbsoluteLegacy),
         "motion" => Some(SensorKind::Motion),
         "accelerometer" => Some(SensorKind::Accelerometer),
+        "linearAcceleration" => Some(SensorKind::LinearAcceleration),
+        "gravity" => Some(SensorKind::Gravity),
         "gyroscope" => Some(SensorKind::Gyroscope),
         "magnetometer" => Some(SensorKind::Magnetometer),
         "absoluteOrientation" => Some(SensorKind::AbsoluteOrientation),

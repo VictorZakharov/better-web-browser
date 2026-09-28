@@ -28,7 +28,9 @@ struct OriginPermissions {
 impl OriginPermissions {
     fn for_kind(&self, kind: SensorKind) -> Option<SensorPermission> {
         match kind {
-            SensorKind::Accelerometer => self.accelerometer,
+            SensorKind::Accelerometer | SensorKind::LinearAcceleration | SensorKind::Gravity => {
+                self.accelerometer
+            }
             SensorKind::Gyroscope => self.gyroscope,
             SensorKind::Magnetometer => self.magnetometer,
             SensorKind::AmbientLight => self.ambient_light,
@@ -45,7 +47,7 @@ impl OriginPermissions {
                     None
                 }
             }
-            SensorKind::AbsoluteOrientation => {
+            SensorKind::AbsoluteOrientation | SensorKind::OrientationAbsoluteLegacy => {
                 if [self.accelerometer, self.gyroscope, self.magnetometer]
                     .contains(&Some(SensorPermission::Denied))
                 {
@@ -64,7 +66,9 @@ impl OriginPermissions {
 
     fn decide(&mut self, kind: SensorKind, permission: SensorPermission) {
         match kind {
-            SensorKind::Accelerometer => self.accelerometer = Some(permission),
+            SensorKind::Accelerometer | SensorKind::LinearAcceleration | SensorKind::Gravity => {
+                self.accelerometer = Some(permission);
+            }
             SensorKind::Gyroscope => self.gyroscope = Some(permission),
             SensorKind::Magnetometer => self.magnetometer = Some(permission),
             SensorKind::AmbientLight => self.ambient_light = Some(permission),
@@ -79,7 +83,7 @@ impl OriginPermissions {
                     self.gyroscope.get_or_insert(permission);
                 }
             }
-            SensorKind::AbsoluteOrientation => {
+            SensorKind::AbsoluteOrientation | SensorKind::OrientationAbsoluteLegacy => {
                 if permission == SensorPermission::Granted {
                     self.accelerometer = Some(permission);
                     self.gyroscope = Some(permission);
@@ -214,6 +218,14 @@ mod tests {
             permissions.for_kind(SensorKind::Accelerometer),
             Some(SensorPermission::Granted)
         );
+        assert_eq!(
+            permissions.for_kind(SensorKind::LinearAcceleration),
+            Some(SensorPermission::Granted)
+        );
+        assert_eq!(
+            permissions.for_kind(SensorKind::Gravity),
+            Some(SensorPermission::Granted)
+        );
         assert_eq!(permissions.for_kind(SensorKind::Gyroscope), None);
         assert_eq!(permissions.for_kind(SensorKind::Motion), None);
         assert_eq!(permissions.for_kind(SensorKind::RelativeOrientation), None);
@@ -245,9 +257,17 @@ mod tests {
         permissions.decide(SensorKind::Accelerometer, SensorPermission::Granted);
         permissions.decide(SensorKind::Gyroscope, SensorPermission::Granted);
         assert_eq!(permissions.for_kind(SensorKind::AbsoluteOrientation), None);
+        assert_eq!(
+            permissions.for_kind(SensorKind::OrientationAbsoluteLegacy),
+            None
+        );
         permissions.decide(SensorKind::Magnetometer, SensorPermission::Granted);
         assert_eq!(
             permissions.for_kind(SensorKind::AbsoluteOrientation),
+            Some(SensorPermission::Granted)
+        );
+        assert_eq!(
+            permissions.for_kind(SensorKind::OrientationAbsoluteLegacy),
             Some(SensorPermission::Granted)
         );
         let mut declined = OriginPermissions::default();
@@ -261,6 +281,21 @@ mod tests {
             declined.for_kind(SensorKind::AbsoluteOrientation),
             Some(SensorPermission::Denied)
         );
+
+        let mut legacy = OriginPermissions::default();
+        legacy.decide(
+            SensorKind::OrientationAbsoluteLegacy,
+            SensorPermission::Granted,
+        );
+        for kind in [
+            SensorKind::Accelerometer,
+            SensorKind::Gyroscope,
+            SensorKind::Magnetometer,
+            SensorKind::AbsoluteOrientation,
+            SensorKind::OrientationAbsoluteLegacy,
+        ] {
+            assert_eq!(legacy.for_kind(kind), Some(SensorPermission::Granted));
+        }
     }
 
     #[test]

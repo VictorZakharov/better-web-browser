@@ -1,25 +1,25 @@
 //! WinRT adapter. No physical sensor is opened until a permissioned Start reaches this worker.
 
+mod acceleration;
 mod light;
 mod orientation;
 
 use super::worker::{self, Sample, SensorProvider};
+use crate::windows_app::winrt_apartment::WinRtApartment;
+use acceleration::AccelerationSource;
 use better_web_browser::renderer_protocol::{SensorError, SensorKind, SensorReading};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use crate::windows_app::winrt_apartment::WinRtApartment;
 use windows::Devices::Sensors::{
-    Accelerometer, AccelerometerReadingType, Gyrometer, LightSensor, Magnetometer,
-    OrientationSensor,
+    Accelerometer, Gyrometer, LightSensor, Magnetometer, OrientationSensor,
 };
 use windows::core::Error as WinError;
 
 use super::TabId;
 
-const STANDARD_GRAVITY: f64 = 9.80665;
 const REPORT_INTERVAL_MS: u32 = 20;
 
 pub(super) fn run_native_worker(
@@ -42,6 +42,7 @@ pub(super) fn run_native_worker(
 struct NativeSensors {
     accelerometer: Option<Result<Accelerometer, SensorError>>,
     linear_accelerometer: Option<Result<Accelerometer, SensorError>>,
+    gravity_accelerometer: Option<Result<Accelerometer, SensorError>>,
     gyrometer: Option<Result<Gyrometer, SensorError>>,
     orientation: Option<Result<OrientationSensor, SensorError>>,
     absolute_orientation: Option<Result<OrientationSensor, SensorError>>,
@@ -57,6 +58,7 @@ impl NativeSensors {
         Self {
             accelerometer: None,
             linear_accelerometer: None,
+            gravity_accelerometer: None,
             gyrometer: None,
             orientation: None,
             absolute_orientation: None,
@@ -69,25 +71,6 @@ impl NativeSensors {
 
     fn initialized(&self) -> Result<(), SensorError> {
         self._apartment.as_ref().map(|_| ()).map_err(|error| *error)
-    }
-
-    fn accelerometer(&mut self) -> Result<Accelerometer, SensorError> {
-        self.initialized()?;
-        self.accelerometer
-            .get_or_insert_with(|| Accelerometer::GetDefault().map_err(classify_default_error))
-            .clone()
-    }
-
-    fn linear_accelerometer(&mut self) -> Result<Accelerometer, SensorError> {
-        self.initialized()?;
-        self.linear_accelerometer
-            .get_or_insert_with(|| {
-                Accelerometer::GetDefaultWithAccelerometerReadingType(
-                    AccelerometerReadingType::Linear,
-                )
-                .map_err(classify_default_error)
-            })
-            .clone()
     }
 
     fn gyrometer(&mut self) -> Result<Gyrometer, SensorError> {
@@ -125,36 +108,6 @@ impl NativeSensors {
         self.light
             .get_or_insert_with(|| LightSensor::GetDefault().map_err(classify_default_error))
             .clone()
-    }
-
-    fn acceleration(&mut self, linear: bool) -> Result<Option<(i64, [f64; 3])>, SensorError> {
-        let device = if linear {
-            self.linear_accelerometer()?
-        } else {
-            self.accelerometer()?
-        };
-        let Some(reading) = current(device.GetCurrentReading())? else {
-            return Ok(None);
-        };
-        let stamp = reading
-            .Timestamp()
-            .map_err(|_| SensorError::NotReadable)?
-            .UniversalTime;
-        let values = [
-            reading
-                .AccelerationX()
-                .map_err(|_| SensorError::NotReadable)?,
-            reading
-                .AccelerationY()
-                .map_err(|_| SensorError::NotReadable)?,
-            reading
-                .AccelerationZ()
-                .map_err(|_| SensorError::NotReadable)?,
-        ];
-        Ok(Some((
-            stamp,
-            values.map(|g| rounded(g * STANDARD_GRAVITY, 0.1)),
-        )))
     }
 
     fn angular_velocity(&mut self) -> Result<Option<(i64, [f64; 3])>, SensorError> {
@@ -208,6 +161,7 @@ impl SensorProvider for NativeSensors {
     fn supported(&mut self, kind: SensorKind) -> Result<bool, SensorError> {
         let device = match kind {
             SensorKind::Orientation => self.orientation().map(|_| ()),
+            SensorKind::OrientationAbsoluteLegacy => self.absolute_orientation().map(|_| ()),
             SensorKind::Motion => {
                 let required = self.accelerometer().map(|_| ());
                 // Motion's linear acceleration and rotation rate remain nullable when absent.
@@ -216,6 +170,8 @@ impl SensorProvider for NativeSensors {
                 required
             }
             SensorKind::Accelerometer => self.accelerometer().map(|_| ()),
+            SensorKind::LinearAcceleration => self.linear_accelerometer().map(|_| ()),
+            SensorKind::Gravity => self.gravity_accelerometer().map(|_| ()),
             SensorKind::Gyroscope => self.gyrometer().map(|_| ()),
             SensorKind::Magnetometer => self.magnetometer().map(|_| ()),
             SensorKind::AbsoluteOrientation => self.absolute_orientation().map(|_| ()),
@@ -239,7 +195,11 @@ impl SensorProvider for NativeSensors {
                 0
             }
         };
-        for cached in [&self.accelerometer, &self.linear_accelerometer] {
+        for cached in [
+            &self.accelerometer,
+            &self.linear_accelerometer,
+            &self.gravity_accelerometer,
+        ] {
             if let Some(Ok(device)) = cached {
                 let _ = device.SetReportInterval(interval(device.MinimumReportInterval()));
             }
@@ -268,22 +228,13 @@ impl SensorProvider for NativeSensors {
     ) -> Result<Option<Sample>, SensorError> {
         match kind {
             SensorKind::Orientation => self.orientation_angles(),
+            SensorKind::OrientationAbsoluteLegacy => self.absolute_orientation_angles(),
             SensorKind::AbsoluteOrientation => self.absolute_quaternion(),
             SensorKind::RelativeOrientation => self.relative_quaternion(),
             SensorKind::AmbientLight => self.illuminance(),
-            SensorKind::Accelerometer => {
-                let sample = self.acceleration(false)?;
-                Ok(sample.map(|(stamp, [x, y, z])| Sample {
-                    stamp,
-                    reading: SensorReading::ThreeAxis {
-                        x,
-                        y,
-                        z,
-                        timestamp_ms: self.clock.elapsed().as_secs_f64() * 1000.0,
-                    },
-                    raw_light_lux: None,
-                }))
-            }
+            SensorKind::Accelerometer => self.acceleration_sample(AccelerationSource::Standard),
+            SensorKind::LinearAcceleration => self.acceleration_sample(AccelerationSource::Linear),
+            SensorKind::Gravity => self.acceleration_sample(AccelerationSource::Gravity),
             SensorKind::Gyroscope => {
                 let sample = self.angular_velocity()?;
                 Ok(sample.map(|(stamp, degrees)| {
@@ -314,11 +265,12 @@ impl SensorProvider for NativeSensors {
                 }))
             }
             SensorKind::Motion => {
-                let Some((stamp, gravity)) = self.acceleration(false)? else {
+                let Some((stamp, gravity)) = self.acceleration(AccelerationSource::Standard)?
+                else {
                     return Ok(None);
                 };
                 let linear = self.linear_accelerometer().ok().and_then(|_| {
-                    self.acceleration(true)
+                    self.acceleration(AccelerationSource::Linear)
                         .ok()
                         .flatten()
                         .map(|(_, values)| values)
@@ -363,15 +315,4 @@ fn current<T>(result: windows::core::Result<T>) -> Result<Option<T>, SensorError
 
 fn rounded(value: f64, step: f64) -> f64 {
     (value / step).round() * step
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{STANDARD_GRAVITY, rounded};
-
-    #[test]
-    fn acceleration_uses_meters_per_second_squared_and_privacy_quantization() {
-        assert_eq!(rounded(STANDARD_GRAVITY, 0.1), 9.8);
-        assert_eq!(rounded(-0.123, 0.1), -0.1);
-    }
 }

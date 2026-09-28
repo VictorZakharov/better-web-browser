@@ -9,6 +9,14 @@ impl EventSink for mpsc::Sender<SensorUpdate> {
     }
 }
 
+struct RejectActivation;
+
+impl EventSink for RejectActivation {
+    fn try_emit(&self, _: SensorUpdate) -> Result<(), String> {
+        Err("full renderer mailbox".into())
+    }
+}
+
 struct FakeProvider {
     supported: Arc<AtomicUsize>,
     samples: Arc<AtomicUsize>,
@@ -129,6 +137,29 @@ fn hidden_and_retired_streams_never_sample_the_provider() {
     ));
     assert_eq!(supported.load(Ordering::Relaxed), 1);
 
+    commands
+        .send(Command::Request(
+            owner,
+            request(
+                owner.document,
+                3,
+                SensorAction::Start {
+                    kind: SensorKind::Gravity,
+                    frequency_hz: Some(50.0),
+                },
+            ),
+            updates.clone(),
+        ))
+        .unwrap();
+    loop {
+        let update = received.recv_timeout(Duration::from_secs(1)).unwrap();
+        if update.request_id == 3 && update.event == SensorEvent::Activated {
+            break;
+        }
+    }
+    assert_eq!(supported.load(Ordering::Relaxed), 2);
+    assert_eq!(active.lock().unwrap().as_slice(), &[true, true]);
+
     visible.store(0, Ordering::Release);
     std::thread::sleep(Duration::from_millis(60));
     let hidden_samples = samples.load(Ordering::Relaxed);
@@ -157,4 +188,57 @@ fn requested_frequency_is_bounded_to_fifty_hertz() {
         sample_interval(SensorKind::Gyroscope, Some(0.5)),
         Duration::from_secs(1)
     );
+}
+
+#[test]
+fn rejected_activation_never_retains_a_sampling_stream() {
+    let owner = SensorOwner {
+        tab: TabId::first(),
+        document: DocumentId::new(23).unwrap(),
+        session_id: 1,
+    };
+    let supported = Arc::new(AtomicUsize::new(0));
+    let samples = Arc::new(AtomicUsize::new(0));
+    let active = Arc::new(Mutex::new(Vec::new()));
+    let fake = FakeProvider {
+        supported: Arc::clone(&supported),
+        samples: Arc::clone(&samples),
+        active: Arc::clone(&active),
+    };
+    let (commands, incoming) = mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        run(
+            incoming,
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(AtomicU64::new(owner.tab.get())),
+            Arc::new(AtomicBool::new(false)),
+            fake,
+        )
+    });
+    commands
+        .send(Command::Request(
+            owner,
+            request(
+                owner.document,
+                1,
+                SensorAction::Start {
+                    kind: SensorKind::Accelerometer,
+                    frequency_hz: Some(50.0),
+                },
+            ),
+            RejectActivation,
+        ))
+        .unwrap();
+    for _ in 0..50 {
+        if supported.load(Ordering::Relaxed) == 1 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(supported.load(Ordering::Relaxed), 1);
+    std::thread::sleep(Duration::from_millis(40));
+    commands.send(Command::Shutdown).unwrap();
+    thread.join().unwrap();
+    assert_eq!(samples.load(Ordering::Relaxed), 0);
+    assert!(active.lock().unwrap().is_empty());
 }

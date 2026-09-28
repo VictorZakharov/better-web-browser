@@ -14,6 +14,9 @@ fn kind_tag(kind: SensorKind) -> u8 {
         SensorKind::AbsoluteOrientation => 6,
         SensorKind::RelativeOrientation => 7,
         SensorKind::AmbientLight => 8,
+        SensorKind::LinearAcceleration => 9,
+        SensorKind::Gravity => 10,
+        SensorKind::OrientationAbsoluteLegacy => 11,
     }
 }
 
@@ -27,6 +30,9 @@ fn kind_from_tag(tag: u8) -> Result<SensorKind, ProtocolError> {
         6 => Ok(SensorKind::AbsoluteOrientation),
         7 => Ok(SensorKind::RelativeOrientation),
         8 => Ok(SensorKind::AmbientLight),
+        9 => Ok(SensorKind::LinearAcceleration),
+        10 => Ok(SensorKind::Gravity),
+        11 => Ok(SensorKind::OrientationAbsoluteLegacy),
         _ => Err(ProtocolError::InvalidPayload("sensor kind")),
     }
 }

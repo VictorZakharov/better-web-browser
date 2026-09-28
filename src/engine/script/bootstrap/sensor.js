@@ -14,6 +14,7 @@
     const subscriptions = new Map();
     const legacy = {
         deviceorientation: { sensor: 'orientation', listeners: 0, id: 0, retryOnError: false },
+        deviceorientationabsolute: { sensor: 'orientationAbsoluteLegacy', listeners: 0, id: 0, retryOnError: false },
         devicemotion: { sensor: 'motion', listeners: 0, id: 0, retryOnError: false }
     };
 
@@ -45,7 +46,7 @@
         return new Promise((resolve, reject) => {
             try {
                 const id = send({ kind: 'requestPermission', sensor, absolute });
-                permissions.set(id, resolve);
+                permissions.set(id, { resolve, reject });
             } catch (error) { reject(error); }
         });
     }
@@ -173,20 +174,38 @@
             state.reading = null;
         }
     }
+    function deviceFrameOnly(options) {
+        if (options != null && typeof options === 'object' &&
+            options.referenceFrame !== undefined && options.referenceFrame !== 'device')
+            throw new DOMException('Only the device reference frame is supported', 'NotSupportedError');
+        return options;
+    }
+    const linearAccelerationToken = {};
+    const gravityToken = {};
     class Accelerometer extends Sensor {
-        constructor(options = {}) { super('accelerometer', options, sensorConstructorToken); }
+        constructor(options = {}, subtypeToken) {
+            const kind = subtypeToken === linearAccelerationToken ? 'linearAcceleration' :
+                subtypeToken === gravityToken ? 'gravity' : 'accelerometer';
+            super(kind, deviceFrameOnly(options), sensorConstructorToken);
+        }
         get x() { return stateFor(this).reading?.x ?? null; }
         get y() { return stateFor(this).reading?.y ?? null; }
         get z() { return stateFor(this).reading?.z ?? null; }
     }
+    class LinearAccelerationSensor extends Accelerometer {
+        constructor(options = {}) { super(options, linearAccelerationToken); }
+    }
+    class GravitySensor extends Accelerometer {
+        constructor(options = {}) { super(options, gravityToken); }
+    }
     class Gyroscope extends Sensor {
-        constructor(options = {}) { super('gyroscope', options, sensorConstructorToken); }
+        constructor(options = {}) { super('gyroscope', deviceFrameOnly(options), sensorConstructorToken); }
         get x() { return stateFor(this).reading?.x ?? null; }
         get y() { return stateFor(this).reading?.y ?? null; }
         get z() { return stateFor(this).reading?.z ?? null; }
     }
     class Magnetometer extends Sensor {
-        constructor(options = {}) { super('magnetometer', options, sensorConstructorToken); }
+        constructor(options = {}) { super('magnetometer', deviceFrameOnly(options), sensorConstructorToken); }
         get x() { return stateFor(this).reading?.x ?? null; }
         get y() { return stateFor(this).reading?.y ?? null; }
         get z() { return stateFor(this).reading?.z ?? null; }
@@ -199,10 +218,7 @@
     class OrientationSensor extends Sensor {
         constructor(kind, options = {}, token) {
             if (token !== orientationConstructorToken) throw new TypeError('Illegal constructor');
-            if (options != null && typeof options === 'object' &&
-                options.referenceFrame !== undefined && options.referenceFrame !== 'device')
-                throw new DOMException('Only the device reference frame is supported', 'NotSupportedError');
-            super(kind, options, sensorConstructorToken);
+            super(kind, deviceFrameOnly(options), sensorConstructorToken);
         }
         get quaternion() { return stateFor(this).reading?.quaternion ?? null; }
         populateMatrix(targetMatrix) {
@@ -243,9 +259,9 @@
         if (!payload) return;
         const { id, event } = JSON.parse(String(payload));
         if (event.kind === 'permission') {
-            const resolve = permissions.get(id);
+            const pending = permissions.get(id);
             permissions.delete(id);
-            if (resolve) resolve(event.permission);
+            if (pending) pending.resolve(event.permission);
             if (event.permission === 'granted') {
                 for (const subscription of Object.values(legacy)) {
                     // A prior Start may still be waiting for its denial when permission
@@ -256,9 +272,14 @@
             }
             return;
         }
+        if (event.kind === 'error' && permissions.has(id)) {
+            permissions.get(id).reject(new DOMException('Sensor permission requires transient user activation', event.name));
+            permissions.delete(id);
+            return;
+        }
         const subscription = subscriptions.get(id);
         if (!subscription) return;
-        if (subscription === legacy.deviceorientation || subscription === legacy.devicemotion) {
+        if (Object.values(legacy).includes(subscription)) {
             if (event.kind === 'error') {
                 subscriptions.delete(id);
                 subscription.id = 0;
@@ -267,7 +288,9 @@
                     startLegacy(subscription);
                 }
             } else if (event.kind === 'orientation') {
-                window.dispatchEvent(trusted(new DeviceOrientationEvent('deviceorientation', event)));
+                const absolute = subscription === legacy.deviceorientationabsolute;
+                const type = absolute ? 'deviceorientationabsolute' : 'deviceorientation';
+                window.dispatchEvent(trusted(new DeviceOrientationEvent(type, { ...event, absolute })));
             } else if (event.kind === 'motion') {
                 const vector = values => values == null ? null :
                     ({ x: values[0], y: values[1], z: values[2] });
@@ -288,7 +311,8 @@
             emit(subscription, new Event('activate'));
         } else if (event.kind === 'threeAxis') {
             if (state.phase !== 'activated' ||
-                !['accelerometer', 'gyroscope', 'magnetometer'].includes(state.kind)) return;
+                !['accelerometer', 'linearAcceleration', 'gravity', 'gyroscope', 'magnetometer']
+                    .includes(state.kind)) return;
             state.reading = { x: event.x, y: event.y, z: event.z };
             // WinRT device timestamps are only used by the broker to deduplicate samples.
             state.timestamp = performance.now();
@@ -318,7 +342,8 @@
 
     Object.assign(globalThis, { DeviceOrientationEvent, DeviceMotionEvent,
         DeviceMotionEventAcceleration, DeviceMotionEventRotationRate,
-        Sensor, SensorErrorEvent, Accelerometer, Gyroscope, Magnetometer,
+        Sensor, SensorErrorEvent, Accelerometer, LinearAccelerationSensor,
+        GravitySensor, Gyroscope, Magnetometer,
         AmbientLightSensor, OrientationSensor, AbsoluteOrientationSensor,
         RelativeOrientationSensor });
 })();

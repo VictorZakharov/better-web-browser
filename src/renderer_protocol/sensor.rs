@@ -13,6 +13,9 @@ pub enum SensorKind {
     AbsoluteOrientation,
     RelativeOrientation,
     AmbientLight,
+    LinearAcceleration,
+    Gravity,
+    OrientationAbsoluteLegacy,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

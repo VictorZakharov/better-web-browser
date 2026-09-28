@@ -89,6 +89,9 @@ fn magnetic_field_and_absolute_quaternion_keep_units_and_components() {
         (6, SensorKind::AbsoluteOrientation),
         (7, SensorKind::RelativeOrientation),
         (8, SensorKind::AmbientLight),
+        (9, SensorKind::LinearAcceleration),
+        (10, SensorKind::Gravity),
+        (11, SensorKind::OrientationAbsoluteLegacy),
     ] {
         let request = SensorRequest {
             document,

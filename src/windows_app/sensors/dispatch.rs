@@ -101,21 +101,32 @@ impl BrowserState {
         };
         match request.action {
             SensorAction::RequestPermission { kind, absolute } => {
-                let permission = if absolute
-                    || !matches!(kind, SensorKind::Orientation | SensorKind::Motion)
+                let permission_kind = if absolute {
+                    SensorKind::OrientationAbsoluteLegacy
+                } else {
+                    kind
+                };
+                if !matches!(kind, SensorKind::Orientation | SensorKind::Motion) {
+                    emit(
+                        &sink,
+                        &request,
+                        SensorEvent::Permission(SensorPermission::Denied),
+                    );
+                } else if let Some(permission) =
+                    self.app.sensor_service.permission(&origin, permission_kind)
                 {
-                    SensorPermission::Denied
-                } else if let Some(permission) = self.app.sensor_service.permission(&origin, kind) {
-                    permission
+                    emit(&sink, &request, SensorEvent::Permission(permission));
                 } else if eligible
                     && request.user_activation
                     && self.has_transient_activation(tab_id, request.document)
                 {
-                    self.prompt_sensor_permission(&origin, kind)
+                    let permission = self.prompt_sensor_permission(&origin, permission_kind);
+                    emit(&sink, &request, SensorEvent::Permission(permission));
                 } else {
-                    SensorPermission::Denied
-                };
-                emit(&sink, &request, SensorEvent::Permission(permission));
+                    // W3C Device Orientation §6: prompt state without transient
+                    // activation rejects rather than resolving to "denied".
+                    emit(&sink, &request, SensorEvent::Error(SensorError::NotAllowed));
+                }
             }
             SensorAction::Start { kind, .. } => {
                 let mut permission = self.app.sensor_service.permission(&origin, kind);
@@ -123,6 +134,8 @@ impl BrowserState {
                     && matches!(
                         kind,
                         SensorKind::Accelerometer
+                            | SensorKind::LinearAcceleration
+                            | SensorKind::Gravity
                             | SensorKind::Gyroscope
                             | SensorKind::Magnetometer
                             | SensorKind::AbsoluteOrientation
@@ -161,9 +174,12 @@ impl BrowserState {
     fn prompt_sensor_permission(&mut self, origin: &str, kind: SensorKind) -> SensorPermission {
         let capability = match kind {
             SensorKind::Accelerometer => "accelerometer",
+            SensorKind::LinearAcceleration => "linear accelerometer",
+            SensorKind::Gravity => "gravity accelerometer",
             SensorKind::Gyroscope => "gyroscope",
             SensorKind::Magnetometer => "magnetometer",
             SensorKind::AbsoluteOrientation => "accelerometer, gyroscope, and magnetometer",
+            SensorKind::OrientationAbsoluteLegacy => "accelerometer, gyroscope, and magnetometer",
             SensorKind::RelativeOrientation => "accelerometer and gyroscope",
             SensorKind::AmbientLight => "ambient light",
             SensorKind::Orientation | SensorKind::Motion => "motion and orientation",
@@ -220,4 +236,32 @@ fn reject(sink: &SensorUpdateSink, request: &SensorRequest) {
         _ => SensorEvent::Error(SensorError::NotAllowed),
     };
     emit(sink, request, event);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_secure_and_numeric_loopback_origins_may_request_physical_sensors() {
+        for url in [
+            "https://example.test/page",
+            "http://127.0.0.1:8080/page",
+            "http://[::1]:8080/page",
+        ] {
+            assert!(
+                trustworthy_sensor_origin(&Origin::parse(url).unwrap()),
+                "{url}"
+            );
+        }
+        for url in [
+            "http://example.test/page",
+            "http://localhost/page",
+        ] {
+            assert!(
+                !trustworthy_sensor_origin(&Origin::parse(url).unwrap()),
+                "{url}"
+            );
+        }
+    }
 }

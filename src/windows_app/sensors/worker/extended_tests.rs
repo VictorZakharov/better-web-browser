@@ -13,8 +13,11 @@ impl SensorProvider for FakeExtendedProvider {
     fn supported(&mut self, kind: SensorKind) -> Result<bool, SensorError> {
         Ok(matches!(
             kind,
-            SensorKind::Magnetometer
+            SensorKind::LinearAcceleration
+                | SensorKind::Gravity
+                | SensorKind::Magnetometer
                 | SensorKind::AbsoluteOrientation
+                | SensorKind::OrientationAbsoluteLegacy
                 | SensorKind::RelativeOrientation
                 | SensorKind::AmbientLight
         ))
@@ -25,6 +28,18 @@ impl SensorProvider for FakeExtendedProvider {
     fn sample(&mut self, kind: SensorKind, _: f64) -> Result<Option<Sample>, SensorError> {
         let stamp = self.samples.fetch_add(1, Ordering::Relaxed) as i64 + 1;
         let reading = match kind {
+            SensorKind::LinearAcceleration => SensorReading::ThreeAxis {
+                x: 1.2,
+                y: -2.4,
+                z: 0.3,
+                timestamp_ms: stamp as f64,
+            },
+            SensorKind::Gravity => SensorReading::ThreeAxis {
+                x: 0.0,
+                y: 0.0,
+                z: -9.8,
+                timestamp_ms: stamp as f64,
+            },
             SensorKind::Magnetometer => SensorReading::ThreeAxis {
                 x: 42.5,
                 y: -17.2,
@@ -37,6 +52,12 @@ impl SensorProvider for FakeExtendedProvider {
                 z: 0.0,
                 w: 1.0,
                 timestamp_ms: stamp as f64,
+            },
+            SensorKind::OrientationAbsoluteLegacy => SensorReading::Orientation {
+                alpha: Some(181.2),
+                beta: Some(-2.3),
+                gamma: Some(4.5),
+                absolute: true,
             },
             SensorKind::RelativeOrientation => SensorReading::Quaternion {
                 x: 0.0,
@@ -73,7 +94,7 @@ fn request(owner: SensorOwner, id: u64, kind: SensorKind) -> SensorRequest {
 }
 
 #[test]
-fn magnetic_orientation_and_light_streams_use_fake_provider() {
+fn extended_vector_orientation_and_light_streams_use_fake_provider() {
     let owner = SensorOwner {
         tab: TabId::first(),
         document: DocumentId::new(7).unwrap(),
@@ -90,10 +111,13 @@ fn magnetic_orientation_and_light_streams_use_fake_provider() {
     let (updates, received) = mpsc::channel();
     let thread = std::thread::spawn(move || run(incoming, retired, visible, stopping, fake));
     for (id, kind) in [
-        (1, SensorKind::Magnetometer),
-        (2, SensorKind::AbsoluteOrientation),
-        (3, SensorKind::RelativeOrientation),
-        (4, SensorKind::AmbientLight),
+        (1, SensorKind::LinearAcceleration),
+        (2, SensorKind::Gravity),
+        (3, SensorKind::Magnetometer),
+        (4, SensorKind::AbsoluteOrientation),
+        (5, SensorKind::OrientationAbsoluteLegacy),
+        (6, SensorKind::RelativeOrientation),
+        (7, SensorKind::AmbientLight),
     ] {
         commands
             .send(Command::Request(
@@ -121,9 +145,32 @@ fn magnetic_orientation_and_light_streams_use_fake_provider() {
         assert!(activated);
         let reading = reading.expect("fake reading delivered");
         assert!(match kind {
+            SensorKind::LinearAcceleration => {
+                matches!(
+                    reading,
+                    SensorReading::ThreeAxis {
+                        x: 1.2,
+                        y: -2.4,
+                        ..
+                    }
+                )
+            }
+            SensorKind::Gravity => {
+                matches!(reading, SensorReading::ThreeAxis { z: -9.8, .. })
+            }
             SensorKind::Magnetometer => matches!(reading, SensorReading::ThreeAxis { x: 42.5, .. }),
             SensorKind::AbsoluteOrientation => {
                 matches!(reading, SensorReading::Quaternion { w: 1.0, .. })
+            }
+            SensorKind::OrientationAbsoluteLegacy => {
+                matches!(
+                    reading,
+                    SensorReading::Orientation {
+                        alpha: Some(181.2),
+                        absolute: true,
+                        ..
+                    }
+                )
             }
             SensorKind::RelativeOrientation => {
                 matches!(reading, SensorReading::Quaternion { z, .. } if z > 0.7)

@@ -89,9 +89,8 @@ pub(super) fn run<P: SensorProvider, S: EventSink>(
                     &mut provider,
                     &retired,
                     &visible_tab,
-                    owner,
-                    request,
-                    sink,
+                    active,
+                    (owner, request, sink),
                 );
             }
             Ok(Command::Retire(owner)) => streams.retain(|(candidate, _), _| *candidate != owner),
@@ -177,9 +176,8 @@ fn handle_request<P: SensorProvider, S: EventSink>(
     provider: &mut P,
     retired: &Mutex<HashMap<TabId, (u64, u64)>>,
     visible_tab: &AtomicU64,
-    owner: SensorOwner,
-    request: SensorRequest,
-    sink: S,
+    active: bool,
+    (owner, request, sink): (SensorOwner, SensorRequest, S),
 ) {
     let SensorRequest {
         request_id, action, ..
@@ -210,7 +208,16 @@ fn handle_request<P: SensorProvider, S: EventSink>(
             }
             match provider.supported(kind) {
                 Ok(true) => {
-                    let _ = emit(&candidate, SensorEvent::Activated);
+                    // supported() can lazily open a second WinRT device while other
+                    // streams are already active. Apply the report interval to it.
+                    if active {
+                        provider.set_active(true);
+                    }
+                    // An activation that cannot reach the renderer must not retain a
+                    // live hardware stream with a permanently activating JS object.
+                    if emit(&candidate, SensorEvent::Activated).is_err() {
+                        return;
+                    }
                     candidate.next_due = Instant::now();
                     streams.insert((owner, request_id), candidate);
                 }
@@ -230,8 +237,12 @@ fn handle_request<P: SensorProvider, S: EventSink>(
 
 fn sample_interval(kind: SensorKind, frequency_hz: Option<f64>) -> Duration {
     let frequency = frequency_hz.unwrap_or(match kind {
-        SensorKind::Orientation | SensorKind::Motion => 20.0,
+        SensorKind::Orientation | SensorKind::OrientationAbsoluteLegacy | SensorKind::Motion => {
+            20.0
+        }
         SensorKind::Accelerometer
+        | SensorKind::LinearAcceleration
+        | SensorKind::Gravity
         | SensorKind::Gyroscope
         | SensorKind::Magnetometer
         | SensorKind::AbsoluteOrientation

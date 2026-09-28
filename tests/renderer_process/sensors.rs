@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 
 #[path = "sensors/extended.rs"]
 mod extended;
+#[path = "sensors/legacy_absolute.rs"]
+mod legacy_absolute;
 
 #[test]
 fn orientation_permission_then_real_document_event_uses_browser_reading() {
