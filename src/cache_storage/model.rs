@@ -8,6 +8,7 @@ use std::sync::Mutex;
 use url::Url;
 
 mod matching;
+mod usage;
 use matching::{matches_entry, vary_fields};
 
 pub(super) const MAX_ORIGIN_BYTES: usize = 16 * 1024 * 1024;

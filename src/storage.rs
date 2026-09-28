@@ -200,6 +200,22 @@ impl LocalStorage {
             .unwrap_or_else(StorageAreaSnapshot::empty))
     }
 
+    /// Approximate payload bytes, using the same quota units as localStorage.
+    /// Session storage is intentionally excluded from the default storage bucket.
+    pub fn usage(&self, url: &str) -> Result<u64, StorageError> {
+        let origin = storage_origin(url)?;
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| StorageError::Persistence("storage lock is poisoned".into()))?;
+        Ok(state.origins.get(&origin).map_or(0, |area| {
+            area.entries
+                .iter()
+                .map(|(key, value)| (key.byte_len() + value.byte_len()) as u64)
+                .sum()
+        }))
+    }
+
     pub fn apply(&self, url: &str, mutation: &StorageMutation) -> Result<bool, StorageError> {
         self.apply_batch(url, std::slice::from_ref(mutation))
     }

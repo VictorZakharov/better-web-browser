@@ -56,7 +56,7 @@ impl HostBridge {
             };
             return Ok(JsValue::from(super::crypto::trustworthy_url(&url)));
         }
-        if operation == "cacheStorageSecureContext" {
+        if operation == "cacheStorageSecureContext" || operation == "storageManagerSecureContext" {
             let secure = match self {
                 Self::Document(host) => {
                     let host = host.upgrade().ok_or_else(inactive_host)?;

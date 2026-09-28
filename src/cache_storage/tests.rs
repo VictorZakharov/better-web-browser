@@ -8,6 +8,36 @@ const ALPHA: &str = "https://alpha.example";
 const BETA: &str = "https://beta.example";
 
 #[test]
+fn origin_usage_tracks_cache_records_and_deletion() {
+    let store = CacheStorage::in_memory();
+    assert_eq!(store.usage(ALPHA).unwrap(), 0);
+    store
+        .execute(
+            ALPHA,
+            CacheCommand::Open {
+                name: "assets".into(),
+            },
+        )
+        .unwrap();
+    let named_cache = store.usage(ALPHA).unwrap();
+    assert!(named_cache > 0);
+    store
+        .execute(ALPHA, put("assets", "https://alpha.example/item", "body"))
+        .unwrap();
+    assert!(store.usage(ALPHA).unwrap() > named_cache);
+    assert_eq!(store.usage(BETA).unwrap(), 0);
+    store
+        .execute(
+            ALPHA,
+            CacheCommand::DeleteCache {
+                name: "assets".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(store.usage(ALPHA).unwrap(), 0);
+}
+
+#[test]
 fn only_trustworthy_non_opaque_origins_can_access_cache_storage() {
     let store = CacheStorage::in_memory();
     for origin in ["http://example.test", "null", "data:text/plain,opaque"] {

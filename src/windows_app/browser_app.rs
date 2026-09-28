@@ -95,8 +95,11 @@ impl BrowserApplication {
             )
             .map_err(|error| error.to_string())?,
         );
-        let database_worker =
-            super::renderer_fetch::DatabaseWorker::new(indexed_db, cache_storage)?;
+        let database_worker = super::renderer_fetch::DatabaseWorker::new(
+            indexed_db,
+            cache_storage,
+            Arc::clone(&local_storage),
+        )?;
         let speech_service = super::speech_synthesis::SpeechSynthesisService::spawn()?;
         let sensor_service = super::sensors::SensorService::spawn()?;
         let protocol_handlers = better_web_browser::protocol_handlers::Registry::open(&profile)?;

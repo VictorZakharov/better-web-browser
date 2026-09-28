@@ -135,6 +135,7 @@ mod shadow_dom;
 mod shadow_focus;
 mod shadow_part_idl;
 mod storage_event;
+mod storage_manager;
 mod streams_bytes;
 mod streams_compression;
 mod streams_encoding;

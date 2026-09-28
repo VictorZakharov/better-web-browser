@@ -72,6 +72,8 @@ mod scrolling;
 mod speech;
 #[path = "live_runtime/stacking.rs"]
 mod stacking;
+#[path = "live_runtime/storage_manager.rs"]
+mod storage_manager;
 #[path = "live_runtime/streaming_navigation.rs"]
 mod streaming_navigation;
 #[path = "live_runtime/streaming_network.rs"]

@@ -30,13 +30,14 @@ impl DatabaseWorker {
     pub(in crate::windows_app) fn new(
         database: Arc<IndexedDb>,
         cache_storage: Arc<CacheStorage>,
+        local_storage: Arc<better_web_browser::storage::LocalStorage>,
     ) -> Result<Self, String> {
         let (sender, receiver) = mpsc::channel();
         let pending_requests = Arc::new(AtomicUsize::new(0));
         let pending = Arc::clone(&pending_requests);
         std::thread::Builder::new()
             .name("breeze-origin-storage".into())
-            .spawn(move || run(database, cache_storage, receiver, pending))
+            .spawn(move || run(database, cache_storage, local_storage, receiver, pending))
             .map_err(|error| format!("start origin-storage worker: {error}"))?;
         Ok(Self {
             sender,
@@ -94,6 +95,7 @@ fn reject(job: Job) {
 fn run(
     database: Arc<IndexedDb>,
     cache_storage: Arc<CacheStorage>,
+    local_storage: Arc<better_web_browser::storage::LocalStorage>,
     receiver: mpsc::Receiver<Work>,
     pending: Arc<AtomicUsize>,
 ) {
@@ -128,7 +130,13 @@ fn run(
                 } else if retired_clients.contains(&(job.tab_id, job.document, job.client_id)) {
                     json!({"kind":"error","name":"AbortError","message":"Origin-storage client has been retired"})
                 } else {
-                    execute(&database, &cache_storage, &job, &mut sessions)
+                    execute(
+                        &database,
+                        &cache_storage,
+                        &local_storage,
+                        &job,
+                        &mut sessions,
+                    )
                 };
                 if job
                     .sink
