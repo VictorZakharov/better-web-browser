@@ -26,8 +26,7 @@ pub use script::{
     DynamicScriptRequest, ScriptClipboardAction, ScriptFetchAction, ScriptFetchEvent,
     ScriptFetchOptions, ScriptGeolocationAction, ScriptKind, ScriptMediaDeviceAction,
     ScriptNotificationAction, ScriptOutcome, ScriptProtocolHandlerAction, ScriptRuntime,
-    ScriptSensorAction, ScriptSpeechAction, ScriptWorkerAction, UserInputEvent,
-    UserInputModifiers, UserInputResult, WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome,
-    WorkerSourceLoader,
+    ScriptSensorAction, ScriptSpeechAction, ScriptWorkerAction, UserInputEvent, UserInputModifiers,
+    UserInputResult, WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome, WorkerSourceLoader,
 };
 pub(crate) use stylesheet::AdoptedStyleSheet;

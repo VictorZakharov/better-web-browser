@@ -28,7 +28,11 @@ pub(super) fn hidden_benchmark_with_args(
     settle_ms: u64,
     extra_arguments: &[&str],
 ) -> std::process::Child {
-    spawn_hidden_benchmark(url, artifacts, settle_ms, extra_arguments, None)
+    // Every hidden browser owns an isolated profile. Parallel test processes
+    // must not contend for the real user's profile or its exclusive lock.
+    let profile = artifacts.root.join("profile");
+    fs::create_dir_all(&profile).expect("create hidden Breeze profile");
+    spawn_hidden_benchmark(url, artifacts, settle_ms, extra_arguments, Some(&profile))
 }
 
 pub(super) fn hidden_benchmark_with_fresh_profile_args(

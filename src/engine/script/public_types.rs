@@ -6,6 +6,5 @@ pub use super::types::{
     ScriptGraphAudioAction, ScriptHistoryAction, ScriptInput, ScriptKind, ScriptMediaAction,
     ScriptMediaCommand, ScriptMediaDeviceAction, ScriptNotificationAction, ScriptOutcome,
     ScriptPointerLockAction, ScriptProtocolHandlerAction, ScriptSensorAction, ScriptSpeechAction,
-    UserInputEvent,
-    UserInputModifiers, UserInputResult,
+    UserInputEvent, UserInputModifiers, UserInputResult,
 };
