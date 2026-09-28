@@ -7,6 +7,16 @@ mod placeholder;
 mod rounded_clip;
 pub(super) use changes::native_controls_changed;
 
+fn single_line_edit_geometry(content_height: i32, font_size: f32, scale: f32) -> (i32, i32) {
+    // Win32 single-line EDIT places glyphs at the top of a tall client rect.
+    // Keep the editable window close to one text line and center it inside the
+    // CSS content box; the surrounding CSS box remains responsible for paint.
+    let text_height = (font_size * scale).ceil().max(1.0) as i32;
+    let inset = (4.0 * scale).ceil() as i32;
+    let edit_height = (text_height + inset).clamp(1, content_height.max(1));
+    ((content_height - edit_height).max(0) / 2, edit_height)
+}
+
 pub(super) struct PageControlWindow {
     pub(super) window: Hwnd,
     pub(super) spec: better_web_browser::engine::ControlSpec,
@@ -214,12 +224,20 @@ impl BrowserState {
                     ((rect.width - left_inset - right_inset).max(1.0) * scale).ceil() as i32;
                 let height =
                     ((rect.height - top_inset - bottom_inset).max(1.0) * scale).ceil() as i32;
-                let native_height = if control.spec.kind == ControlKind::Select {
-                    height + self.scale(220)
+                let (edit_offset, native_text_height) = if matches!(
+                    control.spec.kind,
+                    ControlKind::Text | ControlKind::Password | ControlKind::Search
+                ) {
+                    single_line_edit_geometry(height, control.spec.font.size, scale)
                 } else {
-                    height
+                    (0, height)
                 };
-                MoveWindow(control.window, x, y, width, native_height, 1);
+                let native_height = if control.spec.kind == ControlKind::Select {
+                    native_text_height + self.scale(220)
+                } else {
+                    native_text_height
+                };
+                MoveWindow(control.window, x, y + edit_offset, width, native_height, 1);
                 ShowWindow(control.window, SW_SHOW);
                 self.sync_validation_bubble(control, x, y, width, height, true);
             } else {
@@ -293,5 +311,16 @@ impl BrowserState {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod placement_tests {
+    use super::single_line_edit_geometry;
+
+    #[test]
+    fn tall_single_line_edit_centers_within_css_content_height() {
+        assert_eq!(single_line_edit_geometry(50, 16.0, 1.25), (12, 25));
+        assert_eq!(single_line_edit_geometry(20, 16.0, 1.0), (0, 20));
     }
 }

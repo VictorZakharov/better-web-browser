@@ -131,6 +131,9 @@ impl FetchRequestHead {
                     self.initiator,
                     FetchInitiator::ClassicScript
                         | FetchInitiator::ModuleScript
+                        // A link rel=preload as=script remains a subresource fetch,
+                        // but carries the link's nonce for script CSP admission.
+                        | FetchInitiator::Subresource
                         | FetchInitiator::ChildResource
                         | FetchInitiator::ClassicWorker
                         | FetchInitiator::ModuleWorker

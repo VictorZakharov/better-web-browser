@@ -3,6 +3,11 @@
 
 use super::*;
 
+// Separate intrinsic and final line computations may round the same advance to
+// adjacent floats. CSS lengths are effectively quantized more coarsely than this;
+// do not insert an ellipsis for a sub-1/64px bookkeeping discrepancy.
+const TEXT_OVERFLOW_ROUNDING_TOLERANCE: f32 = 1.0 / 64.0;
+
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     /// Paints one accumulated line, applying the clamp budget and the
     /// single-line overflow marker. Suppressed lines return `y` unchanged so
@@ -95,7 +100,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 line.clear();
                 return y;
             }
-            let y = if policy.single_line_ellipsis && line_width > available {
+            let y = if policy.single_line_ellipsis
+                && line_width > available + TEXT_OVERFLOW_ROUNDING_TOLERANCE
+            {
                 match self.plan_truncated_row(line, available, available, policy) {
                     Some(plan) => self.paint_truncated_row(
                         line,
@@ -133,7 +140,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             line.clear();
             return y;
         }
-        if policy.single_line_ellipsis && line_width > available {
+        if policy.single_line_ellipsis && line_width > available + TEXT_OVERFLOW_ROUNDING_TOLERANCE
+        {
             let y = match self.plan_truncated_row(line, available, available, policy) {
                 Some(plan) => {
                     self.paint_truncated_row(line, &plan, line_x, y, available, align, line_height)

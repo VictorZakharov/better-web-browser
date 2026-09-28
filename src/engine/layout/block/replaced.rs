@@ -163,9 +163,10 @@ impl BlockImage {
                 )
                 .unwrap_or(self.intrinsic_height)
             })
-        } else if self.intrinsic_width > 0.0
-            && (style.width != Length::Auto || node.attr("width").is_some())
-        {
+        } else if self.intrinsic_width > 0.0 && !self.embedded_frame {
+            // The used width can be smaller than the intrinsic width even when
+            // `width` computes to auto (for example after max-width clamps it).
+            // Auto height follows that used width and the intrinsic ratio.
             aspect_ratio::height_from_width(
                 style,
                 (!self.embedded_frame).then_some((self.intrinsic_width, self.intrinsic_height)),

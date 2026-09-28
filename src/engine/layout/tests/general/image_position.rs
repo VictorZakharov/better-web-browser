@@ -1,6 +1,28 @@
 use super::*;
 
 #[test]
+fn auto_sized_block_image_preserves_ratio_when_max_width_shrinks_it() {
+    let mut page = Page::parse(
+        "<style>body{margin:0}.frame{display:inline-block;max-width:120px}\
+         .frame img{display:block;max-width:100%;height:auto}</style>\
+         <div class=frame><img src=/photo.png></div>",
+        "https://example.com/",
+    );
+    page.images.insert(
+        "https://example.com/photo.png".into(),
+        crate::engine::page::DecodedImage {
+            width: 200,
+            height: 100,
+            bgra: vec![0; 200 * 100 * 4].into(),
+        },
+    );
+    let image = page.dom.elements_named("img").next().unwrap();
+    let output = layout_page(&page, 400.0, 300.0, &mut FixedMeasurer);
+    let rect = output.node_bounds[&image.id()];
+    assert_eq!((rect.width, rect.height), (120.0, 60.0));
+}
+
+#[test]
 fn relative_replaced_image_uses_containing_block_percentages_and_keeps_its_clip() {
     let mut page = Page::parse(
         "<style>body{margin:0}.tile{width:126px;height:126px;overflow:hidden}.tile img{position:relative;width:300%;height:300%;left:-100%;top:-100%}</style><div class=tile><img src=/sprite.png></div>",

@@ -118,3 +118,19 @@ fn painted_prefix_ends_on_a_source_grapheme_boundary() {
         }
     }
 }
+
+#[test]
+fn subpixel_overflow_does_not_ellipsis_an_inline_block() {
+    let markup = |max_width| {
+        format!(
+            "<style>body{{margin:0}}h2{{width:628px;margin:0;font-size:16px}}\
+         span{{display:inline-block;max-width:{max_width}px;white-space:nowrap;\
+         overflow:hidden;text-overflow:ellipsis}}</style>\
+         <h2><a href='/wiki'><span>Wikipedia</span></a></h2>"
+        )
+    };
+    let (_, near_fit) = render(&markup(71.9999));
+    assert_eq!(visible(&near_fit), "Wikipedia");
+    let (_, actual_overflow) = render(&markup(71.9));
+    assert!(has_ellipsis(&actual_overflow));
+}
