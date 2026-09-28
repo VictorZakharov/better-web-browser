@@ -124,6 +124,12 @@ impl NavigationTransaction {
         self.document == Some(document)
     }
 
+    pub(super) fn submitted_document_url(&self, document: DocumentId) -> Option<&str> {
+        self.owns_document(document)
+            .then(|| self.page.as_ref().map(|page| page.final_url.as_str()))
+            .flatten()
+    }
+
     pub(super) fn active_document(&self) -> Option<DocumentId> {
         self.document
     }

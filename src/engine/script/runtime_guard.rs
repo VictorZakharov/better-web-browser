@@ -119,6 +119,9 @@ pub(super) fn finish_host(
         .sensor_actions
         .append(&mut state.pending_sensor_actions);
     outcome
+        .broadcast_actions
+        .append(&mut state.pending_broadcast_actions);
+    outcome
         .worker_actions
         .append(&mut state.pending_worker_actions);
     outcome

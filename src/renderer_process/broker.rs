@@ -113,6 +113,7 @@ pub enum RendererEvent {
     CookieMutation(CookieMutation),
     PolicyMutation(PolicyMutation),
     StorageMutation(StorageMutationRequest),
+    BroadcastCommand(crate::renderer_protocol::BroadcastCommand),
     WebSocketCommand(crate::renderer_protocol::WebSocketCommand),
     DatabaseCommand(crate::renderer_protocol::DatabaseCommand),
     SpeechRequest(crate::renderer_protocol::SpeechRequest),

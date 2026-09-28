@@ -60,6 +60,7 @@ impl EventSender {
             RendererEvent::FetchBatch { .. }
                 | RendererEvent::FetchAbort { .. }
                 | RendererEvent::StorageMutation(_)
+                | RendererEvent::BroadcastCommand(_)
                 | RendererEvent::PolicyMutation(_)
                 | RendererEvent::WebSocketCommand(_)
                 | RendererEvent::DatabaseCommand(_)
@@ -209,6 +210,10 @@ fn queued_fetch_batches(events: &VecDeque<RendererEvent>) -> usize {
 fn event_storage_bytes(event: &RendererEvent) -> usize {
     match event {
         RendererEvent::StorageMutation(request) => request.mutation.byte_len(),
+        RendererEvent::BroadcastCommand(command) => match &command.operation {
+            crate::renderer_protocol::BroadcastOperation::Post { serialized } => serialized.len(),
+            _ => 0,
+        },
         _ => 0,
     }
 }
@@ -233,6 +238,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::CookieMutation(mutation) => Some(mutation.document),
         RendererEvent::PolicyMutation(mutation) => Some(mutation.document),
         RendererEvent::StorageMutation(request) => Some(request.document),
+        RendererEvent::BroadcastCommand(command) => Some(command.document),
         RendererEvent::WebSocketCommand(command) => Some(command.document),
         RendererEvent::DatabaseCommand(command) => Some(command.document),
         RendererEvent::SpeechRequest(request) => Some(request.document),

@@ -6,6 +6,8 @@ mod accessibility;
 mod async_scripts;
 #[path = "renderer_process/backpressure.rs"]
 mod backpressure;
+#[path = "renderer_process/broadcast_channel.rs"]
+mod broadcast_channel;
 #[path = "renderer_process/canvas_frames.rs"]
 mod canvas_frames;
 #[path = "renderer_process/canvas_presentation.rs"]

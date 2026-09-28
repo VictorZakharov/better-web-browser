@@ -8,6 +8,26 @@ use crate::renderer_protocol::{
 use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
 
 impl RendererSession {
+    pub fn try_send_broadcast_delivery(
+        &self,
+        delivery: crate::renderer_protocol::BroadcastDelivery,
+    ) -> Result<bool, String> {
+        delivery.validate().map_err(|error| error.to_string())?;
+        self.command_depth.begin_enqueue();
+        let result = match self
+            .commands
+            .try_send(worker::BrokerCommand::BroadcastDelivery(delivery))
+        {
+            Ok(()) => Ok(true),
+            Err(mpsc::TrySendError::Full(_)) => Ok(false),
+            Err(mpsc::TrySendError::Disconnected(_)) => Err(self.disconnected_error()),
+        };
+        if !matches!(result, Ok(true)) {
+            self.command_depth.finish_dequeue();
+        }
+        self.wake.notify();
+        result
+    }
     pub fn try_synchronize_storage(
         &self,
         document: DocumentId,

@@ -168,6 +168,12 @@ impl Broker {
                 request.validate()?;
                 self.emit_event(RendererEvent::StorageMutation(request))?;
             }
+            RendererMessage::BroadcastCommand(command) => {
+                if self.active_document == Some(command.document) {
+                    command.validate()?;
+                    self.emit_event(RendererEvent::BroadcastCommand(command))?;
+                }
+            }
             RendererMessage::WebSocketCommand(command) => {
                 command.validate()?;
                 if self.active_document == Some(command.document) {

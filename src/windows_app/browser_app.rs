@@ -50,6 +50,8 @@ pub(super) struct BrowserApplication {
     pub(super) metrics: Arc<BrowserMetrics>,
     pub(super) http_client: Arc<winhttp::HttpClient>,
     pub(super) storage_coordinator: better_web_browser::storage::StorageCoordinator,
+    pub(super) broadcast_channels:
+        RefCell<better_web_browser::broadcast_channel::BroadcastRegistry>,
     pub(super) database_worker: super::renderer_fetch::DatabaseWorker,
     pub(super) speech_service: super::speech_synthesis::SpeechSynthesisService,
     pub(super) sensor_service: super::sensors::SensorService,
@@ -109,6 +111,7 @@ impl BrowserApplication {
             storage_coordinator: better_web_browser::storage::StorageCoordinator::new(
                 local_storage,
             ),
+            broadcast_channels: RefCell::new(Default::default()),
             database_worker,
             speech_service,
             sensor_service,

@@ -2,6 +2,7 @@ use super::*;
 use crate::storage::{StorageAreaKind, StorageEntry, StorageMutation, StorageOperation};
 use std::io::Cursor;
 
+mod broadcast_channel;
 mod geolocation;
 mod input;
 mod media_devices;

@@ -1,6 +1,8 @@
 //! Native operations exposed to the JavaScript bootstrap through `__hostCall`.
 use super::binding_helpers::*;
 use super::*;
+
+mod broadcast_channel;
 mod canvas_presentation;
 pub(in crate::engine::script) mod clipboard;
 pub(super) mod compression_host;
@@ -34,6 +36,9 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     if let Some(value) = storage::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = broadcast_channel::dispatch(operation, args, state)? {
         return Ok(value);
     }
     super::mutation_host::enforce_tree_budget_for_operation(operation, state)?;

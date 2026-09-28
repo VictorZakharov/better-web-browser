@@ -7,6 +7,8 @@ use crate::renderer_protocol::{
     SensorEvent, SensorUpdate, SpeechEvent, SpeechUpdate, WebSocketEvent, WebSocketEventKind,
 };
 
+mod broadcast_channel;
+
 enum WorkerDelivery {
     Global(Result<String, String>),
     Port {

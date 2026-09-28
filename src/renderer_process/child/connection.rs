@@ -1,5 +1,6 @@
 //! Renderer endpoint state machine over the two inherited anonymous pipes.
 
+mod broadcast_channel;
 mod clipboard;
 mod database;
 mod fetch;
@@ -247,6 +248,7 @@ impl ChildConnection {
             BrowserMessage::MediaDeviceUpdate(update) => self.deliver_media_device_update(update),
             BrowserMessage::SensorUpdate(update) => self.deliver_sensor_update(update),
             BrowserMessage::ClipboardUpdate(update) => self.deliver_clipboard_update(update),
+            BrowserMessage::BroadcastDelivery(delivery) => self.deliver_broadcast(delivery),
             BrowserMessage::AdvanceTime {
                 document,
                 elapsed_micros,

@@ -85,6 +85,10 @@ impl BrowserState {
         if !self.tabs.contains(id) {
             return;
         }
+        self.app
+            .broadcast_channels
+            .borrow_mut()
+            .retire_tab(id.get());
         self.app.database_worker.retire_tab(id);
         self.retire_speech_for_tab(id);
         self.retire_notifications_for_tab(id);

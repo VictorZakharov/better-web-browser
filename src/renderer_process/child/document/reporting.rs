@@ -64,6 +64,9 @@ pub(super) fn merge_outcome(
     target
         .clipboard_actions
         .append(&mut source.clipboard_actions);
+    target
+        .broadcast_actions
+        .append(&mut source.broadcast_actions);
     target.worker_actions.append(&mut source.worker_actions);
     target
         .fullscreen_actions

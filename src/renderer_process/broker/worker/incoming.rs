@@ -96,6 +96,7 @@ impl Broker {
                     | RendererMessage::CookieMutation(_)
                     | RendererMessage::PolicyMutation(_)
                     | RendererMessage::StorageMutation(_)
+                    | RendererMessage::BroadcastCommand(_)
                     | RendererMessage::WebSocketCommand(_)
                     | RendererMessage::DatabaseCommand(_)
                     | RendererMessage::SpeechRequest(_)

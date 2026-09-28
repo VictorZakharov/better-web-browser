@@ -119,6 +119,15 @@ impl Broker {
                         self.protocol_failure(error.to_string());
                     }
                 }
+                BrokerCommand::BroadcastDelivery(delivery) => {
+                    if self.active_document == Some(delivery.document)
+                        && let Err(error) = self
+                            .writer()
+                            .send_browser(&BrowserMessage::BroadcastDelivery(delivery))
+                    {
+                        self.protocol_failure(error.to_string());
+                    }
+                }
                 BrokerCommand::FullscreenResponse(response) => {
                     if self.active_document == Some(response.document)
                         && let Err(error) = self

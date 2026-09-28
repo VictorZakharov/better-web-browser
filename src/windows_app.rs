@@ -3,6 +3,7 @@ mod accessibility;
 mod app_state;
 mod benchmark;
 mod benchmark_capture;
+mod broadcast_channel;
 mod browser_app;
 mod browser_navigation;
 mod browser_window;
