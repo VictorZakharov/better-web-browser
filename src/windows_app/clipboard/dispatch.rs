@@ -46,7 +46,7 @@ impl BrowserState {
         // The current activation ledger is tab/document scoped, not frame scoped.
         // A descendant cannot borrow a top-level click to access host clipboard.
         if !top_level_clipboard_client_eligible(request.client)
-            || !owner.origin.is_secure()
+            || !clipboard_origin_eligible(&owner.origin)
             || !self.request_is_current(tab_id, &request, session_id, &owner.origin)
             || !self.consume_transient_activation(tab_id, request.document)
         {
@@ -153,6 +153,11 @@ fn top_level_clipboard_client_eligible(client: better_web_browser::fetch::Reques
     client.id == 0 && !client.opaque
 }
 
+fn clipboard_origin_eligible(origin: &Origin) -> bool {
+    // Match the SecureContext exposure in the renderer, including loopback HTTP.
+    origin.is_potentially_trustworthy()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,6 +182,24 @@ mod tests {
                 id: 0,
                 opaque: true
             }
+        ));
+    }
+
+    #[test]
+    fn origin_admission_matches_secure_context_exposure() {
+        for url in [
+            "https://example.test/",
+            "http://localhost:8080/",
+            "http://127.0.0.1:8080/",
+            "http://[::1]:8080/",
+        ] {
+            assert!(
+                clipboard_origin_eligible(&Origin::parse(url).unwrap()),
+                "{url}"
+            );
+        }
+        assert!(!clipboard_origin_eligible(
+            &Origin::parse("http://example.test/").unwrap()
         ));
     }
 }
