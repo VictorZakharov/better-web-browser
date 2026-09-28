@@ -66,6 +66,7 @@ pub(super) const WORKER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/indexed_db_cursors.js"),
     include_str!("bootstrap/indexed_db_indexes.js"),
     include_str!("bootstrap/indexed_db.js"),
+    include_str!("bootstrap/cache_storage.js"),
     include_str!("bootstrap/websocket.js"),
     include_str!("bootstrap/worker_ports.js"),
     include_str!("bootstrap/performance.js"),

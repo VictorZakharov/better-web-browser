@@ -21,6 +21,7 @@ fn workers_keep_document_identity_and_child_removal_cancels_only_its_workers() {
                 id,
                 url,
                 document_url,
+                creator_secure_context,
                 client,
                 ..
             } = action
@@ -28,6 +29,7 @@ fn workers_keep_document_identity_and_child_removal_cancels_only_its_workers() {
             {
                 assert_eq!(document_url, "https://example.com/parent/index");
                 assert_eq!(client.id, 0);
+                assert!(!creator_secure_context, "embedded owners fail closed");
                 child_id = Some(id);
             }
         }

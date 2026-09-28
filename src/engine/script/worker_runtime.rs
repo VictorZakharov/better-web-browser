@@ -59,9 +59,30 @@ impl WorkerRuntime {
         source_loader: Arc<WorkerSourceLoader>,
         policy: Arc<crate::fetch::csp::PolicyContainer>,
     ) -> (Option<Self>, WorkerRuntimeOutcome) {
+        Self::start_with_creator_context(
+            source_url,
+            source,
+            name,
+            kind,
+            source_loader,
+            policy,
+            true,
+        )
+    }
+
+    pub(crate) fn start_with_creator_context(
+        source_url: &str,
+        source: &str,
+        name: &str,
+        kind: ScriptKind,
+        source_loader: Arc<WorkerSourceLoader>,
+        policy: Arc<crate::fetch::csp::PolicyContainer>,
+        creator_secure_context: bool,
+    ) -> (Option<Self>, WorkerRuntimeOutcome) {
         let module_loader = Rc::new(WebModuleLoader::new());
         let host = Rc::new(RefCell::new(WorkerHostState::new(
             source_url,
+            creator_secure_context,
             name,
             kind,
             source_loader,
@@ -201,7 +222,7 @@ impl WorkerRuntime {
         {
             outcome
                 .errors
-                .push(format!("deliver Worker IndexedDB event: {error}"));
+                .push(format!("deliver Worker origin-storage event: {error}"));
         }
         self.settle_module_evaluation(&mut outcome);
         self.collect(&mut outcome);

@@ -287,7 +287,9 @@
             return { bytes: new Uint8Array(materializeBlob(body)), stream: null,
                 type: blobState(body).type };
         }
-        if (body instanceof FormData) return multipartBody(body);
+        // FormData is not yet installed in the dedicated-worker bootstrap.
+        // Other BodyInit variants must remain usable in that realm.
+        if (FormData && body instanceof FormData) return multipartBody(body);
         if (urlApi.isParams(body))
             return { bytes: encoder.encode(urlApi.serializeParams(body)), stream: null, type: 'application/x-www-form-urlencoded;charset=UTF-8' };
         const bytes = copyBytes(body);

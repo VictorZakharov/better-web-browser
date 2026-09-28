@@ -45,26 +45,35 @@ impl HostBridge {
                     .borrow()
                     .document_url
                     .clone(),
-                Self::Worker(host) => host
-                    .upgrade()
-                    .ok_or_else(inactive_host)?
-                    .borrow()
-                    .source_url
-                    .clone(),
+                Self::Worker(host) => {
+                    let host = host.upgrade().ok_or_else(inactive_host)?;
+                    let state = host.borrow();
+                    if !state.creator_secure_context {
+                        return Ok(JsValue::from(false));
+                    }
+                    state.source_url.clone()
+                }
             };
             return Ok(JsValue::from(super::crypto::trustworthy_url(&url)));
         }
         if operation == "cacheStorageSecureContext" {
-            let Self::Document(host) = self else {
-                return Ok(JsValue::from(false));
+            let secure = match self {
+                Self::Document(host) => {
+                    let host = host.upgrade().ok_or_else(inactive_host)?;
+                    let state = host.borrow();
+                    // Secure Contexts also requires trustworthy ancestors. The frame
+                    // host has no ancestor-trust bit yet, so fail closed for embeds.
+                    !state.embedded && state.document_origin.is_potentially_trustworthy()
+                }
+                Self::Worker(host) => {
+                    let host = host.upgrade().ok_or_else(inactive_host)?;
+                    let state = host.borrow();
+                    state.creator_secure_context
+                        && crate::fetch::Origin::parse(&state.source_url)
+                            .is_ok_and(|origin| origin.is_potentially_trustworthy())
+                }
             };
-            let host = host.upgrade().ok_or_else(inactive_host)?;
-            let state = host.borrow();
-            // Secure Contexts also requires trustworthy ancestors. The frame
-            // host has no ancestor-trust bit yet, so fail closed for embeds.
-            return Ok(JsValue::from(
-                !state.embedded && state.document_origin.is_potentially_trustworthy(),
-            ));
+            return Ok(JsValue::from(secure));
         }
         if operation == "cryptoSubtleAvailable" {
             return Ok(JsValue::from(cfg!(target_os = "windows")));

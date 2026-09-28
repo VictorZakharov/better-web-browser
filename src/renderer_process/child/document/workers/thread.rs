@@ -70,13 +70,14 @@ pub(super) fn run_worker(config: WorkerConfig) {
             response.content_type(),
         ))
     });
-    let (runtime, initial) = WorkerRuntime::start_with_policy(
+    let (runtime, initial) = WorkerRuntime::start_with_creator_context(
         response_url,
         &source,
         &config.name,
         config.kind,
         loader,
         policy,
+        config.creator_secure_context,
     );
     let Some(mut runtime) = runtime else {
         emit(&config, initial);

@@ -174,6 +174,7 @@ impl RendererWorkers {
                     name,
                     credentials,
                     document_url,
+                    creator_secure_context,
                     client,
                     worker_client,
                 } => {
@@ -192,6 +193,7 @@ impl RendererWorkers {
                         name,
                         credentials,
                         document_url,
+                        creator_secure_context,
                         client,
                         worker_client,
                         network: self.network_sender.clone(),
@@ -367,6 +369,7 @@ struct WorkerConfig {
     name: String,
     credentials: CredentialsMode,
     document_url: String,
+    creator_secure_context: bool,
     client: crate::fetch::RequestClient,
     worker_client: crate::fetch::RequestClient,
     network: mpsc::Sender<WorkerNetworkRequest>,
