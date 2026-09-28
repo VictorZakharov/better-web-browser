@@ -78,3 +78,61 @@ fn file_reader_abort_cancels_old_tasks_and_read_chaining_omits_old_loadend() {
         "if(events.join(',')!=='abort,end,start,load,start,load,end') throw Error(events);",
     );
 }
+
+#[test]
+fn large_file_read_yields_between_bounded_ranges_before_result_is_available() {
+    let (dom, mut runtime) = start(
+        r#"<body><script>
+        window.events=[];
+        const bytes = new Uint8Array(3 * 65536 + 7);
+        bytes[0] = 11; bytes[bytes.length - 1] = 29;
+        window.reader = new FileReader();
+        reader.onloadstart = event => events.push('start:' + event.loaded);
+        reader.onprogress = event => events.push('progress:' + event.loaded);
+        reader.onload = event => events.push('load:' + event.loaded);
+        reader.onloadend = event => events.push('end:' + event.loaded);
+        reader.readAsArrayBuffer(new Blob([bytes]));
+    </script>"#,
+    );
+    for _ in 0..2 {
+        let outcome = runtime.advance_time(Duration::ZERO, 1);
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    }
+    evaluate(
+        &mut runtime,
+        &dom,
+        "if(reader.readyState!==reader.LOADING || reader.result!==null || events.join(',')!=='start:0') throw Error(events);",
+    );
+    drain(&mut runtime);
+    evaluate(
+        &mut runtime,
+        &dom,
+        "const b=new Uint8Array(reader.result); if(reader.readyState!==reader.DONE || b.length!==196615 || b[0]!==11 || b[b.length-1]!==29 || events.at(-3)!=='progress:196615' || events.at(-2)!=='load:196615' || events.at(-1)!=='end:196615') throw Error(events);",
+    );
+}
+
+#[test]
+fn abort_after_partial_file_read_cancels_remaining_ranges_and_reports_loaded_bytes() {
+    let (dom, mut runtime) = start(
+        r#"<body><script>
+        window.events=[];
+        window.reader=new FileReader();
+        reader.onloadstart=()=>events.push('start');
+        reader.onabort=event=>events.push('abort:'+event.loaded+'/'+event.total);
+        reader.onload=()=>events.push('load');
+        reader.onloadend=()=>events.push('end');
+        reader.readAsArrayBuffer(new Blob([new Uint8Array(3*65536+7)]));
+    </script>"#,
+    );
+    for _ in 0..2 {
+        let outcome = runtime.advance_time(Duration::ZERO, 1);
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    }
+    evaluate(&mut runtime, &dom, "reader.abort();");
+    drain(&mut runtime);
+    evaluate(
+        &mut runtime,
+        &dom,
+        "if(events.join(',')!=='start,abort:65536/196615,end' || reader.readyState!==reader.DONE || reader.result!==null) throw Error(events);",
+    );
+}

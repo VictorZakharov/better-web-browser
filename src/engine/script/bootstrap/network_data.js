@@ -2,6 +2,8 @@
     'use strict';
     const FormData = globalThis.FormData;
     const urlApi = globalThis.__urlInternals;
+    const blobBytes = globalThis.__blobByteAlgorithms;
+    delete globalThis.__blobByteAlgorithms;
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
     const headerNamePattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
@@ -182,7 +184,9 @@
         return output;
     };
     const normalizedBlobType = value => {
-        const type = String(value || '').toLowerCase();
+        if (typeof value === 'symbol') throw new TypeError('Blob type must be a DOMString');
+        const type = (value === undefined ? '' : String(value))
+            .replace(/[A-Z]/g, character => character.toLowerCase());
         return [...type].every(character => {
             const code = character.charCodeAt(0);
             return code >= 0x20 && code <= 0x7e;
@@ -230,16 +234,14 @@
         get size() { return blobState(this).size; }
         get type() { return blobState(this).type; }
         slice(start = 0, end = this.size, type = '') {
-            const normalize = value => value < 0 ? Math.max(this.size + value, 0) : Math.min(value, this.size);
-            start = normalize(Number(start) || 0);
-            end = normalize(end === undefined ? this.size : Number(end) || 0);
-            return new Blob([this.__bytes.slice(start, Math.max(start, end))], { type });
+            const state = blobState(this);
+            const bytes = blobBytes.slice(state.chunks, state.size, start, end);
+            return initializeBlob(Object.create(Blob.prototype), bytes, type);
         }
         arrayBuffer() { return Promise.resolve(this.__bytes.buffer.slice(0)); }
         bytes() { return Promise.resolve(new Uint8Array(this.__bytes)); }
         stream() {
-            const bytes = new Uint8Array(this.__bytes);
-            return new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } });
+            return blobBytes.stream(blobState(this).chunks);
         }
         text() { return Promise.resolve(decoder.decode(this.__bytes)); }
     }

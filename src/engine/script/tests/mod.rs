@@ -68,6 +68,7 @@ mod event_handler_attributes;
 mod event_source;
 mod events;
 mod feature_presence;
+mod file_api;
 mod file_input;
 mod focus_selectors;
 mod font_loading;
