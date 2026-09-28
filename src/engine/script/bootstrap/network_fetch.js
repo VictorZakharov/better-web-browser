@@ -2,6 +2,8 @@
     'use strict';
     const urlApi = globalThis.__urlInternals;
     const host = (...args) => __hostCall(...args);
+    const NativeRequest = Request;
+    const responseFromNetwork = Response.__fromNetwork.bind(Response);
     const pending = new Map();
     const concatenate = chunks => {
         const length = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
@@ -23,7 +25,7 @@
     globalThis.fetch = function fetch(input, init = undefined) {
         let request;
         try {
-            request = new Request(input, init);
+            request = new NativeRequest(input, init);
             request.signal.throwIfAborted();
         } catch (error) {
             return Promise.reject(error);
@@ -120,7 +122,7 @@
             }, { highWaterMark: windowBytes, size: chunk => chunk.byteLength });
         }
         operation.responseStarted = true;
-        operation.resolve(Response.__fromNetwork(metadata, stream, nullBody));
+        operation.resolve(responseFromNetwork(metadata, stream, nullBody));
     };
 
     globalThis.__pushFetch = (id, body) => {
@@ -158,7 +160,7 @@
                 start(controller) { controller.enqueue(bytes); controller.close(); }
             });
             finish(operation);
-            operation.resolve(Response.__fromNetwork(metadata, stream, operation.nullBody));
+            operation.resolve(responseFromNetwork(metadata, stream, operation.nullBody));
             return;
         }
         operation.controller?.close();

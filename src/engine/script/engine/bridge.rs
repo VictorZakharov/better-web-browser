@@ -54,6 +54,18 @@ impl HostBridge {
             };
             return Ok(JsValue::from(super::crypto::trustworthy_url(&url)));
         }
+        if operation == "cacheStorageSecureContext" {
+            let Self::Document(host) = self else {
+                return Ok(JsValue::from(false));
+            };
+            let host = host.upgrade().ok_or_else(inactive_host)?;
+            let state = host.borrow();
+            // Secure Contexts also requires trustworthy ancestors. The frame
+            // host has no ancestor-trust bit yet, so fail closed for embeds.
+            return Ok(JsValue::from(
+                !state.embedded && state.document_origin.is_potentially_trustworthy(),
+            ));
+        }
         if operation == "cryptoSubtleAvailable" {
             return Ok(JsValue::from(cfg!(target_os = "windows")));
         }
