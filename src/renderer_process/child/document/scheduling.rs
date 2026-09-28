@@ -49,6 +49,7 @@ impl DocumentRuntime {
             || !self.pending_databases.is_empty()
             || !self.pending_speech_requests.is_empty()
             || !self.pending_notification_requests.is_empty()
+            || !self.pending_protocol_handler_requests.is_empty()
             || !self.pending_geolocation_requests.is_empty()
             || !self.pending_media_device_requests.is_empty()
             || !self.pending_sensor_requests.is_empty()
@@ -187,6 +188,8 @@ impl DocumentRuntime {
             .append(&mut outcome.speech_actions);
         self.pending_notification_requests
             .append(&mut outcome.notification_actions);
+        self.pending_protocol_handler_requests
+            .append(&mut outcome.protocol_handler_actions);
         self.pending_geolocation_requests
             .append(&mut outcome.geolocation_actions);
         self.pending_media_device_requests
@@ -219,6 +222,8 @@ impl DocumentRuntime {
             .append(&mut outcome.speech_actions);
         self.pending_notification_requests
             .append(&mut outcome.notification_actions);
+        self.pending_protocol_handler_requests
+            .append(&mut outcome.protocol_handler_actions);
         self.pending_geolocation_requests
             .append(&mut outcome.geolocation_actions);
         self.pending_media_device_requests

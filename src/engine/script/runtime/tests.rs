@@ -15,6 +15,7 @@ mod idle;
 mod inserted_scripts;
 mod media_devices;
 mod notification;
+mod protocol_handler;
 mod scheduling;
 mod sensor;
 mod speech;

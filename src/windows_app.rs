@@ -31,6 +31,7 @@ mod pointer_cursor;
 mod pointer_lock;
 mod process_metrics;
 mod profile;
+mod protocol_handlers;
 mod reader_layout;
 mod renderer_fetch;
 mod renderer_input;

@@ -37,6 +37,7 @@ impl DocumentRuntime {
     ) -> Result<(), String> {
         self.start_pending_speech_requests(connection)?;
         self.start_pending_notification_requests(connection)?;
+        self.start_pending_protocol_handler_requests(connection)?;
         self.start_pending_geolocation_requests(connection)?;
         self.start_pending_media_device_requests(connection)?;
         self.start_pending_sensor_requests(connection)?;
@@ -286,6 +287,8 @@ impl DocumentRuntime {
             .append(&mut outcome.speech_actions);
         self.pending_notification_requests
             .append(&mut outcome.notification_actions);
+        self.pending_protocol_handler_requests
+            .append(&mut outcome.protocol_handler_actions);
         self.pending_geolocation_requests
             .append(&mut outcome.geolocation_actions);
         self.pending_media_device_requests

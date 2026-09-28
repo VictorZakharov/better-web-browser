@@ -100,6 +100,7 @@ impl Broker {
                     | RendererMessage::DatabaseCommand(_)
                     | RendererMessage::SpeechRequest(_)
                     | RendererMessage::NotificationRequest(_)
+                    | RendererMessage::ProtocolHandlerRequest(_)
                     | RendererMessage::GeolocationRequest(_)
                     | RendererMessage::MediaDeviceRequest(_)
                     | RendererMessage::SensorRequest(_)

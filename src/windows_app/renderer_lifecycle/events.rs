@@ -127,6 +127,9 @@ impl BrowserState {
                 RendererEvent::NotificationRequest(request) => {
                     self.handle_notification_request(id, request);
                 }
+                RendererEvent::ProtocolHandlerRequest(request) => {
+                    self.handle_protocol_handler_request(id, request);
+                }
                 RendererEvent::GeolocationRequest(request) => {
                     self.handle_geolocation_request(id, request);
                 }

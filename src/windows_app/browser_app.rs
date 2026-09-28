@@ -53,6 +53,7 @@ pub(super) struct BrowserApplication {
     pub(super) speech_service: super::speech_synthesis::SpeechSynthesisService,
     pub(super) sensor_service: super::sensors::SensorService,
     pub(super) notifications: RefCell<super::notifications::NotificationService>,
+    pub(super) protocol_handlers: RefCell<better_web_browser::protocol_handlers::Registry>,
     pub(super) geolocation: RefCell<super::geolocation::GeolocationService>,
     pub(super) media_devices: RefCell<super::media_devices::MediaDeviceService>,
     pub(super) capture: RefCell<super::capture::CaptureCoordinator>,
@@ -88,6 +89,7 @@ impl BrowserApplication {
             super::renderer_fetch::DatabaseWorker::new(indexed_db, cache_storage)?;
         let speech_service = super::speech_synthesis::SpeechSynthesisService::spawn()?;
         let sensor_service = super::sensors::SensorService::spawn()?;
+        let protocol_handlers = better_web_browser::protocol_handlers::Registry::open(&profile)?;
         Ok(Rc::new(Self {
             instance,
             profile: profile.clone(),
@@ -105,6 +107,7 @@ impl BrowserApplication {
             speech_service,
             sensor_service,
             notifications: RefCell::new(super::notifications::NotificationService::default()),
+            protocol_handlers: RefCell::new(protocol_handlers),
             geolocation: RefCell::new(super::geolocation::GeolocationService::default()),
             media_devices: RefCell::new(super::media_devices::MediaDeviceService::default()),
             capture: RefCell::new(super::capture::CaptureCoordinator::default()),

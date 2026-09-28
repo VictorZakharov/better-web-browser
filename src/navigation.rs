@@ -106,6 +106,14 @@ pub fn normalize_user_input(input: &str) -> Result<String, UrlError> {
         return Err(UrlError("enter an address or search".into()));
     }
 
+    // The address bar may open a browser-approved custom scheme. Its dispatch
+    // remains a browser-owned decision; this parser does not allow Fetch to use it.
+    if let Ok(custom) = Url::parse(input)
+        && crate::protocol_handlers::allowed_scheme(custom.scheme())
+    {
+        return Ok(custom.to_string());
+    }
+
     if input.starts_with("http://") || input.starts_with("https://") {
         return Ok(ParsedUrl::parse(input)?.canonical());
     }
@@ -155,6 +163,17 @@ pub fn resolve_url(base: &str, reference: &str) -> Option<String> {
     }
     let serialized = resolved.to_string();
     (serialized.len() <= MAX_URL_BYTES).then_some(serialized)
+}
+
+/// Resolves an HTML hyperlink without granting its scheme network-fetch rights.
+/// The browser must still approve and route custom schemes at navigation time.
+pub fn resolve_hyperlink_url(base: &str, reference: &str) -> Option<String> {
+    let resolved = resolve_web_url(base, reference)?;
+    let scheme = Url::parse(&resolved).ok()?.scheme().to_owned();
+    if matches!(scheme.as_str(), "http" | "https") {
+        return resolve_url(base, reference);
+    }
+    crate::protocol_handlers::allowed_scheme(&scheme).then_some(resolved)
 }
 
 /// Resolves a subresource reference, including embedded `data:` resources.
@@ -241,6 +260,32 @@ mod tests {
             resolve_resource_url("https://example.com/", embedded).as_deref(),
             Some(embedded)
         );
+    }
+
+    #[test]
+    fn custom_hyperlinks_reach_navigation_gate_without_becoming_fetch_urls() {
+        let base = "https://example.test/page";
+        assert_eq!(
+            resolve_hyperlink_url(base, "web+soup:chicken-k%C3%AFwi").as_deref(),
+            Some("web+soup:chicken-k%C3%AFwi")
+        );
+        assert_eq!(
+            resolve_hyperlink_url(base, "mailto:chef@example.test").as_deref(),
+            Some("mailto:chef@example.test")
+        );
+        assert_eq!(resolve_url(base, "web+soup:chicken-k%C3%AFwi"), None);
+        assert_eq!(
+            resolve_resource_url(base, "web+soup:chicken-k%C3%AFwi"),
+            None
+        );
+        for rejected in [
+            "javascript:alert(1)",
+            "data:text/html,hello",
+            "file:///private",
+            "web+123:invalid",
+        ] {
+            assert_eq!(resolve_hyperlink_url(base, rejected), None);
+        }
     }
 
     #[test]

@@ -236,6 +236,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::DatabaseCommand(command) => Some(command.document),
         RendererEvent::SpeechRequest(request) => Some(request.document),
         RendererEvent::NotificationRequest(request) => Some(request.document),
+        RendererEvent::ProtocolHandlerRequest(request) => Some(request.document),
         RendererEvent::GeolocationRequest(request) => Some(request.document),
         RendererEvent::MediaDeviceRequest(request) => Some(request.document),
         RendererEvent::SensorRequest(request) => Some(request.document),

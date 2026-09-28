@@ -20,6 +20,25 @@ pub(super) enum HistoryMode {
 }
 
 impl BrowserState {
+    pub(super) fn approved_navigation_target(&self, input: &str) -> Result<String, &'static str> {
+        let parsed = url::Url::parse(input).map_err(|_| "Invalid navigation URL")?;
+        if matches!(parsed.scheme(), "http" | "https") {
+            return Ok(input.to_owned());
+        }
+        self.app
+            .protocol_handlers
+            .borrow()
+            .navigate(input)
+            .ok_or("No approved handler for this URL scheme")
+    }
+
+    pub(super) unsafe fn open_url_in_new_tab(&mut self, url: String, foreground: bool) {
+        match self.approved_navigation_target(&url) {
+            Ok(target) => self.add_tab(Some(target), foreground),
+            Err(error) => self.set_status(error),
+        }
+    }
+
     pub(super) unsafe fn navigate_from_address(&mut self) {
         let input = window_text(self.controls.address);
         self.navigate_from_input(&input, HistoryMode::Push, true);
@@ -95,6 +114,13 @@ impl BrowserState {
         post_body: Option<FormPost>,
         user_activation: bool,
     ) {
+        let url = match self.approved_navigation_target(&url) {
+            Ok(target) => target,
+            Err(error) => {
+                self.set_status(error);
+                return;
+            }
+        };
         let is_active = self.tabs.active_id() == id && !self.processing_background_tab;
         if is_active {
             self.exit_pointer_lock();

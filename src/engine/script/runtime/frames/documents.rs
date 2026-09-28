@@ -204,6 +204,9 @@ pub(in crate::engine::script::runtime) fn append(
         .notification_actions
         .append(&mut other.notification_actions);
     outcome.sensor_actions.append(&mut other.sensor_actions);
+    outcome
+        .protocol_handler_actions
+        .append(&mut other.protocol_handler_actions);
     outcome.worker_actions.append(&mut other.worker_actions);
     // A child document's nodes are not parent invalidation roots, but its paint
     // still has to be recomposed when a streamed resource completes.

@@ -52,6 +52,9 @@ pub(super) fn merge_outcome(
         .notification_actions
         .append(&mut source.notification_actions);
     target
+        .protocol_handler_actions
+        .append(&mut source.protocol_handler_actions);
+    target
         .geolocation_actions
         .append(&mut source.geolocation_actions);
     target

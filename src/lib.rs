@@ -8,6 +8,7 @@ pub mod indexed_db;
 pub mod limits;
 pub mod metrics;
 pub mod navigation;
+pub mod protocol_handlers;
 pub mod renderer_protocol;
 pub mod storage;
 pub(crate) mod text_decode;

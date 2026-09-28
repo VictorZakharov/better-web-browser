@@ -81,6 +81,7 @@ pub(super) struct DocumentRuntime {
     pending_databases: Vec<crate::engine::ScriptDatabaseAction>,
     pending_speech_requests: Vec<crate::engine::ScriptSpeechAction>,
     pending_notification_requests: Vec<crate::engine::ScriptNotificationAction>,
+    pending_protocol_handler_requests: Vec<crate::engine::ScriptProtocolHandlerAction>,
     pending_geolocation_requests: Vec<crate::engine::ScriptGeolocationAction>,
     pending_media_device_requests: Vec<crate::engine::ScriptMediaDeviceAction>,
     pending_sensor_requests: Vec<crate::engine::ScriptSensorAction>,

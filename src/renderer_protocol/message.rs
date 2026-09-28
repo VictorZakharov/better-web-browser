@@ -198,6 +198,7 @@ pub enum RendererMessage {
     DatabaseCommand(DatabaseCommand),
     SpeechRequest(SpeechRequest),
     NotificationRequest(super::NotificationRequest),
+    ProtocolHandlerRequest(super::ProtocolHandlerRequest),
     GeolocationRequest(super::GeolocationRequest),
     MediaDeviceRequest(super::MediaDeviceRequest),
     SensorRequest(super::SensorRequest),

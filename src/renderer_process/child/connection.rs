@@ -8,6 +8,7 @@ mod media_devices;
 mod mutations;
 mod navigation;
 mod notification;
+mod protocol_handler;
 mod runtime;
 mod sensor;
 mod speech;

@@ -130,11 +130,9 @@ impl BrowserState {
         tab_id: TabId,
         document: DocumentId,
     ) -> bool {
-        self.tabs.get_mut(tab_id).is_some_and(|tab| {
-            tab.transient_activation
-                .take()
-                .is_some_and(|activation| activation_authorizes(document, activation))
-        })
+        self.tabs
+            .get_mut(tab_id)
+            .is_some_and(|tab| take_authorized_activation(&mut tab.transient_activation, document))
     }
 
     pub(super) fn has_transient_activation(&mut self, tab_id: TabId, document: DocumentId) -> bool {
@@ -298,6 +296,15 @@ fn activation_authorizes(document: DocumentId, activation: (DocumentId, Instant)
     activation.0 == document && activation.1.elapsed() <= TRANSIENT_ACTIVATION_LIFETIME
 }
 
+fn take_authorized_activation(
+    activation: &mut Option<(DocumentId, Instant)>,
+    document: DocumentId,
+) -> bool {
+    activation
+        .take()
+        .is_some_and(|entry| activation_authorizes(document, entry))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,6 +322,14 @@ mod tests {
                 Instant::now() - TRANSIENT_ACTIVATION_LIFETIME - Duration::from_millis(1)
             )
         ));
+    }
+
+    #[test]
+    fn transient_activation_authorizes_at_most_one_permission_prompt() {
+        let document = DocumentId::new(1).unwrap();
+        let mut activation = Some((document, Instant::now()));
+        assert!(take_authorized_activation(&mut activation, document));
+        assert!(!take_authorized_activation(&mut activation, document));
     }
 
     #[test]

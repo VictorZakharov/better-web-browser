@@ -116,6 +116,7 @@ pub enum RendererEvent {
     DatabaseCommand(crate::renderer_protocol::DatabaseCommand),
     SpeechRequest(crate::renderer_protocol::SpeechRequest),
     NotificationRequest(crate::renderer_protocol::NotificationRequest),
+    ProtocolHandlerRequest(crate::renderer_protocol::ProtocolHandlerRequest),
     GeolocationRequest(crate::renderer_protocol::GeolocationRequest),
     MediaDeviceRequest(crate::renderer_protocol::MediaDeviceRequest),
     SensorRequest(crate::renderer_protocol::SensorRequest),

@@ -113,6 +113,7 @@ impl DocumentRuntime {
             pending_databases: Vec::new(),
             pending_speech_requests: Vec::new(),
             pending_notification_requests: Vec::new(),
+            pending_protocol_handler_requests: Vec::new(),
             pending_geolocation_requests: Vec::new(),
             pending_media_device_requests: Vec::new(),
             pending_sensor_requests: Vec::new(),
@@ -235,6 +236,8 @@ impl DocumentRuntime {
         runtime.pending_databases = std::mem::take(&mut outcome.database_actions);
         runtime.pending_speech_requests = std::mem::take(&mut outcome.speech_actions);
         runtime.pending_notification_requests = std::mem::take(&mut outcome.notification_actions);
+        runtime.pending_protocol_handler_requests =
+            std::mem::take(&mut outcome.protocol_handler_actions);
         runtime.pending_geolocation_requests = std::mem::take(&mut outcome.geolocation_actions);
         runtime.pending_media_device_requests = std::mem::take(&mut outcome.media_device_actions);
         runtime.pending_sensor_requests = std::mem::take(&mut outcome.sensor_actions);

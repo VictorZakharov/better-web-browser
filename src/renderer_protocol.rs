@@ -14,6 +14,7 @@ mod media_devices;
 mod message;
 mod notification;
 mod presentation;
+mod protocol_handler;
 mod sensor;
 mod speech;
 mod state;
@@ -32,6 +33,7 @@ pub use notification::{
     NotificationAction, NotificationEvent, NotificationPermission, NotificationRequest,
     NotificationUpdate,
 };
+pub use protocol_handler::{ProtocolHandlerAction, ProtocolHandlerRequest};
 pub use sensor::{
     SensorAction, SensorError, SensorEvent, SensorKind, SensorPermission, SensorReading,
     SensorRequest, SensorUpdate,
