@@ -33,7 +33,7 @@
         }
         readAsDataURL(blob) {
             const source = state(this, blob);
-            return 'data:' + (source.type || 'application/octet-stream') + ';base64,' +
+            return 'data:' + source.type + ';base64,' +
                 bytesToBase64(concatBytes(source.chunks));
         }
         readAsBinaryString(blob) {

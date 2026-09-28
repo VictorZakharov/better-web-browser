@@ -26,13 +26,14 @@ fn worker_file_reader_sync_reads_snapshot_bytes_and_decodes_declared_charset() {
                 [...new Uint8Array(buffer)].join(','), text.charCodeAt(0),
                 text.charCodeAt(1), text.charCodeAt(2),
                 utf8.charCodeAt(1), [...binary].map(c => c.charCodeAt(0)).join(','),
-                url, Object.prototype.toString.call(reader)
+                url, reader.readAsDataURL(new Blob(['?'])),
+                Object.prototype.toString.call(reader)
             ].join('|'));"#);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     let result: String = serde_json::from_str(&outcome.messages[0]).unwrap();
     assert_eq!(
         result,
-        "65,255,0|65|255|0|65533|65,255,0|data:text/plain;charset=windows-1252;base64,Qf8A|[object FileReaderSync]"
+        "65,255,0|65|255|0|65533|65,255,0|data:text/plain;charset=windows-1252;base64,Qf8A|data:;base64,Pw==|[object FileReaderSync]"
     );
 }
 

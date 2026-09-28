@@ -26,7 +26,7 @@
     const packageData = (bytes, mode, type, label) => {
         if (mode === 'buffer') return bytes.buffer;
         if (mode === 'text') return decode(bytes, type, label);
-        if (mode === 'url') return 'data:' + (type || 'application/octet-stream') + ';base64,' + bytesToBase64(bytes);
+        if (mode === 'url') return 'data:' + type + ';base64,' + bytesToBase64(bytes);
         let result = '';
         for (let offset = 0; offset < bytes.length; offset += 0x4000)
             result += String.fromCharCode(...bytes.subarray(offset, offset + 0x4000));

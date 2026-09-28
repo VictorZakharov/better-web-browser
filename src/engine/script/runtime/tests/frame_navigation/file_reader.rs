@@ -136,3 +136,21 @@ fn abort_after_partial_file_read_cancels_remaining_ranges_and_reports_loaded_byt
         "if(events.join(',')!=='start,abort:65536/196615,end' || reader.readyState!==reader.DONE || reader.result!==null) throw Error(events);",
     );
 }
+
+#[test]
+fn file_reader_data_url_omits_media_type_for_untyped_blob() {
+    let (dom, mut runtime) = start(
+        r#"<body><script>
+            window.result='pending';
+            const reader=new FileReader();
+            reader.onload=()=>result=reader.result;
+            reader.readAsDataURL(new Blob(['?']));
+        </script>"#,
+    );
+    drain(&mut runtime);
+    evaluate(
+        &mut runtime,
+        &dom,
+        "if(result!=='data:;base64,Pw==') throw Error(result);",
+    );
+}

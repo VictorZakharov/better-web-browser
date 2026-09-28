@@ -19,6 +19,7 @@ Standard. Invalid labels fall back to the MIME charset and then UTF-8, matching
 the existing asynchronous FileReader path. The host currently limits a text
 decode input to 16 MiB. Blob reads still materialize the requested result in
 worker memory, so this is not a streaming replacement for large files.
+For both readers, a Data URL omits its media type when the Blob type is empty.
 
 The asynchronous `FileReader` remains available in both Window and workers.
 It now advances through at most 64 KiB of a memory-backed Blob in each queued
