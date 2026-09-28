@@ -36,7 +36,7 @@ impl GraphAudio {
             let output = if self.silent_audio {
                 AudioOutput::silent()
             } else {
-                AudioOutput::device_or_silent(format.sample_rate, format.channels)?
+                AudioOutput::device_required(format.sample_rate, format.channels)?
             };
             self.active = Some(GraphStream {
                 document_id,

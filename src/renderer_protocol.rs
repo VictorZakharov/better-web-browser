@@ -8,7 +8,9 @@ mod codec;
 mod database;
 mod document;
 mod fetch;
+mod geolocation;
 mod input;
+mod media_devices;
 mod message;
 mod notification;
 mod presentation;
@@ -18,6 +20,13 @@ mod video;
 mod websocket;
 mod wire;
 pub use database::{DATABASE_RETIRE_CLIENT_PAYLOAD, DatabaseCommand, DatabaseEvent};
+pub use geolocation::{
+    GeolocationAction, GeolocationErrorCode, GeolocationEvent, GeolocationPosition,
+    GeolocationRequest, GeolocationUpdate,
+};
+pub use media_devices::{
+    MediaDeviceError, MediaDeviceRequest, MediaDeviceResult, MediaDeviceUpdate,
+};
 pub use notification::{
     NotificationAction, NotificationEvent, NotificationPermission, NotificationRequest,
     NotificationUpdate,
@@ -72,7 +81,7 @@ pub use state::{
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
 pub const PROTOCOL_MAJOR: u16 = 14;
-pub const PROTOCOL_MINOR: u16 = 4;
+pub const PROTOCOL_MINOR: u16 = 6;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

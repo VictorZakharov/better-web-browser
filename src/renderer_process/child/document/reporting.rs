@@ -51,6 +51,12 @@ pub(super) fn merge_outcome(
     target
         .notification_actions
         .append(&mut source.notification_actions);
+    target
+        .geolocation_actions
+        .append(&mut source.geolocation_actions);
+    target
+        .media_device_actions
+        .append(&mut source.media_device_actions);
     target.worker_actions.append(&mut source.worker_actions);
     target
         .fullscreen_actions
@@ -59,6 +65,9 @@ pub(super) fn merge_outcome(
         .pointer_lock_actions
         .append(&mut source.pointer_lock_actions);
     target.media_actions.append(&mut source.media_actions);
+    target
+        .graph_audio_actions
+        .append(&mut source.graph_audio_actions);
     target.font_actions.append(&mut source.font_actions);
     target.runtime_stopped |= source.runtime_stopped;
     target.render_requested |= source.render_requested;

@@ -104,6 +104,12 @@ pub(super) fn finish_host(
         .notification_actions
         .append(&mut state.pending_notification_actions);
     outcome
+        .geolocation_actions
+        .append(&mut state.pending_geolocation_actions);
+    outcome
+        .media_device_actions
+        .append(&mut state.pending_media_device_actions);
+    outcome
         .worker_actions
         .append(&mut state.pending_worker_actions);
     outcome
@@ -115,6 +121,9 @@ pub(super) fn finish_host(
     outcome
         .media_actions
         .append(&mut state.pending_media_actions);
+    outcome
+        .graph_audio_actions
+        .append(&mut state.pending_graph_audio_actions);
     outcome.font_actions.append(&mut state.pending_font_actions);
     outcome.render_requested |= state.timers.take_render_request();
     outcome.invalidation.merge_conservatively(

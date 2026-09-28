@@ -127,6 +127,12 @@ impl BrowserState {
                 RendererEvent::NotificationRequest(request) => {
                     self.handle_notification_request(id, request);
                 }
+                RendererEvent::GeolocationRequest(request) => {
+                    self.handle_geolocation_request(id, request);
+                }
+                RendererEvent::MediaDeviceRequest(request) => {
+                    self.handle_media_device_request(id, request);
+                }
                 RendererEvent::Presentation(presentation) => {
                     self.process_for_tab(id, |state| {
                         state.activate_renderer_presentation(*presentation)

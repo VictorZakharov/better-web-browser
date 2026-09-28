@@ -32,14 +32,14 @@
         constructor(token, context, inputs, outputs) {
             super();
             if (token !== audioNodeToken) throw new TypeError('Illegal constructor');
-            if (!(context instanceof OfflineAudioContext))
-                throw new TypeError('AudioNode requires an OfflineAudioContext');
+            if (!(context instanceof BaseAudioContext))
+                throw new TypeError('AudioNode requires a BaseAudioContext');
             const contextState = audioContextState.get(context);
             if (contextState.nodes.size >= MAX_AUDIO_NODES)
                 throw new DOMException('Audio graph node limit reached', 'NotSupportedError');
             if (contextState.renderStarted &&
                 !audioWorkWithinLimit(contextState, contextState.nodes.size + 1))
-                throw new DOMException('Offline graph exceeds the rendering work limit',
+                throw new DOMException('Audio graph exceeds the rendering work limit',
                     'NotSupportedError');
             Object.defineProperties(this, {
                 context: { enumerable: true, value: context },

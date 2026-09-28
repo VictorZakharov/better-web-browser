@@ -157,6 +157,8 @@ pub enum BrowserMessage {
     DatabaseEvent(DatabaseEvent),
     SpeechUpdate(SpeechUpdate),
     NotificationUpdate(super::NotificationUpdate),
+    GeolocationUpdate(super::GeolocationUpdate),
+    MediaDeviceUpdate(super::MediaDeviceUpdate),
     AdvanceTime {
         document: DocumentId,
         elapsed_micros: u64,
@@ -195,6 +197,8 @@ pub enum RendererMessage {
     DatabaseCommand(DatabaseCommand),
     SpeechRequest(SpeechRequest),
     NotificationRequest(super::NotificationRequest),
+    GeolocationRequest(super::GeolocationRequest),
+    MediaDeviceRequest(super::MediaDeviceRequest),
     VideoFrame(super::VideoFrameChunk),
     Ready {
         nonce: Nonce,

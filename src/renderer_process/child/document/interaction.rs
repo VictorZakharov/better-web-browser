@@ -43,6 +43,9 @@ impl DocumentRuntime {
         }
         self.last_input_sequence = input.sequence();
         self.media_activation.observe(&input);
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            runtime.set_audio_activation(self.media_activation.allows(1_000));
+        }
         let force_accessibility_update =
             matches!(&input, DocumentInput::Text(_) | DocumentInput::Focus(_))
                 || (matches!(&input, DocumentInput::Scroll(_))
@@ -261,6 +264,7 @@ impl DocumentRuntime {
         self.collect_document_stream_changes();
         // Collect those after the bounded media-action drain, not before it.
         self.apply_media_actions(outcome, connection)?;
+        self.apply_graph_audio_actions(outcome, connection)?;
         self.apply_font_actions(outcome);
         self.pending_fetches.append(&mut outcome.fetch_actions);
         self.pending_websockets
@@ -270,12 +274,18 @@ impl DocumentRuntime {
             .append(&mut outcome.speech_actions);
         self.pending_notification_requests
             .append(&mut outcome.notification_actions);
+        self.pending_geolocation_requests
+            .append(&mut outcome.geolocation_actions);
+        self.pending_media_device_requests
+            .append(&mut outcome.media_device_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
         connection.send_network_state_updates(self.id, outcome)?;
         self.start_pending_survivable_fetches(connection)?;
         self.start_pending_speech_requests(connection)?;
         self.start_pending_notification_requests(connection)?;
+        self.start_pending_geolocation_requests(connection)?;
+        self.start_pending_media_device_requests(connection)?;
         connection.send_state_mutations(self.id, outcome)
     }
 

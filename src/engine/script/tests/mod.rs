@@ -163,6 +163,7 @@ mod web_audio_channels;
 mod web_audio_delay;
 mod web_audio_iir;
 mod web_audio_interfaces;
+mod web_audio_live;
 mod web_audio_modulation;
 mod web_audio_periodic_wave;
 mod web_audio_resources;

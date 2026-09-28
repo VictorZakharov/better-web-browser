@@ -1,8 +1,10 @@
 //! Renderer-side resource installation and script-network completions.
 
 pub(super) mod events;
+mod geolocation;
 mod installation;
 mod lifecycle;
+mod media_devices;
 mod notifications;
 pub(super) mod preloads;
 mod streaming;

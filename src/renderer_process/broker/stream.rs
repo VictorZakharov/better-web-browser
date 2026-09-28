@@ -10,7 +10,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 
+mod control_updates;
 mod database;
+pub use control_updates::{GeolocationUpdateSink, MediaDeviceUpdateSink};
 
 pub(super) const MAX_QUEUED_DATABASE_RESPONSE_BYTES: usize =
     4 * crate::limits::MAX_INDEXED_DB_IPC_BYTES;

@@ -1,7 +1,11 @@
     // HTML drag data store: event phases share items but expose different modes.
     // https://html.spec.whatwg.org/multipage/dnd.html#the-drag-data-store
-    const dragStores = new WeakMap();
+    const dragTransfers = new WeakMap();
+    const dragLists = new WeakMap();
+    const dragItems = new WeakMap();
+    const eventTransferToken = Symbol('event DataTransfer');
     const dataTransferItemToken = Symbol('DataTransferItem');
+    const dataTransferItemListToken = Symbol('DataTransferItemList');
     const fileListToken = Symbol('FileList');
     const dragTypes = new Set([
         'none', 'copy', 'copyLink', 'copyMove', 'link', 'linkMove', 'move', 'all', 'uninitialized'
@@ -13,18 +17,38 @@
         if (value === 'url') return 'text/uri-list';
         return value;
     };
-    const dragStore = transfer => {
-        const store = dragStores.get(transfer);
-        if (!store) throw new TypeError('Invalid DataTransfer receiver');
-        return store;
+    const dragTransfer = transfer => {
+        const state = dragTransfers.get(transfer);
+        if (!state) throw new TypeError('Invalid DataTransfer receiver');
+        return state;
+    };
+    const dragStore = transfer => dragTransfer(transfer).store;
+    const dragList = list => {
+        const state = dragLists.get(list);
+        if (!state) throw new TypeError('Invalid DataTransferItemList receiver');
+        return state;
+    };
+    const dragItemState = item => {
+        const state = dragItems.get(item);
+        if (!state) throw new TypeError('Invalid DataTransferItem receiver');
+        return state;
+    };
+    const dragItem = (list, entry) => {
+        const state = dragList(list);
+        let item = state.items.get(entry);
+        if (!item) {
+            item = new DataTransferItem(dataTransferItemToken, state.owner, entry);
+            state.items.set(entry, item);
+        }
+        return item;
     };
     const synchronizeIndexedItems = list => {
         for (const key of Object.keys(list)) if (/^(0|[1-9]\d*)$/.test(key)) delete list[key];
-        const store = dragStore(list.__owner);
-        if (store.mode === 'disabled') return;
+        const store = dragStore(dragList(list).owner);
+        if (!store) return;
         for (let index = 0; index < store.items.length; index++)
             Object.defineProperty(list, index, { configurable: true, enumerable: true,
-                get: () => store.items[index]?.wrapper });
+                get: () => store.items[index] ? dragItem(list, store.items[index]) : undefined });
     };
     class FileList {
         constructor(token, files) {
@@ -39,106 +63,112 @@
     class DataTransferItem {
         constructor(token, owner, entry) {
             if (token !== dataTransferItemToken) throw new TypeError('Illegal constructor');
-            this.__owner = owner;
-            this.__entry = entry;
+            dragItems.set(this, { owner, entry });
         }
         get kind() {
-            const store = dragStore(this.__owner);
-            return store.mode !== 'disabled' && store.items.includes(this.__entry) ? this.__entry.kind : '';
+            const { owner, entry } = dragItemState(this);
+            const store = dragStore(owner);
+            return store && store.items.includes(entry) ? entry.kind : '';
         }
-        get type() { return this.kind ? this.__entry.type : ''; }
+        get type() { return this.kind ? dragItemState(this).entry.type : ''; }
         getAsString(callback) {
-            const store = dragStore(this.__owner);
+            const { owner, entry } = dragItemState(this);
+            const store = dragStore(owner);
             if (typeof callback !== 'function' || this.kind !== 'string' || store.mode === 'protected') return;
-            const value = this.__entry.data;
+            const value = entry.data;
             setTimeout(() => callback(value), 0);
         }
         getAsFile() {
-            const store = dragStore(this.__owner);
-            return store.mode === 'protected' || this.kind !== 'file' ? null : this.__entry.data;
+            const { owner, entry } = dragItemState(this);
+            const store = dragStore(owner);
+            return !store || store.mode === 'protected' || this.kind !== 'file' ? null : entry.data;
         }
     }
     class DataTransferItemList {
-        constructor(owner) {
-            this.__owner = owner;
+        constructor(token, owner) {
+            if (token !== dataTransferItemListToken) throw new TypeError('Illegal constructor');
+            dragLists.set(this, { owner, items: new WeakMap() });
             synchronizeIndexedItems(this);
         }
         get length() {
-            const store = dragStore(this.__owner);
-            return store.mode === 'disabled' ? 0 : store.items.length;
+            const store = dragStore(dragList(this).owner);
+            return store ? store.items.length : 0;
         }
         item(index) { return this[Number(index)] ?? null; }
         add(data, type) {
-            const store = dragStore(this.__owner);
-            if (store.mode !== 'readwrite') return null;
+            const store = dragStore(dragList(this).owner);
+            if (!store || store.mode !== 'readwrite') return null;
             const file = typeof File === 'function' && data instanceof File;
             if (!file && arguments.length < 2) throw new TypeError('String data requires a type');
             const format = file ? data.type.toLowerCase() : dragFormat(type);
             if (!file && store.items.some(item => item.kind === 'string' && item.type === format))
                 throw new DOMException('Duplicate drag data type', 'NotSupportedError');
             const entry = { kind: file ? 'file' : 'string', type: format,
-                data: file ? data : String(data), wrapper: null };
-            entry.wrapper = new DataTransferItem(dataTransferItemToken, this.__owner, entry);
+                data: file ? data : String(data) };
             store.items.push(entry);
             synchronizeIndexedItems(this);
-            return entry.wrapper;
+            return dragItem(this, entry);
         }
         remove(index) {
-            const store = dragStore(this.__owner);
-            if (store.mode !== 'readwrite')
+            const store = dragStore(dragList(this).owner);
+            if (!store || store.mode !== 'readwrite')
                 throw new DOMException('Drag data is not writable', 'InvalidStateError');
             index = Number(index) >>> 0;
             if (index < store.items.length) store.items.splice(index, 1);
             synchronizeIndexedItems(this);
         }
         clear() {
-            const store = dragStore(this.__owner);
-            if (store.mode !== 'readwrite') return;
+            const store = dragStore(dragList(this).owner);
+            if (!store || store.mode !== 'readwrite') return;
             store.items.length = 0;
             synchronizeIndexedItems(this);
         }
         [Symbol.iterator]() { return Array.from({length: this.length}, (_, index) => this[index])[Symbol.iterator](); }
     }
     class DataTransfer {
-        constructor() {
-            const store = { mode: 'readwrite', items: [], dropEffect: 'none',
-                effectAllowed: 'none', image: null };
-            dragStores.set(this, store);
-            store.list = new DataTransferItemList(this);
+        constructor(token, eventStore) {
+            const store = token === eventTransferToken ? eventStore :
+                { mode: 'readwrite', items: [], effectAllowed: 'none', image: null };
+            const state = { store, dropEffect: 'none', effectAllowed: store.effectAllowed, list: null };
+            dragTransfers.set(this, state);
+            state.list = new DataTransferItemList(dataTransferItemListToken, this);
         }
-        get dropEffect() { return dragStore(this).dropEffect; }
-        set dropEffect(value) { if (dropTypes.has(String(value))) dragStore(this).dropEffect = String(value); }
-        get effectAllowed() { return dragStore(this).effectAllowed; }
+        get dropEffect() { return dragTransfer(this).dropEffect; }
+        set dropEffect(value) {
+            if (dropTypes.has(String(value))) dragTransfer(this).dropEffect = String(value);
+        }
+        get effectAllowed() { return dragTransfer(this).effectAllowed; }
         set effectAllowed(value) {
-            const store = dragStore(this);
-            if (store.mode === 'readwrite' && dragTypes.has(String(value))) store.effectAllowed = String(value);
+            const state = dragTransfer(this);
+            if (state.store?.mode === 'readwrite' && dragTypes.has(String(value)))
+                state.effectAllowed = String(value);
         }
-        get items() { return dragStore(this).list; }
+        get items() { return dragTransfer(this).list; }
         get types() {
             const store = dragStore(this);
-            if (store.mode === 'disabled') return Object.freeze([]);
+            if (!store) return Object.freeze([]);
             const types = store.items.filter(item => item.kind === 'string').map(item => item.type);
             if (store.items.some(item => item.kind === 'file')) types.push('Files');
             return Object.freeze(types);
         }
         get files() {
             const store = dragStore(this);
-            const files = store.mode === 'protected' || store.mode === 'disabled' ? [] :
+            const files = !store || store.mode === 'protected' ? [] :
                 store.items.filter(item => item.kind === 'file').map(item => item.data);
             return new FileList(fileListToken, files);
         }
         setData(format, data) {
             const store = dragStore(this);
-            if (store.mode !== 'readwrite') return;
+            if (!store || store.mode !== 'readwrite') return;
             format = dragFormat(format);
             const old = store.items.findIndex(item => item.kind === 'string' && item.type === format);
             // Replacing an existing format keeps its position in the drag data store.
             if (old >= 0) store.items[old].data = String(data);
-            else store.list.add(String(data), format);
+            else this.items.add(String(data), format);
         }
         getData(format) {
             const store = dragStore(this);
-            if (store.mode === 'protected' || store.mode === 'disabled') return '';
+            if (!store || store.mode === 'protected') return '';
             format = dragFormat(format);
             let value = store.items.find(item => item.kind === 'string' && item.type === format)?.data ?? '';
             if (format === 'text/uri-list' && String(arguments[0]).toLowerCase() === 'url')
@@ -147,19 +177,30 @@
         }
         clearData(format) {
             const store = dragStore(this);
-            if (store.mode !== 'readwrite') return;
+            if (!store || store.mode !== 'readwrite') return;
             const type = arguments.length ? dragFormat(format) : null;
             store.items = store.items.filter(item => item.kind !== 'string' || (type && item.type !== type));
-            synchronizeIndexedItems(store.list);
+            synchronizeIndexedItems(this.items);
         }
         setDragImage(element, x, y) {
             if (!(element instanceof Element)) throw new TypeError('Drag image must be an Element');
             const store = dragStore(this);
-            if (store.mode === 'readwrite') store.image = { element, x: Number(x), y: Number(y) };
+            if (store?.mode === 'readwrite') store.image = { element, x: Number(x), y: Number(y) };
         }
     }
-    const setDragDataMode = (transfer, mode) => {
-        const store = dragStore(transfer);
-        store.mode = mode;
-        synchronizeIndexedItems(store.list);
+    const createDragDataStore = () => ({
+        mode: 'protected', items: [], effectAllowed: 'uninitialized', image: null
+    });
+    const eventDataTransfer = (store, dropEffect) => {
+        const transfer = new DataTransfer(eventTransferToken, store);
+        dragTransfer(transfer).dropEffect = dropEffect;
+        return transfer;
+    };
+    const detachEventDataTransfer = transfer => {
+        const state = dragTransfer(transfer);
+        state.store = null;
+        synchronizeIndexedItems(state.list);
+    };
+    const appendDefaultDragData = (store, format, data) => {
+        store.items.push({ kind: 'string', type: format, data });
     };

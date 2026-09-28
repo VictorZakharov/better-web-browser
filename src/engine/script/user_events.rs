@@ -16,12 +16,26 @@ pub(super) fn dispatch(
         } | UserInputEvent::Keyboard { phase: "down", .. }
     );
     host.borrow_mut().user_input_active = user_initiated;
+    let notify_audio = {
+        let mut state = host.borrow_mut();
+        if state.audio_activated && !state.audio_activation_notified {
+            state.audio_activation_notified = true;
+            true
+        } else {
+            false
+        }
+    };
+    let mut outcome = ScriptOutcome::default();
+    if notify_audio && let Err(error) = context.call_global("__notifyAudioActivation", &[]) {
+        outcome
+            .errors
+            .push(format!("Web Audio activation callback: {error}"));
+    }
     let payload = payload(host, event);
     let invocation = format!(
         "document.__dispatchNativeInput({});",
         serde_json::to_string(&payload).unwrap_or_else(|_| "null".into())
     );
-    let mut outcome = ScriptOutcome::default();
     let default_allowed = match context.eval(Source::from_bytes(&invocation)) {
         Ok(value) => value.to_boolean(),
         Err(error) => {

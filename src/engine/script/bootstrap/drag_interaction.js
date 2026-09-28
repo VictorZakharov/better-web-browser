@@ -11,7 +11,7 @@
         return null;
     };
     const defaultDragEffect = drag => {
-        const allowed = drag.transfer.effectAllowed;
+        const allowed = drag.store.effectAllowed;
         if (allowed === 'none') return 'none';
         if (allowed === 'link' || allowed === 'linkMove') return 'link';
         if (allowed === 'move') return 'move';
@@ -20,28 +20,36 @@
         return 'copy';
     };
     const fireDragEvent = (type, target, drag, init, mode, cancelable = true) => {
-        setDragDataMode(drag.transfer, mode);
+        drag.store.mode = mode;
         // HTML assigns a fresh dropEffect for each DND event; it is not carried
         // over from the previous target's handler.
-        drag.transfer.dropEffect = type === 'dragenter' || type === 'dragover'
+        const dropEffect = type === 'dragenter' || type === 'dragover'
             ? defaultDragEffect(drag) : type === 'drop' || type === 'dragend'
                 ? drag.operation : 'none';
+        const transfer = eventDataTransfer(drag.store, dropEffect);
+        const transferState = dragTransfer(transfer);
         const event = markTrusted(new DragEvent(type, {
             ...init, bubbles: true, cancelable, composed: true,
-            dataTransfer: drag.transfer
+            dataTransfer: transfer
         }));
-        const allowed = target.dispatchEvent(event);
-        setDragDataMode(drag.transfer, 'protected');
-        return allowed;
+        try {
+            const allowed = target.dispatchEvent(event);
+            // The event wrapper keeps its effects, but cannot expose the store
+            // after dispatch. Only dragstart can change its allowed effects.
+            drag.store.effectAllowed = transferState.effectAllowed;
+            return { allowed, dropEffect: transferState.dropEffect };
+        } finally {
+            drag.store.mode = 'protected';
+            detachEventDataTransfer(transfer);
+        }
     };
-    const allowedDragEffect = transfer => {
-        const store = dragStore(transfer);
+    const allowedDragEffect = (store, dropEffect) => {
         const choices = {
             copy: ['copy', 'copyLink', 'copyMove', 'all', 'uninitialized'],
             link: ['link', 'copyLink', 'linkMove', 'all', 'uninitialized'],
             move: ['move', 'copyMove', 'linkMove', 'all', 'uninitialized']
         };
-        return choices[store.dropEffect]?.includes(store.effectAllowed) ? store.dropEffect : 'none';
+        return choices[dropEffect]?.includes(store.effectAllowed) ? dropEffect : 'none';
     };
     const populateDefaultDragData = drag => {
         const source = drag.source;
@@ -49,7 +57,7 @@
             source instanceof HTMLImageElement ? 'src' : null;
         if (!attribute || !source.hasAttribute(attribute)) return;
         try {
-            drag.transfer.setData('text/uri-list',
+            appendDefaultDragData(drag.store, 'text/uri-list',
                 host('strictResolveUrl', source.getAttribute(attribute), source.baseURI));
         } catch (_) { /* Invalid source URL contributes no URI item. */ }
     };
@@ -58,7 +66,6 @@
             fireDragEvent('dragleave', drag.target, drag, init, 'protected', false);
         if (leave) drag.operation = 'none';
         fireDragEvent('dragend', drag.source, drag, init, 'protected', false);
-        setDragDataMode(drag.transfer, 'disabled');
         pointerDrag = null;
     };
     const processDragPointer = (input, target, init) => {
@@ -69,10 +76,9 @@
             const source = draggableAncestor(target);
             pointerDrag = source ? {
                 source, x: Number(input.x), y: Number(input.y),
-                transfer: new DataTransfer(), active: false, selection: null,
+                store: createDragDataStore(), active: false, selection: null,
                 target: null, operation: 'none'
             } : null;
-            if (pointerDrag) dragStore(pointerDrag.transfer).effectAllowed = 'uninitialized';
             return false;
         }
         const drag = pointerDrag;
@@ -92,8 +98,7 @@
             if (!drag.active) {
                 if (Math.hypot(Number(input.x) - drag.x, Number(input.y) - drag.y) < 5) return false;
                 populateDefaultDragData(drag);
-                if (!fireDragEvent('dragstart', drag.source, drag, init, 'readwrite')) {
-                    setDragDataMode(drag.transfer, 'disabled');
+                if (!fireDragEvent('dragstart', drag.source, drag, init, 'readwrite').allowed) {
                     pointerDrag = null;
                     return false;
                 }
@@ -102,7 +107,7 @@
                     ...init, button: -1, buttons: 0, pressure: 0
                 })));
             }
-            if (!fireDragEvent('drag', drag.source, drag, init, 'protected')) {
+            if (!fireDragEvent('drag', drag.source, drag, init, 'protected').allowed) {
                 finishDrag(drag, init, true);
                 return true;
             }
@@ -114,7 +119,7 @@
                 drag.selection = selection;
                 if (selection !== drag.target) {
                     let next = selection;
-                    if (selection && fireDragEvent('dragenter', selection, drag, init, 'protected')) {
+                    if (selection && fireDragEvent('dragenter', selection, drag, init, 'protected').allowed) {
                         if (selection === document.body) next = drag.target;
                         else {
                             fireDragEvent('dragenter', document.body || document, drag, init, 'protected');
@@ -131,8 +136,8 @@
                 }
             }
             if (!drag.target) { drag.operation = 'none'; return true; }
-            const allowed = fireDragEvent('dragover', drag.target, drag, init, 'protected');
-            drag.operation = allowed ? 'none' : allowedDragEffect(drag.transfer);
+            const over = fireDragEvent('dragover', drag.target, drag, init, 'protected');
+            drag.operation = over.allowed ? 'none' : allowedDragEffect(drag.store, over.dropEffect);
             return true;
         }
         if (input.phase !== 'up') return drag.active;
@@ -140,14 +145,14 @@
         pointerDrag = null;
         if (!drag.active) return false;
         if (drag.operation !== 'none' && drag.target) {
-            if (fireDragEvent('drop', drag.target, drag, init, 'readonly'))
+            const drop = fireDragEvent('drop', drag.target, drag, init, 'readonly');
+            if (drop.allowed)
                 drag.operation = 'none';
-            else drag.operation = drag.transfer.dropEffect;
+            else drag.operation = drop.dropEffect;
         } else if (drag.target) {
             fireDragEvent('dragleave', drag.target, drag, init, 'protected', false);
         }
         fireDragEvent('dragend', drag.source, drag, init, 'protected', false);
-        setDragDataMode(drag.transfer, 'disabled');
         return true;
     };
     const cancelPointerDrag = () => {

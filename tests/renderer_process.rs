@@ -32,6 +32,8 @@ mod form_validation;
 mod form_validation_presentation;
 #[path = "renderer_process/fullscreen.rs"]
 mod fullscreen;
+#[path = "renderer_process/geolocation.rs"]
+mod geolocation;
 #[path = "renderer_process/history_traversal.rs"]
 mod history_traversal;
 #[path = "renderer_process/hover.rs"]
@@ -40,6 +42,8 @@ mod hover;
 mod input;
 #[path = "renderer_process/media.rs"]
 mod media;
+#[path = "renderer_process/media_devices.rs"]
+mod media_devices;
 #[path = "renderer_process/notifications.rs"]
 mod notifications;
 #[path = "renderer_process/pointer_buttons.rs"]

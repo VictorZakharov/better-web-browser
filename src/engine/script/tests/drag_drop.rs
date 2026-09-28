@@ -49,8 +49,12 @@ fn data_transfer_normalizes_types_and_enforces_item_list_rules() {
             catch (error) { duplicate = error.name; }
             const file = new File(['content'], 'notes.txt', {type:'text/plain'});
             const item = transfer.items.add(file);
+            let illegalList = false;
+            try { new DataTransferItemList(transfer); }
+            catch (error) { illegalList = error instanceof TypeError; }
             const checks = [transfer instanceof DataTransfer,
                 transfer.items instanceof DataTransferItemList,
+                illegalList,
                 transfer.items[0] instanceof DataTransferItem,
                 transfer.items[0] === transfer.items.item(0),
                 transfer.getData('text') === 'hello',
@@ -212,7 +216,7 @@ fn trusted_drag_protects_file_and_string_payloads_until_drop() {
             target.ondragenter = event => event.preventDefault();
             target.ondragover = event => {
                 const data = event.dataTransfer;
-                checks.push(data === shared, data.items.length === 2,
+                checks.push(data !== shared, shared.items.length === 0, data.items.length === 2,
                     data.types.join(',') === 'text/plain,Files',
                     data.files.length === 0, data.getData('text/plain') === '',
                     data.items[0].kind === 'string', data.items[1].getAsFile() === null);
@@ -223,12 +227,12 @@ fn trusted_drag_protects_file_and_string_payloads_until_drop() {
             };
             target.ondrop = event => {
                 const data = event.dataTransfer;
-                checks.push(data === shared, data.getData('text/plain') === 'private',
+                checks.push(data !== shared, data.getData('text/plain') === 'private',
                     data.files.length === 1, data.files.item(0).name === 'private.txt');
                 event.preventDefault();
             };
             source.ondragend = () => {
-                checks.push(shared.getData('text/plain') === '', shared.items.length === 2,
+                checks.push(shared.getData('text/plain') === '', shared.items.length === 0,
                     shared.files.length === 0);
                 document.querySelector('output').textContent = checks.every(Boolean) ? 'yes' : checks.join(',');
             };

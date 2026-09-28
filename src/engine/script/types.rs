@@ -126,10 +126,13 @@ pub struct ScriptOutcome {
     pub database_actions: Vec<ScriptDatabaseAction>,
     pub speech_actions: Vec<ScriptSpeechAction>,
     pub notification_actions: Vec<ScriptNotificationAction>,
+    pub geolocation_actions: Vec<ScriptGeolocationAction>,
+    pub media_device_actions: Vec<ScriptMediaDeviceAction>,
     pub worker_actions: Vec<ScriptWorkerAction>,
     pub fullscreen_actions: Vec<ScriptFullscreenAction>,
     pub pointer_lock_actions: Vec<ScriptPointerLockAction>,
     pub media_actions: Vec<ScriptMediaAction>,
+    pub graph_audio_actions: Vec<ScriptGraphAudioAction>,
     pub font_actions: Vec<ScriptFontAction>,
     pub runtime_stopped: bool,
     pub render_requested: bool,
@@ -153,6 +156,19 @@ pub struct ScriptNotificationAction {
     pub request_id: u64,
     pub client: crate::fetch::RequestClient,
     pub action: crate::renderer_protocol::NotificationAction,
+}
+
+#[derive(Clone, Debug)]
+pub struct ScriptGeolocationAction {
+    pub request_id: u64,
+    pub client: crate::fetch::RequestClient,
+    pub action: crate::renderer_protocol::GeolocationAction,
+}
+
+#[derive(Clone, Debug)]
+pub struct ScriptMediaDeviceAction {
+    pub request_id: u64,
+    pub client: crate::fetch::RequestClient,
 }
 
 #[derive(Debug, Clone)]
@@ -244,6 +260,18 @@ pub struct ScriptMediaAction {
     pub request_id: u64,
     pub node: crate::engine::dom::NodeId,
     pub command: ScriptMediaCommand,
+}
+
+#[derive(Debug, Clone)]
+pub enum ScriptGraphAudioAction {
+    Queue {
+        stream_id: u32,
+        format: crate::media_protocol::GraphPcmFormat,
+        pcm: Vec<u8>,
+    },
+    Close {
+        stream_id: u32,
+    },
 }
 
 impl ScriptOutcome {

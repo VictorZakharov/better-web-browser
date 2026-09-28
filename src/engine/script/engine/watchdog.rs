@@ -4,14 +4,9 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
-const EXECUTION_TIMEOUT: Duration = if cfg!(test) {
-    // Keep runaway-script tests fast without making ordinary bounded V8 work fail when the
-    // complete test suite saturates the hosted runner. Production retains the stricter runtime
-    // policy below; this branch only controls the test binary.
-    Duration::from_millis(500)
-} else {
-    Duration::from_secs(2)
-};
+// Use the production deadline in tests too. A shorter test-only wall-clock
+// deadline can interrupt bounded DOM work when the hosted runner is busy.
+const EXECUTION_TIMEOUT: Duration = Duration::from_secs(2);
 
 enum Command {
     Arm(u64),

@@ -97,6 +97,19 @@
         }
         return mixed;
     };
+    const renderAudioQuantum = (context, frame, frames) => {
+        const state = audioContextState.get(context);
+        const cache = new Map();
+        const samples = renderAudioNode(context, context.destination, frame, frames, cache);
+        // Disconnected stateful nodes still advance once per quantum. A later
+        // connection must not replay a source or erase a filter/delay tail.
+        for (const node of state.nodes)
+            if ((node instanceof AudioScheduledSourceNode || node instanceof DelayNode ||
+                node instanceof IIRFilterNode || node instanceof BiquadFilterNode ||
+                node instanceof AnalyserNode) && !cache.has(node))
+                renderAudioNode(context, node, frame, frames, cache);
+        return samples;
+    };
     class OfflineAudioContext extends BaseAudioContext {
         constructor(channelsOrOptions, length, sampleRate) {
             const dictionary = typeof channelsOrOptions === 'object' &&
@@ -182,30 +195,7 @@
                                 return;
                             }
                             const frames = Math.min(AUDIO_QUANTUM, state.length - frame);
-                            const cache = new Map();
-                            const samples = renderAudioNode(this, this.destination,
-                                frame, frames, cache);
-                            // Scheduled sources progress and dispatch `ended` even when
-                            // disconnected; a later graph connection must not restart them.
-                            for (const node of state.nodes)
-                                if (node instanceof AudioScheduledSourceNode && !cache.has(node))
-                                    renderAudioNode(this, node, frame, frames, cache);
-                            // A disconnected delay line still receives its input; a graph
-                            // connection made during suspension can hear its existing tail.
-                            for (const node of state.nodes)
-                                if (node instanceof DelayNode && !cache.has(node))
-                                    renderAudioNode(this, node, frame, frames, cache);
-                            for (const node of state.nodes)
-                                if (node instanceof IIRFilterNode && !cache.has(node))
-                                    renderAudioNode(this, node, frame, frames, cache);
-                            for (const node of state.nodes)
-                                if (node instanceof BiquadFilterNode && !cache.has(node))
-                                    renderAudioNode(this, node, frame, frames, cache);
-                            // AnalyserNode keeps the latest input history even if its
-                            // pass-through output is not connected downstream.
-                            for (const node of state.nodes)
-                                if (node instanceof AnalyserNode && !cache.has(node))
-                                    renderAudioNode(this, node, frame, frames, cache);
+                            const samples = renderAudioQuantum(this, frame, frames);
                             for (let channel = 0; channel < state.channels; ++channel)
                                 resultData[channel].set(samples[channel], frame);
                             frame += frames;
@@ -236,17 +226,3 @@
             });
         }
     }
-
-    Object.assign(globalThis, {
-        AudioBuffer, AudioParam, AudioNode, AudioScheduledSourceNode,
-        AudioDestinationNode, GainNode, OscillatorNode, AudioBufferSourceNode,
-        ConstantSourceNode, StereoPannerNode, DelayNode,
-        ChannelSplitterNode, ChannelMergerNode,
-        IIRFilterNode,
-        BiquadFilterNode,
-        WaveShaperNode,
-        PeriodicWave,
-        AnalyserNode,
-        BaseAudioContext, OfflineAudioContext, OfflineAudioCompletionEvent
-    });
-})();

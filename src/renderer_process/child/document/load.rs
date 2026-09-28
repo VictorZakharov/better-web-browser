@@ -113,6 +113,8 @@ impl DocumentRuntime {
             pending_databases: Vec::new(),
             pending_speech_requests: Vec::new(),
             pending_notification_requests: Vec::new(),
+            pending_geolocation_requests: Vec::new(),
+            pending_media_device_requests: Vec::new(),
             active_script_fetches: HashMap::new(),
             pending_worker_actions: Vec::new(),
             deferred_network_load: PageLoadReport::default(),
@@ -149,6 +151,11 @@ impl DocumentRuntime {
             media_activation: Default::default(),
             media_failure: None,
             pending_media_action: None,
+            graph_audio_stream: None,
+            graph_audio_last_stream_id: 0,
+            pending_graph_audio_chunk: None,
+            pending_graph_audio_start: None,
+            pending_graph_audio_close: None,
             pending_async_outcome: ScriptOutcome::default(),
             resource_events: Default::default(),
             geometry_observers_pending: false,
@@ -220,12 +227,15 @@ impl DocumentRuntime {
             runtime.page.dom.document.id(),
         );
         runtime.apply_media_actions(&mut outcome, connection)?;
+        runtime.apply_graph_audio_actions(&mut outcome, connection)?;
         runtime.apply_font_actions(&mut outcome);
         runtime.pending_fetches = std::mem::take(&mut outcome.fetch_actions);
         runtime.pending_websockets = std::mem::take(&mut outcome.websocket_actions);
         runtime.pending_databases = std::mem::take(&mut outcome.database_actions);
         runtime.pending_speech_requests = std::mem::take(&mut outcome.speech_actions);
         runtime.pending_notification_requests = std::mem::take(&mut outcome.notification_actions);
+        runtime.pending_geolocation_requests = std::mem::take(&mut outcome.geolocation_actions);
+        runtime.pending_media_device_requests = std::mem::take(&mut outcome.media_device_actions);
         runtime.pending_worker_actions = std::mem::take(&mut outcome.worker_actions);
         connection.send_network_state_updates(document, &mut outcome)?;
         runtime.start_pending_survivable_fetches(connection)?;

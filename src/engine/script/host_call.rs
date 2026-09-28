@@ -6,14 +6,17 @@ use super::*;
 mod canvas_presentation;
 pub(super) mod compression_host;
 mod font_host;
+pub(in crate::engine::script) mod geolocation;
+mod graph_audio;
 mod graphics;
+pub(in crate::engine::script) mod media_devices;
 mod module_completion;
 pub(super) mod navigation;
 pub(in crate::engine::script) mod notification;
 pub(in crate::engine::script) mod speech;
 mod storage;
 mod task_scheduling;
-
+mod user_capabilities;
 pub(super) fn dispatch_host_call(
     operation: &str,
     args: &[JsValue],
@@ -44,10 +47,10 @@ pub(super) fn dispatch_host_call(
     if let Some(value) = super::network::database_host::dispatch(operation, args, state)? {
         return Ok(value);
     }
-    if let Some(value) = speech::dispatch(operation, args, state)? {
+    if let Some(value) = user_capabilities::dispatch(operation, args, state)? {
         return Ok(value);
     }
-    if let Some(value) = notification::dispatch(operation, args, state)? {
+    if let Some(value) = graph_audio::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = super::workers::worker_host_call(operation, args, state)? {

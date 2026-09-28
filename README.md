@@ -332,6 +332,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | Beacon, Fetch keepalive, and speech synthesis | `navigator.sendBeacon()` queues browser-owned POST delivery across navigation, while bounded `fetch(..., {keepalive: true})` uploads retain their admitted origin and policy after navigation and share the in-flight body budget with Beacon. Windows Web Speech synthesis uses browser-owned SAPI voices and per-document queues after trusted activation. Renderer-side admission cannot yet predict all browser-wide Beacon saturation; speech recognition and boundary events remain open. See the [keepalive contract](docs/fetch-keepalive.md) and [speech batch](docs/html5test-beacon-speech-shadow-prefetch.md). |
 | ◩ | WebSocket | Document and dedicated-worker WebSockets use browser-owned network transport, bounded IPC, per-client CSP/mixed-content policy, text/binary frames, and close events. Extensions, compression, and broader network interoperability remain incomplete; see the [standards slice](docs/html5test-websocket-indexeddb-forms.md). |
 | ◩ | Notifications | Secure document and child-frame clients can use session-scoped, origin-keyed permission grants and browser-owned Windows notifications. A new permission prompt requires top-level transient activation. Persistent permission, frame-scoped prompts, service-worker notifications, and non-Windows presentation remain open; see the [Notification contract](docs/notifications.md). |
+| ◩ | Location and media-device discovery | Secure top-level pages can request real Windows location readings after an origin-scoped session permission prompt. `navigator.mediaDevices.enumerateDevices()` reports only the presence of microphones and cameras, without identifying them before a capture grant. Background/minimized requests wait, and navigation retires outstanding work. Child-frame permissions policy, camera/microphone capture, and device-change events remain unavailable; see the [location](docs/geolocation.md) and [device enumeration](docs/media-devices-enumeration.md) contracts. |
 | ◩ | URLPattern | A bounded Window `URLPattern` subset matches and extracts fixed URL components, named path segments, and a terminal wildcard. Full pattern syntax, base-URL forms, and worker exposure remain open; see the [URLPattern contract](docs/url-pattern.md). |
 | ◩ | ECMAScript modules | Static graphs, top-level `await`, [dynamic document JavaScript modules](docs/dynamic-modules.md), and parser-inserted [inline import maps](docs/import-maps.md) are implemented. Script-created maps, map integrity enforcement, import attributes, other module types, and dynamic worker imports remain gaps. |
 | ◩ | Web Workers | Isolated classic and module dedicated workers are implemented. Shared Workers and Service Workers are not. |
@@ -342,7 +343,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | Forms and input | Native text, search, password, select, and button controls plus GET forms are supported through renderer-owned DOM state and default actions. Checkboxes/radios have separate checked/default state, activation, grouping, and reset behavior. Date/month/week/time/datetime-local numeric values, applicable UTC date values, and color sanitization have targeted standards coverage. Control styling, broader form/reset behavior, IME/composition, cancelable `beforeinput`, and document text selection remain incomplete. |
 | ☑ | Tabs and windows | Multiple live tabs, [browser-owned session history](docs/history-traversal.md) with structured-cloned state and same-document Back/Forward, tab search and restoration, keyboard shortcuts, multi-selection, reordering, and detach/redock across windows are supported. Back/forward document caching, per-entry scroll restoration, and persistent tab sessions across browser restarts are not. |
 | ◩ | Canvas, media, and downloads | Bounded software Canvas 2D provides real sRGB pixels, SVG paths, fills/strokes, gradients/patterns, clipping, shadows, filters, compositing, shaped/rasterized text, Geometry Interfaces, `ImageData`, image drawing, `ImageBitmap`, `OffscreenCanvas` (including workers), and PNG/JPEG/WebP export. Dirty document and child-frame Canvas bitmaps participate in live image presentation. The contained media worker plays URL-backed PCM WAV, MP3, AAC/MP4 and M4A audio, native FLAC when the host decoder is present, H.264/AAC MP4, and H.264-only MP4 with a video clock; it also supports synchronized XAudio2 output, progressive Media Source input, and play/pause/seek/volume/mute/fullscreen controls. HTML `<source>` fallback and stale-response rejection are tested. Text tracks can load WebVTT and paint bounded captions; audio/video track lists expose the accepted decoder streams and allow disabling their output. [Remaining limits](docs/html-media-hints-csp.md) include Ogg/WebM codecs, DRM, detached `new Audio(src)` loading, multiple selectable decoded streams, full caption styling/regions, picture-in-picture, and mature downloads. |
-| ◩ | Web Audio (offline) | `OfflineAudioContext` renders bounded 128-frame `Float32` PCM graphs with buffer, oscillator, constant, gain, filter, delay, panning, channel-routing, WaveShaper, and Analyser nodes; automation and connected audio-rate modulation affect real samples. Native PCM output transport exists but is not connected to page JavaScript. Live `AudioContext`, `AudioWorklet`, `decodeAudioData`, media sources, and full conformance remain unavailable; see the [supported scope and limits](docs/web-audio.md). |
+| ◩ | Web Audio | `OfflineAudioContext` renders bounded 128-frame `Float32` PCM graphs with buffer, oscillator, constant, gain, filter, delay, panning, channel-routing, WaveShaper, and Analyser nodes. A live `AudioContext` now sends rendered PCM through the contained media worker to XAudio2 after user activation, with bounded backpressure and lifecycle handling. `AudioWorklet`, `decodeAudioData`, media sources, and full conformance remain unavailable; see the [supported scope and limits](docs/web-audio.md). |
 | ◩ | Web Animations | Script-created keyframe animations participate in the CSS cascade, with document timelines, effect inspection, playback promises/events, easing, replacement, and bounded style commitment. Painter interpolation covers numbers, colors, and supported 2D translations; compositor offloading and the full animation/transition model remain open. See the [animation contract](docs/html5test-animation-media-csp.md). |
 | ◩ | Accessibility | A bounded renderer semantic tree is validated and exposed with browser chrome through AccessKit and Windows UI Automation, including focus/invoke/value actions. Accessible-name/ARIA coverage, rich text patterns, live regions, and non-Windows adapters remain incomplete; see [Accessibility architecture](docs/accessibility.md). |
 | ◩ | Process and site isolation | Each tab has a capability-free AppContainer renderer that owns remote-document parsing, JavaScript/DOM, CSS/layout, image/font decoding, Workers, and immutable presentation construction. The browser reconstructs privileged Fetch requests and owns persistent state; bounded IPC/queues, Job limits, hang detection, and tab-local containment cover aborts, access violations, OOM termination, and native stack overflow. Cross-site frame isolation is not implemented. |
@@ -474,8 +475,8 @@ The 2026-09-27 [offline Web Audio slice](docs/web-audio.md) rendered
 **430 / 588** in a fresh-profile hidden release run with the same viewport,
 scale, locale, and settle time. It returned HTTP 200 with no JavaScript errors
 or renderer exit. This was **no score change** from the preceding observation:
-offline graphs render real audio samples, but the live `AudioContext` remains
-unexposed until its page-to-device path can play them reliably. No points were
+offline graphs render real audio samples, but at that stage the live `AudioContext`
+remained unexposed until its page-to-device path could play them reliably. No points were
 claimed for a constructor without working behavior.
 
 The next [Worker, Canvas, Fetch, DOM, and Notification standards batch](docs/html5test-websocket-indexeddb-forms.md)
@@ -489,15 +490,29 @@ hidden browser tests; HTML5test does not cover most of those contracts. The
 score remains a capability inventory, not a conformance percentage or
 controlled loading-performance result.
 
+The 2026-09-28 [Geolocation](docs/geolocation.md), [pre-capture device
+enumeration](docs/media-devices-enumeration.md), live [Web Audio](docs/web-audio.md),
+and [drag-data lifecycle](docs/dom-traversal-editing.md) batch rendered
+**458 / 588** with Breeze's default identity, up **23** from a same-day
+**435 / 588** `origin/main` baseline. Both were fresh-profile hidden release
+runs at 1280×720, 125% scale, `en-US`, and a 10-second settle, returning HTTP
+200 with no JavaScript errors or renderer exit. The after capture used commit
+`fd3617c`; its Geolocation, live `AudioContext`, and `enumerateDevices` rows
+account for the score gain. Drag/drop gains no HTML5test points because those
+rows remain excluded for an unrecognized browser identity, although trusted
+pointer-drag lifecycle tests exercise the new behavior. These are partial APIs,
+not claims of full Geolocation, Media Capture, Web Audio, or DnD conformance.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
 ```powershell
-./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ -FreshProfile `
+./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ `
+  -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-27-batch7-after.json `
-  -Screenshot target/html5test/2026-09-27-batch7-after.png
+  -Output target/html5test/2026-09-28-batch11-after.json `
+  -Screenshot target/html5test/2026-09-28-batch11-after.png
 ```
 
 New releases must refresh or explicitly date these observations using the
