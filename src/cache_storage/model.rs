@@ -375,16 +375,15 @@ fn validate_entry(entry: &CacheEntry) -> Result<(), CacheError> {
     {
         return Err(CacheError::VaryStar);
     }
-    if let Some(body) = &entry.response.body_base64 {
-        if body.len() > MAX_BODY_BYTES * 4 / 3 + 4
+    if let Some(body) = &entry.response.body_base64
+        && (body.len() > MAX_BODY_BYTES * 4 / 3 + 4
             || base64::engine::general_purpose::STANDARD
                 .decode(body)
                 .map_err(|_| CacheError::InvalidResponse)?
                 .len()
-                > MAX_BODY_BYTES
-        {
-            return Err(CacheError::Quota);
-        }
+                > MAX_BODY_BYTES)
+    {
+        return Err(CacheError::Quota);
     }
     Ok(())
 }
