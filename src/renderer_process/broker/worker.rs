@@ -81,6 +81,8 @@ pub(super) struct BrokerResources {
     pub(super) notification_overflow: Arc<std::sync::atomic::AtomicBool>,
     pub(super) geolocation_updates: mpsc::Receiver<crate::renderer_protocol::GeolocationUpdate>,
     pub(super) geolocation_overflow: Arc<std::sync::atomic::AtomicBool>,
+    pub(super) media_device_updates: mpsc::Receiver<crate::renderer_protocol::MediaDeviceUpdate>,
+    pub(super) media_device_overflow: Arc<std::sync::atomic::AtomicBool>,
     pub(super) fetch_flow: Arc<super::flow::FetchFlow>,
     pub(super) events: super::events::EventSender,
     pub(super) wake: super::wake::BrokerWake,
@@ -158,6 +160,7 @@ impl Broker {
             self.process_fetch_stream();
             self.process_notification_updates();
             self.process_geolocation_updates();
+            self.process_media_device_updates();
             self.process_navigation();
             if self.process_has_exited() {
                 self.finish_exit();

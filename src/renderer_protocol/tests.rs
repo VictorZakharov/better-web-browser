@@ -4,6 +4,7 @@ use std::io::Cursor;
 
 mod geolocation;
 mod input;
+mod media_devices;
 mod state;
 
 fn session() -> RendererSessionId {

@@ -4,6 +4,7 @@ mod database;
 mod fetch;
 mod geolocation;
 mod media;
+mod media_devices;
 mod mutations;
 mod navigation;
 mod notification;
@@ -240,6 +241,7 @@ impl ChildConnection {
             BrowserMessage::SpeechUpdate(update) => self.deliver_speech_update(update),
             BrowserMessage::NotificationUpdate(update) => self.deliver_notification_update(update),
             BrowserMessage::GeolocationUpdate(update) => self.deliver_geolocation_update(update),
+            BrowserMessage::MediaDeviceUpdate(update) => self.deliver_media_device_update(update),
             BrowserMessage::AdvanceTime {
                 document,
                 elapsed_micros,

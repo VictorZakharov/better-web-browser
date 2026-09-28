@@ -114,6 +114,7 @@ impl DocumentRuntime {
             pending_speech_requests: Vec::new(),
             pending_notification_requests: Vec::new(),
             pending_geolocation_requests: Vec::new(),
+            pending_media_device_requests: Vec::new(),
             active_script_fetches: HashMap::new(),
             pending_worker_actions: Vec::new(),
             deferred_network_load: PageLoadReport::default(),
@@ -228,6 +229,7 @@ impl DocumentRuntime {
         runtime.pending_speech_requests = std::mem::take(&mut outcome.speech_actions);
         runtime.pending_notification_requests = std::mem::take(&mut outcome.notification_actions);
         runtime.pending_geolocation_requests = std::mem::take(&mut outcome.geolocation_actions);
+        runtime.pending_media_device_requests = std::mem::take(&mut outcome.media_device_actions);
         runtime.pending_worker_actions = std::mem::take(&mut outcome.worker_actions);
         connection.send_network_state_updates(document, &mut outcome)?;
         runtime.start_pending_survivable_fetches(connection)?;

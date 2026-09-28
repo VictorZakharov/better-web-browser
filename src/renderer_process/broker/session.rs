@@ -132,6 +132,15 @@ impl RendererSession {
         )
     }
 
+    pub fn media_device_update_sink(&self, document: DocumentId) -> super::MediaDeviceUpdateSink {
+        super::MediaDeviceUpdateSink::new(
+            document,
+            self.media_device_updates.clone(),
+            Arc::clone(&self.media_device_overflow),
+            self.wake.clone(),
+        )
+    }
+
     pub fn load_streaming_document(
         &self,
         start: DocumentStart,

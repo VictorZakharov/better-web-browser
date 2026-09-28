@@ -54,6 +54,9 @@ pub(super) fn merge_outcome(
     target
         .geolocation_actions
         .append(&mut source.geolocation_actions);
+    target
+        .media_device_actions
+        .append(&mut source.media_device_actions);
     target.worker_actions.append(&mut source.worker_actions);
     target
         .fullscreen_actions

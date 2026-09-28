@@ -42,6 +42,8 @@ mod hover;
 mod input;
 #[path = "renderer_process/media.rs"]
 mod media;
+#[path = "renderer_process/media_devices.rs"]
+mod media_devices;
 #[path = "renderer_process/notifications.rs"]
 mod notifications;
 #[path = "renderer_process/pointer_buttons.rs"]

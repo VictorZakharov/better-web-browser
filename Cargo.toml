@@ -37,6 +37,7 @@ harfrust = "0.5.2"
 swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"] }
 unicode-script = "0.5.8"
 windows = { version = "0.62.2", features = [
+    "Devices_Enumeration",
     "Devices_Geolocation",
     "Foundation",
     "Win32_Globalization",
@@ -46,7 +47,11 @@ windows = { version = "0.62.2", features = [
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Variant",
+    "Win32_System_WinRT",
 ] }
+# Already used by windows 0.62; direct access lets async handlers initialize
+# their callback apartment before calling GetResults (MIT OR Apache-2.0).
+windows-future = "0.3.2"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

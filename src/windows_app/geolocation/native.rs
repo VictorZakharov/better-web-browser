@@ -3,12 +3,14 @@
 //! RequestAccessAsync must be started by the foreground UI thread; dispatch.rs
 //! enforces that before calling this adapter.
 use super::{GeoFailure, GeoHandle, GeoProvider, GeoResult};
+use crate::windows_app::WinRtApartment;
 use better_web_browser::renderer_protocol::GeolocationPosition;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use windows::Devices::Geolocation::{
     GeolocationAccessStatus, Geolocator, Geoposition, PositionAccuracy, PositionChangedEventArgs,
 };
 use windows::Foundation::{TimeSpan, TypedEventHandler};
+use windows_future::AsyncOperationCompletedHandler;
 
 pub(super) struct WinRtGeoProvider;
 
@@ -17,16 +19,33 @@ impl GeoProvider for WinRtGeoProvider {
         &self,
         done: Box<dyn FnOnce(Result<(), GeoFailure>) + Send>,
     ) -> Result<(), GeoFailure> {
-        Geolocator::RequestAccessAsync()
-            .map_err(map_error)?
-            .when(move |result| {
-                done(match result {
-                    Ok(GeolocationAccessStatus::Allowed) => Ok(()),
-                    Ok(_) => Err(GeoFailure::PermissionDenied),
+        let operation = Geolocator::RequestAccessAsync().map_err(map_error)?;
+        let done = Mutex::new(Some(done));
+        let handler =
+            AsyncOperationCompletedHandler::<GeolocationAccessStatus>::new(move |sender, _| {
+                // A WinRT completion may run on a different or already-initialized
+                // thread; initialize before touching GetResults.
+                let result = match WinRtApartment::initialize_callback() {
+                    Ok(_apartment) => sender
+                        .ok()
+                        .and_then(|operation| operation.GetResults())
+                        .map_err(map_error)
+                        .and_then(|status| match status {
+                            GeolocationAccessStatus::Allowed => Ok(()),
+                            _ => Err(GeoFailure::PermissionDenied),
+                        }),
                     Err(error) => Err(map_error(error)),
-                });
-            })
-            .map_err(map_error)
+                };
+                if let Some(done) = done
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .take()
+                {
+                    done(result);
+                }
+                Ok(())
+            });
+        operation.SetCompleted(&handler).map_err(map_error)
     }
 
     fn start(
@@ -49,13 +68,15 @@ impl GeoProvider for WinRtGeoProvider {
             let receiver = Arc::clone(&deliver);
             let handler =
                 TypedEventHandler::<Geolocator, PositionChangedEventArgs>::new(move |_, args| {
-                    if let Some(args) = args.as_ref() {
-                        receiver(
-                            args.Position()
-                                .map_err(map_error)
-                                .and_then(position_from_winrt),
-                        );
-                    }
+                    let result = match WinRtApartment::initialize_callback() {
+                        Ok(_apartment) => args
+                            .as_ref()
+                            .ok_or(GeoFailure::PositionUnavailable)
+                            .and_then(|args| args.Position().map_err(map_error))
+                            .and_then(position_from_winrt),
+                        Err(error) => Err(map_error(error)),
+                    };
+                    receiver(result);
                     Ok(())
                 });
             Some(locator.PositionChanged(&handler).map_err(map_error)?)
@@ -74,9 +95,19 @@ impl GeoProvider for WinRtGeoProvider {
         let operation = locator
             .GetGeopositionAsyncWithAgeAndTimeout(age, timeout)
             .map_err(map_error)?;
-        operation
-            .when(move |result| deliver(result.map_err(map_error).and_then(position_from_winrt)))
-            .map_err(map_error)?;
+        let handler = AsyncOperationCompletedHandler::<Geoposition>::new(move |sender, _| {
+            let result = match WinRtApartment::initialize_callback() {
+                Ok(_apartment) => sender
+                    .ok()
+                    .and_then(|operation| operation.GetResults())
+                    .map_err(map_error)
+                    .and_then(position_from_winrt),
+                Err(error) => Err(map_error(error)),
+            };
+            deliver(result);
+            Ok(())
+        });
+        operation.SetCompleted(&handler).map_err(map_error)?;
         Ok(Box::new(WinRtGeoHandle { locator, token }))
     }
 }

@@ -107,6 +107,9 @@ pub(super) fn finish_host(
         .geolocation_actions
         .append(&mut state.pending_geolocation_actions);
     outcome
+        .media_device_actions
+        .append(&mut state.pending_media_device_actions);
+    outcome
         .worker_actions
         .append(&mut state.pending_worker_actions);
     outcome

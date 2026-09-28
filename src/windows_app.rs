@@ -15,6 +15,7 @@ mod document_state;
 mod fullscreen;
 mod geolocation;
 mod incident_log;
+mod media_devices;
 mod navigation_transaction;
 mod notifications;
 mod page_controls;
@@ -50,6 +51,7 @@ mod video_presentation;
 mod viewport;
 mod win32_helpers;
 mod window_dispatch;
+mod winrt_apartment;
 use accessibility::AccessibilityState;
 use app_state::BrowserState;
 use benchmark::{BenchmarkRun, LaunchOptions};
@@ -86,11 +88,14 @@ use win32_helpers::*;
 use window_dispatch::{
     chrome_control_proc, dispatch_browser_input, main_window_proc, page_control_proc,
 };
+use winrt_apartment::WinRtApartment;
+
 pub fn run() -> Result<(), String> {
     unsafe {
         let process_started = Instant::now();
         // Per-monitor V2 keeps chrome crisp; a prior DPI mode makes failure harmless.
         SetProcessDpiAwarenessContext(-4_isize as Handle);
+        let _winrt_apartment = WinRtApartment::initialize_ui()?;
         let instance = GetModuleHandleW(null());
         if instance.is_null() {
             return Err(last_error("locate application module"));

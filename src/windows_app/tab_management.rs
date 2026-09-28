@@ -93,6 +93,7 @@ impl BrowserState {
         self.retire_speech_for_tab(id);
         self.retire_notifications_for_tab(id);
         self.retire_geolocation_for_tab(id);
+        self.retire_media_devices_for_tab(id);
         if close_tab_action(self.tabs.len(), self.tabs.active_id() == id)
             == CloseTabAction::CloseWindow
         {

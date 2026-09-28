@@ -13,6 +13,7 @@ mod frames;
 mod geolocation;
 mod idle;
 mod inserted_scripts;
+mod media_devices;
 mod notification;
 mod scheduling;
 mod speech;

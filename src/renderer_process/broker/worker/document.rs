@@ -198,6 +198,12 @@ impl Broker {
                     self.emit_event(RendererEvent::GeolocationRequest(request))?;
                 }
             }
+            RendererMessage::MediaDeviceRequest(request) => {
+                request.validate()?;
+                if self.active_document == Some(request.document) {
+                    self.emit_event(RendererEvent::MediaDeviceRequest(request))?;
+                }
+            }
             RendererMessage::StateSnapshotApplied(applied) => {
                 applied.validate()?;
                 if self.active_document != Some(applied.document) {

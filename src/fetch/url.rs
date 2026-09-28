@@ -157,15 +157,20 @@ impl Origin {
     pub fn is_potentially_trustworthy(&self) -> bool {
         match &self.kind {
             OriginKind::Opaque(_) => false,
-            OriginKind::Tuple { scheme, host, .. }
+            OriginKind::Tuple { scheme, .. }
                 if matches!(scheme.as_str(), "https" | "wss" | "file") =>
             {
                 true
             }
             OriginKind::Tuple { scheme, host, .. } if matches!(scheme.as_str(), "http" | "ws") => {
+                // Parsed IPv6 URL hosts retain their URL brackets, unlike IpAddr syntax.
+                let ip_host = host
+                    .strip_prefix('[')
+                    .and_then(|inner| inner.strip_suffix(']'))
+                    .unwrap_or(host);
                 host.eq_ignore_ascii_case("localhost")
                     || host.to_ascii_lowercase().ends_with(".localhost")
-                    || host
+                    || ip_host
                         .parse::<std::net::IpAddr>()
                         .is_ok_and(|address| address.is_loopback())
             }
@@ -226,5 +231,28 @@ mod tests {
             !url.origin()
                 .is_same_origin(&FetchUrl::parse("data:text/plain,hello").unwrap().origin())
         );
+    }
+
+    #[test]
+    fn secure_contexts_accept_loopback_but_not_other_http_origins() {
+        for url in [
+            "https://example.com/",
+            "http://localhost/",
+            "http://sub.localhost/",
+            "http://127.0.0.1/",
+            "http://[::1]/",
+        ] {
+            assert!(
+                Origin::parse(url).unwrap().is_potentially_trustworthy(),
+                "{url}"
+            );
+        }
+        for url in ["http://example.com/", "http://192.0.2.1/"] {
+            assert!(
+                !Origin::parse(url).unwrap().is_potentially_trustworthy(),
+                "{url}"
+            );
+        }
+        assert!(!Origin::opaque().is_potentially_trustworthy());
     }
 }
