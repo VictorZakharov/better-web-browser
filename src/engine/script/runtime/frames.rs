@@ -285,6 +285,9 @@ impl ScriptRuntime {
             .protocol_handler_actions
             .append(&mut self.host.borrow_mut().pending_protocol_handler_actions);
         outcome
+            .clipboard_actions
+            .append(&mut self.host.borrow_mut().pending_clipboard_actions);
+        outcome
             .worker_actions
             .append(&mut self.host.borrow_mut().pending_worker_actions);
         outcome

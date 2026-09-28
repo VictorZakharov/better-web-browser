@@ -150,6 +150,15 @@ impl RendererSession {
         )
     }
 
+    pub fn clipboard_update_sink(&self, document: DocumentId) -> super::ClipboardUpdateSink {
+        super::ClipboardUpdateSink::new(
+            document,
+            self.clipboard_updates.clone(),
+            Arc::clone(&self.clipboard_overflow),
+            self.wake.clone(),
+        )
+    }
+
     pub fn load_streaming_document(
         &self,
         start: DocumentStart,

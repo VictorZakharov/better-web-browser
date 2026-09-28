@@ -10,6 +10,7 @@ mod browser_window;
 mod capture;
 mod chrome_controls;
 mod chrome_paint;
+mod clipboard;
 mod color_scheme;
 mod document_activation;
 mod document_navigation;

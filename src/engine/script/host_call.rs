@@ -1,8 +1,8 @@
 //! Native operations exposed to the JavaScript bootstrap through `__hostCall`.
-
 use super::binding_helpers::*;
 use super::*;
 mod canvas_presentation;
+pub(in crate::engine::script) mod clipboard;
 pub(super) mod compression_host;
 mod dom_queries;
 mod font_host;
@@ -53,6 +53,9 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     if let Some(value) = protocol_handler::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = clipboard::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = graph_audio::dispatch(operation, args, state)? {

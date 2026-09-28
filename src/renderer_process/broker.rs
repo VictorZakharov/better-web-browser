@@ -46,8 +46,9 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 pub use stream::{
-    DatabaseEventSink, FetchResponseSink, GeolocationUpdateSink, MediaDeviceUpdateSink,
-    NotificationUpdateSink, SensorUpdateSink, SpeechUpdateSink, WebSocketEventSink,
+    ClipboardUpdateSink, DatabaseEventSink, FetchResponseSink, GeolocationUpdateSink,
+    MediaDeviceUpdateSink, NotificationUpdateSink, SensorUpdateSink, SpeechUpdateSink,
+    WebSocketEventSink,
 };
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RendererState {
@@ -120,6 +121,7 @@ pub enum RendererEvent {
     GeolocationRequest(crate::renderer_protocol::GeolocationRequest),
     MediaDeviceRequest(crate::renderer_protocol::MediaDeviceRequest),
     SensorRequest(crate::renderer_protocol::SensorRequest),
+    ClipboardRequest(crate::renderer_protocol::ClipboardRequest),
     Unresponsive,
     Exited(RendererExit),
 }
@@ -144,6 +146,8 @@ pub struct RendererSession {
     media_device_overflow: Arc<std::sync::atomic::AtomicBool>,
     sensor_updates: mpsc::SyncSender<stream::QueuedSensorUpdate>,
     sensor_overflow: Arc<std::sync::atomic::AtomicBool>,
+    clipboard_updates: mpsc::SyncSender<crate::renderer_protocol::ClipboardUpdate>,
+    clipboard_overflow: Arc<std::sync::atomic::AtomicBool>,
     fetch_flow: Arc<flow::FetchFlow>,
     events: events::EventReceiver,
     incoming_depth: QueueDepth,
@@ -267,6 +271,8 @@ impl RendererSession {
         let media_device_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (sensor_updates_tx, sensor_updates_rx) = mpsc::sync_channel(256);
         let sensor_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (clipboard_updates_tx, clipboard_updates_rx) = mpsc::sync_channel(256);
+        let clipboard_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let fetch_flow = Arc::new(flow::FetchFlow::default());
         let worker_fetch_flow = Arc::clone(&fetch_flow);
         let (events_tx, events_rx) = events::bounded();
@@ -279,6 +285,7 @@ impl RendererSession {
         let worker_geolocation_overflow = Arc::clone(&geolocation_overflow);
         let worker_media_device_overflow = Arc::clone(&media_device_overflow);
         let worker_sensor_overflow = Arc::clone(&sensor_overflow);
+        let worker_clipboard_overflow = Arc::clone(&clipboard_overflow);
         let worker_database_overflow = Arc::clone(&database_overflow);
         let worker_database_queued_bytes = Arc::clone(&database_queued_bytes);
         let handle = std::thread::Builder::new()
@@ -312,6 +319,8 @@ impl RendererSession {
                     media_device_overflow: worker_media_device_overflow,
                     sensor_updates: sensor_updates_rx,
                     sensor_overflow: worker_sensor_overflow,
+                    clipboard_updates: clipboard_updates_rx,
+                    clipboard_overflow: worker_clipboard_overflow,
                     fetch_flow: worker_fetch_flow,
                     events: events_tx,
                     wake: worker_wake,
@@ -340,6 +349,8 @@ impl RendererSession {
             media_device_overflow,
             sensor_updates: sensor_updates_tx,
             sensor_overflow,
+            clipboard_updates: clipboard_updates_tx,
+            clipboard_overflow,
             fetch_flow,
             events: events_rx,
             incoming_depth,

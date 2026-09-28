@@ -1,5 +1,6 @@
 //! Renderer-side resource installation and script-network completions.
 
+mod clipboard;
 pub(super) mod events;
 mod geolocation;
 mod installation;

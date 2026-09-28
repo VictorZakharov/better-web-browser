@@ -1,6 +1,6 @@
 //! Lossless, bounded control replies from browser services into the renderer.
 
-use crate::renderer_protocol::{DocumentId, GeolocationUpdate, MediaDeviceUpdate};
+use crate::renderer_protocol::{ClipboardUpdate, DocumentId, GeolocationUpdate, MediaDeviceUpdate};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -19,6 +19,51 @@ pub struct MediaDeviceUpdateSink {
     required: mpsc::SyncSender<MediaDeviceUpdate>,
     overflow: Arc<AtomicBool>,
     wake: super::super::wake::BrokerWake,
+}
+
+#[derive(Clone)]
+pub struct ClipboardUpdateSink {
+    document: DocumentId,
+    required: mpsc::SyncSender<ClipboardUpdate>,
+    overflow: Arc<AtomicBool>,
+    wake: super::super::wake::BrokerWake,
+}
+
+impl ClipboardUpdateSink {
+    pub(in crate::renderer_process::broker) fn new(
+        document: DocumentId,
+        required: mpsc::SyncSender<ClipboardUpdate>,
+        overflow: Arc<AtomicBool>,
+        wake: super::super::wake::BrokerWake,
+    ) -> Self {
+        Self {
+            document,
+            required,
+            overflow,
+            wake,
+        }
+    }
+
+    pub fn try_send(&self, update: ClipboardUpdate) -> Result<(), String> {
+        update.validate().map_err(|error| error.to_string())?;
+        if update.document != self.document {
+            return Err("clipboard update document mismatch".into());
+        }
+        match self.required.try_send(update) {
+            Ok(()) => {
+                self.wake.notify();
+                Ok(())
+            }
+            Err(mpsc::TrySendError::Full(_)) => {
+                self.overflow.store(true, Ordering::Release);
+                self.wake.notify();
+                Err("renderer clipboard control mailbox is full".into())
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                Err("renderer clipboard control mailbox is closed".into())
+            }
+        }
+    }
 }
 
 impl GeolocationUpdateSink {

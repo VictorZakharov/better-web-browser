@@ -5,6 +5,7 @@ use crate::storage::{StorageAreaKind, StorageAreaSnapshot, StorageEntry};
 use std::rc::Rc;
 use std::time::Duration;
 
+mod clipboard;
 mod document_lifecycle;
 mod dynamic_modules;
 mod dynamic_readiness;

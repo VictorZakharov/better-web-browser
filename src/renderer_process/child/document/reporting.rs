@@ -61,6 +61,9 @@ pub(super) fn merge_outcome(
         .media_device_actions
         .append(&mut source.media_device_actions);
     target.sensor_actions.append(&mut source.sensor_actions);
+    target
+        .clipboard_actions
+        .append(&mut source.clipboard_actions);
     target.worker_actions.append(&mut source.worker_actions);
     target
         .fullscreen_actions

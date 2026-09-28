@@ -117,6 +117,7 @@ impl DocumentRuntime {
             pending_geolocation_requests: Vec::new(),
             pending_media_device_requests: Vec::new(),
             pending_sensor_requests: Vec::new(),
+            pending_clipboard_requests: Vec::new(),
             active_script_fetches: HashMap::new(),
             pending_worker_actions: Vec::new(),
             deferred_network_load: PageLoadReport::default(),
@@ -241,6 +242,7 @@ impl DocumentRuntime {
         runtime.pending_geolocation_requests = std::mem::take(&mut outcome.geolocation_actions);
         runtime.pending_media_device_requests = std::mem::take(&mut outcome.media_device_actions);
         runtime.pending_sensor_requests = std::mem::take(&mut outcome.sensor_actions);
+        runtime.pending_clipboard_requests = std::mem::take(&mut outcome.clipboard_actions);
         runtime.pending_worker_actions = std::mem::take(&mut outcome.worker_actions);
         connection.send_network_state_updates(document, &mut outcome)?;
         runtime.start_pending_survivable_fetches(connection)?;

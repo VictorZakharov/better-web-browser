@@ -7,8 +7,6 @@ use std::fmt::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const REFRESH_INTERVAL_MS: u32 = 250;
-const CF_UNICODETEXT: u32 = 13;
-const GMEM_MOVEABLE: u32 = 0x0002;
 
 impl BrowserState {
     pub(in crate::windows_app) unsafe fn create_performance_window(
@@ -204,7 +202,8 @@ impl BrowserState {
         );
         report.push_str("\nIncident history\n");
         report.push_str(&tab.incidents.report());
-        copy_unicode_text(self.window, &report)
+        crate::windows_app::clipboard::native::write_unicode_text(self.window, &report)
+            .map_err(|error| format!("copy diagnostics to clipboard: {error:?}"))
     }
 }
 
@@ -275,40 +274,4 @@ fn contains(rectangle: Rect, point: Point) -> bool {
         && point.x < rectangle.right
         && point.y >= rectangle.top
         && point.y < rectangle.bottom
-}
-
-unsafe fn copy_unicode_text(owner: Hwnd, text: &str) -> Result<(), String> {
-    if OpenClipboard(owner) == 0 {
-        return Err(last_error("open clipboard"));
-    }
-    if EmptyClipboard() == 0 {
-        let error = last_error("clear clipboard");
-        CloseClipboard();
-        return Err(error);
-    }
-    let encoded = wide(text);
-    let bytes = encoded.len().saturating_mul(size_of::<u16>());
-    let memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
-    if memory.is_null() {
-        let error = last_error("allocate clipboard text");
-        CloseClipboard();
-        return Err(error);
-    }
-    let destination = GlobalLock(memory) as *mut u16;
-    if destination.is_null() {
-        let error = last_error("lock clipboard text");
-        GlobalFree(memory);
-        CloseClipboard();
-        return Err(error);
-    }
-    std::ptr::copy_nonoverlapping(encoded.as_ptr(), destination, encoded.len());
-    GlobalUnlock(memory);
-    if SetClipboardData(CF_UNICODETEXT, memory).is_null() {
-        let error = last_error("publish clipboard text");
-        GlobalFree(memory);
-        CloseClipboard();
-        return Err(error);
-    }
-    CloseClipboard();
-    Ok(())
 }

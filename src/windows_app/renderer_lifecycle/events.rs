@@ -139,6 +139,9 @@ impl BrowserState {
                 RendererEvent::SensorRequest(request) => {
                     self.handle_sensor_request(id, request);
                 }
+                RendererEvent::ClipboardRequest(request) => {
+                    self.handle_clipboard_request(id, request);
+                }
                 RendererEvent::Presentation(presentation) => {
                     self.process_for_tab(id, |state| {
                         state.activate_renderer_presentation(*presentation)

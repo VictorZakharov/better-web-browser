@@ -1,4 +1,6 @@
 //! Asynchronous Fetch and worker event delivery into the retained realm.
+mod clipboard;
+
 use super::*;
 use crate::renderer_protocol::{
     DatabaseEvent, GeolocationUpdate, MediaDeviceUpdate, NotificationEvent, NotificationUpdate,

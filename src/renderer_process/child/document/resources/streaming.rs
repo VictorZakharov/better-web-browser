@@ -41,6 +41,7 @@ impl DocumentRuntime {
         self.start_pending_geolocation_requests(connection)?;
         self.start_pending_media_device_requests(connection)?;
         self.start_pending_sensor_requests(connection)?;
+        self.start_pending_clipboard_requests(connection)?;
         for action in std::mem::take(&mut self.pending_websockets) {
             connection.send_websocket_command(crate::renderer_protocol::WebSocketCommand {
                 document: self.id,
@@ -295,6 +296,8 @@ impl DocumentRuntime {
             .append(&mut outcome.media_device_actions);
         self.pending_sensor_requests
             .append(&mut outcome.sensor_actions);
+        self.pending_clipboard_requests
+            .append(&mut outcome.clipboard_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
         // Abort and chained Fetch actions produced by a network callback belong to the same

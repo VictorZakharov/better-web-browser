@@ -107,6 +107,9 @@ pub(super) fn finish_host(
         .protocol_handler_actions
         .append(&mut state.pending_protocol_handler_actions);
     outcome
+        .clipboard_actions
+        .append(&mut state.pending_clipboard_actions);
+    outcome
         .geolocation_actions
         .append(&mut state.pending_geolocation_actions);
     outcome

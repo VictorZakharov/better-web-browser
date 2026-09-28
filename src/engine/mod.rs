@@ -23,10 +23,11 @@ pub use layout::{
 pub use page::{DecodedImage, Page, PageResource};
 pub use script::network::{ScriptDatabaseAction, ScriptWebSocketAction};
 pub use script::{
-    DynamicScriptRequest, ScriptFetchAction, ScriptFetchEvent, ScriptFetchOptions,
-    ScriptGeolocationAction, ScriptKind, ScriptMediaDeviceAction, ScriptNotificationAction,
-    ScriptOutcome, ScriptProtocolHandlerAction, ScriptRuntime, ScriptSensorAction,
-    ScriptSpeechAction, ScriptWorkerAction, UserInputEvent, UserInputModifiers, UserInputResult,
-    WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome, WorkerSourceLoader,
+    DynamicScriptRequest, ScriptClipboardAction, ScriptFetchAction, ScriptFetchEvent,
+    ScriptFetchOptions, ScriptGeolocationAction, ScriptKind, ScriptMediaDeviceAction,
+    ScriptNotificationAction, ScriptOutcome, ScriptProtocolHandlerAction, ScriptRuntime,
+    ScriptSensorAction, ScriptSpeechAction, ScriptWorkerAction, UserInputEvent,
+    UserInputModifiers, UserInputResult, WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome,
+    WorkerSourceLoader,
 };
 pub(crate) use stylesheet::AdoptedStyleSheet;

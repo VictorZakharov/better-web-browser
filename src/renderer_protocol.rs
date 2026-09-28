@@ -4,6 +4,7 @@
 //! deserializing Rust object graphs: every length and tag is checked before allocation.
 
 mod accessibility;
+mod clipboard;
 mod codec;
 mod database;
 mod document;
@@ -21,6 +22,10 @@ mod state;
 mod video;
 mod websocket;
 mod wire;
+pub use clipboard::{
+    ClipboardAction, ClipboardError, ClipboardRequest, ClipboardUpdate, ClipboardValue,
+    MAX_CLIPBOARD_TEXT_BYTES,
+};
 pub use database::{DATABASE_RETIRE_CLIENT_PAYLOAD, DatabaseCommand, DatabaseEvent};
 pub use geolocation::{
     GeolocationAction, GeolocationErrorCode, GeolocationEvent, GeolocationPosition,
