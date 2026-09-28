@@ -13,7 +13,11 @@ use better_web_browser::renderer_protocol::{
     DocumentId, SensorAction, SensorError, SensorEvent, SensorKind, SensorPermission,
     SensorRequest, SensorUpdate,
 };
-use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, SIZE_MINIMIZED};
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    IsIconic, MB_DEFBUTTON2, MB_ICONQUESTION, MB_YESNO, SIZE_MINIMIZED,
+};
+
+const SENSOR_PROMPT_FLAGS: u32 = MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SensorAuthority {
@@ -271,8 +275,17 @@ impl BrowserState {
             "Allow {origin} to read this device's {capability} sensors for this browser session?"
         ));
         let title = wide("Breeze sensor permission");
-        // Win32 MB_YESNO | MB_ICONQUESTION. Only an active, visible interactive tab reaches here.
-        if unsafe { MessageBoxW(self.window, question.as_ptr(), title.as_ptr(), 0x24) } == 6 {
+        // The default button is No, so Enter never silently grants access.
+        // Only an active, visible interactive tab reaches this dialog.
+        if unsafe {
+            MessageBoxW(
+                self.window,
+                question.as_ptr(),
+                title.as_ptr(),
+                SENSOR_PROMPT_FLAGS,
+            )
+        } == 6
+        {
             SensorPermission::Granted
         } else {
             SensorPermission::Denied
@@ -319,6 +332,12 @@ fn reject(sink: &SensorUpdateSink, request: &SensorRequest) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_permission_prompt_defaults_to_no() {
+        assert_eq!(SENSOR_PROMPT_FLAGS & MB_YESNO, MB_YESNO);
+        assert_eq!(SENSOR_PROMPT_FLAGS & MB_DEFBUTTON2, MB_DEFBUTTON2);
+    }
 
     #[test]
     fn only_secure_and_numeric_loopback_origins_may_request_physical_sensors() {

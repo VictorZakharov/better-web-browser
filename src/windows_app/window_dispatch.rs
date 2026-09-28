@@ -85,9 +85,14 @@ unsafe fn dispatch_window_message(
             .handle_accessibility_getobject(wparam, lparam)
             .unwrap_or_else(|| DefWindowProcW(window, message, wparam, lparam)),
         WM_ACTIVATE => {
-            state.update_accessibility_window_focus(wparam & 0xffff != 0);
-            state.sync_sensor_visibility();
-            if wparam & 0xffff == 0 {
+            let active = wparam & 0xffff != 0;
+            state.update_accessibility_window_focus(active);
+            if active {
+                state.sync_sensor_visibility();
+            } else {
+                // WA_INACTIVE is authoritative even if foreground ownership has
+                // not changed by the time this message is dispatched.
+                state.clear_visible_sensor_tab(state.tabs.active_id());
                 state.exit_pointer_lock();
                 state.retire_capture_for_window();
             }
