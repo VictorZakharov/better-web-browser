@@ -1,4 +1,5 @@
 pub mod branding;
+pub mod cache_storage;
 pub mod document;
 pub mod engine;
 pub mod fetch;

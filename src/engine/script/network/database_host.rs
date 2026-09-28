@@ -1,4 +1,4 @@
-//! Asynchronous IndexedDB requests leave the renderer; no profile I/O runs in V8.
+//! Asynchronous origin-storage requests leave the renderer; no profile I/O runs in V8.
 use super::super::binding_helpers::{argument_string, js_string};
 use super::*;
 use crate::limits::MAX_INDEXED_DB_IPC_BYTES;
@@ -22,7 +22,7 @@ pub(in crate::engine::script) fn dispatch(
     let payload = argument_string(args, 1)?;
     if payload.len() > MAX_INDEXED_DB_IPC_BYTES {
         return Err(JsNativeError::range()
-            .with_message("IndexedDB request exceeds the browser limit")
+            .with_message("Origin-storage request exceeds the browser limit")
             .into());
     }
     let id = state

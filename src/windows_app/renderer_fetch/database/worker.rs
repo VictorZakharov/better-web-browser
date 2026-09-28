@@ -27,14 +27,17 @@ pub(in crate::windows_app) struct DatabaseWorker {
 }
 
 impl DatabaseWorker {
-    pub(in crate::windows_app) fn new(database: Arc<IndexedDb>) -> Result<Self, String> {
+    pub(in crate::windows_app) fn new(
+        database: Arc<IndexedDb>,
+        cache_storage: Arc<CacheStorage>,
+    ) -> Result<Self, String> {
         let (sender, receiver) = mpsc::channel();
         let pending_requests = Arc::new(AtomicUsize::new(0));
         let pending = Arc::clone(&pending_requests);
         std::thread::Builder::new()
-            .name("breeze-indexed-db".into())
-            .spawn(move || run(database, receiver, pending))
-            .map_err(|error| format!("start IndexedDB worker: {error}"))?;
+            .name("breeze-origin-storage".into())
+            .spawn(move || run(database, cache_storage, receiver, pending))
+            .map_err(|error| format!("start origin-storage worker: {error}"))?;
         Ok(Self {
             sender,
             pending_requests,
@@ -84,11 +87,16 @@ fn reject(job: Job) {
     let _ = job.sink.try_send(DatabaseEvent {
         document: job.document,
         request_id: job.request_id,
-        payload: error_payload("QuotaExceededError", "IndexedDB request queue is full"),
+        payload: error_payload("QuotaExceededError", "Origin-storage request queue is full"),
     });
 }
 
-fn run(database: Arc<IndexedDb>, receiver: mpsc::Receiver<Work>, pending: Arc<AtomicUsize>) {
+fn run(
+    database: Arc<IndexedDb>,
+    cache_storage: Arc<CacheStorage>,
+    receiver: mpsc::Receiver<Work>,
+    pending: Arc<AtomicUsize>,
+) {
     let mut sessions: HashMap<SessionKey, SessionValue> = HashMap::new();
     // A terminated Worker's committed client identity cannot be reused within
     // the document. Remember it until document retirement so a late Step cannot
@@ -116,11 +124,11 @@ fn run(database: Arc<IndexedDb>, receiver: mpsc::Receiver<Work>, pending: Arc<At
             Work::Request(job) => {
                 pending.fetch_sub(1, Ordering::AcqRel);
                 let payload = if failed_documents.contains(&(job.tab_id, job.document)) {
-                    json!({"kind":"error","name":"AbortError","message":"IndexedDB document is unavailable"})
+                    json!({"kind":"error","name":"AbortError","message":"Origin-storage document is unavailable"})
                 } else if retired_clients.contains(&(job.tab_id, job.document, job.client_id)) {
-                    json!({"kind":"error","name":"AbortError","message":"IndexedDB client has been retired"})
+                    json!({"kind":"error","name":"AbortError","message":"Origin-storage client has been retired"})
                 } else {
-                    execute(&database, &job, &mut sessions)
+                    execute(&database, &cache_storage, &job, &mut sessions)
                 };
                 if job
                     .sink

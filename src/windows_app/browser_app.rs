@@ -77,7 +77,14 @@ impl BrowserApplication {
             better_web_browser::indexed_db::IndexedDb::open(profile.join("indexed-db.json"))
                 .map_err(|error| error.to_string())?,
         );
-        let database_worker = super::renderer_fetch::DatabaseWorker::new(indexed_db)?;
+        let cache_storage = Arc::new(
+            better_web_browser::cache_storage::CacheStorage::open(
+                profile.join("cache-storage.json"),
+            )
+            .map_err(|error| error.to_string())?,
+        );
+        let database_worker =
+            super::renderer_fetch::DatabaseWorker::new(indexed_db, cache_storage)?;
         let speech_service = super::speech_synthesis::SpeechSynthesisService::spawn()?;
         Ok(Rc::new(Self {
             instance,
