@@ -39,9 +39,9 @@ impl DocumentRuntime {
                 if self.pending_graph_audio_start == Some(stream_id) {
                     self.pending_graph_audio_start = None;
                 }
-                if !self
+                if self
                     .pending_graph_audio_close
-                    .is_some_and(|(id, _)| id == stream_id)
+                    .is_none_or(|(id, _)| id != stream_id)
                 {
                     if self.graph_audio_stream == Some(stream_id) {
                         self.pending_graph_audio_close = connection

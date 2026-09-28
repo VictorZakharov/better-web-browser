@@ -2,10 +2,12 @@ use super::*;
 use better_web_browser::fetch::RequestClient;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+type PendingCompletion = Box<dyn FnOnce(PresenceResult) + Send>;
+
 #[derive(Default)]
 struct FakeState {
     starts: AtomicUsize,
-    pending: Mutex<Vec<Box<dyn FnOnce(PresenceResult) + Send>>>,
+    pending: Mutex<Vec<PendingCompletion>>,
     launch_error: Mutex<Option<MediaDeviceError>>,
 }
 
