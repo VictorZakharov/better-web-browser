@@ -5,7 +5,7 @@ mod native;
 mod worker;
 
 use super::tabs::TabId;
-use better_web_browser::renderer_process::SensorUpdateSink;
+use better_web_browser::renderer_process::{SensorDeliveryGate, SensorUpdateSink};
 use better_web_browser::renderer_protocol::{
     DocumentId, SensorKind, SensorPermission, SensorRequest,
 };
@@ -16,6 +16,10 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 const MAX_SENSOR_COMMANDS: usize = 64;
+
+fn clear_visible_tab_gate(visible_tab: &AtomicU64, tab: TabId) {
+    let _ = visible_tab.compare_exchange(tab.get(), 0, Ordering::AcqRel, Ordering::Relaxed);
+}
 
 #[derive(Default)]
 struct OriginPermissions {
@@ -109,8 +113,10 @@ struct SensorOwner {
 pub(super) struct SensorService {
     commands: SyncSender<worker::Command>,
     permissions: Mutex<HashMap<String, OriginPermissions>>,
+    latest_owner: Mutex<HashMap<TabId, SensorOwner>>,
     retired: Arc<Mutex<HashMap<TabId, (u64, u64)>>>,
     visible_tab: Arc<AtomicU64>,
+    delivery_gate: SensorDeliveryGate,
     stopping: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
 }
@@ -133,8 +139,10 @@ impl SensorService {
         Ok(Self {
             commands,
             permissions: Mutex::new(HashMap::new()),
+            latest_owner: Mutex::new(HashMap::new()),
             retired,
             visible_tab,
+            delivery_gate: SensorDeliveryGate::default(),
             stopping,
             worker: Some(worker),
         })
@@ -167,33 +175,64 @@ impl SensorService {
         if request.document != owner.document || worker::is_retired(&self.retired, owner) {
             return Err("sensor document has retired".into());
         }
+        self.latest_owner
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .entry(owner.tab)
+            .and_modify(|latest| {
+                if (owner.session_id, owner.document.get())
+                    > (latest.session_id, latest.document.get())
+                {
+                    *latest = owner;
+                }
+            })
+            .or_insert(owner);
         self.commands
-            .try_send(worker::Command::Request(owner, request, sink))
+            .try_send(worker::Command::Request(
+                owner,
+                request,
+                sink.with_delivery_gate(self.delivery_gate.clone(), owner.tab.get()),
+            ))
             .map_err(|error| format!("sensor worker command queue: {error}"))
     }
 
     fn set_visible_tab(&self, tab: Option<TabId>) {
+        self.delivery_gate
+            .set_visible_tab(tab.map_or(0, TabId::get));
         self.visible_tab
             .store(tab.map_or(0, TabId::get), Ordering::Release);
     }
 
     fn clear_visible_tab(&self, tab: TabId) {
-        let _ =
-            self.visible_tab
-                .compare_exchange(tab.get(), 0, Ordering::AcqRel, Ordering::Relaxed);
+        self.delivery_gate.clear_visible_tab(tab.get());
+        clear_visible_tab_gate(&self.visible_tab, tab);
     }
 
-    fn retire(&self, owner: SensorOwner) {
-        let mut retired = self
-            .retired
+    fn retire_tab(&self, tab: TabId, current: Option<SensorOwner>) {
+        self.clear_visible_tab(tab);
+        let latest = self
+            .latest_owner
             .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
-        retired
-            .entry(owner.tab)
-            .and_modify(|latest| *latest = (*latest).max((owner.session_id, owner.document.get())))
-            .or_insert((owner.session_id, owner.document.get()));
-        drop(retired);
-        let _ = self.commands.try_send(worker::Command::Retire(owner));
+            .unwrap_or_else(|poison| poison.into_inner())
+            .remove(&tab);
+        let owner = [current, latest]
+            .into_iter()
+            .flatten()
+            .max_by_key(|owner| (owner.session_id, owner.document.get()));
+        if let Some(owner) = owner {
+            let mut retired = self
+                .retired
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            retired
+                .entry(tab)
+                .and_modify(|latest| {
+                    *latest = (*latest).max((owner.session_id, owner.document.get()))
+                })
+                .or_insert((owner.session_id, owner.document.get()));
+            drop(retired);
+        }
+        let _ = self.commands.try_send(worker::Command::RetireTab(tab));
     }
 }
 
@@ -209,6 +248,51 @@ impl Drop for SensorService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn switching_tabs_revokes_only_the_old_visible_sensor_gate() {
+        let old = TabId::first();
+        let next = TabId::allocate();
+        let visible = AtomicU64::new(old.get());
+        clear_visible_tab_gate(&visible, next);
+        assert_eq!(visible.load(Ordering::Acquire), old.get());
+        clear_visible_tab_gate(&visible, old);
+        assert_eq!(visible.load(Ordering::Acquire), 0);
+        visible.store(next.get(), Ordering::Release);
+        clear_visible_tab_gate(&visible, old);
+        assert_eq!(visible.load(Ordering::Acquire), next.get());
+    }
+
+    #[test]
+    fn renderer_crash_retires_last_known_owner_even_after_session_is_gone() {
+        let owner = SensorOwner {
+            tab: TabId::first(),
+            document: DocumentId::new(17).unwrap(),
+            session_id: 8,
+        };
+        let (commands, incoming) = mpsc::sync_channel(1);
+        let retired = Arc::new(Mutex::new(HashMap::new()));
+        let service = SensorService {
+            commands,
+            permissions: Mutex::new(HashMap::new()),
+            latest_owner: Mutex::new(HashMap::from([(owner.tab, owner)])),
+            retired: Arc::clone(&retired),
+            visible_tab: Arc::new(AtomicU64::new(owner.tab.get())),
+            delivery_gate: SensorDeliveryGate::default(),
+            stopping: Arc::new(AtomicBool::new(false)),
+            worker: None,
+        };
+        service.retire_tab(owner.tab, None);
+        assert_eq!(service.visible_tab.load(Ordering::Acquire), 0);
+        assert_eq!(
+            retired.lock().unwrap().get(&owner.tab),
+            Some(&(owner.session_id, owner.document.get()))
+        );
+        assert!(matches!(
+            incoming.try_recv(),
+            Ok(worker::Command::RetireTab(tab)) if tab == owner.tab
+        ));
+    }
 
     #[test]
     fn generic_accelerometer_permission_does_not_grant_gyroscope() {

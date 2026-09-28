@@ -374,6 +374,7 @@ impl BrowserState {
 
     unsafe fn record_renderer_launch_failure(&mut self, id: TabId, error: String) {
         self.retire_database_for_tab(id);
+        self.retire_sensors_for_tab(id);
         let title = if let Some(tab) = self.tabs.get_mut(id) {
             tab.mark_crashed(format!(
                 "Renderer unavailable: {error}. Reload to try again."

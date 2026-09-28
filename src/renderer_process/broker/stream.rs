@@ -14,7 +14,8 @@ mod control_updates;
 mod database;
 pub use control_updates::{GeolocationUpdateSink, MediaDeviceUpdateSink};
 mod sensor;
-pub use sensor::SensorUpdateSink;
+pub(crate) use sensor::QueuedSensorUpdate;
+pub use sensor::{SensorDeliveryGate, SensorSinkError, SensorUpdateSink};
 
 pub(super) const MAX_QUEUED_DATABASE_RESPONSE_BYTES: usize =
     4 * crate::limits::MAX_INDEXED_DB_IPC_BYTES;

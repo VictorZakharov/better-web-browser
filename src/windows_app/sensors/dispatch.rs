@@ -10,25 +10,58 @@ use crate::windows_app::{
 use better_web_browser::fetch::Origin;
 use better_web_browser::renderer_process::SensorUpdateSink;
 use better_web_browser::renderer_protocol::{
-    SensorAction, SensorError, SensorEvent, SensorKind, SensorPermission, SensorRequest,
-    SensorUpdate,
+    DocumentId, SensorAction, SensorError, SensorEvent, SensorKind, SensorPermission,
+    SensorRequest, SensorUpdate,
 };
+use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, SIZE_MINIMIZED};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SensorAuthority {
+    tab: TabId,
+    document: DocumentId,
+    session_id: u64,
+    origin: String,
+}
+
+fn same_sensor_authority(
+    expected: &SensorAuthority,
+    current: Option<&SensorAuthority>,
+    foreground: bool,
+) -> bool {
+    foreground && current == Some(expected)
+}
 
 impl BrowserState {
+    fn sensor_foreground(&self, tab: TabId) -> bool {
+        self.benchmark.is_none()
+            && self.tabs.active_id() == tab
+            && unsafe { IsWindowVisible(self.window) } != 0
+            && unsafe { IsIconic(self.window) } == 0
+            && unsafe { GetForegroundWindow() } == self.window
+    }
+
     pub(in crate::windows_app) fn sync_sensor_visibility(&mut self) {
         let tab = self.tabs.active_id();
-        if self.benchmark.is_none()
-            && unsafe { IsWindowVisible(self.window) } != 0
-            && unsafe { GetForegroundWindow() } == self.window
-        {
+        if self.sensor_foreground(tab) {
             self.app.sensor_service.set_visible_tab(Some(tab));
         } else {
             self.app.sensor_service.clear_visible_tab(tab);
         }
     }
 
+    pub(in crate::windows_app) fn clear_visible_sensor_tab(&self, tab: TabId) {
+        self.app.sensor_service.clear_visible_tab(tab);
+    }
+
+    pub(in crate::windows_app) fn handle_sensor_window_size(&mut self, reason: usize) {
+        if reason == SIZE_MINIMIZED as usize {
+            self.clear_visible_sensor_tab(self.tabs.active_id());
+        } else {
+            self.sync_sensor_visibility();
+        }
+    }
+
     pub(in crate::windows_app) fn retire_sensors_for_tab(&mut self, tab_id: TabId) {
-        self.app.sensor_service.clear_visible_tab(tab_id);
         let owner = self.tabs.get_mut(tab_id).and_then(|tab| {
             let session_id = tab.renderer_session.as_ref()?.snapshot().session_id;
             let document = tab
@@ -41,9 +74,7 @@ impl BrowserState {
                 session_id,
             })
         });
-        if let Some(owner) = owner {
-            self.app.sensor_service.retire(owner);
-        }
+        self.app.sensor_service.retire_tab(tab_id, owner);
     }
 
     pub(in crate::windows_app) fn retire_sensors_for_window(&mut self) {
@@ -51,6 +82,38 @@ impl BrowserState {
         for id in ids {
             self.retire_sensors_for_tab(id);
         }
+    }
+
+    fn current_sensor_authority(
+        &mut self,
+        tab_id: TabId,
+        request: &SensorRequest,
+    ) -> Option<SensorAuthority> {
+        let tab = self.tabs.get_mut(tab_id)?;
+        if !tab.navigation.owns_document(request.document) || request.client.id != 0 {
+            return None;
+        }
+        let session_id = tab.renderer_session.as_ref()?.snapshot().session_id;
+        let owner = tab
+            .renderer_fetches
+            .resolve_client(request.document, &tab.reader_url, request.client)
+            .ok()?;
+        trustworthy_sensor_origin(&owner.origin).then(|| SensorAuthority {
+            tab: tab_id,
+            document: request.document,
+            session_id,
+            origin: owner.origin.serialize(),
+        })
+    }
+
+    fn sensor_authority_is_current(
+        &mut self,
+        expected: &SensorAuthority,
+        request: &SensorRequest,
+    ) -> bool {
+        let foreground = self.sensor_foreground(expected.tab);
+        let current = self.current_sensor_authority(expected.tab, request);
+        same_sensor_authority(expected, current.as_ref(), foreground)
     }
 
     pub(in crate::windows_app) fn handle_sensor_request(
@@ -90,14 +153,17 @@ impl BrowserState {
             return;
         }
         let origin = owner.origin.serialize();
-        let eligible = self.benchmark.is_none()
-            && self.tabs.active_id() == tab_id
-            && unsafe { IsWindowVisible(self.window) } != 0
-            && unsafe { GetForegroundWindow() } == self.window;
+        let eligible = self.sensor_foreground(tab_id);
         let sensor_owner = SensorOwner {
             tab: tab_id,
             document: request.document,
             session_id,
+        };
+        let authority = SensorAuthority {
+            tab: tab_id,
+            document: request.document,
+            session_id,
+            origin: origin.clone(),
         };
         match request.action {
             SensorAction::RequestPermission { kind, absolute } => {
@@ -121,7 +187,14 @@ impl BrowserState {
                     && self.has_transient_activation(tab_id, request.document)
                 {
                     let permission = self.prompt_sensor_permission(&origin, permission_kind);
-                    emit(&sink, &request, SensorEvent::Permission(permission));
+                    if self.sensor_authority_is_current(&authority, &request) {
+                        self.app
+                            .sensor_service
+                            .decide(origin.clone(), permission_kind, permission);
+                        emit(&sink, &request, SensorEvent::Permission(permission));
+                    } else {
+                        emit(&sink, &request, SensorEvent::Error(SensorError::NotAllowed));
+                    }
                 } else {
                     // W3C Device Orientation §6: prompt state without transient
                     // activation rejects rather than resolving to "denied".
@@ -144,9 +217,19 @@ impl BrowserState {
                     )
                     && eligible
                 {
-                    permission = Some(self.prompt_sensor_permission(&origin, kind));
+                    let prompted = self.prompt_sensor_permission(&origin, kind);
+                    if !self.sensor_authority_is_current(&authority, &request) {
+                        emit(&sink, &request, SensorEvent::Error(SensorError::NotAllowed));
+                        return;
+                    }
+                    self.app
+                        .sensor_service
+                        .decide(origin.clone(), kind, prompted);
+                    permission = Some(prompted);
                 }
-                if !eligible || permission != Some(SensorPermission::Granted) {
+                if !self.sensor_authority_is_current(&authority, &request)
+                    || permission != Some(SensorPermission::Granted)
+                {
                     emit(&sink, &request, SensorEvent::Error(SensorError::NotAllowed));
                 } else {
                     self.sync_sensor_visibility();
@@ -189,16 +272,11 @@ impl BrowserState {
         ));
         let title = wide("Breeze sensor permission");
         // Win32 MB_YESNO | MB_ICONQUESTION. Only an active, visible interactive tab reaches here.
-        let permission =
-            if unsafe { MessageBoxW(self.window, question.as_ptr(), title.as_ptr(), 0x24) } == 6 {
-                SensorPermission::Granted
-            } else {
-                SensorPermission::Denied
-            };
-        self.app
-            .sensor_service
-            .decide(origin.into(), kind, permission);
-        permission
+        if unsafe { MessageBoxW(self.window, question.as_ptr(), title.as_ptr(), 0x24) } == 6 {
+            SensorPermission::Granted
+        } else {
+            SensorPermission::Denied
+        }
     }
 }
 
@@ -259,6 +337,35 @@ mod tests {
                 !trustworthy_sensor_origin(&Origin::parse(url).unwrap()),
                 "{url}"
             );
+        }
+    }
+
+    #[test]
+    fn modal_permission_result_cannot_authorize_a_replaced_document_or_background_tab() {
+        let expected = SensorAuthority {
+            tab: TabId::first(),
+            document: DocumentId::new(12).unwrap(),
+            session_id: 4,
+            origin: "https://example.test".into(),
+        };
+        assert!(same_sensor_authority(&expected, Some(&expected), true));
+        assert!(!same_sensor_authority(&expected, Some(&expected), false));
+        assert!(!same_sensor_authority(&expected, None, true));
+        for changed in [
+            SensorAuthority {
+                session_id: 5,
+                ..expected.clone()
+            },
+            SensorAuthority {
+                document: DocumentId::new(13).unwrap(),
+                ..expected.clone()
+            },
+            SensorAuthority {
+                origin: "https://other.test".into(),
+                ..expected.clone()
+            },
+        ] {
+            assert!(!same_sensor_authority(&expected, Some(&changed), true));
         }
     }
 }

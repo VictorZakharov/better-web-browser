@@ -258,6 +258,10 @@
         const payload = native('sensorTakeUpdate');
         if (!payload) return;
         const { id, event } = JSON.parse(String(payload));
+        // The browser drops stale queued readings at its delivery gate. A
+        // lifecycle message can still overtake a reading already in the pipe.
+        if (document.hidden && ['orientation', 'motion', 'threeAxis', 'quaternion', 'illuminance']
+            .includes(event.kind)) return;
         if (event.kind === 'permission') {
             const pending = permissions.get(id);
             permissions.delete(id);

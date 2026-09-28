@@ -4,16 +4,29 @@ use better_web_browser::renderer_protocol::DocumentId;
 use std::sync::atomic::AtomicUsize;
 
 impl EventSink for mpsc::Sender<SensorUpdate> {
-    fn try_emit(&self, update: SensorUpdate) -> Result<(), String> {
-        self.send(update).map_err(|error| error.to_string())
+    fn try_emit(&self, update: SensorUpdate) -> Result<(), SensorSinkError> {
+        self.send(update).map_err(|_| SensorSinkError::Disconnected)
     }
 }
 
-struct RejectActivation;
+struct RejectActivation(Arc<AtomicUsize>);
 
 impl EventSink for RejectActivation {
-    fn try_emit(&self, _: SensorUpdate) -> Result<(), String> {
-        Err("full renderer mailbox".into())
+    fn try_emit(&self, _: SensorUpdate) -> Result<(), SensorSinkError> {
+        self.0.fetch_add(1, Ordering::Release);
+        Err(SensorSinkError::Full)
+    }
+}
+
+struct DisconnectAfterActivation;
+
+impl EventSink for DisconnectAfterActivation {
+    fn try_emit(&self, update: SensorUpdate) -> Result<(), SensorSinkError> {
+        if update.event == SensorEvent::Activated {
+            Ok(())
+        } else {
+            Err(SensorSinkError::Disconnected)
+        }
     }
 }
 
@@ -200,6 +213,7 @@ fn rejected_activation_never_retains_a_sampling_stream() {
     let supported = Arc::new(AtomicUsize::new(0));
     let samples = Arc::new(AtomicUsize::new(0));
     let active = Arc::new(Mutex::new(Vec::new()));
+    let activation_attempts = Arc::new(AtomicUsize::new(0));
     let fake = FakeProvider {
         supported: Arc::clone(&supported),
         samples: Arc::clone(&samples),
@@ -226,19 +240,150 @@ fn rejected_activation_never_retains_a_sampling_stream() {
                     frequency_hz: Some(50.0),
                 },
             ),
-            RejectActivation,
+            RejectActivation(Arc::clone(&activation_attempts)),
         ))
         .unwrap();
     for _ in 0..50 {
-        if supported.load(Ordering::Relaxed) == 1 {
+        if activation_attempts.load(Ordering::Acquire) == 1 {
             break;
         }
         std::thread::sleep(Duration::from_millis(2));
     }
+    assert_eq!(activation_attempts.load(Ordering::Acquire), 1);
     assert_eq!(supported.load(Ordering::Relaxed), 1);
-    std::thread::sleep(Duration::from_millis(40));
     commands.send(Command::Shutdown).unwrap();
     thread.join().unwrap();
     assert_eq!(samples.load(Ordering::Relaxed), 0);
+    assert!(active.lock().unwrap().is_empty());
+}
+
+#[test]
+fn disconnected_renderer_mailbox_retires_stream_after_first_sample() {
+    let owner = SensorOwner {
+        tab: TabId::first(),
+        document: DocumentId::new(24).unwrap(),
+        session_id: 1,
+    };
+    let samples = Arc::new(AtomicUsize::new(0));
+    let active = Arc::new(Mutex::new(Vec::new()));
+    let fake = FakeProvider {
+        supported: Arc::new(AtomicUsize::new(0)),
+        samples: Arc::clone(&samples),
+        active: Arc::clone(&active),
+    };
+    let (commands, incoming) = mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        run(
+            incoming,
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(AtomicU64::new(owner.tab.get())),
+            Arc::new(AtomicBool::new(false)),
+            fake,
+        )
+    });
+    commands
+        .send(Command::Request(
+            owner,
+            request(
+                owner.document,
+                1,
+                SensorAction::Start {
+                    kind: SensorKind::Accelerometer,
+                    frequency_hz: Some(50.0),
+                },
+            ),
+            DisconnectAfterActivation,
+        ))
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if active.lock().unwrap().as_slice() == [true, false] {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "disconnected sensor stream was not retired"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    commands.send(Command::Shutdown).unwrap();
+    thread.join().unwrap();
+    assert_eq!(samples.load(Ordering::Relaxed), 1);
+    assert_eq!(active.lock().unwrap().as_slice(), &[true, false]);
+}
+
+#[test]
+fn hiding_tab_during_device_discovery_rejects_stale_activation() {
+    struct BlockingProvider {
+        entered: mpsc::Sender<()>,
+        proceed: mpsc::Receiver<()>,
+        active: Arc<Mutex<Vec<bool>>>,
+    }
+
+    impl SensorProvider for BlockingProvider {
+        fn supported(&mut self, _: SensorKind) -> Result<bool, SensorError> {
+            self.entered.send(()).unwrap();
+            self.proceed.recv_timeout(Duration::from_secs(2)).unwrap();
+            Ok(true)
+        }
+
+        fn set_active(&mut self, active: bool) {
+            self.active.lock().unwrap().push(active);
+        }
+
+        fn sample(&mut self, _: SensorKind, _: f64) -> Result<Option<Sample>, SensorError> {
+            panic!("hidden tab must not sample after device discovery");
+        }
+    }
+
+    let owner = SensorOwner {
+        tab: TabId::first(),
+        document: DocumentId::new(25).unwrap(),
+        session_id: 1,
+    };
+    let visible = Arc::new(AtomicU64::new(owner.tab.get()));
+    let active = Arc::new(Mutex::new(Vec::new()));
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (proceed_tx, proceed_rx) = mpsc::channel();
+    let (commands, incoming) = mpsc::channel();
+    let (updates, received) = mpsc::channel();
+    let worker_visible = Arc::clone(&visible);
+    let worker_active = Arc::clone(&active);
+    let thread = std::thread::spawn(move || {
+        run(
+            incoming,
+            Arc::new(Mutex::new(HashMap::new())),
+            worker_visible,
+            Arc::new(AtomicBool::new(false)),
+            BlockingProvider {
+                entered: entered_tx,
+                proceed: proceed_rx,
+                active: worker_active,
+            },
+        )
+    });
+    commands
+        .send(Command::Request(
+            owner,
+            request(
+                owner.document,
+                1,
+                SensorAction::Start {
+                    kind: SensorKind::Accelerometer,
+                    frequency_hz: None,
+                },
+            ),
+            updates,
+        ))
+        .unwrap();
+    entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    visible.store(0, Ordering::Release);
+    proceed_tx.send(()).unwrap();
+    assert_eq!(
+        received.recv_timeout(Duration::from_secs(2)).unwrap().event,
+        SensorEvent::Error(SensorError::NotAllowed)
+    );
+    commands.send(Command::Shutdown).unwrap();
+    thread.join().unwrap();
     assert!(active.lock().unwrap().is_empty());
 }

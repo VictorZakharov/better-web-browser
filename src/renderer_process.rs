@@ -5,6 +5,7 @@ mod child;
 pub(crate) mod launcher;
 pub(crate) mod windows;
 
+pub use broker::stream::{SensorDeliveryGate, SensorSinkError};
 pub use broker::{
     DatabaseEventSink, FetchResponseSink, NavigationBody, NotificationUpdateSink,
     RendererCrashSurface, RendererEvent, RendererExit, RendererExitReason, RendererSession,

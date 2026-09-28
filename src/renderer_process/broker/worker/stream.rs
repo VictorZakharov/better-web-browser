@@ -170,21 +170,19 @@ impl Broker {
             if !self.writer().has_page_command_capacity() {
                 break;
             }
-            let update = match self.resources().sensor_updates.try_recv() {
+            let queued = match self.resources().sensor_updates.try_recv() {
                 Ok(update) => update,
                 Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
             };
-            if self.active_document != Some(update.document) {
+            if self.active_document != Some(queued.update.document) {
                 continue;
             }
-            let result = update
-                .validate()
-                .map_err(|error| error.to_string())
-                .and_then(|_| {
-                    self.writer()
-                        .send_browser(&BrowserMessage::SensorUpdate(update))
-                        .map_err(|error| error.to_string())
-                });
+            let result = queued.forward_if_current(|update| {
+                update.validate().map_err(|error| error.to_string())?;
+                self.writer()
+                    .send_browser(&BrowserMessage::SensorUpdate(update.clone()))
+                    .map_err(|error| error.to_string())
+            });
             if let Err(error) = result {
                 self.protocol_failure(error);
                 break;

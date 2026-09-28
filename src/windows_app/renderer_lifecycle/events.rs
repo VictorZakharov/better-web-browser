@@ -281,6 +281,9 @@ impl BrowserState {
         session.finish_event_drain();
 
         if let Some(exit) = exit {
+            // Retire the browser-owned hardware stream before any recovery path
+            // can detach this renderer session or start its replacement.
+            self.retire_sensors_for_tab(id);
             let crash_surface = exit.crash_surface();
             let task_budget_exceeded =
                 matches!(exit.reason, RendererExitReason::TaskBudgetExceeded(_));

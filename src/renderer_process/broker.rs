@@ -11,7 +11,7 @@ mod outbound;
 mod queue_depth;
 mod session;
 mod state_updates;
-mod stream;
+pub(super) mod stream;
 #[cfg(test)]
 mod tests;
 mod viewport;
@@ -141,7 +141,7 @@ pub struct RendererSession {
     geolocation_overflow: Arc<std::sync::atomic::AtomicBool>,
     media_device_updates: mpsc::SyncSender<crate::renderer_protocol::MediaDeviceUpdate>,
     media_device_overflow: Arc<std::sync::atomic::AtomicBool>,
-    sensor_updates: mpsc::SyncSender<crate::renderer_protocol::SensorUpdate>,
+    sensor_updates: mpsc::SyncSender<stream::QueuedSensorUpdate>,
     sensor_overflow: Arc<std::sync::atomic::AtomicBool>,
     fetch_flow: Arc<flow::FetchFlow>,
     events: events::EventReceiver,

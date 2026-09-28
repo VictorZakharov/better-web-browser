@@ -39,8 +39,10 @@ upgrades a relative reading to an absolute claim. Windows
 sensor axes are in the hardware's natural device orientation, not the current
 screen orientation. The adapter converts accelerometer *g* values using
 9.80665 m/s² per *g*, and converts gyroscope degrees/s to radians/s only for
-the Generic Sensor interface. The worker quantizes vector values to 0.1 in
-their respective units and caps sampling at 50 Hz. A Generic Sensor's
+the Generic Sensor interface. Acceleration and magnetic vectors are rounded
+to 0.1 in their exposed units; angular rates are rounded to 0.1 degrees/s
+before conversion to radians/s (steps of roughly 0.001745 radians/s). The
+worker caps sampling at 50 Hz. A Generic Sensor's
 `timestamp` currently uses the renderer delivery time from `performance.now()`;
 it can lag physical acquisition across the browser/renderer IPC boundary.
 
@@ -70,10 +72,14 @@ benchmark modes.
 
 The worker admits at most 32 streams, accepts commands through a bounded
 64-entry queue, and sends readings through a bounded renderer mailbox. It
-stops sampling hidden tabs and retires streams when the document, renderer,
-tab, or window exits. Sensor objects are initialized lazily after permission,
-and shutdown does not block on a faulty device driver. Source WinRT timestamps
-deduplicate repeated current readings.
+revokes sampling on tab switch or minimization immediately, and retires streams
+when the document, renderer, tab, or window exits. A disconnected renderer
+mailbox also terminates its stream. After a native permission dialog, the
+browser rechecks the document, renderer session, effective origin, and
+foreground state before recording consent or starting a sensor. Sensor objects
+are initialized lazily after permission, and shutdown does not block on a
+faulty device driver. Source WinRT timestamps deduplicate repeated current
+readings.
 
 The current slice does not include `UncalibratedMagnetometer`, screen-reference
 frame transforms, background sampling, persistent grants, or Permissions

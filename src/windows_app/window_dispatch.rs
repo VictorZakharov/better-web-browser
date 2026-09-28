@@ -103,6 +103,7 @@ unsafe fn dispatch_window_message(
         }
         WM_SETCURSOR if state.apply_page_cursor_for_hit_test(lparam) => 1,
         WM_SIZE => {
+            state.handle_sensor_window_size(wparam);
             state.exit_pointer_lock();
             if wparam == 1 {
                 // SIZE_MINIMIZED: capture must not persist in a hidden window.

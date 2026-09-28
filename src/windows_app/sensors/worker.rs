@@ -1,7 +1,7 @@
 //! Bounded sampling scheduler. Device access exists only behind the authorized worker commands.
 
 use super::{SensorOwner, TabId};
-use better_web_browser::renderer_process::SensorUpdateSink;
+use better_web_browser::renderer_process::{SensorSinkError, SensorUpdateSink};
 use better_web_browser::renderer_protocol::{
     SensorAction, SensorError, SensorEvent, SensorKind, SensorReading, SensorRequest, SensorUpdate,
 };
@@ -21,7 +21,7 @@ mod tests;
 
 pub(super) enum Command<S = SensorUpdateSink> {
     Request(SensorOwner, SensorRequest, S),
-    Retire(SensorOwner),
+    RetireTab(TabId),
     Shutdown,
 }
 
@@ -41,11 +41,11 @@ pub(super) trait SensorProvider {
 }
 
 pub(super) trait EventSink: Send + 'static {
-    fn try_emit(&self, update: SensorUpdate) -> Result<(), String>;
+    fn try_emit(&self, update: SensorUpdate) -> Result<(), SensorSinkError>;
 }
 
 impl EventSink for SensorUpdateSink {
-    fn try_emit(&self, update: SensorUpdate) -> Result<(), String> {
+    fn try_emit(&self, update: SensorUpdate) -> Result<(), SensorSinkError> {
         self.try_send(update)
     }
 }
@@ -93,7 +93,7 @@ pub(super) fn run<P: SensorProvider, S: EventSink>(
                     (owner, request, sink),
                 );
             }
-            Ok(Command::Retire(owner)) => streams.retain(|(candidate, _), _| *candidate != owner),
+            Ok(Command::RetireTab(tab)) => streams.retain(|(candidate, _), _| candidate.tab != tab),
             Ok(Command::Shutdown) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
@@ -115,11 +115,20 @@ pub(super) fn run<P: SensorProvider, S: EventSink>(
         let now = Instant::now();
         let mut failures = Vec::new();
         for (key, stream) in &mut streams {
-            if stream.owner.tab.get() != visible || now < stream.next_due {
+            if stream.owner.tab.get() != visible
+                || visible_tab.load(Ordering::Acquire) != visible
+                || is_retired(&retired, stream.owner)
+                || now < stream.next_due
+            {
                 continue;
             }
             stream.next_due = now + stream.interval;
-            match provider.sample(stream.kind, stream.interval.as_secs_f64() * 1000.0) {
+            let sample = provider.sample(stream.kind, stream.interval.as_secs_f64() * 1000.0);
+            if visible_tab.load(Ordering::Acquire) != visible || is_retired(&retired, stream.owner)
+            {
+                continue;
+            }
+            match sample {
                 Ok(Some(sample)) if stream.last_stamp != Some(sample.stamp) => {
                     stream.last_stamp = Some(sample.stamp);
                     let light = if let Some(raw) = sample.raw_light_lux {
@@ -141,10 +150,20 @@ pub(super) fn run<P: SensorProvider, S: EventSink>(
                         None
                     };
                     // A full renderer sample lane loses this sample, never blocks sensor polling.
-                    if emit(stream, SensorEvent::Reading(sample.reading)).is_ok()
-                        && let Some(light) = light
-                    {
-                        stream.last_light = Some(light);
+                    match emit(stream, SensorEvent::Reading(sample.reading)) {
+                        Ok(()) => {
+                            if let Some(light) = light {
+                                stream.last_light = Some(light);
+                            }
+                        }
+                        Err(SensorSinkError::Full | SensorSinkError::Hidden) => {}
+                        Err(SensorSinkError::Disconnected) => {
+                            failures.push(*key);
+                        }
+                        Err(SensorSinkError::Invalid(_)) => {
+                            let _ = emit(stream, SensorEvent::Error(SensorError::NotReadable));
+                            failures.push(*key);
+                        }
                     }
                 }
                 Ok(_) => {}
@@ -208,6 +227,14 @@ fn handle_request<P: SensorProvider, S: EventSink>(
             }
             match provider.supported(kind) {
                 Ok(true) => {
+                    // A device discovery may have blocked while the tab was hidden or
+                    // its renderer was retired; do not activate that stale request.
+                    if is_retired(retired, owner)
+                        || visible_tab.load(Ordering::Acquire) != owner.tab.get()
+                    {
+                        let _ = emit(&candidate, SensorEvent::Error(SensorError::NotAllowed));
+                        return;
+                    }
                     // supported() can lazily open a second WinRT device while other
                     // streams are already active. Apply the report interval to it.
                     if active {
@@ -252,7 +279,7 @@ fn sample_interval(kind: SensorKind, frequency_hz: Option<f64>) -> Duration {
     Duration::from_secs_f64(1.0 / frequency.clamp(1.0, 50.0))
 }
 
-fn emit<S: EventSink>(stream: &Stream<S>, event: SensorEvent) -> Result<(), String> {
+fn emit<S: EventSink>(stream: &Stream<S>, event: SensorEvent) -> Result<(), SensorSinkError> {
     stream.sink.try_emit(SensorUpdate {
         document: stream.owner.document,
         request_id: stream.request_id,
