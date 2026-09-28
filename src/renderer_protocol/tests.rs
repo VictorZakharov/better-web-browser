@@ -2,6 +2,7 @@ use super::*;
 use crate::storage::{StorageAreaKind, StorageEntry, StorageMutation, StorageOperation};
 use std::io::Cursor;
 
+mod geolocation;
 mod input;
 mod state;
 

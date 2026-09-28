@@ -10,6 +10,7 @@ mod dynamic_modules;
 mod dynamic_readiness;
 mod frame_navigation;
 mod frames;
+mod geolocation;
 mod idle;
 mod inserted_scripts;
 mod notification;

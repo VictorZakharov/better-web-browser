@@ -152,6 +152,27 @@ impl Origin {
         matches!(&self.kind, OriginKind::Tuple { scheme, .. } if scheme == "https")
     }
 
+    /// Secure Contexts' potentially trustworthy origins include loopback HTTP.
+    /// Opaque origins never inherit trust merely from a displayed URL.
+    pub fn is_potentially_trustworthy(&self) -> bool {
+        match &self.kind {
+            OriginKind::Opaque(_) => false,
+            OriginKind::Tuple { scheme, host, .. }
+                if matches!(scheme.as_str(), "https" | "wss" | "file") =>
+            {
+                true
+            }
+            OriginKind::Tuple { scheme, host, .. } if matches!(scheme.as_str(), "http" | "ws") => {
+                host.eq_ignore_ascii_case("localhost")
+                    || host.to_ascii_lowercase().ends_with(".localhost")
+                    || host
+                        .parse::<std::net::IpAddr>()
+                        .is_ok_and(|address| address.is_loopback())
+            }
+            _ => false,
+        }
+    }
+
     pub fn opaque() -> Self {
         Self {
             kind: OriginKind::Opaque(NEXT_OPAQUE_ORIGIN.fetch_add(1, Ordering::Relaxed)),

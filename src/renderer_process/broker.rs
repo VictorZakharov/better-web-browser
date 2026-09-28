@@ -46,8 +46,8 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 pub use stream::{
-    DatabaseEventSink, FetchResponseSink, NotificationUpdateSink, SpeechUpdateSink,
-    WebSocketEventSink,
+    DatabaseEventSink, FetchResponseSink, GeolocationUpdateSink, NotificationUpdateSink,
+    SpeechUpdateSink, WebSocketEventSink,
 };
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RendererState {
@@ -116,6 +116,7 @@ pub enum RendererEvent {
     DatabaseCommand(crate::renderer_protocol::DatabaseCommand),
     SpeechRequest(crate::renderer_protocol::SpeechRequest),
     NotificationRequest(crate::renderer_protocol::NotificationRequest),
+    GeolocationRequest(crate::renderer_protocol::GeolocationRequest),
     Unresponsive,
     Exited(RendererExit),
 }
@@ -134,6 +135,8 @@ pub struct RendererSession {
     database_overflow: Arc<std::sync::atomic::AtomicBool>,
     notification_updates: mpsc::SyncSender<crate::renderer_protocol::NotificationUpdate>,
     notification_overflow: Arc<std::sync::atomic::AtomicBool>,
+    geolocation_updates: mpsc::SyncSender<crate::renderer_protocol::GeolocationUpdate>,
+    geolocation_overflow: Arc<std::sync::atomic::AtomicBool>,
     fetch_flow: Arc<flow::FetchFlow>,
     events: events::EventReceiver,
     incoming_depth: QueueDepth,
@@ -251,6 +254,8 @@ impl RendererSession {
         // They cannot compete with bulk Fetch chunks in the lossy UI-thread lane.
         let (notification_updates_tx, notification_updates_rx) = mpsc::sync_channel(256);
         let notification_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (geolocation_updates_tx, geolocation_updates_rx) = mpsc::sync_channel(256);
+        let geolocation_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let fetch_flow = Arc::new(flow::FetchFlow::default());
         let worker_fetch_flow = Arc::clone(&fetch_flow);
         let (events_tx, events_rx) = events::bounded();
@@ -260,6 +265,7 @@ impl RendererSession {
         let worker_command_depth = command_depth.clone();
         let worker_incoming_depth = incoming_depth.clone();
         let worker_notification_overflow = Arc::clone(&notification_overflow);
+        let worker_geolocation_overflow = Arc::clone(&geolocation_overflow);
         let worker_database_overflow = Arc::clone(&database_overflow);
         let worker_database_queued_bytes = Arc::clone(&database_queued_bytes);
         let handle = std::thread::Builder::new()
@@ -287,6 +293,8 @@ impl RendererSession {
                     database_overflow: worker_database_overflow,
                     notification_updates: notification_updates_rx,
                     notification_overflow: worker_notification_overflow,
+                    geolocation_updates: geolocation_updates_rx,
+                    geolocation_overflow: worker_geolocation_overflow,
                     fetch_flow: worker_fetch_flow,
                     events: events_tx,
                     wake: worker_wake,
@@ -309,6 +317,8 @@ impl RendererSession {
             database_overflow,
             notification_updates: notification_updates_tx,
             notification_overflow,
+            geolocation_updates: geolocation_updates_tx,
+            geolocation_overflow,
             fetch_flow,
             events: events_rx,
             incoming_depth,

@@ -65,6 +65,7 @@ impl EventSender {
                 | RendererEvent::DatabaseCommand(_)
                 | RendererEvent::SpeechRequest(_)
                 | RendererEvent::NotificationRequest(_)
+                | RendererEvent::GeolocationRequest(_)
         ) {
             self.send_lossless(event)
         } else {
@@ -233,6 +234,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::DatabaseCommand(command) => Some(command.document),
         RendererEvent::SpeechRequest(request) => Some(request.document),
         RendererEvent::NotificationRequest(request) => Some(request.document),
+        RendererEvent::GeolocationRequest(request) => Some(request.document),
         RendererEvent::FullscreenRequested(request) => Some(request.document),
         RendererEvent::PointerLockRequested(request) => Some(request.document),
         RendererEvent::Diagnostic { .. }

@@ -123,6 +123,15 @@ impl RendererSession {
         )
     }
 
+    pub fn geolocation_update_sink(&self, document: DocumentId) -> super::GeolocationUpdateSink {
+        super::GeolocationUpdateSink::new(
+            document,
+            self.geolocation_updates.clone(),
+            Arc::clone(&self.geolocation_overflow),
+            self.wake.clone(),
+        )
+    }
+
     pub fn load_streaming_document(
         &self,
         start: DocumentStart,

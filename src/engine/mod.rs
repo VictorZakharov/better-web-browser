@@ -23,9 +23,9 @@ pub use layout::{
 pub use page::{DecodedImage, Page, PageResource};
 pub use script::network::{ScriptDatabaseAction, ScriptWebSocketAction};
 pub use script::{
-    DynamicScriptRequest, ScriptFetchAction, ScriptFetchEvent, ScriptFetchOptions, ScriptKind,
-    ScriptNotificationAction, ScriptOutcome, ScriptRuntime, ScriptSpeechAction, ScriptWorkerAction,
-    UserInputEvent, UserInputModifiers, UserInputResult, WorkerPortEvent, WorkerRuntime,
-    WorkerRuntimeOutcome, WorkerSourceLoader,
+    DynamicScriptRequest, ScriptFetchAction, ScriptFetchEvent, ScriptFetchOptions,
+    ScriptGeolocationAction, ScriptKind, ScriptNotificationAction, ScriptOutcome, ScriptRuntime,
+    ScriptSpeechAction, ScriptWorkerAction, UserInputEvent, UserInputModifiers, UserInputResult,
+    WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome, WorkerSourceLoader,
 };
 pub(crate) use stylesheet::AdoptedStyleSheet;

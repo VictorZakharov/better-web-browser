@@ -199,6 +199,7 @@ impl ScriptRuntime {
         host.pending_database_actions.clear();
         host.pending_speech_actions.clear();
         host.pending_notification_actions.clear();
+        host.pending_geolocation_actions.clear();
         host.pending_worker_actions.clear();
         host.pending_fullscreen_actions.clear();
         host.pending_pointer_lock_actions.clear();

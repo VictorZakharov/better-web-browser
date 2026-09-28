@@ -6,6 +6,7 @@ use super::*;
 mod canvas_presentation;
 pub(super) mod compression_host;
 mod font_host;
+pub(in crate::engine::script) mod geolocation;
 mod graphics;
 mod module_completion;
 pub(super) mod navigation;
@@ -48,6 +49,9 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     if let Some(value) = notification::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = geolocation::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = super::workers::worker_host_call(operation, args, state)? {

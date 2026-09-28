@@ -13,6 +13,7 @@ mod document_activation;
 mod document_navigation;
 mod document_state;
 mod fullscreen;
+mod geolocation;
 mod incident_log;
 mod navigation_transaction;
 mod notifications;

@@ -3,8 +3,8 @@
 use crate::limits::MAX_FETCH_STREAM_CHUNK_BYTES;
 use crate::renderer_protocol::{
     BrowserFetchError, DatabaseEvent, DocumentId, FetchResponseAbort, FetchResponseEnd,
-    FetchResponseHead, NotificationEvent, NotificationUpdate, SpeechUpdate, TransferChunk,
-    WebSocketEvent,
+    FetchResponseHead, GeolocationUpdate, NotificationEvent, NotificationUpdate, SpeechUpdate,
+    TransferChunk, WebSocketEvent,
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -55,6 +55,50 @@ pub struct NotificationUpdateSink {
     required: mpsc::SyncSender<NotificationUpdate>,
     overflow: Arc<AtomicBool>,
     wake: super::wake::BrokerWake,
+}
+
+#[derive(Clone)]
+pub struct GeolocationUpdateSink {
+    document: DocumentId,
+    required: mpsc::SyncSender<GeolocationUpdate>,
+    overflow: Arc<AtomicBool>,
+    wake: super::wake::BrokerWake,
+}
+
+impl GeolocationUpdateSink {
+    pub(super) fn new(
+        document: DocumentId,
+        required: mpsc::SyncSender<GeolocationUpdate>,
+        overflow: Arc<AtomicBool>,
+        wake: super::wake::BrokerWake,
+    ) -> Self {
+        Self {
+            document,
+            required,
+            overflow,
+            wake,
+        }
+    }
+
+    /// Location callbacks must never block the UI thread or disappear silently.
+    pub fn try_send(&self, update: GeolocationUpdate) -> Result<(), String> {
+        update.validate().map_err(|error| error.to_string())?;
+        if update.document != self.document {
+            return Err("geolocation update document mismatch".into());
+        }
+        match self.required.try_send(update) {
+            Ok(()) => self.wake.notify(),
+            Err(mpsc::TrySendError::Full(_)) => {
+                self.overflow.store(true, Ordering::Release);
+                self.wake.notify();
+                return Err("renderer geolocation control mailbox is full".into());
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                return Err("renderer geolocation control mailbox is closed".into());
+            }
+        }
+        Ok(())
+    }
 }
 
 pub(super) enum FetchStreamEvent {

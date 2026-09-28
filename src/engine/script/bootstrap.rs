@@ -196,6 +196,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/indexed_db.js"),
     include_str!("bootstrap/speech_synthesis.js"),
     include_str!("bootstrap/notification.js"),
+    include_str!("bootstrap/geolocation.js"),
     include_str!("bootstrap/performance.js"),
     include_str!("bootstrap/user_timing.js"),
     include_str!("bootstrap/performance_observer.js"),

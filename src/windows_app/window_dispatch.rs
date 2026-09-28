@@ -66,6 +66,10 @@ unsafe fn dispatch_window_message(
             state.handle_notification_shell_event(wparam as u32, lparam as u32);
             0
         }
+        geolocation::WM_APP_GEOLOCATION => {
+            state.tick_geolocation();
+            0
+        }
         WM_CREATE => {
             if state.create_controls().is_err() {
                 return -1;
@@ -187,6 +191,7 @@ unsafe fn dispatch_window_message(
         }
         WM_TIMER if wparam == ID_RENDERER_MONITOR_TIMER => {
             state.poll_renderers();
+            state.tick_geolocation();
             0
         }
         WM_TIMER if wparam == ID_PERFORMANCE_MONITOR_TIMER => {
@@ -419,6 +424,7 @@ unsafe fn dispatch_window_message(
             }
             state.retire_speech_for_window();
             state.retire_notifications_for_window();
+            state.retire_geolocation_for_window();
             state.release_pointer_lock(false);
             KillTimer(window, ID_PERFORMANCE_MONITOR_TIMER);
             KillTimer(window, ID_SCROLL_ANIMATION_TIMER);

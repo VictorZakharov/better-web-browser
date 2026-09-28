@@ -37,6 +37,8 @@ harfrust = "0.5.2"
 swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"] }
 unicode-script = "0.5.8"
 windows = { version = "0.62.2", features = [
+    "Devices_Geolocation",
+    "Foundation",
     "Win32_Globalization",
     "Win32_Media_Audio_XAudio2",
     "Win32_Media_MediaFoundation",

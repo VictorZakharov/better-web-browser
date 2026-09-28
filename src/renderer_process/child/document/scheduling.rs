@@ -45,6 +45,7 @@ impl DocumentRuntime {
             || !self.pending_databases.is_empty()
             || !self.pending_speech_requests.is_empty()
             || !self.pending_notification_requests.is_empty()
+            || !self.pending_geolocation_requests.is_empty()
             || !self.pending_worker_actions.is_empty()
             || self.workers.has_work()
             || self
@@ -180,6 +181,8 @@ impl DocumentRuntime {
             .append(&mut outcome.speech_actions);
         self.pending_notification_requests
             .append(&mut outcome.notification_actions);
+        self.pending_geolocation_requests
+            .append(&mut outcome.geolocation_actions);
         self.start_dynamic_script_fetches(connection)?;
         let worker_actions = std::mem::take(&mut outcome.worker_actions);
         connection.report_renderer_task_stage(format!(
@@ -206,6 +209,8 @@ impl DocumentRuntime {
             .append(&mut outcome.speech_actions);
         self.pending_notification_requests
             .append(&mut outcome.notification_actions);
+        self.pending_geolocation_requests
+            .append(&mut outcome.geolocation_actions);
         self.apply_media_actions(&mut outcome, connection)?;
         let media_changed = self.advance_media(elapsed, connection, &mut outcome)?;
         // Media events execute author script too. Admit their fetch/worker/media
