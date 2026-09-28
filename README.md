@@ -550,6 +550,13 @@ exits. The score is unchanged from the preceding 469-point observation; the
 new browser-owned storage, power, and permission contracts are covered by
 focused unit and hidden integration tests, not established by HTML5test.
 
+The following 2026-09-28 [URLPattern grammar slice](docs/url-pattern.md) also
+rendered **469 / 588** in three identical hidden fresh-profile release runs.
+Each returned HTTP 200, executed seven page scripts, and had no JavaScript
+errors or renderer exits. The score is unchanged; HTML5test does not exercise
+the new repeated and literal-affixed capture behavior, which is covered by
+focused tests. No dependency or copied upstream code was added.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280Ã—720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -558,8 +565,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280Ã
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-28-browser-apis-batch18-run1.json `
-  -Screenshot target/html5test/2026-09-28-browser-apis-batch18-run1.png
+  -Output target/html5test/2026-09-28-urlpattern-batch19-run1.json `
+  -Screenshot target/html5test/2026-09-28-urlpattern-batch19-run1.png
 ```
 
 New releases must refresh or explicitly date these observations using the
