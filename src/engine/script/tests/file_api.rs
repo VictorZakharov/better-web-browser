@@ -118,6 +118,71 @@ fn blob_slice_clamps_extreme_offsets_and_preserves_nested_ranges() {
 }
 
 #[test]
+fn blob_reads_and_default_slice_use_private_state_not_author_overrides() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output>pending</output><script>
+            (async () => {
+                const blob = new Blob(['private bytes'], {type:'text/plain'});
+                Object.defineProperty(blob, 'size', {get() { throw Error('size override'); }});
+                Object.defineProperty(blob, '__bytes', {get() { throw Error('bytes override'); }});
+                const slice = blob.slice();
+                const copy = await blob.bytes();
+                const buffer = await blob.arrayBuffer();
+                const text = await blob.text();
+                document.querySelector('output').textContent = [
+                    slice.size, new TextDecoder().decode(copy),
+                    new TextDecoder().decode(buffer), text
+                ].join('|');
+            })().catch(error => document.querySelector('output').textContent = error.message);
+        </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "13|private bytes|private bytes|private bytes"
+    );
+}
+
+#[test]
+fn clone_and_upload_use_private_blob_and_file_snapshots() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output>pending</output><script>
+            (async () => {
+                const blob = new Blob(['blob-data'], {type:'text/plain'});
+                const file = new File(['file-data'], 'real.txt',
+                    {type:'text/plain', lastModified:123});
+                for (const value of [blob, file]) {
+                    for (const key of ['__bytes', 'type', 'name', 'lastModified'])
+                        Object.defineProperty(value, key, {
+                            get() { throw Error('author ' + key); }
+                        });
+                }
+                const clonedBlob = structuredClone(blob);
+                const clonedFile = structuredClone(file);
+                const direct = new Request('/upload', {method:'POST', body:blob});
+                const form = new FormData();
+                form.append('attachment', file);
+                const multipart = new Request('/upload', {method:'POST', body:form});
+                const multipartText = await multipart.text();
+                document.querySelector('output').textContent = [
+                    await clonedBlob.text(), clonedBlob.type,
+                    await clonedFile.text(), clonedFile.type,
+                    clonedFile.name, clonedFile.lastModified,
+                    await direct.text(), direct.headers.get('content-type'),
+                    multipartText.includes('filename="real.txt"'),
+                    multipartText.includes('file-data')
+                ].join('|');
+            })().catch(error => document.querySelector('output').textContent = error.message);
+        </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "blob-data|text/plain|file-data|text/plain|real.txt|123|blob-data|text/plain|true|true"
+    );
+}
+
+#[test]
 fn canceled_blob_stream_does_not_perturb_another_reader_or_its_source() {
     let (dom, outcome) = execute_html(
         r#"<body><output>pending</output><script>

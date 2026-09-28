@@ -68,3 +68,20 @@ fn asynchronous_file_reader_remains_available_in_worker() {
     let result: String = serde_json::from_str(&completion.messages[0]).unwrap();
     assert_eq!(result, "worker read");
 }
+
+#[test]
+fn worker_structured_clone_uses_private_file_snapshot() {
+    let (_, outcome) = run(r#"const file = new File(['worker bytes'], 'original.txt',
+            {type:'text/plain', lastModified:321});
+            for (const key of ['__bytes', 'type', 'name', 'lastModified'])
+                Object.defineProperty(file, key, {
+                    get() { throw Error('author ' + key); }
+                });
+            const copy = structuredClone(file);
+            const bytes = new FileReaderSync().readAsText(copy);
+            postMessage([bytes, copy.name, copy.type, copy.lastModified,
+                typeof __blobStructuredCloneSnapshot].join('|'));"#);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let result: String = serde_json::from_str(&outcome.messages[0]).unwrap();
+    assert_eq!(result, "worker bytes|original.txt|text/plain|321|undefined");
+}

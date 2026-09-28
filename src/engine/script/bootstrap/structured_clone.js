@@ -12,6 +12,8 @@
         return bytes;
     };
     const fail = () => { throw new DOMException('The value could not be cloned', 'DataCloneError'); };
+    const blobSnapshot = globalThis.__blobStructuredCloneSnapshot;
+    delete globalThis.__blobStructuredCloneSnapshot;
     const transferList = options => {
         const source = Array.isArray(options) ? options : options?.transfer;
         if (source === undefined) return [];
@@ -92,10 +94,11 @@
                 b: bytesToBase64(new Uint8Array(value.buffer)), o: value.byteOffset,
                 l: value instanceof DataView ? value.byteLength : value.length
             };
-            if (typeof Blob === 'function' && value instanceof Blob) return {
-                t: value instanceof File ? 'file' : 'blob', id,
-                v: bytesToBase64(value.__bytes), y: value.type,
-                n: value.name, m: value.lastModified
+            const blob = blobSnapshot(value);
+            if (blob) return {
+                t: blob.file ? 'file' : 'blob', id,
+                v: bytesToBase64(blob.bytes), y: blob.type,
+                n: blob.file?.name, m: blob.file?.lastModified
             };
             if (value instanceof QuotaExceededError) return { t: 'quota-error', id, m: value.message, q: value.quota, r: value.requested };
             if (value instanceof Error) return { t: 'error', id, n: value.name, m: value.message, s: value.stack };
