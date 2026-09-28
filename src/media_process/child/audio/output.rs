@@ -43,6 +43,24 @@ impl AudioOutput {
         }
     }
 
+    /// A live graph cannot claim to be rendering audio when there is no output endpoint.
+    /// The decoded-media path intentionally keeps its separate silent fallback for video.
+    pub(super) fn device_required(sample_rate: u32, channels: u16) -> Result<Self, String> {
+        Self::from_required_device(XAudioOutput::new(sample_rate, channels))
+    }
+
+    fn from_required_device(
+        created: Result<XAudioOutput, DeviceOutputError>,
+    ) -> Result<Self, String> {
+        match created {
+            Ok(output) => Ok(Self::Device(output)),
+            Err(DeviceOutputError::EndpointUnavailable) => {
+                Err("default audio output endpoint is unavailable".into())
+            }
+            Err(DeviceOutputError::Fatal(error)) => Err(error),
+        }
+    }
+
     pub(super) fn playing(&self) -> bool {
         match self {
             Self::Silent(output) => output.playing,
@@ -375,16 +393,4 @@ fn missing_default_audio_endpoint(code: windows::core::HRESULT) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_a_missing_default_endpoint_selects_silent_output() {
-        assert!(missing_default_audio_endpoint(windows::core::HRESULT(
-            AUDIO_ENDPOINT_NOT_FOUND
-        )));
-        assert!(!missing_default_audio_endpoint(windows::core::HRESULT(
-            0x8007_0057_u32 as i32
-        )));
-    }
-}
+mod tests;

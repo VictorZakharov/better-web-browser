@@ -301,6 +301,7 @@ impl DocumentRuntime {
         // A FontFace URL load resolves from this networking task, not from a clock or input
         // task. Install its decoded face before deciding whether this callback needs layout.
         self.apply_font_actions(&mut outcome);
+        self.apply_graph_audio_actions(&mut outcome, connection)?;
         connection.send_state_mutations(self.id, &mut outcome)?;
 
         let script_time = started.elapsed();

@@ -7,6 +7,7 @@ mod canvas_presentation;
 pub(super) mod compression_host;
 mod font_host;
 pub(in crate::engine::script) mod geolocation;
+mod graph_audio;
 mod graphics;
 pub(in crate::engine::script) mod media_devices;
 mod module_completion;
@@ -55,6 +56,9 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     if let Some(value) = media_devices::dispatch(operation, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = graph_audio::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = super::workers::worker_host_call(operation, args, state)? {

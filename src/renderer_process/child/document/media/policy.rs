@@ -24,7 +24,7 @@ impl MediaActivation {
         };
     }
 
-    pub(super) fn allows(&self, volume_millis: u16) -> bool {
+    pub(in crate::renderer_process::child::document) fn allows(&self, volume_millis: u16) -> bool {
         volume_millis == 0 || self.0
     }
 }

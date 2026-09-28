@@ -205,6 +205,7 @@ impl ScriptRuntime {
         host.pending_fullscreen_actions.clear();
         host.pending_pointer_lock_actions.clear();
         host.pending_media_actions.clear();
+        host.pending_graph_audio_actions.clear();
         host.pending_font_actions.clear();
         host.storage_event = None;
         host.storage_updates.clear();

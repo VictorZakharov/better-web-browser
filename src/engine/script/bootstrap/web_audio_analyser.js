@@ -52,8 +52,8 @@
             const smoothing = validAnalyserSmoothing(
                 options.smoothingTimeConstant === undefined ?
                     0.8 : options.smoothingTimeConstant);
-            if (!(context instanceof OfflineAudioContext))
-                throw new TypeError('AnalyserNode requires an OfflineAudioContext');
+            if (!(context instanceof BaseAudioContext))
+                throw new TypeError('AnalyserNode requires a BaseAudioContext');
             const contextState = audioContextState.get(context);
             if ((contextState.analyserNodes ?? 0) >= MAX_ANALYSER_NODES)
                 throw new AudioDOMException('AnalyserNode limit reached',

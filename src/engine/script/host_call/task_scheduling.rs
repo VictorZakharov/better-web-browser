@@ -64,7 +64,17 @@ pub(super) fn dispatch(
                     .with_message("task identifiers must be positive integers")
                     .into());
             }
-            state.schedule_media_task(id);
+            state.schedule_media_task(id, Duration::ZERO);
+            JsValue::from(id)
+        }
+        "audioTaskSchedule" => {
+            let id = argument_id(args, 1);
+            if id == 0 {
+                return Err(JsNativeError::range()
+                    .with_message("task identifiers must be positive integers")
+                    .into());
+            }
+            state.schedule_media_task(id, argument_duration(args, 2));
             JsValue::from(id)
         }
         "idleSchedule" => {

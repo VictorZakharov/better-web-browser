@@ -1,6 +1,5 @@
 use super::*;
 use crate::media_protocol::{GraphPcmFormat, GraphPcmStatus};
-use crate::renderer_protocol::DocumentId;
 use std::time::{Duration, Instant};
 
 // Three waiting chunks plus at most one chunk retrying after worker backpressure.
@@ -30,6 +29,8 @@ struct GraphState {
     context_id: u64,
     last_context_id: u64,
     generation: u64,
+    worker_generation_seen: u64,
+    worker_accepted_generation: u64,
 }
 
 impl GraphState {
@@ -50,6 +51,8 @@ impl GraphPcmPump {
             context_id: 0,
             last_context_id: 0,
             generation: 1,
+            worker_generation_seen: 0,
+            worker_accepted_generation: 0,
         }));
         let fault = Arc::new(Mutex::new(None));
         let thread_state = Arc::clone(&state);
@@ -96,19 +99,47 @@ impl GraphPcmPump {
         }
     }
 
-    fn close(&self, document_id: u64, context_id: u64) -> bool {
+    fn close(&self, document_id: u64, context_id: u64) -> Option<u64> {
         let mut state = self
             .state
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         if context_id == 0 || state.document_id != document_id || state.context_id != context_id {
-            return false;
+            return None;
         }
         state.advance();
         state.context_id = 0;
+        let ticket = state.generation;
         drop(state);
         let _ = self.commands.try_send(GraphCommand::Wake);
-        true
+        Some(ticket)
+    }
+
+    fn close_completed(&self, ticket: u64) -> bool {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        ticket != 0 && state.worker_generation_seen >= ticket
+    }
+
+    fn first_chunk_status(&self, document_id: u64, context_id: u64) -> Result<Option<()>, String> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| "graph PCM state lock was poisoned")?;
+        if state.document_id != document_id || state.context_id != context_id {
+            return Err("graph PCM stream was retired before output started".into());
+        }
+        if let Some(error) = self
+            .fault
+            .lock()
+            .map_err(|_| "graph PCM status lock was poisoned")?
+            .as_ref()
+        {
+            return Err(error.clone());
+        }
+        Ok((state.worker_accepted_generation == state.generation).then_some(()))
     }
 
     fn try_queue(
@@ -201,6 +232,13 @@ fn run(
             });
             active = None;
         }
+        // The worker has observed this generation only after a prior graph voice was
+        // released. A document may settle close() when its ticket has been observed.
+        let mut latest = state.lock().unwrap_or_else(|poison| poison.into_inner());
+        if latest.generation == current.generation {
+            latest.worker_generation_seen = current.generation;
+        }
+        drop(latest);
         let GraphCommand::Queue {
             document_id,
             context_id,
@@ -234,9 +272,28 @@ fn run(
         );
         match result {
             Ok(Some(GraphPcmStatus::Accepted)) => {
-                active = Some((document_id, context_id, command_generation))
+                let mut latest = state.lock().unwrap_or_else(|poison| poison.into_inner());
+                if latest.document_id == document_id
+                    && latest.context_id == context_id
+                    && latest.generation == command_generation
+                {
+                    latest.worker_accepted_generation = command_generation;
+                    active = Some((document_id, context_id, command_generation));
+                } else {
+                    drop(latest);
+                    let _ = with_client(&client, |client| {
+                        client.close_graph_pcm(document_id, context_id)
+                    });
+                }
             }
-            Ok(None) => {}
+            Ok(None) => {
+                // Invalidation can race a successful IPC response. The worker may
+                // have created a voice although the retry loop now sees a stale
+                // generation, so close that exact identity before acknowledging it.
+                let _ = with_client(&client, |client| {
+                    client.close_graph_pcm(document_id, context_id)
+                });
+            }
             Ok(Some(GraphPcmStatus::Backpressure)) => unreachable!(),
             terminal => {
                 let error = match terminal {
@@ -317,81 +374,7 @@ fn record_fault_if_current(
     }
 }
 
-impl ChildConnection {
-    pub(in crate::renderer_process::child) fn activate_graph_pcm(&mut self, document: DocumentId) {
-        if let Some(media) = self.media.as_mut() {
-            media.graph_document = document.get();
-            if let Some(graph) = media.graph.as_ref() {
-                graph.activate(document.get());
-            }
-        }
-    }
-
-    pub(in crate::renderer_process::child) fn retire_graph_pcm(&mut self, document: DocumentId) {
-        if let Some(media) = self
-            .media
-            .as_mut()
-            .filter(|media| media.graph_document == document.get())
-        {
-            media.graph_document = 0;
-            if let Some(graph) = media.graph.as_ref() {
-                graph.retire(document.get());
-            }
-        }
-    }
-
-    pub(in crate::renderer_process::child) fn retire_all_graph_pcm(&mut self) {
-        if let Some(media) = self.media.as_mut() {
-            let document_id = std::mem::take(&mut media.graph_document);
-            if let Some(graph) = media.graph.as_ref() {
-                graph.retire(document_id);
-            }
-        }
-    }
-
-    /// The realtime graph is not page-visible yet; the eventual host may call this without
-    /// waiting for media IPC or an audio device. False means bounded queue backpressure.
-    #[allow(dead_code)]
-    pub(in crate::renderer_process::child) fn try_queue_graph_pcm(
-        &mut self,
-        document: DocumentId,
-        context_id: u64,
-        format: GraphPcmFormat,
-        pcm: Vec<u8>,
-    ) -> Result<bool, String> {
-        let media = self
-            .media
-            .as_mut()
-            .ok_or("contained media worker is unavailable")?;
-        if media.graph_document != document.get() {
-            return Ok(false);
-        }
-        if media.graph.is_none() {
-            media.graph = Some(GraphPcmPump::new(
-                Arc::clone(&media.client),
-                document.get(),
-            )?);
-        }
-        media
-            .graph
-            .as_ref()
-            .expect("graph PCM pump initialized")
-            .try_queue(document.get(), context_id, format, pcm)
-    }
-
-    #[allow(dead_code)]
-    pub(in crate::renderer_process::child) fn close_graph_pcm(
-        &self,
-        document: DocumentId,
-        context_id: u64,
-    ) -> bool {
-        self.media
-            .as_ref()
-            .filter(|media| media.graph_document == document.get())
-            .and_then(|media| media.graph.as_ref())
-            .is_some_and(|graph| graph.close(document.get(), context_id))
-    }
-}
+mod connection;
 
 #[cfg(test)]
 mod tests;

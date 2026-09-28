@@ -16,6 +16,7 @@ mod document_streams;
 mod dynamic_modules;
 mod dynamic_scripts;
 mod frames;
+mod graph_audio;
 pub(crate) use frames::FramePaintSnapshot;
 mod geometry;
 mod history;
@@ -42,6 +43,11 @@ pub struct ScriptRuntime {
 }
 
 impl ScriptRuntime {
+    /// Mirrors the owning document's sticky media activation before a trusted input is dispatched.
+    pub(crate) fn set_audio_activation(&mut self, activated: bool) {
+        self.host.borrow_mut().audio_activated = activated;
+    }
+
     pub(crate) fn set_notification_permission(
         &mut self,
         permission: crate::renderer_protocol::NotificationPermission,

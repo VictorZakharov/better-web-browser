@@ -43,6 +43,9 @@ impl DocumentRuntime {
         }
         self.last_input_sequence = input.sequence();
         self.media_activation.observe(&input);
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            runtime.set_audio_activation(self.media_activation.allows(1_000));
+        }
         let force_accessibility_update =
             matches!(&input, DocumentInput::Text(_) | DocumentInput::Focus(_))
                 || (matches!(&input, DocumentInput::Scroll(_))
@@ -261,6 +264,7 @@ impl DocumentRuntime {
         self.collect_document_stream_changes();
         // Collect those after the bounded media-action drain, not before it.
         self.apply_media_actions(outcome, connection)?;
+        self.apply_graph_audio_actions(outcome, connection)?;
         self.apply_font_actions(outcome);
         self.pending_fetches.append(&mut outcome.fetch_actions);
         self.pending_websockets

@@ -23,10 +23,8 @@ impl HostState {
         self.timer_handles.insert(id, handle);
     }
 
-    pub(in crate::engine::script) fn schedule_media_task(&mut self, id: u32) {
-        let handle = self
-            .timers
-            .queue_task(TaskSource::MediaElement, Duration::ZERO, id);
+    pub(in crate::engine::script) fn schedule_media_task(&mut self, id: u32, delay: Duration) {
+        let handle = self.timers.queue_task(TaskSource::MediaElement, delay, id);
         self.timer_handles.insert(id, handle);
     }
 

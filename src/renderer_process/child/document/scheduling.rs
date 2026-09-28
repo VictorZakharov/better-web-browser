@@ -32,6 +32,10 @@ impl DocumentRuntime {
         [
             runtime_timer,
             self.media_timer_micros(),
+            (self.pending_graph_audio_chunk.is_some()
+                || self.pending_graph_audio_start.is_some()
+                || self.pending_graph_audio_close.is_some())
+            .then_some(10_000),
             self.rendering_deadline(),
         ]
         .into_iter()
@@ -217,6 +221,7 @@ impl DocumentRuntime {
         self.pending_media_device_requests
             .append(&mut outcome.media_device_actions);
         self.apply_media_actions(&mut outcome, connection)?;
+        self.apply_graph_audio_actions(&mut outcome, connection)?;
         let media_changed = self.advance_media(elapsed, connection, &mut outcome)?;
         // Media events execute author script too. Admit their fetch/worker/media
         // commands before publishing the report, which only retains diagnostics.

@@ -151,6 +151,11 @@ impl DocumentRuntime {
             media_activation: Default::default(),
             media_failure: None,
             pending_media_action: None,
+            graph_audio_stream: None,
+            graph_audio_last_stream_id: 0,
+            pending_graph_audio_chunk: None,
+            pending_graph_audio_start: None,
+            pending_graph_audio_close: None,
             pending_async_outcome: ScriptOutcome::default(),
             resource_events: Default::default(),
             geometry_observers_pending: false,
@@ -222,6 +227,7 @@ impl DocumentRuntime {
             runtime.page.dom.document.id(),
         );
         runtime.apply_media_actions(&mut outcome, connection)?;
+        runtime.apply_graph_audio_actions(&mut outcome, connection)?;
         runtime.apply_font_actions(&mut outcome);
         runtime.pending_fetches = std::mem::take(&mut outcome.fetch_actions);
         runtime.pending_websockets = std::mem::take(&mut outcome.websocket_actions);

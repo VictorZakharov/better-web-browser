@@ -26,6 +26,8 @@ mod source_replacement;
 mod starvation;
 #[path = "media/video_only.rs"]
 mod video_only;
+#[path = "media/web_audio.rs"]
+mod web_audio;
 
 #[test]
 fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership() {

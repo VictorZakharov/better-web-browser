@@ -154,6 +154,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/web_audio_analyser_fft.js"),
     include_str!("bootstrap/web_audio_analyser.js"),
     include_str!("bootstrap/web_audio_context.js"),
+    include_str!("bootstrap/web_audio_live_context.js"),
     include_str!("bootstrap/text_encoding.js"),
     include_str!("bootstrap/crypto.js"),
     include_str!("bootstrap/web_crypto.js"),

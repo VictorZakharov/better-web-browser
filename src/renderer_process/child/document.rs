@@ -9,6 +9,7 @@ mod font_actions;
 mod frames_paint;
 mod fullscreen;
 mod geometry;
+mod graph_audio;
 mod image_deltas;
 mod interaction;
 mod load;
@@ -116,6 +117,11 @@ pub(super) struct DocumentRuntime {
     media_activation: media::MediaActivation,
     media_failure: Option<String>,
     pending_media_action: Option<media::PendingMediaAction>,
+    graph_audio_stream: Option<u32>,
+    graph_audio_last_stream_id: u32,
+    pending_graph_audio_chunk: Option<crate::engine::script::ScriptGraphAudioAction>,
+    pending_graph_audio_start: Option<u32>,
+    pending_graph_audio_close: Option<(u32, u64)>,
     pending_async_outcome: ScriptOutcome,
     resource_events: resources::events::ResourceEvents,
     geometry_observers_pending: bool,
