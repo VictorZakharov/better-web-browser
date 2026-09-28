@@ -16,13 +16,13 @@ pub(super) fn dispatch(
 ) -> JsResult<Option<JsValue>> {
     if operation == "clipboardAvailable" {
         return Ok(Some(JsValue::from(
-            state.document_origin.is_potentially_trustworthy(),
+            !state.embedded && state.document_origin.is_potentially_trustworthy(),
         )));
     }
     if operation != "clipboardRequest" {
         return Ok(None);
     }
-    if !state.document_origin.is_potentially_trustworthy() {
+    if state.embedded || !state.document_origin.is_potentially_trustworthy() {
         return Err(JsNativeError::typ()
             .with_message("Clipboard requires a secure context")
             .into());

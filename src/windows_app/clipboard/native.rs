@@ -63,25 +63,38 @@ pub(in crate::windows_app) fn read_unicode_text(owner: Hwnd) -> Result<String, C
             return Err(ClipboardError::NotReadable);
         }
         let size = GlobalSize(handle);
-        if size == 0 || size % 2 != 0 || size > MAX_UTF16_BYTES {
-            return Err(ClipboardError::NotReadable);
-        }
+        let units_to_scan = bounded_unit_count(size)?;
         let pointer = GlobalLock(handle) as *const u16;
         if pointer.is_null() {
             return Err(ClipboardError::NotReadable);
         }
-        let units = std::slice::from_raw_parts(pointer, size / 2);
-        let end = units
-            .iter()
-            .position(|unit| *unit == 0)
-            .unwrap_or(units.len());
-        let text = String::from_utf16_lossy(&units[..end]);
+        let units = std::slice::from_raw_parts(pointer, units_to_scan);
+        let text = decode_unicode_units(units);
         GlobalUnlock(handle);
-        if text.len() > MAX_CLIPBOARD_TEXT_BYTES {
-            return Err(ClipboardError::NotReadable);
-        }
-        Ok(text)
+        text
     }
+}
+
+fn bounded_unit_count(global_size: usize) -> Result<usize, ClipboardError> {
+    let count = global_size / 2;
+    if count == 0 {
+        return Err(ClipboardError::NotReadable);
+    }
+    // GlobalSize reports the allocated block size, which Windows may round up.
+    // Only the NUL-terminated text prefix is subject to our content limit.
+    Ok(count.min(MAX_UTF16_BYTES / 2))
+}
+
+fn decode_unicode_units(units: &[u16]) -> Result<String, ClipboardError> {
+    let end = units
+        .iter()
+        .position(|unit| *unit == 0)
+        .ok_or(ClipboardError::NotReadable)?;
+    let text = String::from_utf16_lossy(&units[..end]);
+    if text.len() > MAX_CLIPBOARD_TEXT_BYTES {
+        return Err(ClipboardError::NotReadable);
+    }
+    Ok(text)
 }
 
 fn windows_newlines(text: &str) -> String {
@@ -139,6 +152,27 @@ pub(in crate::windows_app) fn write_unicode_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn padded_global_allocation_does_not_reject_short_text() {
+        let mut units = vec![0u16; MAX_UTF16_BYTES / 2 + 2048];
+        units[..3].copy_from_slice(&[u16::from(b'o'), u16::from(b'k'), 0]);
+        let count = bounded_unit_count(units.len() * 2).unwrap();
+        assert_eq!(count, MAX_UTF16_BYTES / 2);
+        assert_eq!(decode_unicode_units(&units[..count]).unwrap(), "ok");
+    }
+
+    #[test]
+    fn unterminated_or_oversized_unicode_text_is_rejected() {
+        assert!(decode_unicode_units(&[u16::from(b'a')]).is_err());
+        let mut units = vec![u16::from(b'a'); MAX_CLIPBOARD_TEXT_BYTES + 1];
+        units[MAX_CLIPBOARD_TEXT_BYTES] = 0;
+        assert!(decode_unicode_units(&units).is_ok());
+        units[MAX_CLIPBOARD_TEXT_BYTES] = u16::from(b'a');
+        units.push(0);
+        assert!(decode_unicode_units(&units).is_err());
+    }
+
     #[test]
     fn windows_text_normalizes_only_lone_line_feeds() {
         assert_eq!(windows_newlines("a\nb\r\nc"), "a\r\nb\r\nc");

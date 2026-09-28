@@ -86,6 +86,26 @@ fn denied_and_missing_clipboard_reject_with_distinct_dom_exceptions() {
 }
 
 #[test]
+fn web_idl_string_conversion_errors_reject_without_clipboard_ipc() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><script>
+            navigator.clipboard.writeText(Symbol('secret')).catch(error =>
+                document.body.setAttribute('data-symbol', error.name));
+            navigator.clipboard.writeText().catch(error =>
+                document.body.setAttribute('data-missing', error.name));
+        </script></body>"#,
+        true,
+    );
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.test/");
+    let outcome = runtime.execute_initial(&script_inputs(&dom));
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert!(outcome.clipboard_actions.is_empty());
+    let body = dom.elements_named("body").next().unwrap();
+    assert_eq!(body.attr("data-symbol").as_deref(), Some("TypeError"));
+    assert_eq!(body.attr("data-missing").as_deref(), Some("TypeError"));
+}
+
+#[test]
 fn clipboard_is_not_exposed_to_insecure_origins() {
     let dom = dom::parse_with_scripting(
         "<body><script>document.body.setAttribute('data-available', String('clipboard' in navigator));</script></body>",
@@ -99,6 +119,35 @@ fn clipboard_is_not_exposed_to_insecure_origins() {
             .next()
             .unwrap()
             .attr("data-available")
+            .as_deref(),
+        Some("false")
+    );
+}
+
+#[test]
+fn inherited_origin_srcdoc_frame_cannot_borrow_top_level_clipboard_access() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><script>
+            const frame = document.createElement('iframe');
+            document.body.append(frame);
+            frame.srcdoc = '<script>parent.document.body.dataset.clipboardAvailable = String("clipboard" in navigator)<\/script>';
+        </script></body>"#,
+        true,
+    );
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.test/page");
+    let setup = runtime.execute_initial_before_document_completion(&script_inputs(&dom), None);
+    assert!(setup.errors.is_empty(), "{:?}", setup.errors);
+    assert!(setup.clipboard_actions.is_empty());
+    for _ in 0..30 {
+        let outcome = runtime.advance_time(Duration::ZERO, 1);
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert!(outcome.clipboard_actions.is_empty());
+    }
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-clipboard-available")
             .as_deref(),
         Some("false")
     );

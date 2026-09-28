@@ -45,7 +45,6 @@ impl TabMessageRouter {
 pub(super) struct BrowserApplication {
     pub(super) instance: Hinstance,
     pub(super) profile: PathBuf,
-    _profile_lock: File,
     pub(super) active_user_agent_mode: UserAgentMode,
     pub(super) selected_user_agent_mode: Cell<UserAgentMode>,
     pub(super) metrics: Arc<BrowserMetrics>,
@@ -65,6 +64,9 @@ pub(super) struct BrowserApplication {
     pub(super) prefers_dark_color_scheme: Cell<bool>,
     windows: RefCell<Vec<Hwnd>>,
     recently_closed_tabs: RefCell<RecentlyClosedTabs<ClosedTab>>,
+    // Rust drops fields in declaration order: release the profile only after
+    // every browser-owned service and store has finished dropping.
+    _profile_lock: File,
 }
 
 impl BrowserApplication {
@@ -97,7 +99,6 @@ impl BrowserApplication {
         Ok(Rc::new(Self {
             instance,
             profile: profile.clone(),
-            _profile_lock: profile_lock,
             active_user_agent_mode: user_agent_mode,
             selected_user_agent_mode: Cell::new(user_agent_mode),
             metrics,
@@ -122,6 +123,7 @@ impl BrowserApplication {
             prefers_dark_color_scheme: Cell::new(super::color_scheme::prefers_dark_color_scheme()),
             windows: RefCell::new(Vec::new()),
             recently_closed_tabs: RefCell::new(RecentlyClosedTabs::new()),
+            _profile_lock: profile_lock,
         }))
     }
 

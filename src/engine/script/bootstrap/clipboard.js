@@ -12,13 +12,18 @@
             if (key !== internal) throw new TypeError('Illegal constructor');
         }
         readText() {
-            if (this !== clipboard) throw new TypeError('Illegal Clipboard invocation');
+            if (this !== clipboard) return Promise.reject(new TypeError('Illegal Clipboard invocation'));
             return enqueue('readText');
         }
         writeText(data) {
-            if (this !== clipboard) throw new TypeError('Illegal Clipboard invocation');
-            if (arguments.length < 1) throw new TypeError('Clipboard.writeText requires data');
-            return enqueue('writeText', String(data));
+            if (this !== clipboard) return Promise.reject(new TypeError('Illegal Clipboard invocation'));
+            if (arguments.length < 1) return Promise.reject(new TypeError('Clipboard.writeText requires data'));
+            try {
+                // Web IDL DOMString uses ToString; String(Symbol) is a special
+                // ECMAScript convenience conversion and must not be accepted.
+                if (typeof data === 'symbol') throw new TypeError('Cannot convert a Symbol to a string');
+                return enqueue('writeText', String(data));
+            } catch (error) { return Promise.reject(error); }
         }
     }
     const enqueue = (kind, data) => new Promise((resolve, reject) => {
