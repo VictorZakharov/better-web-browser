@@ -542,6 +542,14 @@ and byte-stream behavior are covered by focused and hidden integration tests;
 HTML5test does not establish their conformance. This batch adds no dependency
 or copied third-party implementation.
 
+The subsequent 2026-09-28 worker CacheStorage, StorageManager, Screen Wake Lock,
+and Permissions API batch also rendered **469 / 588** in three identical hidden
+fresh-profile release runs with Breeze's default identity. Each run returned
+HTTP 200, executed seven page scripts, and had no JavaScript errors or renderer
+exits. The score is unchanged from the preceding 469-point observation; the
+new browser-owned storage, power, and permission contracts are covered by
+focused unit and hidden integration tests, not established by HTML5test.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280Ã—720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -550,8 +558,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280Ã
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-28-browser-apis-after200.json `
-  -Screenshot target/html5test/2026-09-28-browser-apis-after200.png
+  -Output target/html5test/2026-09-28-browser-apis-batch18-run1.json `
+  -Screenshot target/html5test/2026-09-28-browser-apis-batch18-run1.png
 ```
 
 New releases must refresh or explicitly date these observations using the
