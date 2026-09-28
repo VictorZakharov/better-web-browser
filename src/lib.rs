@@ -1,4 +1,5 @@
 pub mod branding;
+pub mod cache_storage;
 pub mod document;
 pub mod engine;
 pub mod fetch;
@@ -11,6 +12,13 @@ pub mod renderer_protocol;
 pub mod storage;
 pub(crate) mod text_decode;
 
+#[cfg(target_os = "windows")]
+// The broker is deliberately private until a browser permission service can own its grants.
+#[allow(dead_code)]
+pub mod capture_process;
+#[cfg(target_os = "windows")]
+#[allow(dead_code)]
+pub(crate) mod capture_protocol;
 #[cfg(target_os = "windows")]
 pub(crate) mod media_data_protocol;
 // Shared wire types are also consumed by the platform-independent media protocol.

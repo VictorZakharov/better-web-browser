@@ -3,6 +3,7 @@ mod worker;
 pub(in crate::windows_app) use worker::DatabaseWorker;
 
 use super::super::{BrowserState, tabs::TabId};
+use better_web_browser::cache_storage::{CacheCommand, CacheStorage};
 use better_web_browser::indexed_db::{
     DbOperation, DbResult, DbSession, IndexedDb, StoreDefinition, TransactionMode,
 };
@@ -34,6 +35,9 @@ enum Phase {
     rename_all_fields = "camelCase"
 )]
 enum Request {
+    Cache {
+        command: CacheCommand,
+    },
     Open {
         name: String,
     },
@@ -117,7 +121,7 @@ impl BrowserState {
                 request_id: command.request_id,
                 payload: error_payload(
                     "SecurityError",
-                    "IndexedDB client is not owned by this document",
+                    "Storage client is not owned by this document",
                 ),
             });
             return;
@@ -140,7 +144,7 @@ impl BrowserState {
                 request_id: command.request_id,
                 payload: error_payload(
                     "SecurityError",
-                    "IndexedDB is unavailable for an opaque origin",
+                    "Storage is unavailable for an opaque origin",
                 ),
             });
             return;
@@ -177,16 +181,38 @@ fn database_origin(client: &super::clients::Client) -> Option<String> {
 
 fn execute(
     database: &IndexedDb,
+    cache_storage: &CacheStorage,
     job: &Job,
     sessions: &mut HashMap<SessionKey, SessionValue>,
 ) -> Value {
     let request: Request = match serde_json::from_str(&job.payload) {
         Ok(request) => request,
         Err(_) => {
-            return json!({"kind":"error","name":"DataError","message":"Invalid IndexedDB request"});
+            return json!({"kind":"error","name":"DataError","message":"Invalid storage request"});
         }
     };
+    if let Request::Cache { command } = request {
+        let result = cache_storage.execute(&job.origin_url, command);
+        return match result {
+            Ok(value) => {
+                let reply = json!({"kind":"cache","value":value});
+                if reply.to_string().len() <= better_web_browser::limits::MAX_INDEXED_DB_IPC_BYTES {
+                    reply
+                } else {
+                    json!({"kind":"error","name":"QuotaExceededError","message":"CacheStorage result exceeds the IPC limit"})
+                }
+            }
+            Err(error) => json!({
+                "kind":"error",
+                "name":error.name(),
+                "message": if matches!(error, better_web_browser::cache_storage::CacheError::Persistence(_)) {
+                    "CacheStorage is unavailable".to_string()
+                } else { error.to_string() },
+            }),
+        };
+    }
     let result = match request {
+        Request::Cache { .. } => unreachable!("handled above"),
         Request::Open { name } => database
             .inspect(&job.origin_url, &name)
             .map(|info| json!({"kind":"open","info":info})),

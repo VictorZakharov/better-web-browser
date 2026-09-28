@@ -54,6 +54,7 @@ pub(super) struct BrowserApplication {
     pub(super) notifications: RefCell<super::notifications::NotificationService>,
     pub(super) geolocation: RefCell<super::geolocation::GeolocationService>,
     pub(super) media_devices: RefCell<super::media_devices::MediaDeviceService>,
+    pub(super) capture: RefCell<super::capture::CaptureCoordinator>,
     pub(super) renderer_registry: SharedRendererRegistry,
     pub(super) tab_router: TabMessageRouter,
     pub(super) prefers_dark_color_scheme: Cell<bool>,
@@ -76,7 +77,14 @@ impl BrowserApplication {
             better_web_browser::indexed_db::IndexedDb::open(profile.join("indexed-db.json"))
                 .map_err(|error| error.to_string())?,
         );
-        let database_worker = super::renderer_fetch::DatabaseWorker::new(indexed_db)?;
+        let cache_storage = Arc::new(
+            better_web_browser::cache_storage::CacheStorage::open(
+                profile.join("cache-storage.json"),
+            )
+            .map_err(|error| error.to_string())?,
+        );
+        let database_worker =
+            super::renderer_fetch::DatabaseWorker::new(indexed_db, cache_storage)?;
         let speech_service = super::speech_synthesis::SpeechSynthesisService::spawn()?;
         Ok(Rc::new(Self {
             instance,
@@ -96,6 +104,7 @@ impl BrowserApplication {
             notifications: RefCell::new(super::notifications::NotificationService::default()),
             geolocation: RefCell::new(super::geolocation::GeolocationService::default()),
             media_devices: RefCell::new(super::media_devices::MediaDeviceService::default()),
+            capture: RefCell::new(super::capture::CaptureCoordinator::default()),
             renderer_registry: Arc::new(Mutex::new(RendererTaskRegistry::default())),
             tab_router: TabMessageRouter::default(),
             prefers_dark_color_scheme: Cell::new(super::color_scheme::prefers_dark_color_scheme()),

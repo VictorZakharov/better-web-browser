@@ -12,6 +12,8 @@ use support::*;
 mod authored_controls;
 #[path = "live_runtime/beacon.rs"]
 mod beacon;
+#[path = "live_runtime/cache_storage.rs"]
+mod cache_storage;
 #[path = "live_runtime/deferred_scripts.rs"]
 mod deferred_scripts;
 #[path = "live_runtime/document_lifecycle.rs"]

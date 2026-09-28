@@ -124,7 +124,7 @@
     globalThis.indexedDB = new IDBFactory();
     globalThis.__receiveDatabaseEvent = (id, payload) => {
         const pending = pendingDatabaseRequests.get(Number(id));
-        if (!pending) return;
+        if (!pending) return globalThis.__receiveCacheStorageEvent?.(id, payload);
         pendingDatabaseRequests.delete(Number(id));
         let response;
         try { response = JSON.parse(String(payload)); }

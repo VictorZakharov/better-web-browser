@@ -27,6 +27,7 @@ mod adjacent_insertion;
 mod attributes;
 mod beacon;
 mod bindings;
+mod cache_storage;
 mod canvas;
 mod canvas_bitmap;
 mod canvas_blend;

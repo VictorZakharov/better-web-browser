@@ -4,7 +4,7 @@ mod metrics;
 
 pub(crate) use fault_testing::suppress_injected_fault_reporting;
 
-pub(crate) use app_container::AppContainerSid;
+pub(crate) use app_container::{AppContainerSid, CapabilitySid};
 pub(crate) use metrics::{
     ProcessSample, exit_code, process_exited, process_sample, terminate_job, terminate_job_checked,
     wait_for_process,
@@ -20,7 +20,9 @@ use windows_sys::Win32::Foundation::{HANDLE, HANDLE_FLAG_INHERIT, SetHandleInfor
 use windows_sys::Win32::Security::Cryptography::{
     BCRYPT_USE_SYSTEM_PREFERRED_RNG, BCryptGenRandom,
 };
-use windows_sys::Win32::Security::{SECURITY_ATTRIBUTES, SECURITY_CAPABILITIES};
+use windows_sys::Win32::Security::{
+    SECURITY_ATTRIBUTES, SECURITY_CAPABILITIES, SID_AND_ATTRIBUTES,
+};
 use windows_sys::Win32::System::JobObjects::{
     CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
@@ -147,6 +149,11 @@ pub(crate) fn create_media_job() -> Result<OwnedHandle, String> {
     create_contained_job(MEDIA_PROCESS_MEMORY_LIMIT_BYTES, "media worker")
 }
 
+#[allow(dead_code)] // Consumed by the private broker once the browser grants capture.
+pub(crate) fn create_capture_job() -> Result<OwnedHandle, String> {
+    create_contained_job(MEDIA_PROCESS_MEMORY_LIMIT_BYTES, "capture worker")
+}
+
 fn create_contained_job(memory_limit: usize, role: &str) -> Result<OwnedHandle, String> {
     let handle = unsafe { CreateJobObjectW(null(), null()) };
     if handle.is_null() {
@@ -184,6 +191,8 @@ pub(crate) struct LaunchAttributes {
     _child_policy: Box<u32>,
     _mitigations: Box<u64>,
     _security: Box<SECURITY_CAPABILITIES>,
+    _capability_sids: Vec<CapabilitySid>,
+    _capabilities: Box<[SID_AND_ATTRIBUTES]>,
 }
 
 impl LaunchAttributes {
@@ -194,6 +203,40 @@ impl LaunchAttributes {
         job: &OwnedHandle,
         sid: &AppContainerSid,
     ) -> Result<Self, String> {
+        Self::with_capabilities(child_input, child_output, additional, job, sid, Vec::new())
+    }
+
+    #[allow(dead_code)] // See create_capture_job.
+    pub(crate) fn with_capture_capabilities(
+        child_input: &OwnedHandle,
+        child_output: &OwnedHandle,
+        additional: &[HANDLE],
+        job: &OwnedHandle,
+        sid: &AppContainerSid,
+        camera: bool,
+        microphone: bool,
+    ) -> Result<Self, String> {
+        if !camera && !microphone {
+            return Err("capture worker requires an authorized device kind".into());
+        }
+        let mut sids = Vec::with_capacity(2);
+        if camera {
+            sids.push(CapabilitySid::derive("webcam")?);
+        }
+        if microphone {
+            sids.push(CapabilitySid::derive("microphone")?);
+        }
+        Self::with_capabilities(child_input, child_output, additional, job, sid, sids)
+    }
+
+    fn with_capabilities(
+        child_input: &OwnedHandle,
+        child_output: &OwnedHandle,
+        additional: &[HANDLE],
+        job: &OwnedHandle,
+        sid: &AppContainerSid,
+        capability_sids: Vec<CapabilitySid>,
+    ) -> Result<Self, String> {
         let mut handles = Vec::with_capacity(2 + additional.len());
         handles.push(raw(child_input));
         handles.push(raw(child_output));
@@ -202,7 +245,22 @@ impl LaunchAttributes {
         let jobs = Box::new([raw(job)]);
         let child_policy = Box::new(PROCESS_CREATION_CHILD_PROCESS_RESTRICTED);
         let mitigations = Box::new(renderer_mitigations());
-        let security = Box::new(sid.security_capabilities());
+        // SE_GROUP_ENABLED. The boxed array and each SID outlive CreateProcessW via Self.
+        let mut capabilities = capability_sids
+            .iter()
+            .map(|sid| SID_AND_ATTRIBUTES {
+                Sid: sid.as_ptr(),
+                Attributes: 4,
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let mut security = Box::new(sid.security_capabilities());
+        security.Capabilities = if capabilities.is_empty() {
+            null_mut()
+        } else {
+            capabilities.as_mut_ptr()
+        };
+        security.CapabilityCount = capabilities.len() as u32;
         let mut list = AttributeList::new(5)?;
         list.update(
             PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
@@ -236,6 +294,8 @@ impl LaunchAttributes {
             _child_policy: child_policy,
             _mitigations: mitigations,
             _security: security,
+            _capability_sids: capability_sids,
+            _capabilities: capabilities,
         })
     }
 

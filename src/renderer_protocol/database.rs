@@ -1,4 +1,4 @@
-//! Bounded, document-scoped database IPC; origin is resolved by the browser.
+//! Bounded, document-scoped origin-storage IPC; origin is resolved by the browser.
 use super::{DocumentId, ProtocolError};
 use crate::fetch::RequestClient;
 use crate::limits::MAX_INDEXED_DB_IPC_BYTES;
@@ -24,7 +24,7 @@ pub struct DatabaseEvent {
 impl DatabaseCommand {
     pub fn validate(&self) -> Result<(), ProtocolError> {
         if self.request_id == 0 || self.payload.len() > MAX_INDEXED_DB_IPC_BYTES {
-            return Err(ProtocolError::InvalidPayload("IndexedDB request"));
+            return Err(ProtocolError::InvalidPayload("origin-storage request"));
         }
         Ok(())
     }
@@ -33,7 +33,7 @@ impl DatabaseCommand {
 impl DatabaseEvent {
     pub fn validate(&self) -> Result<(), ProtocolError> {
         if self.request_id == 0 || self.payload.len() > MAX_INDEXED_DB_IPC_BYTES {
-            return Err(ProtocolError::InvalidPayload("IndexedDB result"));
+            return Err(ProtocolError::InvalidPayload("origin-storage result"));
         }
         Ok(())
     }
