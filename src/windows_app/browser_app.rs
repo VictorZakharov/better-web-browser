@@ -6,6 +6,7 @@ use super::tabs::{RecentlyClosedTabs, TabId};
 use super::*;
 use better_web_browser::branding::UserAgentMode;
 use std::cell::{Cell, RefCell};
+use std::fs::File;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -49,10 +50,14 @@ pub(super) struct BrowserApplication {
     pub(super) metrics: Arc<BrowserMetrics>,
     pub(super) http_client: Arc<winhttp::HttpClient>,
     pub(super) storage_coordinator: better_web_browser::storage::StorageCoordinator,
+    pub(super) broadcast_channels:
+        RefCell<better_web_browser::broadcast_channel::BroadcastRegistry>,
     pub(super) database_worker: super::renderer_fetch::DatabaseWorker,
     pub(super) speech_service: super::speech_synthesis::SpeechSynthesisService,
     pub(super) sensor_service: super::sensors::SensorService,
     pub(super) notifications: RefCell<super::notifications::NotificationService>,
+    pub(super) protocol_handlers: RefCell<better_web_browser::protocol_handlers::Registry>,
+    pub(super) clipboard: RefCell<super::clipboard::ClipboardService>,
     pub(super) geolocation: RefCell<super::geolocation::GeolocationService>,
     pub(super) media_devices: RefCell<super::media_devices::MediaDeviceService>,
     pub(super) capture: RefCell<super::capture::CaptureCoordinator>,
@@ -61,6 +66,9 @@ pub(super) struct BrowserApplication {
     pub(super) prefers_dark_color_scheme: Cell<bool>,
     windows: RefCell<Vec<Hwnd>>,
     recently_closed_tabs: RefCell<RecentlyClosedTabs<ClosedTab>>,
+    // Rust drops fields in declaration order: release the profile only after
+    // every browser-owned service and store has finished dropping.
+    _profile_lock: File,
 }
 
 impl BrowserApplication {
@@ -69,6 +77,7 @@ impl BrowserApplication {
         metrics: Arc<BrowserMetrics>,
     ) -> Result<Rc<Self>, String> {
         let profile = super::profile::directory()?;
+        let profile_lock = super::profile::acquire_exclusive_lock(&profile)?;
         let user_agent_mode = super::user_agent_preferences::load(&profile)?;
         let local_storage = Arc::new(
             better_web_browser::storage::LocalStorage::open(profile.join("local-storage.json"))
@@ -88,6 +97,7 @@ impl BrowserApplication {
             super::renderer_fetch::DatabaseWorker::new(indexed_db, cache_storage)?;
         let speech_service = super::speech_synthesis::SpeechSynthesisService::spawn()?;
         let sensor_service = super::sensors::SensorService::spawn()?;
+        let protocol_handlers = better_web_browser::protocol_handlers::Registry::open(&profile)?;
         Ok(Rc::new(Self {
             instance,
             profile: profile.clone(),
@@ -101,10 +111,13 @@ impl BrowserApplication {
             storage_coordinator: better_web_browser::storage::StorageCoordinator::new(
                 local_storage,
             ),
+            broadcast_channels: RefCell::new(Default::default()),
             database_worker,
             speech_service,
             sensor_service,
             notifications: RefCell::new(super::notifications::NotificationService::default()),
+            protocol_handlers: RefCell::new(protocol_handlers),
+            clipboard: RefCell::new(super::clipboard::ClipboardService::default()),
             geolocation: RefCell::new(super::geolocation::GeolocationService::default()),
             media_devices: RefCell::new(super::media_devices::MediaDeviceService::default()),
             capture: RefCell::new(super::capture::CaptureCoordinator::default()),
@@ -113,6 +126,7 @@ impl BrowserApplication {
             prefers_dark_color_scheme: Cell::new(super::color_scheme::prefers_dark_color_scheme()),
             windows: RefCell::new(Vec::new()),
             recently_closed_tabs: RefCell::new(RecentlyClosedTabs::new()),
+            _profile_lock: profile_lock,
         }))
     }
 

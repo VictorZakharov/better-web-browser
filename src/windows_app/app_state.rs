@@ -262,6 +262,10 @@ impl Drop for BrowserState {
             KillTimer(self.window, ID_SCROLL_ANIMATION_TIMER);
             let ids = self.tabs.iter().map(|tab| tab.id).collect::<Vec<_>>();
             for id in ids {
+                self.app
+                    .broadcast_channels
+                    .borrow_mut()
+                    .retire_tab(id.get());
                 self.app.tab_router.unbind(id);
                 self.remove_renderer_tab(id);
             }

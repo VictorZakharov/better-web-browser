@@ -12,7 +12,7 @@ impl DocumentRuntime {
             crate::engine::dom::Node::composed_parent,
         )
         .find(|node| node.tag_name() == Some("a") && node.attr("href").is_some())
-        .and_then(|node| crate::navigation::resolve_url(&base, &node.attr("href")?))
+        .and_then(|node| crate::navigation::resolve_hyperlink_url(&base, &node.attr("href")?))
     }
 
     pub(super) fn resolve_target(&self, target: DocumentNodeId) -> Option<NodeRef> {

@@ -36,6 +36,7 @@ pub(super) enum BrokerCommand {
     },
     Test(TestCommand),
     Input(DocumentInput),
+    BroadcastDelivery(crate::renderer_protocol::BroadcastDelivery),
     FullscreenResponse(crate::renderer_protocol::FullscreenResponse),
     PointerLockResponse(crate::renderer_protocol::PointerLockResponse),
     Shutdown(mpsc::Sender<Result<RendererExit, String>>),
@@ -85,6 +86,8 @@ pub(super) struct BrokerResources {
     pub(super) media_device_overflow: Arc<std::sync::atomic::AtomicBool>,
     pub(super) sensor_updates: mpsc::Receiver<super::stream::QueuedSensorUpdate>,
     pub(super) sensor_overflow: Arc<std::sync::atomic::AtomicBool>,
+    pub(super) clipboard_updates: mpsc::Receiver<crate::renderer_protocol::ClipboardUpdate>,
+    pub(super) clipboard_overflow: Arc<std::sync::atomic::AtomicBool>,
     pub(super) fetch_flow: Arc<super::flow::FetchFlow>,
     pub(super) events: super::events::EventSender,
     pub(super) wake: super::wake::BrokerWake,
@@ -164,6 +167,7 @@ impl Broker {
             self.process_geolocation_updates();
             self.process_media_device_updates();
             self.process_sensor_updates();
+            self.process_clipboard_updates();
             self.process_navigation();
             if self.process_has_exited() {
                 self.finish_exit();

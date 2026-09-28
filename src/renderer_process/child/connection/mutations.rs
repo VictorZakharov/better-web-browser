@@ -29,6 +29,17 @@ impl ChildConnection {
         outcome: &mut crate::engine::ScriptOutcome,
     ) -> Result<(), String> {
         self.send_policy_updates(document, outcome)?;
+        for action in outcome.broadcast_actions.drain(..) {
+            self.writer
+                .send_renderer(&RendererMessage::BroadcastCommand(
+                    crate::renderer_protocol::BroadcastCommand {
+                        document,
+                        channel_id: action.channel_id,
+                        operation: action.operation,
+                    },
+                ))
+                .map_err(|error| error.to_string())?;
+        }
         for (area, version) in outcome.storage_event_receipts.drain(..) {
             self.send_state_snapshot_applied(StateSnapshotApplied {
                 document,

@@ -104,6 +104,12 @@ pub(super) fn finish_host(
         .notification_actions
         .append(&mut state.pending_notification_actions);
     outcome
+        .protocol_handler_actions
+        .append(&mut state.pending_protocol_handler_actions);
+    outcome
+        .clipboard_actions
+        .append(&mut state.pending_clipboard_actions);
+    outcome
         .geolocation_actions
         .append(&mut state.pending_geolocation_actions);
     outcome
@@ -112,6 +118,9 @@ pub(super) fn finish_host(
     outcome
         .sensor_actions
         .append(&mut state.pending_sensor_actions);
+    outcome
+        .broadcast_actions
+        .append(&mut state.pending_broadcast_actions);
     outcome
         .worker_actions
         .append(&mut state.pending_worker_actions);

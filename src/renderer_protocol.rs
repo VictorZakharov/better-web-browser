@@ -4,6 +4,8 @@
 //! deserializing Rust object graphs: every length and tag is checked before allocation.
 
 mod accessibility;
+mod broadcast_channel;
+mod clipboard;
 mod codec;
 mod database;
 mod document;
@@ -14,12 +16,18 @@ mod media_devices;
 mod message;
 mod notification;
 mod presentation;
+mod protocol_handler;
 mod sensor;
 mod speech;
 mod state;
 mod video;
 mod websocket;
 mod wire;
+pub use broadcast_channel::{BroadcastCommand, BroadcastDelivery, BroadcastOperation};
+pub use clipboard::{
+    ClipboardAction, ClipboardError, ClipboardRequest, ClipboardUpdate, ClipboardValue,
+    MAX_CLIPBOARD_TEXT_BYTES,
+};
 pub use database::{DATABASE_RETIRE_CLIENT_PAYLOAD, DatabaseCommand, DatabaseEvent};
 pub use geolocation::{
     GeolocationAction, GeolocationErrorCode, GeolocationEvent, GeolocationPosition,
@@ -32,6 +40,7 @@ pub use notification::{
     NotificationAction, NotificationEvent, NotificationPermission, NotificationRequest,
     NotificationUpdate,
 };
+pub use protocol_handler::{ProtocolHandlerAction, ProtocolHandlerRequest};
 pub use sensor::{
     SensorAction, SensorError, SensorEvent, SensorKind, SensorPermission, SensorReading,
     SensorRequest, SensorUpdate,
@@ -86,7 +95,7 @@ pub use state::{
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
 pub const PROTOCOL_MAJOR: u16 = 14;
-pub const PROTOCOL_MINOR: u16 = 7;
+pub const PROTOCOL_MINOR: u16 = 8;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

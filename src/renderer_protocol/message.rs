@@ -9,9 +9,9 @@ use super::state::{
     StorageSync,
 };
 use super::{
-    DatabaseCommand, DatabaseEvent, DocumentId, DocumentStart, FetchRequestHead,
-    FetchResponseAbort, FetchResponseEnd, FetchResponseHead, PresentedViewport, SpeechRequest,
-    SpeechUpdate, TransferChunk, WebSocketCommand, WebSocketEvent,
+    BroadcastCommand, BroadcastDelivery, DatabaseCommand, DatabaseEvent, DocumentId, DocumentStart,
+    FetchRequestHead, FetchResponseAbort, FetchResponseEnd, FetchResponseHead, PresentedViewport,
+    SpeechRequest, SpeechUpdate, TransferChunk, WebSocketCommand, WebSocketEvent,
 };
 use crate::limits::{MAX_RENDERER_DIAGNOSTIC_BYTES, RENDERER_HEARTBEAT_INTERVAL};
 use crate::renderer_protocol::RendererRuntimeUpdate;
@@ -157,9 +157,11 @@ pub enum BrowserMessage {
     DatabaseEvent(DatabaseEvent),
     SpeechUpdate(SpeechUpdate),
     NotificationUpdate(super::NotificationUpdate),
+    ClipboardUpdate(super::ClipboardUpdate),
     GeolocationUpdate(super::GeolocationUpdate),
     MediaDeviceUpdate(super::MediaDeviceUpdate),
     SensorUpdate(super::SensorUpdate),
+    BroadcastDelivery(BroadcastDelivery),
     AdvanceTime {
         document: DocumentId,
         elapsed_micros: u64,
@@ -198,9 +200,12 @@ pub enum RendererMessage {
     DatabaseCommand(DatabaseCommand),
     SpeechRequest(SpeechRequest),
     NotificationRequest(super::NotificationRequest),
+    ProtocolHandlerRequest(super::ProtocolHandlerRequest),
+    ClipboardRequest(super::ClipboardRequest),
     GeolocationRequest(super::GeolocationRequest),
     MediaDeviceRequest(super::MediaDeviceRequest),
     SensorRequest(super::SensorRequest),
+    BroadcastCommand(BroadcastCommand),
     VideoFrame(super::VideoFrameChunk),
     Ready {
         nonce: Nonce,

@@ -17,11 +17,7 @@ impl BrowserState {
         self.add_tab(None, true);
     }
 
-    pub(super) unsafe fn open_url_in_new_tab(&mut self, url: String, foreground: bool) {
-        self.add_tab(Some(url), foreground);
-    }
-
-    unsafe fn add_tab(&mut self, url: Option<String>, foreground: bool) {
+    pub(super) unsafe fn add_tab(&mut self, url: Option<String>, foreground: bool) {
         if foreground {
             self.suspend_active_tab_ui();
         }
@@ -89,6 +85,10 @@ impl BrowserState {
         if !self.tabs.contains(id) {
             return;
         }
+        self.app
+            .broadcast_channels
+            .borrow_mut()
+            .retire_tab(id.get());
         self.app.database_worker.retire_tab(id);
         self.retire_speech_for_tab(id);
         self.retire_notifications_for_tab(id);

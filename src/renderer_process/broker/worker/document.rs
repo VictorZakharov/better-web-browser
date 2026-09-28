@@ -168,6 +168,12 @@ impl Broker {
                 request.validate()?;
                 self.emit_event(RendererEvent::StorageMutation(request))?;
             }
+            RendererMessage::BroadcastCommand(command) => {
+                if self.active_document == Some(command.document) {
+                    command.validate()?;
+                    self.emit_event(RendererEvent::BroadcastCommand(command))?;
+                }
+            }
             RendererMessage::WebSocketCommand(command) => {
                 command.validate()?;
                 if self.active_document == Some(command.document) {
@@ -192,6 +198,12 @@ impl Broker {
                     self.emit_event(RendererEvent::NotificationRequest(request))?;
                 }
             }
+            RendererMessage::ProtocolHandlerRequest(request) => {
+                request.validate()?;
+                if self.active_document == Some(request.document) {
+                    self.emit_event(RendererEvent::ProtocolHandlerRequest(request))?;
+                }
+            }
             RendererMessage::GeolocationRequest(request) => {
                 request.validate()?;
                 if self.active_document == Some(request.document) {
@@ -208,6 +220,12 @@ impl Broker {
                 request.validate()?;
                 if self.active_document == Some(request.document) {
                     self.emit_event(RendererEvent::SensorRequest(request))?;
+                }
+            }
+            RendererMessage::ClipboardRequest(request) => {
+                request.validate()?;
+                if self.active_document == Some(request.document) {
+                    self.emit_event(RendererEvent::ClipboardRequest(request))?;
                 }
             }
             RendererMessage::StateSnapshotApplied(applied) => {

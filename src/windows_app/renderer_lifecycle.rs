@@ -113,6 +113,10 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn replace_renderer_for_navigation(&mut self, id: TabId) {
+        self.app
+            .broadcast_channels
+            .borrow_mut()
+            .retire_tab(id.get());
         self.retire_database_for_tab(id);
         self.retire_speech_for_tab(id);
         self.retire_notifications_for_tab(id);
@@ -287,6 +291,10 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn terminate_renderer_for(&mut self, id: TabId) {
+        self.app
+            .broadcast_channels
+            .borrow_mut()
+            .retire_tab(id.get());
         let result = self
             .tabs
             .get_mut(id)
@@ -325,6 +333,11 @@ impl BrowserState {
                     .storage_subscription
                     .as_ref()
                     .is_some_and(|(_, subscription)| subscription.has_pending())
+                || self
+                    .app
+                    .broadcast_channels
+                    .borrow()
+                    .has_pending(tab.id.get())
                 || tab.renderer_next_timer.is_some()
                 || tab
                     .renderer_session

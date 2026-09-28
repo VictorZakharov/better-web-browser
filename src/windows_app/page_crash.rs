@@ -15,6 +15,10 @@ pub(super) fn panic_detail(payload: Box<dyn Any + Send>) -> String {
 
 impl BrowserState {
     pub(super) unsafe fn contain_page_engine_failure(&mut self, id: TabId, detail: String) {
+        self.app
+            .broadcast_channels
+            .borrow_mut()
+            .retire_tab(id.get());
         let status =
             format!("Page engine stopped after an internal error: {detail}. Reload to try again.");
         self.retire_database_for_tab(id);

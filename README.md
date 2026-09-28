@@ -333,6 +333,10 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | Beacon, Fetch keepalive, and speech synthesis | `navigator.sendBeacon()` queues browser-owned POST delivery across navigation, while bounded `fetch(..., {keepalive: true})` uploads retain their admitted origin and policy after navigation and share the in-flight body budget with Beacon. Windows Web Speech synthesis uses browser-owned SAPI voices and per-document queues after trusted activation. Renderer-side admission cannot yet predict all browser-wide Beacon saturation; speech recognition and boundary events remain open. See the [keepalive contract](docs/fetch-keepalive.md) and [speech batch](docs/html5test-beacon-speech-shadow-prefetch.md). |
 | ◩ | WebSocket | Document and dedicated-worker WebSockets use browser-owned network transport, bounded IPC, per-client CSP/mixed-content policy, text/binary frames, and close events. Extensions, compression, and broader network interoperability remain incomplete; see the [standards slice](docs/html5test-websocket-indexeddb-forms.md). |
 | ◩ | Notifications | Secure document and child-frame clients can use session-scoped, origin-keyed permission grants and browser-owned Windows notifications. A new permission prompt requires top-level transient activation. Persistent permission, frame-scoped prompts, service-worker notifications, and non-Windows presentation remain open; see the [Notification contract](docs/notifications.md). |
+| ◩ | Custom protocol handlers | Secure top-level pages can request a browser-owned handler for safelisted or `web+` schemes. Explicit, gesture-bound consent and a bounded profile store gate subsequent link navigation; Fetch and operating-system defaults are unchanged. Embedded-frame support and a management UI remain open; see the [handler contract](docs/custom-protocol-handlers.md). |
+| ◩ | Async Clipboard text | Secure, visible top-level pages can `readText()` and `writeText()` through the actual Windows clipboard after trusted activation and separate per-origin session consent. Bounded IPC and document/session revalidation keep the OS boundary browser-owned. Rich `ClipboardItem` read/write, iframe delegation, and persistent grants remain open; see the [Clipboard contract](docs/async-clipboard.md). |
+| ◩ | BroadcastChannel | Same-origin top-level documents can exchange structured-cloned messages across tabs through browser-owned, bounded membership and delivery queues. Embedded documents and workers await storage-key/lifecycle integration; see the [BroadcastChannel contract](docs/broadcast-channel.md). |
+| ◩ | File API | Memory-backed `Blob` slices share private immutable chunks, byte streams pull bounded chunks with BYOB readers, and dedicated workers can use all four `FileReaderSync` read formats. File-backed streaming and complete File API coverage remain open; see the [File API contract](docs/file-api-worker-reads.md). |
 | ◩ | Location and media-device discovery | Secure top-level pages can request real Windows location readings after an origin-scoped session permission prompt. `navigator.mediaDevices.enumerateDevices()` reports only the presence of microphones and cameras, without identifying them before a capture grant. Background/minimized requests wait, and navigation retires outstanding work. Child-frame permissions policy, camera/microphone capture, and device-change events remain unavailable; see the [location](docs/geolocation.md) and [device enumeration](docs/media-devices-enumeration.md) contracts. |
 | ◩ | URLPattern | A bounded Window `URLPattern` subset matches and extracts fixed URL components, named path segments, and a terminal wildcard. Full pattern syntax, base-URL forms, and worker exposure remain open; see the [URLPattern contract](docs/url-pattern.md). |
 | ◩ | ECMAScript modules | Static graphs, top-level `await`, [dynamic document JavaScript modules](docs/dynamic-modules.md), and parser-inserted [inline import maps](docs/import-maps.md) are implemented. Script-created maps, map integrity enforcement, import attributes, other module types, and dynamic worker imports remain gaps. |
@@ -517,6 +521,20 @@ hidden-renderer tests exercise the physical-data contract without accessing
 the user's devices. The adapter uses existing locked Windows API crates,
 without adding dependencies or copied upstream code.
 
+The next [protocol handler](docs/custom-protocol-handlers.md),
+[Clipboard](docs/async-clipboard.md), [BroadcastChannel](docs/broadcast-channel.md),
+and [File API](docs/file-api-worker-reads.md) batch rendered **469 / 588** in
+three identical 2026-09-28 hidden release runs with Breeze's default identity.
+The merged PR #200 baseline was **465–468 / 588** under the same viewport,
+scale, locale, and settle settings. Each new run executed seven page scripts,
+returned HTTP 200, and had no JavaScript errors or renderer exits. The result
+is one point above the highest prior observation, but the baseline's 465-point
+run executed only six scripts, so the range is not a controlled attribution to
+these APIs. Browser-owned consent, cross-tab delivery, FileReader decoding,
+and byte-stream behavior are covered by focused and hidden integration tests;
+HTML5test does not establish their conformance. This batch adds no dependency
+or copied third-party implementation.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -525,8 +543,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-28-sensors-final-post199.json `
-  -Screenshot target/html5test/2026-09-28-sensors-final-post199.png
+  -Output target/html5test/2026-09-28-browser-apis-after200.json `
+  -Screenshot target/html5test/2026-09-28-browser-apis-after200.png
 ```
 
 New releases must refresh or explicitly date these observations using the

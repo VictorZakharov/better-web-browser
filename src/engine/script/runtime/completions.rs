@@ -1,9 +1,13 @@
 //! Asynchronous Fetch and worker event delivery into the retained realm.
+mod clipboard;
+
 use super::*;
 use crate::renderer_protocol::{
     DatabaseEvent, GeolocationUpdate, MediaDeviceUpdate, NotificationEvent, NotificationUpdate,
     SensorEvent, SensorUpdate, SpeechEvent, SpeechUpdate, WebSocketEvent, WebSocketEventKind,
 };
+
+mod broadcast_channel;
 
 enum WorkerDelivery {
     Global(Result<String, String>),

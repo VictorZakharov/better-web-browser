@@ -3,7 +3,10 @@
     'use strict';
     const [snapshot, concatBytes, bytesToBase64] = globalThis.__fileReaderSnapshot;
     delete globalThis.__fileReaderSnapshot;
+    const charsetOf = globalThis.__fileReaderMimeCharset;
+    delete globalThis.__fileReaderMimeCharset;
     const schedule = globalThis.setTimeout, cancel = globalThis.clearTimeout;
+    const now = Date.now.bind(Date), READ_CHUNK_SIZE = 64 * 1024;
     const trusted = globalThis.__markTrustedEvent, Progress = globalThis.ProgressEvent;
     const host = __hostCall, Exception = globalThis.DOMException;
     const dispatch = EventTarget.prototype.dispatchEvent;
@@ -19,13 +22,12 @@
         return String(value);
     };
     const decode = (bytes, type, label) => {
-        const charset = /(?:^|;)\s*charset\s*=\s*(?:"([^"]*)"|([^;\s]*))/i.exec(type);
-        return host('fileReadText', bytes, label ?? '', charset ? charset[1] ?? charset[2] : '');
+        return host('fileReadText', bytes, label ?? '', charsetOf(type));
     };
     const packageData = (bytes, mode, type, label) => {
         if (mode === 'buffer') return bytes.buffer;
         if (mode === 'text') return decode(bytes, type, label);
-        if (mode === 'url') return 'data:' + (type || 'application/octet-stream') + ';base64,' + bytesToBase64(bytes);
+        if (mode === 'url') return 'data:' + type + ';base64,' + bytesToBase64(bytes);
         let result = '';
         for (let offset = 0; offset < bytes.length; offset += 0x4000)
             result += String.fromCharCode(...bytes.subarray(offset, offset + 0x4000));
@@ -46,23 +48,47 @@
             if (!current()) return;
             fire(reader, 'loadstart', 0, data.size);
             if (!current()) return;
-            state.task = schedule(() => {
+            let chunkIndex = 0, chunkOffset = 0, lastProgress = now();
+            const pump = () => {
                 if (!current()) return;
+                // Yield between bounded byte ranges so long reads do not monopolize
+                // the document or worker event loop. The underlying chunks are
+                // private snapshots and remain immutable across these tasks.
+                let budget = READ_CHUNK_SIZE;
+                while (budget && chunkIndex < data.chunks.length) {
+                    const chunk = data.chunks[chunkIndex];
+                    const amount = Math.min(chunk.length - chunkOffset, budget);
+                    if (amount) {
+                        chunkOffset += amount;
+                        budget -= amount;
+                        state.loaded += amount;
+                    }
+                    if (chunkOffset === chunk.length) {
+                        ++chunkIndex; chunkOffset = 0;
+                    }
+                }
+                const complete = chunkIndex === data.chunks.length;
+                const elapsed = now() - lastProgress;
+                if (state.loaded > 0 && elapsed >= 50) {
+                    lastProgress = now();
+                    fire(reader, 'progress', state.loaded, data.size);
+                    if (!current()) return;
+                }
+                if (!complete) {
+                    state.task = schedule(pump, 0);
+                    return;
+                }
                 let result, error;
                 try { result = packageData(concatBytes(data.chunks), mode, data.type, label); }
                 catch (_) { error = new Exception('Could not read Blob bytes', 'NotReadableError'); }
-                if (!error) {
-                    state.loaded = data.size;
-                    fire(reader, 'progress', data.size, data.size);
-                    if (!current()) return;
-                }
                 state.readyState = 2; state.task = null;
                 state.result = error ? null : result; state.error = error || null;
                 fire(reader, error ? 'error' : 'load', state.loaded, data.size);
                 // A load/error handler may start a new read. Its state must not be
                 // overwritten, nor may the previous operation emit loadend.
                 if (state.readyState !== 1) fire(reader, 'loadend', state.loaded, data.size);
-            }, 0);
+            };
+            state.task = schedule(pump, 0);
         }, 0);
     };
     class FileReader extends EventTarget {

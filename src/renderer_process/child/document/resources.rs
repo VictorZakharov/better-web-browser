@@ -1,5 +1,7 @@
 //! Renderer-side resource installation and script-network completions.
 
+mod broadcast_channel;
+mod clipboard;
 pub(super) mod events;
 mod geolocation;
 mod installation;
@@ -7,6 +9,7 @@ mod lifecycle;
 mod media_devices;
 mod notifications;
 pub(super) mod preloads;
+mod protocol_handlers;
 mod sensors;
 mod streaming;
 mod stylesheets;

@@ -12,8 +12,8 @@ use std::sync::mpsc;
 
 mod control_updates;
 mod database;
-pub use control_updates::{GeolocationUpdateSink, MediaDeviceUpdateSink};
 mod sensor;
+pub use control_updates::{ClipboardUpdateSink, GeolocationUpdateSink, MediaDeviceUpdateSink};
 pub(crate) use sensor::QueuedSensorUpdate;
 pub use sensor::{SensorDeliveryGate, SensorSinkError, SensorUpdateSink};
 

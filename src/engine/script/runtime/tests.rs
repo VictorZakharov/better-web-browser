@@ -5,6 +5,8 @@ use crate::storage::{StorageAreaKind, StorageAreaSnapshot, StorageEntry};
 use std::rc::Rc;
 use std::time::Duration;
 
+mod broadcast_channel;
+mod clipboard;
 mod document_lifecycle;
 mod dynamic_modules;
 mod dynamic_readiness;
@@ -15,6 +17,7 @@ mod idle;
 mod inserted_scripts;
 mod media_devices;
 mod notification;
+mod protocol_handler;
 mod scheduling;
 mod sensor;
 mod speech;

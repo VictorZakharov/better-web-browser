@@ -116,6 +116,9 @@ unsafe extern "system" {
     pub(in crate::windows_app) fn CloseClipboard() -> i32;
     pub(in crate::windows_app) fn EmptyClipboard() -> i32;
     pub(in crate::windows_app) fn SetClipboardData(format: u32, memory: Handle) -> Handle;
+    pub(in crate::windows_app) fn GetClipboardData(format: u32) -> Handle;
+    pub(in crate::windows_app) fn IsClipboardFormatAvailable(format: u32) -> i32;
+    pub(in crate::windows_app) fn IsIconic(window: Hwnd) -> i32;
     pub(in crate::windows_app) fn EnableWindow(window: Hwnd, enabled: i32) -> i32;
     pub(in crate::windows_app) fn SetWindowPos(
         window: Hwnd,
@@ -343,6 +346,7 @@ unsafe extern "system" {
     pub(in crate::windows_app) fn GlobalLock(memory: Handle) -> *mut c_void;
     pub(in crate::windows_app) fn GlobalUnlock(memory: Handle) -> i32;
     pub(in crate::windows_app) fn GlobalFree(memory: Handle) -> Handle;
+    pub(in crate::windows_app) fn GlobalSize(memory: Handle) -> usize;
 }
 
 #[link(name = "psapi")]

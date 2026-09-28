@@ -274,21 +274,27 @@ impl DocumentRuntime {
             .append(&mut outcome.speech_actions);
         self.pending_notification_requests
             .append(&mut outcome.notification_actions);
+        self.pending_protocol_handler_requests
+            .append(&mut outcome.protocol_handler_actions);
         self.pending_geolocation_requests
             .append(&mut outcome.geolocation_actions);
         self.pending_media_device_requests
             .append(&mut outcome.media_device_actions);
         self.pending_sensor_requests
             .append(&mut outcome.sensor_actions);
+        self.pending_clipboard_requests
+            .append(&mut outcome.clipboard_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
         connection.send_network_state_updates(self.id, outcome)?;
         self.start_pending_survivable_fetches(connection)?;
         self.start_pending_speech_requests(connection)?;
         self.start_pending_notification_requests(connection)?;
+        self.start_pending_protocol_handler_requests(connection)?;
         self.start_pending_geolocation_requests(connection)?;
         self.start_pending_media_device_requests(connection)?;
         self.start_pending_sensor_requests(connection)?;
+        self.start_pending_clipboard_requests(connection)?;
         connection.send_state_mutations(self.id, outcome)
     }
 

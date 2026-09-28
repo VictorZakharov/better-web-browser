@@ -96,13 +96,16 @@ impl Broker {
                     | RendererMessage::CookieMutation(_)
                     | RendererMessage::PolicyMutation(_)
                     | RendererMessage::StorageMutation(_)
+                    | RendererMessage::BroadcastCommand(_)
                     | RendererMessage::WebSocketCommand(_)
                     | RendererMessage::DatabaseCommand(_)
                     | RendererMessage::SpeechRequest(_)
                     | RendererMessage::NotificationRequest(_)
+                    | RendererMessage::ProtocolHandlerRequest(_)
                     | RendererMessage::GeolocationRequest(_)
                     | RendererMessage::MediaDeviceRequest(_)
                     | RendererMessage::SensorRequest(_)
+                    | RendererMessage::ClipboardRequest(_)
                     | RendererMessage::StateSnapshotApplied(_)),
                 ) => {
                     if let Err(error) = self.process_document_message(message) {

@@ -10,13 +10,16 @@ fn file_reader_encoding_uses_label_then_mime_with_bom_precedence() {
         read([0xe9],'text/plain;charset=utf-8','iso-8859-1');
         read([0xff,0xfe,0x41,0],'text/plain','utf-8');
         read([0xc3,0xa9],'text/plain','invalid-label');
+        read([0xc3,0xa9],'text/plain; x=";charset=windows-1252"; charset=utf-8');
+        read([0xc3,0xa9],'text/plain; x=";charset=windows-1252"');
+        read([0xe9],'text/plain; charset=windows-1252; charset=utf-8');
     </script>"#,
     );
     drain(&mut runtime);
     evaluate(
         &mut runtime,
         &dom,
-        "if(results.join(',')!=='€,é,A,é') throw Error(results);",
+        "if(results.join(',')!=='€,é,A,é,é,é,é') throw Error(results);",
     );
 }
 
@@ -52,7 +55,8 @@ fn file_reader_modes_preserve_private_bytes_and_async_state() {
         if(results.sort().join('|')!=='readAsArrayBuffer:hello|readAsBinaryString:hello|readAsDataURL:data:text/plain;base64,aGVsbG8=|readAsText:hello')
             throw Error(JSON.stringify(results));
         if(events.length!==4 || events.some(e=>e!=='loadstart:true')) throw Error(events);
-        if('__fileReaderSnapshot' in globalThis) throw Error('private hook');
+        if('__fileReaderSnapshot' in globalThis || '__fileReaderMimeCharset' in globalThis)
+            throw Error('private hook');
     "#,
     );
 }
@@ -76,5 +80,111 @@ fn file_reader_abort_cancels_old_tasks_and_read_chaining_omits_old_loadend() {
         &mut runtime,
         &dom,
         "if(events.join(',')!=='abort,end,start,load,start,load,end') throw Error(events);",
+    );
+}
+
+#[test]
+fn large_file_read_yields_between_bounded_ranges_before_result_is_available() {
+    let (dom, mut runtime) = start(
+        r#"<body><script>
+        window.events=[];
+        const bytes = new Uint8Array(3 * 65536 + 7);
+        bytes[0] = 11; bytes[bytes.length - 1] = 29;
+        window.reader = new FileReader();
+        reader.onloadstart = event => events.push('start:' + event.loaded);
+        reader.onprogress = event => events.push('progress:' + event.loaded);
+        reader.onload = event => events.push('load:' + event.loaded);
+        reader.onloadend = event => events.push('end:' + event.loaded);
+        reader.readAsArrayBuffer(new Blob([bytes]));
+    </script>"#,
+    );
+    for _ in 0..2 {
+        let outcome = runtime.advance_time(Duration::ZERO, 1);
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    }
+    evaluate(
+        &mut runtime,
+        &dom,
+        "if(reader.readyState!==reader.LOADING || reader.result!==null || events.join(',')!=='start:0') throw Error(events);",
+    );
+    drain(&mut runtime);
+    evaluate(
+        &mut runtime,
+        &dom,
+        "const b=new Uint8Array(reader.result); if(reader.readyState!==reader.DONE || b.length!==196615 || b[0]!==11 || b[b.length-1]!==29 || events.at(-2)!=='load:196615' || events.at(-1)!=='end:196615' || events.some((v,i)=>v.startsWith('progress:') && i>=events.length-2)) throw Error(events);",
+    );
+}
+
+#[test]
+fn abort_after_partial_file_read_cancels_remaining_ranges_and_reports_loaded_bytes() {
+    let (dom, mut runtime) = start(
+        r#"<body><script>
+        window.events=[];
+        window.reader=new FileReader();
+        reader.onloadstart=()=>events.push('start');
+        reader.onabort=event=>events.push('abort:'+event.loaded+'/'+event.total);
+        reader.onload=()=>events.push('load');
+        reader.onloadend=()=>events.push('end');
+        reader.readAsArrayBuffer(new Blob([new Uint8Array(3*65536+7)]));
+    </script>"#,
+    );
+    for _ in 0..2 {
+        let outcome = runtime.advance_time(Duration::ZERO, 1);
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    }
+    evaluate(&mut runtime, &dom, "reader.abort();");
+    drain(&mut runtime);
+    evaluate(
+        &mut runtime,
+        &dom,
+        "if(events.join(',')!=='start,abort:65536/196615,end' || reader.readyState!==reader.DONE || reader.result!==null) throw Error(events);",
+    );
+}
+
+#[test]
+fn file_reader_data_url_omits_media_type_for_untyped_blob() {
+    let (dom, mut runtime) = start(
+        r#"<body><script>
+            window.result='pending';
+            const reader=new FileReader();
+            reader.onload=()=>result=reader.result;
+            reader.readAsDataURL(new Blob(['?']));
+        </script>"#,
+    );
+    drain(&mut runtime);
+    evaluate(
+        &mut runtime,
+        &dom,
+        "if(result!=='data:;base64,Pw==') throw Error(result);",
+    );
+}
+
+#[test]
+fn short_and_empty_file_reads_do_not_synthesize_progress_events() {
+    let (dom, mut runtime) = start(
+        r#"<body><script>
+            window.results=[];
+            const read = bytes => {
+                const reader = new FileReader(), events = [];
+                const began = Date.now();
+                for (const type of ['loadstart','progress','load','loadend'])
+                    reader.addEventListener(type, () => events.push(type));
+                reader.onloadend = () => results.push({events,elapsed:Date.now()-began,size:bytes.length});
+                reader.readAsArrayBuffer(new Blob([bytes]));
+            };
+            read(new Uint8Array());
+            read(new Uint8Array([1]));
+        </script>"#,
+    );
+    drain(&mut runtime);
+    evaluate(
+        &mut runtime,
+        &dom,
+        r#"if(results.length!==2 || results.some(({events}) =>
+            events[0]!=='loadstart' || events.at(-2)!=='load' || events.at(-1)!=='loadend'))
+                throw Error(JSON.stringify(results));
+            if(results[0].events.includes('progress')) throw Error('empty progress');
+            if(results[1].elapsed<50 && results[1].events.includes('progress'))
+                throw Error('premature tiny progress');"#,
     );
 }

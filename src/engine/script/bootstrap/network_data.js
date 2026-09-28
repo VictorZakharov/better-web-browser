@@ -2,6 +2,8 @@
     'use strict';
     const FormData = globalThis.FormData;
     const urlApi = globalThis.__urlInternals;
+    const blobBytes = globalThis.__blobByteAlgorithms;
+    delete globalThis.__blobByteAlgorithms;
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
     const headerNamePattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
@@ -182,7 +184,9 @@
         return output;
     };
     const normalizedBlobType = value => {
-        const type = String(value || '').toLowerCase();
+        if (typeof value === 'symbol') throw new TypeError('Blob type must be a DOMString');
+        const type = (value === undefined ? '' : String(value))
+            .replace(/[A-Z]/g, character => character.toLowerCase());
         return [...type].every(character => {
             const code = character.charCodeAt(0);
             return code >= 0x20 && code <= 0x7e;
@@ -229,19 +233,17 @@
         get __bytes() { return new Uint8Array(materializeBlob(this)); }
         get size() { return blobState(this).size; }
         get type() { return blobState(this).type; }
-        slice(start = 0, end = this.size, type = '') {
-            const normalize = value => value < 0 ? Math.max(this.size + value, 0) : Math.min(value, this.size);
-            start = normalize(Number(start) || 0);
-            end = normalize(end === undefined ? this.size : Number(end) || 0);
-            return new Blob([this.__bytes.slice(start, Math.max(start, end))], { type });
+        slice(start = 0, end = undefined, type = '') {
+            const state = blobState(this);
+            const bytes = blobBytes.slice(state.chunks, state.size, start, end);
+            return initializeBlob(Object.create(Blob.prototype), bytes, type);
         }
-        arrayBuffer() { return Promise.resolve(this.__bytes.buffer.slice(0)); }
-        bytes() { return Promise.resolve(new Uint8Array(this.__bytes)); }
+        arrayBuffer() { return Promise.resolve(new Uint8Array(materializeBlob(this)).buffer); }
+        bytes() { return Promise.resolve(new Uint8Array(materializeBlob(this))); }
         stream() {
-            const bytes = new Uint8Array(this.__bytes);
-            return new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } });
+            return blobBytes.stream(blobState(this).chunks);
         }
-        text() { return Promise.resolve(decoder.decode(this.__bytes)); }
+        text() { return Promise.resolve(decoder.decode(materializeBlob(this))); }
     }
     // Network-delivered chunks are already private immutable snapshots. Adopting them avoids a
     // second full-body copy merely to expose Blob.size to an XHR load handler.
@@ -267,10 +269,12 @@
             const normalize = input => String(input).replace(/\r\n|\r|\n/g, '\r\n');
             const escape = input => normalize(input).replace(/[\r\n"]/g, character => encodeURIComponent(character));
             let heading = '--' + boundary + '\r\nContent-Disposition: form-data; name="' + escape(name) + '"';
-            if (value instanceof File) {
-                heading += '; filename="' + escape(value.name) + '"\r\n';
-                heading += 'Content-Type: ' + (value.type || 'application/octet-stream') + '\r\n\r\n';
-                chunks.push(encoder.encode(heading), value.__bytes, encoder.encode('\r\n'));
+            if (fileStates.has(value)) {
+                const file = fileStates.get(value), blob = blobState(value);
+                heading += '; filename="' + escape(file.name) + '"\r\n';
+                heading += 'Content-Type: ' + (blob.type || 'application/octet-stream') + '\r\n\r\n';
+                chunks.push(encoder.encode(heading), new Uint8Array(materializeBlob(value)),
+                    encoder.encode('\r\n'));
             } else chunks.push(encoder.encode(heading + '\r\n\r\n' + normalize(value) + '\r\n'));
         }
         chunks.push(encoder.encode('--' + boundary + '--\r\n'));
@@ -279,7 +283,10 @@
     const extractBody = body => {
         if (body == null) return { bytes: null, stream: null, type: '' };
         if (body instanceof ReadableStream) return { bytes: null, stream: body, type: '' };
-        if (body instanceof Blob) return { bytes: new Uint8Array(body.__bytes), stream: null, type: body.type };
+        if (blobStates.has(body)) {
+            return { bytes: new Uint8Array(materializeBlob(body)), stream: null,
+                type: blobState(body).type };
+        }
         if (body instanceof FormData) return multipartBody(body);
         if (urlApi.isParams(body))
             return { bytes: encoder.encode(urlApi.serializeParams(body)), stream: null, type: 'application/x-www-form-urlencoded;charset=UTF-8' };
@@ -295,6 +302,15 @@
         const state = blobState(value);
         return { chunks: state.chunks, size: state.size, type: state.type };
     }, concatBytes, bytesToBase64];
+    // Structured clone also needs the private snapshot in worker realms. Its
+    // bootstrap captures then deletes this temporary capability before authors run.
+    globalThis.__blobStructuredCloneSnapshot = value => {
+        const state = blobStates.get(value);
+        if (!state) return null;
+        const file = fileStates.get(value);
+        return { bytes: new Uint8Array(materializeBlob(value)), type: state.type,
+            file: file ? {name: file.name, lastModified: file.lastModified} : null };
+    };
     // Captured and removed before author execution. Native structured clone invokes these
     // closures, never mutable author getters, prototypes, or constructor properties.
     if (typeof document !== 'undefined') globalThis.__blobCloneBindings = [

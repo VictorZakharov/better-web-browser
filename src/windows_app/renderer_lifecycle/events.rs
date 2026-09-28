@@ -28,6 +28,9 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn poll_renderer(&mut self, id: TabId) {
+        if let Err(error) = self.pump_broadcast_deliveries(id) {
+            self.contain_page_engine_failure(id, error);
+        }
         if let Err(error) = self.pump_storage_updates(id) {
             self.contain_page_engine_failure(id, error);
         }
@@ -127,6 +130,9 @@ impl BrowserState {
                 RendererEvent::NotificationRequest(request) => {
                     self.handle_notification_request(id, request);
                 }
+                RendererEvent::ProtocolHandlerRequest(request) => {
+                    self.handle_protocol_handler_request(id, request);
+                }
                 RendererEvent::GeolocationRequest(request) => {
                     self.handle_geolocation_request(id, request);
                 }
@@ -135,6 +141,9 @@ impl BrowserState {
                 }
                 RendererEvent::SensorRequest(request) => {
                     self.handle_sensor_request(id, request);
+                }
+                RendererEvent::ClipboardRequest(request) => {
+                    self.handle_clipboard_request(id, request);
                 }
                 RendererEvent::Presentation(presentation) => {
                     self.process_for_tab(id, |state| {
@@ -251,6 +260,25 @@ impl BrowserState {
                         Ok(true) => {}
                     }
                 }
+                RendererEvent::BroadcastCommand(command) => {
+                    let mut applied = Ok(true);
+                    self.process_for_tab(id, |state| {
+                        applied = state.apply_broadcast_command(command.clone());
+                    });
+                    match applied {
+                        Ok(false) => {
+                            if let Some(tab) = self.tabs.get_mut(id) {
+                                tab.deferred_renderer_events
+                                    .push_back(RendererEvent::BroadcastCommand(command));
+                                tab.deferred_renderer_events.extend(events);
+                            }
+                            exit = None;
+                            break;
+                        }
+                        Err(error) => self.contain_page_engine_failure(id, error),
+                        Ok(true) => {}
+                    }
+                }
                 RendererEvent::Exited(renderer_exit) => {
                     self.abandon_pointer_lock_owned_by(id);
                     self.abandon_page_fullscreen_owned_by(id);
@@ -281,6 +309,10 @@ impl BrowserState {
         session.finish_event_drain();
 
         if let Some(exit) = exit {
+            self.app
+                .broadcast_channels
+                .borrow_mut()
+                .retire_tab(id.get());
             // Retire the browser-owned hardware stream before any recovery path
             // can detach this renderer session or start its replacement.
             self.retire_sensors_for_tab(id);

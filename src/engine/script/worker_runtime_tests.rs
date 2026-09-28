@@ -5,6 +5,8 @@ use crate::fetch::{Body, FetchResponse, FetchUrl, HeaderList, ResponseType};
 mod event_listener;
 #[path = "worker_runtime_tests/event_source.rs"]
 mod event_source;
+#[path = "worker_runtime_tests/file_api.rs"]
+mod file_api;
 #[path = "worker_runtime_tests/indexed_db.rs"]
 mod indexed_db;
 #[path = "worker_runtime_tests/websocket.rs"]

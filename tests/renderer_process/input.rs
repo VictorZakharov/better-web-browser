@@ -14,6 +14,8 @@ mod fragment_navigation;
 mod helpers;
 #[path = "input/nested_scrolling.rs"]
 mod nested_scrolling;
+#[path = "input/protocol_handlers.rs"]
+mod protocol_handlers;
 #[path = "input/scroll_composition.rs"]
 mod scroll_composition;
 #[path = "input/shadow_focus.rs"]

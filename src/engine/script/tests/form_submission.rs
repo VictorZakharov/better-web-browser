@@ -155,6 +155,18 @@ fn synthetic_anchor_activation_follows_after_cancellation_sensitive_dispatch() {
 }
 
 #[test]
+fn synthetic_custom_scheme_anchor_emits_navigation_intent_for_browser_approval() {
+    let outcome = submit(
+        r#"<a href='web+soup:chicken-k%C3%AFwi'>Soup</a><script>
+        document.querySelector('a').click();</script>"#,
+    );
+    assert_eq!(
+        outcome.navigation_url.as_deref(),
+        Some("web+soup:chicken-k%C3%AFwi")
+    );
+}
+
+#[test]
 fn planned_submission_survives_later_disconnection_and_replaces_previous_submission() {
     let canceled = submit(
         r#"<form action='/no'></form><script>

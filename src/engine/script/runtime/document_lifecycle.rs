@@ -199,6 +199,8 @@ impl ScriptRuntime {
         host.pending_database_actions.clear();
         host.pending_speech_actions.clear();
         host.pending_notification_actions.clear();
+        host.pending_protocol_handler_actions.clear();
+        host.pending_clipboard_actions.clear();
         host.pending_geolocation_actions.clear();
         host.pending_media_device_actions.clear();
         host.pending_sensor_actions.clear();

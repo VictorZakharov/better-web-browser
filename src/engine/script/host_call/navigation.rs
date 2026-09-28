@@ -43,8 +43,13 @@ pub(super) fn dispatch(
                 .validate()
                 .map_err(|error| JsNativeError::range().with_message(error))?;
             let resolved = state.resolved_url(&value);
-            crate::navigation::ParsedUrl::parse(&resolved)
-                .map_err(|error| JsNativeError::typ().with_message(error.to_string()))?;
+            let custom_scheme = url::Url::parse(&resolved)
+                .ok()
+                .is_some_and(|url| crate::protocol_handlers::allowed_scheme(url.scheme()));
+            if operation == "planFormNavigation" || !custom_scheme {
+                crate::navigation::ParsedUrl::parse(&resolved)
+                    .map_err(|error| JsNativeError::typ().with_message(error.to_string()))?;
+            }
             if operation == "planFormNavigation" {
                 if !state.policy.allows_url("form-action", &resolved, 0) {
                     state.diagnose("form navigation blocked by Content Security Policy".into());
