@@ -13,7 +13,14 @@ fn input_after_an_undrained_exit_reports_the_original_crash_or_watchdog_reason()
         (TestCommand::Crash, "crashed"),
         (TestCommand::Hang, "unresponsive-task budget"),
     ] {
-        let session = RendererSession::launch(hung_task_options()).expect("hidden renderer");
+        // Native abort/fault reporting can take longer than the deliberately short
+        // watchdog used to exercise Hang, especially under a parallel test load.
+        let launch_options = if command == TestCommand::Hang {
+            hung_task_options()
+        } else {
+            options()
+        };
+        let session = RendererSession::launch(launch_options).expect("hidden renderer");
         let presentation = load_inline_document(&session, 125);
         session.send_test_command(command).unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);

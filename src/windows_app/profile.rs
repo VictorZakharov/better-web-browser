@@ -29,6 +29,7 @@ pub(super) fn acquire_exclusive_lock(profile: &Path) -> Result<File, String> {
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .share_mode(0)
         .open(&path)
         .map_err(|error| {
