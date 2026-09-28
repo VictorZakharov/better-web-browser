@@ -521,6 +521,20 @@ hidden-renderer tests exercise the physical-data contract without accessing
 the user's devices. The adapter uses existing locked Windows API crates,
 without adding dependencies or copied upstream code.
 
+The next [protocol handler](docs/custom-protocol-handlers.md),
+[Clipboard](docs/async-clipboard.md), [BroadcastChannel](docs/broadcast-channel.md),
+and [File API](docs/file-api-worker-reads.md) batch rendered **469 / 588** in
+three identical 2026-09-28 hidden release runs with Breeze's default identity.
+The merged PR #200 baseline was **465–468 / 588** under the same viewport,
+scale, locale, and settle settings. Each new run executed seven page scripts,
+returned HTTP 200, and had no JavaScript errors or renderer exits. The result
+is one point above the highest prior observation, but the baseline's 465-point
+run executed only six scripts, so the range is not a controlled attribution to
+these APIs. Browser-owned consent, cross-tab delivery, FileReader decoding,
+and byte-stream behavior are covered by focused and hidden integration tests;
+HTML5test does not establish their conformance. This batch adds no dependency
+or copied third-party implementation.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -529,8 +543,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-28-sensors-final-post199.json `
-  -Screenshot target/html5test/2026-09-28-sensors-final-post199.png
+  -Output target/html5test/2026-09-28-browser-apis-after200.json `
+  -Screenshot target/html5test/2026-09-28-browser-apis-after200.png
 ```
 
 New releases must refresh or explicitly date these observations using the
