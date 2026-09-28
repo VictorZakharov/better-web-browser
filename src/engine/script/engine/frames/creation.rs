@@ -120,6 +120,7 @@ pub(super) fn create<'s>(
         .borrow_mut()
         .insert(host.borrow().document.id(), v8::Weak::new(scope, context));
     let active = Rc::clone(&context.get_slot::<FrameLink>()?.active);
+    host.borrow_mut().frame_active = Some(Rc::clone(&active));
     let top_key = v8::String::new(scope, "top")?;
     let top = parent.global(scope).get(scope, top_key.into())?;
     let (storage_dispatch, private_hooks) = {
@@ -160,6 +161,7 @@ pub(super) fn create<'s>(
             "__setCurrentScript",
             "__dispatchNodeEvent",
             "__queuePolicyViolation",
+            "__receivePermissionUpdate",
         ] {
             let key = v8::String::new(scope, name)?;
             let function = context.global(scope).get(scope, key.into())?;

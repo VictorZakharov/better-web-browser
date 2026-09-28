@@ -11,6 +11,8 @@ use better_web_browser::renderer_process::DatabaseEventSink;
 use better_web_browser::renderer_protocol::{
     DATABASE_RETIRE_CLIENT_PAYLOAD, DatabaseCommand, DatabaseEvent, DocumentId,
 };
+use better_web_browser::storage::LocalStorage;
+use better_web_browser::storage_manager::StorageEstimate;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -35,6 +37,7 @@ enum Phase {
     rename_all_fields = "camelCase"
 )]
 enum Request {
+    StorageEstimate,
     Cache {
         command: CacheCommand,
     },
@@ -182,6 +185,7 @@ fn database_origin(client: &super::clients::Client) -> Option<String> {
 fn execute(
     database: &IndexedDb,
     cache_storage: &CacheStorage,
+    local_storage: &LocalStorage,
     job: &Job,
     sessions: &mut HashMap<SessionKey, SessionValue>,
 ) -> Value {
@@ -191,6 +195,19 @@ fn execute(
             return json!({"kind":"error","name":"DataError","message":"Invalid storage request"});
         }
     };
+    if matches!(request, Request::StorageEstimate) {
+        return match StorageEstimate::for_origin(
+            &job.origin_url,
+            local_storage,
+            database,
+            cache_storage,
+        ) {
+            Ok(estimate) => json!({"kind":"storageEstimate","value":estimate}),
+            Err(_) => {
+                json!({"kind":"error","name":"UnknownError", "message":"Storage estimate is unavailable"})
+            }
+        };
+    }
     if let Request::Cache { command } = request {
         let result = cache_storage.execute(&job.origin_url, command);
         return match result {
@@ -212,6 +229,7 @@ fn execute(
         };
     }
     let result = match request {
+        Request::StorageEstimate => unreachable!("handled above"),
         Request::Cache { .. } => unreachable!("handled above"),
         Request::Open { name } => database
             .inspect(&job.origin_url, &name)

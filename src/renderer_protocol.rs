@@ -15,12 +15,14 @@ mod input;
 mod media_devices;
 mod message;
 mod notification;
+mod permission;
 mod presentation;
 mod protocol_handler;
 mod sensor;
 mod speech;
 mod state;
 mod video;
+mod wake_lock;
 mod websocket;
 mod wire;
 pub use broadcast_channel::{BroadcastCommand, BroadcastDelivery, BroadcastOperation};
@@ -40,6 +42,7 @@ pub use notification::{
     NotificationAction, NotificationEvent, NotificationPermission, NotificationRequest,
     NotificationUpdate,
 };
+pub use permission::{PermissionName, PermissionRequest, PermissionState, PermissionUpdate};
 pub use protocol_handler::{ProtocolHandlerAction, ProtocolHandlerRequest};
 pub use sensor::{
     SensorAction, SensorError, SensorEvent, SensorKind, SensorPermission, SensorReading,
@@ -49,6 +52,7 @@ pub use speech::{
     MAX_SPEECH_TEXT_BYTES, SpeechAction, SpeechEvent, SpeechRequest, SpeechUpdate, SpeechVoiceInfo,
 };
 pub use video::{VideoFrameAssembler, VideoFrameChunk, VideoFrameIdentity, VideoFrameUpdate};
+pub use wake_lock::{WakeLockAction, WakeLockDisposition, WakeLockRequest, WakeLockUpdate};
 pub use websocket::{WebSocketCommand, WebSocketEvent, WebSocketEventKind, WebSocketOperation};
 
 pub use accessibility::{

@@ -328,13 +328,16 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ☑ | HTTP navigation policy | Typed navigation and Fetch policy cover tuple origins, guarded headers, redirects, scoped cookies, CORS/preflight checks, bounded bodies, and document-wide cancellation. This is an early implementation rather than a security-audited replacement for a mature browser network stack. |
 | ◩ | Cookies and Web Storage | Browser-owned cookies implement RFC-oriented domain/path, expiry, public-suffix, Secure, HttpOnly, SameSite, prefix, ordering, quota, and restart-persistence behavior. Origin-scoped `localStorage` persists; `sessionStorage` is tab-scoped. Named properties preserve UTF-16 values, and same-origin tabs synchronize local storage with ordered `storage` events. Child-frame event scope, partitioned state, and user-facing data controls remain incomplete; see the [storage contract](docs/web-storage.md). |
 | ◩ | IndexedDB | Browser-owned origin-scoped databases provide asynchronous transactions, ordered keys/ranges/cursors, structured-cloned values, restart persistence, and secondary indexes with unique, multi-entry, compound-key-path, and cursor operations. Dedicated workers use the same browser-owned store; full cross-tab scheduling and connection blocking/versionchange coordination remain incomplete. See the [standards slice](docs/html5test-websocket-indexeddb-forms.md). |
-| ◩ | CacheStorage | Secure top-level pages can store and query origin-scoped named `Cache` objects through a browser-owned, restart-persistent store. `add`/`addAll` use Fetch policy and batch writes atomically. Worker exposure, secure descendant-frame context calculation, and Service Workers remain open; see the [Cache API contract](docs/cache-storage.md). |
+| ◩ | CacheStorage | Secure top-level pages and dedicated workers can store and query origin-scoped named `Cache` objects through a browser-owned, restart-persistent store. `add`/`addAll` use Fetch policy and batch writes atomically. Secure descendant-frame context calculation and Service Workers remain open; see the [Cache API contract](docs/cache-storage.md). |
+| ◩ | StorageManager | Secure top-level pages and dedicated workers expose `navigator.storage.estimate()` with rough browser-owned usage across localStorage, IndexedDB, and CacheStorage. Its fixed logical 37 MiB quota reflects independent backend caps, not reservable disk space. The default bucket is best-effort (`persisted()` is false); `persist()` and persistence promotion are not implemented. See the [StorageManager contract](docs/storage-manager.md). |
 | ◩ | JavaScript Fetch and XHR | Document and dedicated-worker Fetch bodies stream progressively through default readers, with byte-based backpressure, cloning, and cancellation. Fetch/XHR and Body primitives are implemented; BYOB, streaming uploads, and complete pipe/transform semantics remain incomplete. See the [streaming contract and measurements](docs/progressive-fetch.md). |
 | ◩ | Beacon, Fetch keepalive, and speech synthesis | `navigator.sendBeacon()` queues browser-owned POST delivery across navigation, while bounded `fetch(..., {keepalive: true})` uploads retain their admitted origin and policy after navigation and share the in-flight body budget with Beacon. Windows Web Speech synthesis uses browser-owned SAPI voices and per-document queues after trusted activation. Renderer-side admission cannot yet predict all browser-wide Beacon saturation; speech recognition and boundary events remain open. See the [keepalive contract](docs/fetch-keepalive.md) and [speech batch](docs/html5test-beacon-speech-shadow-prefetch.md). |
 | ◩ | WebSocket | Document and dedicated-worker WebSockets use browser-owned network transport, bounded IPC, per-client CSP/mixed-content policy, text/binary frames, and close events. Extensions, compression, and broader network interoperability remain incomplete; see the [standards slice](docs/html5test-websocket-indexeddb-forms.md). |
 | ◩ | Notifications | Secure document and child-frame clients can use session-scoped, origin-keyed permission grants and browser-owned Windows notifications. A new permission prompt requires top-level transient activation. Persistent permission, frame-scoped prompts, service-worker notifications, and non-Windows presentation remain open; see the [Notification contract](docs/notifications.md). |
 | ◩ | Custom protocol handlers | Secure top-level pages can request a browser-owned handler for safelisted or `web+` schemes. Explicit, gesture-bound consent and a bounded profile store gate subsequent link navigation; Fetch and operating-system defaults are unchanged. Embedded-frame support and a management UI remain open; see the [handler contract](docs/custom-protocol-handlers.md). |
 | ◩ | Async Clipboard text | Secure, visible top-level pages can `readText()` and `writeText()` through the actual Windows clipboard after trusted activation and separate per-origin session consent. Bounded IPC and document/session revalidation keep the OS boundary browser-owned. Rich `ClipboardItem` read/write, iframe delegation, and persistent grants remain open; see the [Clipboard contract](docs/async-clipboard.md). |
+| ◩ | Screen Wake Lock | Secure, visible top-level pages can request a browser-owned screen wake lock backed by Windows power requests. Locks release on document or visibility loss, tab switch, and shutdown. Permissions-Policy header enforcement, an active-lock indicator, and workers remain open; see the [wake-lock contract](docs/screen-wake-lock.md). |
+| ◩ | Permissions API | Window documents expose non-prompting queries for six permission names. Secure top-level clients receive browser-authoritative states and change events; insecure and child clients resolve `denied`. Other names, worker exposure, and broader descendant-frame policy remain open; see the [Permissions API contract](docs/permissions-api.md). |
 | ◩ | BroadcastChannel | Same-origin top-level documents can exchange structured-cloned messages across tabs through browser-owned, bounded membership and delivery queues. Embedded documents and workers await storage-key/lifecycle integration; see the [BroadcastChannel contract](docs/broadcast-channel.md). |
 | ◩ | File API | Memory-backed `Blob` slices share private immutable chunks, byte streams pull bounded chunks with BYOB readers, and dedicated workers can use all four `FileReaderSync` read formats. File-backed streaming and complete File API coverage remain open; see the [File API contract](docs/file-api-worker-reads.md). |
 | ◩ | Location and media-device discovery | Secure top-level pages can request real Windows location readings after an origin-scoped session permission prompt. `navigator.mediaDevices.enumerateDevices()` reports only the presence of microphones and cameras, without identifying them before a capture grant. Background/minimized requests wait, and navigation retires outstanding work. Child-frame permissions policy, camera/microphone capture, and device-change events remain unavailable; see the [location](docs/geolocation.md) and [device enumeration](docs/media-devices-enumeration.md) contracts. |
@@ -509,6 +512,10 @@ rows remain excluded for an unrecognized browser identity, although trusted
 pointer-drag lifecycle tests exercise the new behavior. These are partial APIs,
 not claims of full Geolocation, Media Capture, Web Audio, or DnD conformance.
 
+A separate browser-owned [Permissions API subset](docs/permissions-api.md) now
+queries existing notification, geolocation, and sensor grants without prompting;
+it does not imply full API coverage or an unmeasured HTML5test score increase.
+
 The 2026-09-28 [physical sensor batch](docs/sensors.md) rendered
 **465–468 / 588** across three identical hidden runs with Breeze's default
 identity, up **7–10** from the merged PR #199 **458 / 588** baseline. All
@@ -535,6 +542,14 @@ and byte-stream behavior are covered by focused and hidden integration tests;
 HTML5test does not establish their conformance. This batch adds no dependency
 or copied third-party implementation.
 
+The subsequent 2026-09-28 worker CacheStorage, StorageManager, Screen Wake Lock,
+and Permissions API batch also rendered **469 / 588** in three identical hidden
+fresh-profile release runs with Breeze's default identity. Each run returned
+HTTP 200, executed seven page scripts, and had no JavaScript errors or renderer
+exits. The score is unchanged from the preceding 469-point observation; the
+new browser-owned storage, power, and permission contracts are covered by
+focused unit and hidden integration tests, not established by HTML5test.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -543,8 +558,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-28-browser-apis-after200.json `
-  -Screenshot target/html5test/2026-09-28-browser-apis-after200.png
+  -Output target/html5test/2026-09-28-browser-apis-batch18-run1.json `
+  -Screenshot target/html5test/2026-09-28-browser-apis-batch18-run1.png
 ```
 
 New releases must refresh or explicitly date these observations using the

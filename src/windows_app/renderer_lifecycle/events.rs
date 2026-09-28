@@ -133,6 +133,9 @@ impl BrowserState {
                 RendererEvent::ProtocolHandlerRequest(request) => {
                     self.handle_protocol_handler_request(id, request);
                 }
+                RendererEvent::PermissionRequest(request) => {
+                    self.handle_permission_request(id, request);
+                }
                 RendererEvent::GeolocationRequest(request) => {
                     self.handle_geolocation_request(id, request);
                 }
@@ -218,6 +221,9 @@ impl BrowserState {
                 }
                 RendererEvent::PointerLockRequested(request) => {
                     self.handle_pointer_lock_request(id, request);
+                }
+                RendererEvent::WakeLockRequested(request) => {
+                    self.handle_wake_lock_request(id, request);
                 }
                 RendererEvent::CookieMutation(mutation) => {
                     let mut correction_error = None;
@@ -316,6 +322,8 @@ impl BrowserState {
             // Retire the browser-owned hardware stream before any recovery path
             // can detach this renderer session or start its replacement.
             self.retire_sensors_for_tab(id);
+            self.retire_wake_locks_for_tab(id);
+            self.retire_permissions_for_tab(id);
             let crash_surface = exit.crash_surface();
             let task_budget_exceeded =
                 matches!(exit.reason, RendererExitReason::TaskBudgetExceeded(_));

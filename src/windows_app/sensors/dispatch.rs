@@ -195,6 +195,7 @@ impl BrowserState {
                         self.app
                             .sensor_service
                             .decide(origin.clone(), permission_kind, permission);
+                        self.broadcast_permission_changes(&origin);
                         emit(&sink, &request, SensorEvent::Permission(permission));
                     } else {
                         emit(&sink, &request, SensorEvent::Error(SensorError::NotAllowed));
@@ -229,6 +230,7 @@ impl BrowserState {
                     self.app
                         .sensor_service
                         .decide(origin.clone(), kind, prompted);
+                    self.broadcast_permission_changes(&origin);
                     permission = Some(prompted);
                 }
                 if !self.sensor_authority_is_current(&authority, &request)

@@ -4,6 +4,7 @@ mod dom_parser;
 mod serialization;
 mod url_pattern;
 mod url_resolution;
+mod wake_lock;
 mod xhr_document;
 
 fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {
@@ -134,6 +135,7 @@ mod shadow_dom;
 mod shadow_focus;
 mod shadow_part_idl;
 mod storage_event;
+mod storage_manager;
 mod streams_bytes;
 mod streams_compression;
 mod streams_encoding;

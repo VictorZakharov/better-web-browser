@@ -148,7 +148,7 @@ impl SensorService {
         })
     }
 
-    fn permission(&self, origin: &str, kind: SensorKind) -> Option<SensorPermission> {
+    pub(super) fn permission(&self, origin: &str, kind: SensorKind) -> Option<SensorPermission> {
         self.permissions
             .lock()
             .unwrap_or_else(|poison| poison.into_inner())

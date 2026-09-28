@@ -58,9 +58,12 @@ pub(super) struct BrowserApplication {
     pub(super) notifications: RefCell<super::notifications::NotificationService>,
     pub(super) protocol_handlers: RefCell<better_web_browser::protocol_handlers::Registry>,
     pub(super) clipboard: RefCell<super::clipboard::ClipboardService>,
+    pub(super) permissions: RefCell<super::permissions::PermissionService>,
     pub(super) geolocation: RefCell<super::geolocation::GeolocationService>,
     pub(super) media_devices: RefCell<super::media_devices::MediaDeviceService>,
     pub(super) capture: RefCell<super::capture::CaptureCoordinator>,
+    pub(super) wake_locks:
+        RefCell<super::wake_lock::WakeLockService<super::wake_lock::native::DisplayPowerRequest>>,
     pub(super) renderer_registry: SharedRendererRegistry,
     pub(super) tab_router: TabMessageRouter,
     pub(super) prefers_dark_color_scheme: Cell<bool>,
@@ -93,8 +96,11 @@ impl BrowserApplication {
             )
             .map_err(|error| error.to_string())?,
         );
-        let database_worker =
-            super::renderer_fetch::DatabaseWorker::new(indexed_db, cache_storage)?;
+        let database_worker = super::renderer_fetch::DatabaseWorker::new(
+            indexed_db,
+            cache_storage,
+            Arc::clone(&local_storage),
+        )?;
         let speech_service = super::speech_synthesis::SpeechSynthesisService::spawn()?;
         let sensor_service = super::sensors::SensorService::spawn()?;
         let protocol_handlers = better_web_browser::protocol_handlers::Registry::open(&profile)?;
@@ -118,9 +124,11 @@ impl BrowserApplication {
             notifications: RefCell::new(super::notifications::NotificationService::default()),
             protocol_handlers: RefCell::new(protocol_handlers),
             clipboard: RefCell::new(super::clipboard::ClipboardService::default()),
+            permissions: RefCell::new(super::permissions::PermissionService::default()),
             geolocation: RefCell::new(super::geolocation::GeolocationService::default()),
             media_devices: RefCell::new(super::media_devices::MediaDeviceService::default()),
             capture: RefCell::new(super::capture::CaptureCoordinator::default()),
+            wake_locks: RefCell::new(super::wake_lock::WakeLockService::new(Default::default())),
             renderer_registry: Arc::new(Mutex::new(RendererTaskRegistry::default())),
             tab_router: TabMessageRouter::default(),
             prefers_dark_color_scheme: Cell::new(super::color_scheme::prefers_dark_color_scheme()),

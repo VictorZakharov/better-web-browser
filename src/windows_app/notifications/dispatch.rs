@@ -43,7 +43,7 @@ impl BrowserState {
         // A sandboxed frame can retain an HTTPS URL while its effective origin is
         // opaque. Permission must use the registered client's effective origin,
         // not recover a tuple origin from the URL string.
-        if !owner.origin.is_secure() {
+        if !owner.origin.is_potentially_trustworthy() {
             let event = match request.action {
                 NotificationAction::RequestPermission => {
                     NotificationEvent::Permission(NotificationPermission::Denied)
@@ -84,7 +84,8 @@ impl BrowserState {
                     self.app
                         .notifications
                         .borrow_mut()
-                        .decide(origin, permission);
+                        .decide(origin.clone(), permission);
+                    self.broadcast_permission_changes(&origin);
                 }
                 emit(&sink, &request, NotificationEvent::Permission(permission));
             }

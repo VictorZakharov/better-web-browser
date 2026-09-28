@@ -66,6 +66,7 @@ impl EventSender {
                 | RendererEvent::DatabaseCommand(_)
                 | RendererEvent::SpeechRequest(_)
                 | RendererEvent::NotificationRequest(_)
+                | RendererEvent::PermissionRequest(_)
                 | RendererEvent::GeolocationRequest(_)
                 | RendererEvent::MediaDeviceRequest(_)
                 | RendererEvent::SensorRequest(_)
@@ -244,12 +245,14 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::SpeechRequest(request) => Some(request.document),
         RendererEvent::NotificationRequest(request) => Some(request.document),
         RendererEvent::ProtocolHandlerRequest(request) => Some(request.document),
+        RendererEvent::PermissionRequest(request) => Some(request.document),
         RendererEvent::GeolocationRequest(request) => Some(request.document),
         RendererEvent::MediaDeviceRequest(request) => Some(request.document),
         RendererEvent::SensorRequest(request) => Some(request.document),
         RendererEvent::ClipboardRequest(request) => Some(request.document),
         RendererEvent::FullscreenRequested(request) => Some(request.document),
         RendererEvent::PointerLockRequested(request) => Some(request.document),
+        RendererEvent::WakeLockRequested(request) => Some(request.document),
         RendererEvent::Diagnostic { .. }
         | RendererEvent::Unresponsive
         | RendererEvent::Exited(_) => None,

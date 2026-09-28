@@ -48,7 +48,7 @@ impl NotificationService {
     }
 
     pub(super) fn permission_for_origin(&self, origin: &Origin) -> NotificationPermission {
-        if !origin.is_secure() {
+        if !origin.is_potentially_trustworthy() {
             return NotificationPermission::Denied;
         }
         self.permission(&origin.serialize())

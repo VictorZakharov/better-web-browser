@@ -30,7 +30,8 @@ with IP-based synthetic coordinates.
 
 This is a partial implementation of the [W3C Geolocation Candidate
 Recommendation](https://www.w3.org/TR/geolocation/). Browser prompts are
-session-scoped, not a complete Permissions API integration. Cross-origin frame
+session-scoped; a [bounded Permissions API subset](permissions-api.md) can query and
+observe changes to this grant without prompting. Cross-origin frame
 delegation, background acquisition, persistent grants, and emulated positions
 are not implemented. Tests inject fake position providers and exercise the
 renderer IPC without opening visible windows or requesting the user's actual

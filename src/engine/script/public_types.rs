@@ -8,3 +8,4 @@ pub use super::types::{
     ScriptOutcome, ScriptPointerLockAction, ScriptProtocolHandlerAction, ScriptSensorAction,
     ScriptSpeechAction, UserInputEvent, UserInputModifiers, UserInputResult,
 };
+pub use super::wake_lock_host::ScriptWakeLockAction;

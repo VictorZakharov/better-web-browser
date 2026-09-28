@@ -3,20 +3,22 @@
 Breeze implements a bounded, browser-owned subset of the
 [Notifications API](https://notifications.spec.whatwg.org/). A document can call
 `Notification.requestPermission()`, inspect `Notification.permission`, construct a notification,
-call `close()`, and receive `show`, `click`, `close`, or `error` events. This is not a general
-implementation of the [Permissions API](https://www.w3.org/TR/permissions/).
+call `close()`, and receive `show`, `click`, `close`, or `error` events. A
+[bounded Permissions API subset](permissions-api.md) can query this grant, but this is not
+a general implementation of [Permissions](https://www.w3.org/TR/permissions/).
 
 The browser resolves every renderer request to its registered document/frame client. Permission is
-keyed to that client's effective canonical HTTPS origin, including its port, not to an arbitrary
+keyed to that client's effective potentially trustworthy origin, including its port, not to an arbitrary
 origin string supplied by JavaScript or recovered from the frame URL. The initial child-frame
 sandbox decision still originates in renderer navigation metadata; this is not a fully
 security-audited browser-owned frame tree. An active top-level document with a browser-recorded
 transient user gesture can trigger a Windows Yes/No permission prompt. Descendant frames cannot
 prompt yet because activation tracking is not frame-scoped; an existing grant still applies to a
 frame of that origin. The choice is retained only until the browser exits; unknown permission
-remains `default`. HTTP and opaque origins are denied. Hidden benchmark/test windows never prompt
-or display notifications. The renderer cannot change the decision or access Windows notification
-APIs directly.
+remains `default`. Non-trustworthy HTTP and opaque origins are denied; potentially
+trustworthy loopback origins follow the same session-grant policy as HTTPS. Hidden
+benchmark/test windows never prompt or display notifications. The renderer cannot
+change the decision or access Windows notification APIs directly.
 
 After a grant, the browser presents a notification through Windows
 [`Shell_NotifyIconW`](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shell_notifyiconw)

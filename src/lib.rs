@@ -12,6 +12,7 @@ pub mod navigation;
 pub mod protocol_handlers;
 pub mod renderer_protocol;
 pub mod storage;
+pub mod storage_manager;
 pub(crate) mod text_decode;
 
 #[cfg(target_os = "windows")]

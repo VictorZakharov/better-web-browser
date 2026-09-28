@@ -53,6 +53,7 @@ mod types;
 mod url_host;
 mod user_events;
 mod viewport_host;
+mod wake_lock_host;
 mod worker_bootstrap;
 mod worker_host;
 mod worker_module;

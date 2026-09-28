@@ -1,4 +1,4 @@
-//! Worker IndexedDB requests share the document IPC but retain realm-local callbacks.
+//! Worker origin-storage requests share the document IPC but retain realm-local callbacks.
 use super::*;
 use crate::renderer_protocol::{DATABASE_RETIRE_CLIENT_PAYLOAD, DatabaseCommand, DatabaseEvent};
 
@@ -31,7 +31,7 @@ impl WorkerDatabases {
                 .get(&worker)
                 .is_some_and(|client| *client != action.client)
             {
-                return Err("Worker IndexedDB client identity changed".into());
+                return Err("Worker origin-storage client identity changed".into());
             }
             let wire_id = self.allocate_wire_id()?;
             connection.send_database_command(DatabaseCommand {
@@ -51,7 +51,7 @@ impl WorkerDatabases {
             .next_sequence
             .checked_add(1)
             .filter(|sequence| *sequence < WORKER_DATABASE_BIT)
-            .ok_or("Worker IndexedDB request identifiers exhausted")?;
+            .ok_or("Worker origin-storage request identifiers exhausted")?;
         Ok(WORKER_DATABASE_BIT | self.next_sequence)
     }
 

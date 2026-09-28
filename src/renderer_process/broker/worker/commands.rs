@@ -146,6 +146,15 @@ impl Broker {
                         self.protocol_failure(error.to_string());
                     }
                 }
+                BrokerCommand::WakeLockUpdate(update) => {
+                    if self.active_document == Some(update.document)
+                        && let Err(error) = self
+                            .writer()
+                            .send_browser(&BrowserMessage::WakeLockUpdate(update))
+                    {
+                        self.protocol_failure(error.to_string());
+                    }
+                }
                 BrokerCommand::Shutdown(reply) => self.begin_shutdown(Some(reply)),
                 BrokerCommand::Terminate => {
                     self.exit_reason = Some(RendererExitReason::Terminated);

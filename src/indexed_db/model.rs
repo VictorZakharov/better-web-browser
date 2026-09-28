@@ -11,6 +11,7 @@ mod inline_key;
 mod keys;
 mod records;
 mod types;
+mod usage;
 pub use keys::{Key, KeyRange};
 pub use types::{
     CursorRecord, DatabaseInfo, DatabaseListing, DbError, DbOperation, DbResult, IndexDefinition,

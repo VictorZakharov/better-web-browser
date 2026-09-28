@@ -14,6 +14,7 @@ pub enum ScriptWorkerAction {
         name: String,
         credentials: CredentialsMode,
         document_url: String,
+        creator_secure_context: bool,
         client: crate::fetch::RequestClient,
         worker_client: crate::fetch::RequestClient,
     },
@@ -122,6 +123,12 @@ pub(super) fn worker_host_call(
                         .as_ref()
                         .unwrap_or(&state.document_url)
                         .clone(),
+                    // Secure Contexts requires both a trustworthy Worker origin and
+                    // a secure owner. Until ancestor trust is tracked, embedded
+                    // documents fail closed just like their Window caches binding.
+                    creator_secure_context: !state.embedded
+                        && !state.fetch_client.opaque
+                        && state.document_origin.is_potentially_trustworthy(),
                     client: state.fetch_client,
                     worker_client,
                 });

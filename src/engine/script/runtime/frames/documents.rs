@@ -203,6 +203,9 @@ pub(in crate::engine::script::runtime) fn append(
     outcome
         .notification_actions
         .append(&mut other.notification_actions);
+    outcome
+        .permission_actions
+        .append(&mut other.permission_actions);
     outcome.sensor_actions.append(&mut other.sensor_actions);
     outcome
         .protocol_handler_actions

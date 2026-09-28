@@ -1,6 +1,8 @@
 use super::*;
 use crate::fetch::{Body, FetchResponse, FetchUrl, HeaderList, ResponseType};
 
+#[path = "worker_runtime_tests/cache_storage.rs"]
+mod cache_storage;
 #[path = "worker_runtime_tests/event_listener.rs"]
 mod event_listener;
 #[path = "worker_runtime_tests/event_source.rs"]
@@ -9,6 +11,8 @@ mod event_source;
 mod file_api;
 #[path = "worker_runtime_tests/indexed_db.rs"]
 mod indexed_db;
+#[path = "worker_runtime_tests/storage_manager.rs"]
+mod storage_manager;
 #[path = "worker_runtime_tests/websocket.rs"]
 mod websocket;
 

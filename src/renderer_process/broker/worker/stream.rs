@@ -14,6 +14,36 @@ pub(super) struct OutgoingFetch {
 }
 
 impl Broker {
+    pub(super) fn process_permission_updates(&mut self) {
+        if self
+            .resources()
+            .permission_overflow
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            self.protocol_failure("renderer Permissions control mailbox overflow".into());
+            return;
+        }
+        for _ in 0..crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS {
+            if !self.writer().has_page_command_capacity() {
+                break;
+            }
+            let update = match self.resources().permission_updates.try_recv() {
+                Ok(update) => update,
+                Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
+            };
+            if self.active_document != Some(update.document) {
+                continue;
+            }
+            if let Err(error) = self
+                .writer()
+                .send_browser(&BrowserMessage::PermissionUpdate(update))
+            {
+                self.protocol_failure(error.to_string());
+                break;
+            }
+        }
+    }
+
     pub(super) fn process_database_events(&mut self) {
         if self
             .resources()

@@ -14,6 +14,7 @@ const MAX_WORKER_DATABASE_ACTION_BYTES: usize = 8 * 1024 * 1024;
 
 pub(super) struct WorkerHostState {
     pub(super) source_url: String,
+    pub(super) creator_secure_context: bool,
     pub(super) name: String,
     pub(super) kind: ScriptKind,
     pub(super) source_loader: Arc<WorkerSourceLoader>,
@@ -47,6 +48,7 @@ struct ImportedScript {
 impl WorkerHostState {
     pub(super) fn new(
         source_url: &str,
+        creator_secure_context: bool,
         name: &str,
         kind: ScriptKind,
         source_loader: Arc<WorkerSourceLoader>,
@@ -54,6 +56,7 @@ impl WorkerHostState {
     ) -> Self {
         Self {
             source_url: source_url.into(),
+            creator_secure_context,
             name: name.into(),
             kind,
             source_loader,
@@ -227,7 +230,7 @@ pub(super) fn dispatch_worker_host_call(
             let payload = argument_string(args, 1)?;
             if payload.len() > crate::limits::MAX_INDEXED_DB_IPC_BYTES {
                 return Err(JsNativeError::range()
-                    .with_message("IndexedDB request exceeds the browser limit")
+                    .with_message("Origin-storage request exceeds the browser limit")
                     .into());
             }
             let queued_bytes: usize = state
@@ -239,12 +242,13 @@ pub(super) fn dispatch_worker_host_call(
                 || queued_bytes.saturating_add(payload.len()) > MAX_WORKER_DATABASE_ACTION_BYTES
             {
                 return Err(JsNativeError::range()
-                    .with_message("Worker IndexedDB task queue limit exceeded")
+                    .with_message("Worker origin-storage task queue limit exceeded")
                     .into());
             }
             let id = state.next_database_id;
             state.next_database_id = id.checked_add(1).ok_or_else(|| {
-                JsNativeError::range().with_message("Worker IndexedDB identifiers were exhausted")
+                JsNativeError::range()
+                    .with_message("Worker origin-storage identifiers were exhausted")
             })?;
             state
                 .database_actions

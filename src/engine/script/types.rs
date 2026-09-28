@@ -3,6 +3,7 @@
 use super::network::ScriptDatabaseAction;
 use super::network::ScriptFetchAction;
 use super::network::ScriptWebSocketAction;
+use super::wake_lock_host::ScriptWakeLockAction;
 use super::workers::ScriptWorkerAction;
 use crate::engine::dom::NodeRef;
 use crate::engine::invalidation::RenderInvalidation;
@@ -128,12 +129,14 @@ pub struct ScriptOutcome {
     pub notification_actions: Vec<ScriptNotificationAction>,
     pub protocol_handler_actions: Vec<ScriptProtocolHandlerAction>,
     pub clipboard_actions: Vec<ScriptClipboardAction>,
+    pub permission_actions: Vec<crate::renderer_protocol::PermissionRequest>,
     pub geolocation_actions: Vec<ScriptGeolocationAction>,
     pub media_device_actions: Vec<ScriptMediaDeviceAction>,
     pub sensor_actions: Vec<ScriptSensorAction>,
     pub broadcast_actions: Vec<ScriptBroadcastAction>,
     pub worker_actions: Vec<ScriptWorkerAction>,
     pub fullscreen_actions: Vec<ScriptFullscreenAction>,
+    pub wake_lock_actions: Vec<ScriptWakeLockAction>,
     pub pointer_lock_actions: Vec<ScriptPointerLockAction>,
     pub media_actions: Vec<ScriptMediaAction>,
     pub graph_audio_actions: Vec<ScriptGraphAudioAction>,
@@ -397,6 +400,10 @@ pub enum UserInputEvent {
         previous: &'static str,
     },
     Fullscreen {
+        request_id: u64,
+        disposition: &'static str,
+    },
+    WakeLock {
         request_id: u64,
         disposition: &'static str,
     },

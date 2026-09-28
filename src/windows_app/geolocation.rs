@@ -143,7 +143,7 @@ impl GeolocationService {
         }
     }
 
-    fn permission(&self, origin: &str) -> Option<bool> {
+    pub(super) fn permission(&self, origin: &str) -> Option<bool> {
         self.permissions.get(origin).copied()
     }
 

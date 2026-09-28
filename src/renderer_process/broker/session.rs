@@ -143,6 +143,15 @@ impl RendererSession {
         )
     }
 
+    pub fn permission_update_sink(&self, document: DocumentId) -> super::PermissionUpdateSink {
+        super::PermissionUpdateSink::new(
+            document,
+            self.permission_updates.clone(),
+            Arc::clone(&self.permission_overflow),
+            self.wake.clone(),
+        )
+    }
+
     pub fn geolocation_update_sink(&self, document: DocumentId) -> super::GeolocationUpdateSink {
         super::GeolocationUpdateSink::new(
             document,
@@ -250,6 +259,14 @@ impl RendererSession {
     pub fn respond_fullscreen(&self, response: FullscreenResponse) -> Result<(), String> {
         response.validate().map_err(|error| error.to_string())?;
         self.send_command(worker::BrokerCommand::FullscreenResponse(response))
+    }
+
+    pub fn update_wake_lock(
+        &self,
+        update: crate::renderer_protocol::WakeLockUpdate,
+    ) -> Result<(), String> {
+        update.validate().map_err(|error| error.to_string())?;
+        self.send_command(worker::BrokerCommand::WakeLockUpdate(update))
     }
 
     pub fn respond_pointer_lock(

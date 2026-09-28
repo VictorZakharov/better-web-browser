@@ -82,6 +82,7 @@ impl BrowserState {
                     .geolocation
                     .borrow_mut()
                     .decide(context.origin.clone(), granted);
+                self.broadcast_permission_changes(&context.origin);
                 granted
             }
         };

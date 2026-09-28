@@ -10,11 +10,13 @@ mod media_devices;
 mod mutations;
 mod navigation;
 mod notification;
+mod permission;
 mod protocol_handler;
 mod runtime;
 mod sensor;
 mod speech;
 mod state;
+mod wake_lock;
 mod websocket;
 mod writer;
 
@@ -244,6 +246,7 @@ impl ChildConnection {
             BrowserMessage::DatabaseEvent(event) => self.deliver_database_event(event),
             BrowserMessage::SpeechUpdate(update) => self.deliver_speech_update(update),
             BrowserMessage::NotificationUpdate(update) => self.deliver_notification_update(update),
+            BrowserMessage::PermissionUpdate(update) => self.deliver_permission_update(update),
             BrowserMessage::GeolocationUpdate(update) => self.deliver_geolocation_update(update),
             BrowserMessage::MediaDeviceUpdate(update) => self.deliver_media_device_update(update),
             BrowserMessage::SensorUpdate(update) => self.deliver_sensor_update(update),
@@ -263,6 +266,7 @@ impl ChildConnection {
             }
             BrowserMessage::FullscreenResponse(response) => self.fullscreen_response(response),
             BrowserMessage::PointerLockResponse(response) => self.pointer_lock_response(response),
+            BrowserMessage::WakeLockUpdate(update) => self.deliver_wake_lock_update(update),
             BrowserMessage::CancelDocument(document) => self.cancel_navigation(document),
             message @ (BrowserMessage::FetchResponseStart(_)
             | BrowserMessage::FetchResponseChunk(_)

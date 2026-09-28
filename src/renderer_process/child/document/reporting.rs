@@ -55,6 +55,9 @@ pub(super) fn merge_outcome(
         .protocol_handler_actions
         .append(&mut source.protocol_handler_actions);
     target
+        .permission_actions
+        .append(&mut source.permission_actions);
+    target
         .geolocation_actions
         .append(&mut source.geolocation_actions);
     target
@@ -71,6 +74,9 @@ pub(super) fn merge_outcome(
     target
         .fullscreen_actions
         .append(&mut source.fullscreen_actions);
+    target
+        .wake_lock_actions
+        .append(&mut source.wake_lock_actions);
     target
         .pointer_lock_actions
         .append(&mut source.pointer_lock_actions);
