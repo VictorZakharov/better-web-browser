@@ -254,10 +254,7 @@ mod tests {
                 "{url}"
             );
         }
-        for url in [
-            "http://example.test/page",
-            "http://localhost/page",
-        ] {
+        for url in ["http://example.test/page", "http://localhost/page"] {
             assert!(
                 !trustworthy_sensor_origin(&Origin::parse(url).unwrap()),
                 "{url}"

@@ -10,14 +10,20 @@ instead of touching the user's hardware.
 
 - `DeviceOrientationEvent` and `DeviceMotionEvent` deliver trusted window events
   only while a listener exists. `requestPermission()` requires transient user
-  activation. The orientation event uses the relative WinRT orientation sensor
-  and reports `absolute: false`; `requestPermission(true)` is denied because
-  this legacy event does not currently have an absolute source.
-- Generic `Sensor`, `Accelerometer`, `Gyroscope`, `Magnetometer`,
+  activation. `deviceorientation` uses the relative WinRT orientation sensor and
+  reports `absolute: false`; `deviceorientationabsolute` uses WinRT's distinct
+  Earth-referenced source and reports `absolute: true` only after the three
+  required permissions are granted through `requestPermission(true)`.
+  A new permission prompt without transient user activation rejects with
+  `NotAllowedError`; an explicit user denial resolves to `"denied"`.
+- Generic `Sensor`, `Accelerometer`, `LinearAccelerationSensor`,
+  `GravitySensor`, `Gyroscope`, `Magnetometer`,
   `OrientationSensor`, `RelativeOrientationSensor`,
   `AbsoluteOrientationSensor`, and `AmbientLightSensor` provide
-  `start()`/`stop()`, state, readings, and errors. Accelerometer values are
-  m/s², gyroscope values are radians/s, magnetometer values are µT, relative
+  `start()`/`stop()`, state, readings, and errors. The standard accelerometer
+  includes gravity; linear acceleration excludes it, and the gravity sensor
+  exposes the gravity vector alone. All three use distinct WinRT reading types
+  and report m/s². Gyroscope values are radians/s, magnetometer values are µT, relative
   and absolute orientations are normalized `[x, y, z, w]` quaternions, and
   ambient light is lux. The legacy motion event's rotation rates remain
   degrees/s, as specified for that event.
@@ -26,10 +32,10 @@ instead of touching the user's hardware.
   `referenceFrame: 'device'` option is supported; `screen` raises
   `NotSupportedError` until display rotation can be applied correctly.
 
-WinRT `OrientationSensor::GetDefaultForRelativeReadings()` supplies the legacy
-event and Generic relative orientation, while `GetDefault()` supplies the
-Earth-referenced quaternion. The browser never upgrades the relative reading
-to an absolute claim. Windows
+WinRT `OrientationSensor::GetDefaultForRelativeReadings()` supplies the relative
+legacy event and Generic relative orientation, while `GetDefault()` supplies
+the absolute legacy event and Earth-referenced quaternion. The browser never
+upgrades a relative reading to an absolute claim. Windows
 sensor axes are in the hardware's natural device orientation, not the current
 screen orientation. The adapter converts accelerometer *g* values using
 9.80665 m/s² per *g*, and converts gyroscope degrees/s to radians/s only for
@@ -54,7 +60,8 @@ numeric loopback HTTP origin may ask. Opaque, `file:`, and descendant frames
 cannot borrow a top-level permission; Permissions Policy delegation is not yet
 implemented. Legacy permission prompts require a foreground visible tab and
 transient activation. A Generic Sensor `start()` can prompt in a foreground
-visible tab. Accelerometer, gyroscope, and magnetometer grants are independent;
+visible tab. The three accelerometer-derived classes share the accelerometer
+grant; gyroscope and magnetometer grants are independent;
 relative orientation requires the accelerometer and gyroscope, and absolute
 orientation requires all three. Ambient light has its own
 `ambient-light-sensor` grant. A declined combined prompt does not revoke a
@@ -68,11 +75,24 @@ tab, or window exits. Sensor objects are initialized lazily after permission,
 and shutdown does not block on a faulty device driver. Source WinRT timestamps
 deduplicate repeated current readings.
 
-The current slice does not include `DeviceOrientationEventAbsolute`,
-`UncalibratedMagnetometer`, screen-reference
+The current slice does not include `UncalibratedMagnetometer`, screen-reference
 frame transforms, background sampling, persistent grants, or Permissions
 Policy-based iframe delegation. It does not claim full Generic Sensor or
 Device Orientation conformance.
+
+## Hidden release observation
+
+On 2026-09-28, the sensor code at commit `4d83c28` rendered **468 / 588**
+on HTML5test.co, versus **458 / 588** for the preceding merged batch. The
+capture used the default browser identity, a fresh profile, 1280×720 hidden
+window, 125% device scale, `en-US`, and a 10-second settle. It returned HTTP
+200 with zero JavaScript errors, no renderer exit, and a successful hidden
+benchmark guard. The score reflects feature probes only: the benchmark is
+intentionally unable to invoke the physical sensor broker or permission UI.
+The fake WinRT provider and hidden renderer tests verify readings, permission
+gates, lifecycle, and IPC independently of that score. Captures are kept under
+`target/html5test/2026-09-28-sensors-{code,final}.{json,png}` and are not
+committed.
 
 References: [W3C Device Orientation and Motion](https://www.w3.org/TR/orientation-event/),
 [Generic Sensor](https://www.w3.org/TR/generic-sensor/),
@@ -82,5 +102,6 @@ References: [W3C Device Orientation and Motion](https://www.w3.org/TR/orientatio
 [Ambient Light Sensor](https://www.w3.org/TR/ambient-light/),
 [Microsoft sensor orientation](https://learn.microsoft.com/en-us/windows/apps/develop/devices-sensors/sensor-orientation),
 [WinRT Magnetometer](https://learn.microsoft.com/en-us/uwp/api/windows.devices.sensors.magnetometer), and
+[WinRT AccelerometerReadingType](https://learn.microsoft.com/en-us/uwp/api/windows.devices.sensors.accelerometerreadingtype),
 [WinRT OrientationSensor](https://learn.microsoft.com/en-us/uwp/api/windows.devices.sensors.orientationsensor), and
 [WinRT LightSensor](https://learn.microsoft.com/en-us/uwp/api/windows.devices.sensors.lightsensor).
