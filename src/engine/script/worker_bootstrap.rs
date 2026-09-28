@@ -30,6 +30,7 @@ pub(super) const WORKER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/event_source.js"),
     include_str!("bootstrap/network_xhr_response.js"),
     include_str!("bootstrap/network_xhr.js"),
+    include_str!("bootstrap/file_reader_mime.js"),
     include_str!("bootstrap/file_reader_sync.js"),
     include_str!("bootstrap/file_reader.js"),
     include_str!("bootstrap/worker_canvas_begin.js"),

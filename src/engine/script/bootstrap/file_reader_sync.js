@@ -15,10 +15,7 @@
             result += String.fromCharCode(...bytes.subarray(offset, offset + 0x4000));
         return result;
     };
-    const charsetOf = type => {
-        const match = /(?:^|;)\s*charset\s*=\s*(?:"([^"]*)"|([^;\s]*))/i.exec(type);
-        return match ? match[1] ?? match[2] : '';
-    };
+    const charsetOf = globalThis.__fileReaderMimeCharset;
 
     class FileReaderSync {
         constructor() { readers.add(this); }

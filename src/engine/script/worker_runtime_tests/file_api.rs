@@ -85,3 +85,20 @@ fn worker_structured_clone_uses_private_file_snapshot() {
     let result: String = serde_json::from_str(&outcome.messages[0]).unwrap();
     assert_eq!(result, "worker bytes|original.txt|text/plain|321|undefined");
 }
+
+#[test]
+fn worker_file_reader_sync_parses_quoted_mime_parameters_before_charset() {
+    let (_, outcome) = run(r#"const reader = new FileReaderSync();
+            const bytes = new Uint8Array([0xc3, 0xa9]);
+            const quoted = new Blob([bytes],
+                {type:'text/plain; x=";charset=windows-1252"; charset=utf-8'});
+            const fallback = new Blob([bytes],
+                {type:'text/plain; x=";charset=windows-1252"'});
+            const duplicate = new Blob([new Uint8Array([0xe9])],
+                {type:'text/plain; charset=windows-1252; charset=utf-8'});
+            postMessage([reader.readAsText(quoted), reader.readAsText(fallback),
+                reader.readAsText(duplicate)].join('|'));"#);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let result: String = serde_json::from_str(&outcome.messages[0]).unwrap();
+    assert_eq!(result, "é|é|é");
+}

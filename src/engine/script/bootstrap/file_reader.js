@@ -3,6 +3,8 @@
     'use strict';
     const [snapshot, concatBytes, bytesToBase64] = globalThis.__fileReaderSnapshot;
     delete globalThis.__fileReaderSnapshot;
+    const charsetOf = globalThis.__fileReaderMimeCharset;
+    delete globalThis.__fileReaderMimeCharset;
     const schedule = globalThis.setTimeout, cancel = globalThis.clearTimeout;
     const now = Date.now.bind(Date), READ_CHUNK_SIZE = 64 * 1024;
     const trusted = globalThis.__markTrustedEvent, Progress = globalThis.ProgressEvent;
@@ -20,8 +22,7 @@
         return String(value);
     };
     const decode = (bytes, type, label) => {
-        const charset = /(?:^|;)\s*charset\s*=\s*(?:"([^"]*)"|([^;\s]*))/i.exec(type);
-        return host('fileReadText', bytes, label ?? '', charset ? charset[1] ?? charset[2] : '');
+        return host('fileReadText', bytes, label ?? '', charsetOf(type));
     };
     const packageData = (bytes, mode, type, label) => {
         if (mode === 'buffer') return bytes.buffer;
@@ -68,7 +69,7 @@
                 }
                 const complete = chunkIndex === data.chunks.length;
                 const elapsed = now() - lastProgress;
-                if (complete || elapsed >= 50) {
+                if (state.loaded > 0 && elapsed >= 50) {
                     lastProgress = now();
                     fire(reader, 'progress', state.loaded, data.size);
                     if (!current()) return;

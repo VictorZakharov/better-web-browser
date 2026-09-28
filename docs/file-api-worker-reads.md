@@ -19,6 +19,9 @@ Standard. Invalid labels fall back to the MIME charset and then UTF-8, matching
 the existing asynchronous FileReader path. The host currently limits a text
 decode input to 16 MiB. Blob reads still materialize the requested result in
 worker memory, so this is not a streaming replacement for large files.
+Both reader paths use one private [MIME parser](https://mimesniff.spec.whatwg.org/#parsing-a-mime-type)
+for charset extraction. A semicolon inside another quoted parameter cannot
+invent a charset, and the first syntactically valid `charset` parameter wins.
 For both readers, a Data URL omits its media type when the Blob type is empty.
 
 The asynchronous `FileReader` remains available in both Window and workers.
@@ -29,6 +32,9 @@ contract remains, while an abort after partial progress reports the actual
 `loaded` byte count and cancels subsequent read tasks. Result packaging still
 materializes the complete byte sequence on completion; this slice does not
 promise constant-memory whole-file reads.
+An empty read emits no artificial `progress` event, and a small read that
+finishes before the interval also proceeds from `loadstart` to `load` and
+`loadend` without one.
 No new native dependency, copied implementation, or filesystem privilege was
 introduced. A FileReaderSync can read only bytes already in its worker realm's
 Blob snapshot; it cannot open an arbitrary local path.

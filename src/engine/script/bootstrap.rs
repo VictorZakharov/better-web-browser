@@ -188,6 +188,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/websocket.js"),
     include_str!("bootstrap/network_xhr_response.js"),
     include_str!("bootstrap/network_xhr.js"),
+    include_str!("bootstrap/file_reader_mime.js"),
     include_str!("bootstrap/file_reader.js"),
     include_str!("bootstrap/structured_clone.js"),
     include_str!("bootstrap/broadcast_channel.js"),

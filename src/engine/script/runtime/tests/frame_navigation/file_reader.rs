@@ -10,13 +10,16 @@ fn file_reader_encoding_uses_label_then_mime_with_bom_precedence() {
         read([0xe9],'text/plain;charset=utf-8','iso-8859-1');
         read([0xff,0xfe,0x41,0],'text/plain','utf-8');
         read([0xc3,0xa9],'text/plain','invalid-label');
+        read([0xc3,0xa9],'text/plain; x=";charset=windows-1252"; charset=utf-8');
+        read([0xc3,0xa9],'text/plain; x=";charset=windows-1252"');
+        read([0xe9],'text/plain; charset=windows-1252; charset=utf-8');
     </script>"#,
     );
     drain(&mut runtime);
     evaluate(
         &mut runtime,
         &dom,
-        "if(results.join(',')!=='€,é,A,é') throw Error(results);",
+        "if(results.join(',')!=='€,é,A,é,é,é,é') throw Error(results);",
     );
 }
 
@@ -52,7 +55,8 @@ fn file_reader_modes_preserve_private_bytes_and_async_state() {
         if(results.sort().join('|')!=='readAsArrayBuffer:hello|readAsBinaryString:hello|readAsDataURL:data:text/plain;base64,aGVsbG8=|readAsText:hello')
             throw Error(JSON.stringify(results));
         if(events.length!==4 || events.some(e=>e!=='loadstart:true')) throw Error(events);
-        if('__fileReaderSnapshot' in globalThis) throw Error('private hook');
+        if('__fileReaderSnapshot' in globalThis || '__fileReaderMimeCharset' in globalThis)
+            throw Error('private hook');
     "#,
     );
 }
@@ -107,7 +111,7 @@ fn large_file_read_yields_between_bounded_ranges_before_result_is_available() {
     evaluate(
         &mut runtime,
         &dom,
-        "const b=new Uint8Array(reader.result); if(reader.readyState!==reader.DONE || b.length!==196615 || b[0]!==11 || b[b.length-1]!==29 || events.at(-3)!=='progress:196615' || events.at(-2)!=='load:196615' || events.at(-1)!=='end:196615') throw Error(events);",
+        "const b=new Uint8Array(reader.result); if(reader.readyState!==reader.DONE || b.length!==196615 || b[0]!==11 || b[b.length-1]!==29 || events.at(-2)!=='load:196615' || events.at(-1)!=='end:196615' || events.some((v,i)=>v.startsWith('progress:') && i>=events.length-2)) throw Error(events);",
     );
 }
 
@@ -152,5 +156,35 @@ fn file_reader_data_url_omits_media_type_for_untyped_blob() {
         &mut runtime,
         &dom,
         "if(result!=='data:;base64,Pw==') throw Error(result);",
+    );
+}
+
+#[test]
+fn short_and_empty_file_reads_do_not_synthesize_progress_events() {
+    let (dom, mut runtime) = start(
+        r#"<body><script>
+            window.results=[];
+            const read = bytes => {
+                const reader = new FileReader(), events = [];
+                const began = Date.now();
+                for (const type of ['loadstart','progress','load','loadend'])
+                    reader.addEventListener(type, () => events.push(type));
+                reader.onloadend = () => results.push({events,elapsed:Date.now()-began,size:bytes.length});
+                reader.readAsArrayBuffer(new Blob([bytes]));
+            };
+            read(new Uint8Array());
+            read(new Uint8Array([1]));
+        </script>"#,
+    );
+    drain(&mut runtime);
+    evaluate(
+        &mut runtime,
+        &dom,
+        r#"if(results.length!==2 || results.some(({events}) =>
+            events[0]!=='loadstart' || events.at(-2)!=='load' || events.at(-1)!=='loadend'))
+                throw Error(JSON.stringify(results));
+            if(results[0].events.includes('progress')) throw Error('empty progress');
+            if(results[1].elapsed<50 && results[1].events.includes('progress'))
+                throw Error('premature tiny progress');"#,
     );
 }
