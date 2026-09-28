@@ -475,8 +475,8 @@ The 2026-09-27 [offline Web Audio slice](docs/web-audio.md) rendered
 **430 / 588** in a fresh-profile hidden release run with the same viewport,
 scale, locale, and settle time. It returned HTTP 200 with no JavaScript errors
 or renderer exit. This was **no score change** from the preceding observation:
-offline graphs render real audio samples, but the live `AudioContext` remains
-unexposed until its page-to-device path can play them reliably. No points were
+offline graphs render real audio samples, but at that stage the live `AudioContext`
+remained unexposed until its page-to-device path could play them reliably. No points were
 claimed for a constructor without working behavior.
 
 The next [Worker, Canvas, Fetch, DOM, and Notification standards batch](docs/html5test-websocket-indexeddb-forms.md)
@@ -490,15 +490,29 @@ hidden browser tests; HTML5test does not cover most of those contracts. The
 score remains a capability inventory, not a conformance percentage or
 controlled loading-performance result.
 
+The 2026-09-28 [Geolocation](docs/geolocation.md), [pre-capture device
+enumeration](docs/media-devices-enumeration.md), live [Web Audio](docs/web-audio.md),
+and [drag-data lifecycle](docs/dom-traversal-editing.md) batch rendered
+**458 / 588** with Breeze's default identity, up **23** from a same-day
+**435 / 588** `origin/main` baseline. Both were fresh-profile hidden release
+runs at 1280×720, 125% scale, `en-US`, and a 10-second settle, returning HTTP
+200 with no JavaScript errors or renderer exit. The after capture used commit
+`fd3617c`; its Geolocation, live `AudioContext`, and `enumerateDevices` rows
+account for the score gain. Drag/drop gains no HTML5test points because those
+rows remain excluded for an unrecognized browser identity, although trusted
+pointer-drag lifecycle tests exercise the new behavior. These are partial APIs,
+not claims of full Geolocation, Media Capture, Web Audio, or DnD conformance.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
 ```powershell
-./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ -FreshProfile `
+./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ `
+  -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-27-batch7-after.json `
-  -Screenshot target/html5test/2026-09-27-batch7-after.png
+  -Output target/html5test/2026-09-28-batch11-after.json `
+  -Screenshot target/html5test/2026-09-28-batch11-after.png
 ```
 
 New releases must refresh or explicitly date these observations using the
