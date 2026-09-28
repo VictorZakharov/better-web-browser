@@ -6,6 +6,10 @@
     if (!native('geolocationAvailable')) return;
 
     const pending = new Map();
+    const internal = {};
+    const coordinateData = new WeakMap();
+    const positionData = new WeakMap();
+    const errorData = new WeakMap();
     function duration(value, fallback) {
         if (value === undefined) return fallback;
         const number = Number(value);
@@ -35,6 +39,9 @@
         return id;
     }
     class Geolocation {
+        constructor(key) {
+            if (key !== internal) throw new TypeError('Illegal constructor');
+        }
         getCurrentPosition(success, error, options) {
             start(false, success, error, options);
         }
@@ -49,17 +56,53 @@
             native('geolocationRequest', JSON.stringify({ kind: 'clear', id }));
         }
     }
-    const geolocation = new Geolocation();
+    class GeolocationCoordinates {
+        constructor(key, data) {
+            if (key !== internal) throw new TypeError('Illegal constructor');
+            coordinateData.set(this, data);
+        }
+        get latitude() { return coordinateData.get(this).latitude; }
+        get longitude() { return coordinateData.get(this).longitude; }
+        get accuracy() { return coordinateData.get(this).accuracy; }
+        get altitude() { return coordinateData.get(this).altitude; }
+        get altitudeAccuracy() { return coordinateData.get(this).altitudeAccuracy; }
+        get heading() { return coordinateData.get(this).heading; }
+        get speed() { return coordinateData.get(this).speed; }
+        toJSON() {
+            return { latitude: this.latitude, longitude: this.longitude,
+                accuracy: this.accuracy, altitude: this.altitude,
+                altitudeAccuracy: this.altitudeAccuracy, heading: this.heading,
+                speed: this.speed };
+        }
+    }
+    class GeolocationPosition {
+        constructor(key, data) {
+            if (key !== internal) throw new TypeError('Illegal constructor');
+            positionData.set(this, {
+                coords: new GeolocationCoordinates(internal, data.coords),
+                timestamp: data.timestamp
+            });
+        }
+        get coords() { return positionData.get(this).coords; }
+        get timestamp() { return positionData.get(this).timestamp; }
+        toJSON() { return { coords: this.coords.toJSON(), timestamp: this.timestamp }; }
+    }
+    class GeolocationPositionError {
+        constructor(key, code, message) {
+            if (key !== internal) throw new TypeError('Illegal constructor');
+            errorData.set(this, { code, message });
+        }
+        get code() { return errorData.get(this).code; }
+        get message() { return errorData.get(this).message; }
+    }
+    const geolocation = new Geolocation(internal);
     Object.defineProperty(navigator, 'geolocation', {
         configurable: true, enumerable: true, get: () => geolocation
     });
     globalThis.Geolocation = Geolocation;
-    globalThis.GeolocationPositionError = class GeolocationPositionError {
-        constructor(code, message) {
-            this.code = code;
-            this.message = message;
-        }
-    };
+    globalThis.GeolocationCoordinates = GeolocationCoordinates;
+    globalThis.GeolocationPosition = GeolocationPosition;
+    globalThis.GeolocationPositionError = GeolocationPositionError;
     Object.assign(GeolocationPositionError, {
         PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3
     });
@@ -72,10 +115,9 @@
         if (!request) return;
         if (update.terminal) pending.delete(Number(update.id));
         if (update.position) {
-            const coords = Object.freeze(update.position.coords);
-            request.success(Object.freeze({ coords, timestamp: update.position.timestamp }));
+            request.success(new GeolocationPosition(internal, update.position));
         } else if (request.error) {
-            request.error(Object.freeze(new GeolocationPositionError(update.code, update.message)));
+            request.error(new GeolocationPositionError(internal, update.code, update.message));
         }
     };
 })();

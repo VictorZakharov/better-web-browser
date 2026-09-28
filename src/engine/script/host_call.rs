@@ -16,6 +16,7 @@ pub(in crate::engine::script) mod notification;
 pub(in crate::engine::script) mod speech;
 mod storage;
 mod task_scheduling;
+mod user_capabilities;
 pub(super) fn dispatch_host_call(
     operation: &str,
     args: &[JsValue],
@@ -46,16 +47,7 @@ pub(super) fn dispatch_host_call(
     if let Some(value) = super::network::database_host::dispatch(operation, args, state)? {
         return Ok(value);
     }
-    if let Some(value) = speech::dispatch(operation, args, state)? {
-        return Ok(value);
-    }
-    if let Some(value) = notification::dispatch(operation, args, state)? {
-        return Ok(value);
-    }
-    if let Some(value) = geolocation::dispatch(operation, args, state)? {
-        return Ok(value);
-    }
-    if let Some(value) = media_devices::dispatch(operation, state)? {
+    if let Some(value) = user_capabilities::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = graph_audio::dispatch(operation, args, state)? {

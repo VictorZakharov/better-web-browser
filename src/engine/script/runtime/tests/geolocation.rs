@@ -9,8 +9,16 @@ fn secure_page_gets_callback_only_from_browser_update() {
     let dom = dom::parse_with_scripting(
         r#"<body><script>
             document.body.setAttribute('data-exposed', String(navigator.geolocation === navigator.geolocation));
+            document.body.setAttribute('data-constructor', String((() => {
+                try { new Geolocation(); return 'public'; }
+                catch (error) { return error instanceof TypeError ? 'private' : 'wrong error'; }
+            })()));
             navigator.geolocation.getCurrentPosition(position => {
                 document.body.setAttribute('data-position', position.coords.latitude + ',' + position.timestamp);
+                document.body.setAttribute('data-interface', String(
+                    position instanceof GeolocationPosition &&
+                    position.coords instanceof GeolocationCoordinates));
+                document.body.setAttribute('data-json', JSON.stringify(position));
             }, error => document.body.setAttribute('data-error', String(error.code)), {
                 maximumAge: 1200, timeout: 5000, enableHighAccuracy: true
             });
@@ -22,6 +30,7 @@ fn secure_page_gets_callback_only_from_browser_update() {
     assert!(initial.errors.is_empty(), "{:?}", initial.errors);
     let body = dom.elements_named("body").next().unwrap();
     assert_eq!(body.attr("data-exposed").as_deref(), Some("true"));
+    assert_eq!(body.attr("data-constructor").as_deref(), Some("private"));
     assert_eq!(body.attr("data-position"), None);
     let request = initial.geolocation_actions.first().unwrap();
     assert!(matches!(
@@ -50,6 +59,11 @@ fn secure_page_gets_callback_only_from_browser_update() {
     });
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(body.attr("data-position").as_deref(), Some("43.65,1234"));
+    assert_eq!(body.attr("data-interface").as_deref(), Some("true"));
+    let json: serde_json::Value = serde_json::from_str(&body.attr("data-json").unwrap()).unwrap();
+    assert_eq!(json["coords"]["latitude"], 43.65);
+    assert_eq!(json["coords"]["altitude"], serde_json::Value::Null);
+    assert_eq!(json["timestamp"], 1234);
 }
 
 #[test]
@@ -58,7 +72,11 @@ fn watch_clear_and_structured_error_are_document_scoped() {
         r#"<body><script>
             globalThis.geoWatch = navigator.geolocation.watchPosition(
                 () => document.body.setAttribute('data-position', 'yes'),
-                error => document.body.setAttribute('data-error', String(error.code)));
+                error => {
+                    document.body.setAttribute('data-error', String(error.code));
+                    document.body.setAttribute('data-error-interface', String(
+                        error instanceof GeolocationPositionError));
+                });
         </script></body>"#,
         true,
     );
@@ -89,6 +107,14 @@ fn watch_clear_and_structured_error_are_document_scoped() {
             .attr("data-error")
             .as_deref(),
         Some("3")
+    );
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-error-interface")
+            .as_deref(),
+        Some("true")
     );
     let clear = runtime.execute_additional_with_loader(
         &[input(
