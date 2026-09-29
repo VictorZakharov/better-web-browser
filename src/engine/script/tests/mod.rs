@@ -174,5 +174,6 @@ mod web_audio_resources;
 mod web_audio_suspend;
 mod web_audio_waveshaper;
 mod websocket;
+mod window_named_access;
 mod workers;
 mod xhr_reuse;

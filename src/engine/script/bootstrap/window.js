@@ -157,12 +157,16 @@
     windowObject.removeEventListener = windowEvents.removeEventListener.bind(windowEvents);
     windowObject.dispatchEvent = windowEvents.dispatchEvent.bind(windowEvents);
     const installedWindowNames = new Map();
-    const synchronizeWindowName = name => {
+    const synchronizeWindowName = (name, knownPresent = false) => {
         name = String(name || '');
         if (!name) return;
-        const objects = list(host('namedProperty', name));
         const installedGetter = installedWindowNames.get(name);
-        if (!objects.length) {
+        // Insertion steps already know that this name belongs to a node in the
+        // document tree. Avoid rebuilding the document-wide native index for
+        // every added element; the getter still resolves its value live.
+        if (knownPresent && (installedGetter || name in windowObject)) return;
+        const objects = knownPresent ? null : list(host('namedProperty', name));
+        if (objects && !objects.length) {
             if (installedGetter && Object.getOwnPropertyDescriptor(windowObject, name)?.get === installedGetter)
                 delete windowObject[name];
             installedWindowNames.delete(name);
@@ -186,18 +190,22 @@
         });
         installedWindowNames.set(name, getter);
     };
-    refreshWindowNamedPropertyValues = values => {
-        for (const name of new Set(values)) synchronizeWindowName(name);
+    refreshWindowNamedPropertyValues = (values, knownPresent = false) => {
+        for (const name of new Set(values)) synchronizeWindowName(name, knownPresent);
     };
-    refreshWindowNamedProperties = roots => {
+    refreshWindowNamedProperties = (roots, inserted = false) => {
         if (roots !== undefined) {
             roots = Array.isArray(roots) ? roots : [roots];
             const names = new Set();
             for (const root of roots) {
                 if (!(isNode(root))) continue;
+                // isConnected includes composed shadow trees. Window named
+                // access only includes the document tree, so a known-present
+                // shortcut must reject shadow and detached-tree insertions.
+                if (inserted && host('rootNode', nodeId(root), false) !== nodeId(document)) continue;
                 for (const name of JSON.parse(host('namedPropertyCandidates', nodeId(root)))) names.add(name);
             }
-            refreshWindowNamedPropertyValues(names);
+            refreshWindowNamedPropertyValues(names, inserted);
             return;
         }
         const names = new Set(JSON.parse(host('namedPropertyNames')));

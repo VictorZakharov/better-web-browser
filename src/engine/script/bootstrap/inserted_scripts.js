@@ -13,9 +13,8 @@
         }
     }
     const isHtmlScript = node => {
-        const id = nodeId(node);
-        return host('nodeType', id) === 1 && host('namespaceUri', id) === htmlNamespace &&
-            host('localName', id) === 'script';
+        return nativeNodeType(node) === 1 && nativeNodeNamespace(node) === htmlNamespace &&
+            nativeNodeLocalName(node) === 'script';
     };
     function prepareInsertedScript(node) {
         if (!isHtmlScript(node)) return;

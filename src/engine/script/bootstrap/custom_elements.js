@@ -80,7 +80,7 @@
         const pending = [root];
         while (pending.length) {
             const node = pending.pop();
-            if (node.nodeType === Node.ELEMENT_NODE) elements.push(node);
+            if (nativeNodeType(node) === Node.ELEMENT_NODE) elements.push(node);
             const children = node.childNodes;
             for (let index = children.length - 1; index >= 0; index--) pending.push(children[index]);
             const shadowRoot = shadowRootForTraversal(node);
@@ -93,11 +93,11 @@
     const definitionForElement = element => {
         const registry = elementRegistryFor(element);
         const id = nodeId(element);
-        if (!registry || host('namespaceUri', id) !== htmlNamespace) return null;
+        if (!registry || nativeNodeNamespace(element) !== htmlNamespace) return null;
         // Inert template/DOMImplementation documents have no default custom-element registry.
         if (registry === defaultCustomElementRegistry &&
             host('ownerDocument', id) !== nodeId(document)) return null;
-        return registryStates.get(registry)?.definitionsByName.get(host('localName', id)) || null;
+        return registryStates.get(registry)?.definitionsByName.get(nativeNodeLocalName(element)) || null;
     };
     const upgradeElement = (element, definition, synchronous, parserInserted = false) => {
         const state = customElementStates.get(element);
@@ -138,7 +138,7 @@
         return element;
     };
     const tryUpgradeElement = (element, synchronous = false, parserInserted = false) => {
-        if (host('nodeType', nodeId(element)) !== 1) return element;
+        if (nativeNodeType(element) !== 1) return element;
         const definition = definitionForElement(element);
         return definition ? upgradeElement(element, definition, synchronous, parserInserted) : element;
     };

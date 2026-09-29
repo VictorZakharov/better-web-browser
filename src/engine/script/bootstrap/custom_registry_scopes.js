@@ -31,7 +31,7 @@
         if (elementRegistries.has(element)) return elementRegistries.get(element);
         const parent = wrap(host('parent', nodeId(element)));
         const parentId = nodeId(parent);
-        const parentType = host('nodeType', parentId);
+        const parentType = nativeNodeType(parent);
         const registry = parentType === 11 && host('shadowHost', parentId)
             ? shadowRegistryFor(parent)
             : parentType === 1 ? elementRegistryFor(parent)
@@ -41,7 +41,7 @@
     };
     const nodeRegistryFor = node => {
         const id = nodeId(node);
-        const type = host('nodeType', id);
+        const type = nativeNodeType(node);
         return type === 1 ? elementRegistryFor(node)
             : type === 11 && host('shadowHost', id) ? shadowRegistryFor(node)
                 : type === 9 ? documentRegistryFor(node) : null;

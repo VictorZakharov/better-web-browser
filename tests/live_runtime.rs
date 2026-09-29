@@ -18,6 +18,8 @@ mod cache_storage;
 mod deferred_scripts;
 #[path = "live_runtime/document_lifecycle.rs"]
 mod document_lifecycle;
+#[path = "live_runtime/dom_results.rs"]
+mod dom_results;
 #[path = "live_runtime/dynamic_modules.rs"]
 mod dynamic_modules;
 #[path = "live_runtime/dynamic_scripts.rs"]
