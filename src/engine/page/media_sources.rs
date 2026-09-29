@@ -288,6 +288,7 @@ fn supported_media_type(kind: &str) -> bool {
     );
     let mpeg = essence == "audio/mpeg";
     let aac = essence == "audio/aac";
+    let ogg = essence == "audio/ogg";
     // RFC 9639 applies to native FLAC only and defines no media-type parameters.
     // Ogg FLAC remains unsupported even though the codec itself can be decoded.
     let flac = matches!(essence.as_str(), "audio/flac" | "audio/x-flac");
@@ -298,7 +299,7 @@ fn supported_media_type(kind: &str) -> bool {
         essence.as_str(),
         "video/mp4" | "audio/mp4" | "audio/m4a" | "audio/x-m4a" | "application/mp4"
     );
-    if !wave && !mpeg && !aac && !mp4 {
+    if !wave && !mpeg && !aac && !mp4 && !ogg {
         return false;
     }
     let mut codecs = None;
@@ -342,6 +343,9 @@ fn supported_media_type(kind: &str) -> bool {
     }
     if aac {
         return codecs == ["mp4a.40.2"];
+    }
+    if ogg {
+        return codecs == ["vorbis"];
     }
     let has_audio = codecs.contains(&"mp4a.40.2");
     let has_video = codecs.iter().any(|codec| {

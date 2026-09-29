@@ -3,7 +3,7 @@
 //! https://www.w3.org/TR/fetch-metadata/#integration-with-fetch-and-html
 
 use crate::fetch::{
-    FetchError, FetchRequest, FetchUrl, HeaderList, RequestDestination, RequestMode,
+    FetchError, FetchRequest, FetchUrl, HeaderList, RequestContext, RequestDestination, RequestMode,
 };
 use crate::navigation::ParsedUrl;
 
@@ -12,6 +12,12 @@ pub(super) fn append_fetch_metadata(
     request: &FetchRequest,
     url_list: &[FetchUrl],
 ) -> Result<(), FetchError> {
+    // Fetch sets this for the prefetch initiator independently of Fetch Metadata's
+    // potentially-trustworthy-URL restriction.
+    // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch
+    if request.context == RequestContext::Prefetch {
+        headers.set("sec-purpose", "prefetch")?;
+    }
     // Fetch Metadata is only sent to potentially trustworthy URLs. HTTPS and
     // loopback HTTP are the transport URLs Breeze currently treats as such.
     let Some(target) = request.url.parsed() else {
@@ -252,6 +258,30 @@ mod tests {
             )
             .as_deref(),
             Some("none")
+        );
+    }
+
+    #[test]
+    fn prefetch_sends_sec_purpose_even_without_fetch_metadata() {
+        let request =
+            FetchRequest::prefetch("http://example.com/asset", "http://example.com/page").unwrap();
+        assert_eq!(
+            header(&request, &[request.url.as_str()], "sec-purpose").as_deref(),
+            Some("prefetch")
+        );
+        assert_eq!(
+            header(&request, &[request.url.as_str()], "sec-fetch-dest"),
+            None
+        );
+        let immediate = FetchRequest::subresource(
+            "http://example.com/asset",
+            "http://example.com/page",
+            RequestDestination::Image,
+        )
+        .unwrap();
+        assert_eq!(
+            header(&immediate, &[immediate.url.as_str()], "sec-purpose"),
+            None
         );
     }
 }

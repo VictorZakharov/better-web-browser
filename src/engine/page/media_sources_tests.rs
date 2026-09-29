@@ -61,6 +61,18 @@ fn native_flac_source_is_selected_without_claiming_ogg_flac() {
 }
 
 #[test]
+fn ogg_vorbis_source_is_selected_without_claiming_other_ogg_codecs() {
+    let page = Page::parse(
+        r#"<audio><source src="skip.ogg" type='audio/ogg; codecs="opus"'>
+                 <source src="song.ogg" type='audio/ogg; codecs="vorbis"'>
+                 <source src="fallback.mp3" type="audio/mpeg"></audio>"#,
+        "https://example.com/music/",
+    );
+    assert!(matches!(page.resources.as_slice(),
+        [PageResource::Media { url, .. }] if url == "https://example.com/music/song.ogg"));
+}
+
+#[test]
 fn video_only_mp4_source_is_selected_without_an_aac_track() {
     let page = Page::parse(
         "<video><source src='silent.mp4' type='video/mp4; codecs=\"avc1.42e01e\"'>\

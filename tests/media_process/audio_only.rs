@@ -175,3 +175,18 @@ fn native_flac_audio_only_play_pause_seek() {
     );
     verify_playback(&bytes, MediaCodecFamily::Flac);
 }
+
+#[test]
+fn ogg_vorbis_audio_only_play_pause_seek() {
+    let bytes = decode_base64(include_str!("../fixtures/media/test-2s-audio.ogg.base64"));
+    assert_eq!(bytes.len(), 6_675);
+    assert_eq!(
+        sha256(&bytes),
+        [
+            0x1e, 0x65, 0x83, 0x9c, 0x93, 0x5c, 0x43, 0xc4, 0x81, 0xf9, 0xe7, 0xa7, 0xdf, 0x38,
+            0x88, 0xa2, 0xab, 0x2c, 0xe9, 0xe9, 0xfb, 0x05, 0xf5, 0xd0, 0xb8, 0x6c, 0x84, 0x6f,
+            0x53, 0x6e, 0x4a, 0x7b,
+        ]
+    );
+    verify_playback(&bytes, MediaCodecFamily::Vorbis);
+}

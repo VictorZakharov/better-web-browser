@@ -30,6 +30,10 @@ xml = "1.4.0"
 xmlparser = "0.13.6"
 
 [target.'cfg(windows)'.dependencies]
+# Pure-Rust Ogg/Vorbis decoder (MIT OR Apache-2.0) and BSD-3-Clause container parser;
+# both consume bounded encoded bytes only inside the restricted media worker.
+lewton = "=0.10.2"
+ogg = "=0.8.0"
 accesskit = "0.24.1"
 accesskit_windows = "0.34.0"
 fontique = { version = "0.11.1", default-features = false, features = ["system"] }

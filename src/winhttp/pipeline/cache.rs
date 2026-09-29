@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc2822;
+mod prefetch;
 
 const MAX_ENTRIES: usize = 64;
 const MAX_ENTRY_BYTES: usize = 2 * 1024 * 1024;
@@ -28,6 +29,8 @@ struct Partition {
     mode: RequestMode,
     credentials: CredentialsMode,
     cookie: Option<String>,
+    /// A speculative response may only be replayed for the same effective referrer.
+    prefetch_referrer: Option<String>,
 }
 
 impl Partition {
@@ -40,6 +43,8 @@ impl Partition {
             mode: request.mode,
             credentials: request.credentials,
             cookie: outbound.get("cookie").map(str::to_owned),
+            prefetch_referrer: (request.context == RequestContext::Prefetch)
+                .then(|| outbound.get("referer").unwrap_or_default().to_owned()),
         }
     }
 }
@@ -61,11 +66,14 @@ pub(super) struct CachedResponse {
 
 impl CachedResponse {
     fn matches(&self, partition: &Partition, outbound: &HeaderList) -> bool {
-        self.partition == *partition
-            && self.vary.iter().all(|name| {
-                self.request_headers.values(name).collect::<Vec<_>>()
-                    == outbound.values(name).collect::<Vec<_>>()
-            })
+        self.partition == *partition && self.vary_matches(outbound)
+    }
+
+    fn vary_matches(&self, outbound: &HeaderList) -> bool {
+        self.vary.iter().all(|name| {
+            self.request_headers.values(name).collect::<Vec<_>>()
+                == outbound.values(name).collect::<Vec<_>>()
+        })
     }
 
     pub(super) fn fresh(&self) -> bool {
@@ -141,6 +149,12 @@ impl ResponseCache {
             .iter()
             .rev()
             .find(|entry| entry.matches(&partition, outbound))
+            .or_else(|| {
+                self.entries
+                    .iter()
+                    .rev()
+                    .find(|entry| entry.matches_prefetch_consumer(request, outbound))
+            })
             .cloned()
     }
 

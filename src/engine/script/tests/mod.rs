@@ -164,6 +164,7 @@ mod web_audio_automation;
 mod web_audio_biquad;
 mod web_audio_buffer_acquisition;
 mod web_audio_channels;
+mod web_audio_decode;
 mod web_audio_delay;
 mod web_audio_iir;
 mod web_audio_interfaces;

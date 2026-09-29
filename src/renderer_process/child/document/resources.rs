@@ -304,7 +304,7 @@ fn is_presentational_resource(resource: &PageResource) -> bool {
 fn resource_label(resource: &PageResource) -> String {
     let (kind, url) = match resource {
         PageResource::OriginHint { origin } => ("origin hint", origin),
-        PageResource::Prefetch { url } => ("prefetch", url),
+        PageResource::Prefetch { url, .. } => ("prefetch", url),
         PageResource::Preload { url, .. } => ("preload", url),
         PageResource::Stylesheet { url } => ("stylesheet", url),
         PageResource::Image { url } => ("image", url),

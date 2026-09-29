@@ -26,11 +26,15 @@ pub(super) fn page_resource_request(
             ResourceDestination::Fetch,
             FetchMode::NoCors,
         ),
-        PageResource::Prefetch { url } => (
+        PageResource::Prefetch {
+            url,
+            mode: request_mode,
+            ..
+        } => (
             url,
             FetchInitiator::NetworkHint,
             ResourceDestination::Document,
-            FetchMode::NoCors,
+            mode(*request_mode),
         ),
         PageResource::Preload {
             url,
@@ -125,9 +129,10 @@ pub(super) fn page_resource_request(
             headers: Vec::new(),
             mode,
             credentials: match resource {
-                PageResource::OriginHint { .. } | PageResource::Prefetch { .. } => {
-                    FetchCredentials::Omit
-                }
+                PageResource::OriginHint { .. } => FetchCredentials::Omit,
+                PageResource::Prefetch {
+                    credentials: value, ..
+                } => credentials(*value),
                 PageResource::Preload {
                     credentials: value, ..
                 } => credentials(*value),
@@ -143,7 +148,11 @@ pub(super) fn page_resource_request(
             redirect: FetchRedirect::Follow,
             referrer: FetchReferrer::Client,
             referrer_policy: match resource {
-                PageResource::Preload {
+                PageResource::Prefetch {
+                    referrer_policy: value,
+                    ..
+                }
+                | PageResource::Preload {
                     referrer_policy: value,
                     ..
                 } => referrer_policy(*value),

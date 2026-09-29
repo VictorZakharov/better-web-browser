@@ -5,6 +5,40 @@ use std::time::Instant;
 
 #[test]
 fn contained_renderer_loads_plays_and_seeks_audio_only_mp3() {
+    verify_audio_source_with_seek(
+        195,
+        "/test.mp3",
+        "audio/mpeg",
+        "audio/mpeg",
+        "MP3",
+        decode_base64(include_str!(
+            "../../fixtures/media/test-1s-audio.mp3.base64"
+        )),
+    );
+}
+
+#[test]
+fn contained_renderer_loads_plays_and_seeks_ogg_vorbis_source() {
+    verify_audio_source_with_seek(
+        204,
+        "/tone.ogg",
+        "audio/ogg; codecs=\"vorbis\"",
+        "audio/ogg",
+        "Vorbis",
+        decode_base64(include_str!(
+            "../../fixtures/media/test-2s-audio.ogg.base64"
+        )),
+    );
+}
+
+fn verify_audio_source_with_seek(
+    document_id: u64,
+    path: &str,
+    source_type: &str,
+    content_type: &str,
+    codec_name: &str,
+    bytes: Vec<u8>,
+) {
     let _serial = SERIAL
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -13,9 +47,9 @@ fn contained_renderer_loads_plays_and_seeks_audio_only_mp3() {
     launch.unresponsive_timeout = Duration::from_millis(500);
     let mut session =
         RendererSession::launch(launch).expect("launch hidden renderer and media worker");
-    let document = better_web_browser::renderer_protocol::DocumentId::new(195).unwrap();
+    let document = better_web_browser::renderer_protocol::DocumentId::new(document_id).unwrap();
     let html = r#"<!doctype html><title>audio-only</title>
-        <audio id="sound" src="/test.mp3" muted></audio>
+        <audio id="sound" muted><source src="/test.mp3" type='audio/mpeg'></audio>
         <output id="state">waiting</output><script>
             sound.addEventListener('loadeddata', () => {
                 sound.play().then(() => {
@@ -27,7 +61,10 @@ fn contained_renderer_loads_plays_and_seeks_audio_only_mp3() {
                     + ':' + sound.currentSrc;
             });
         </script>"#;
-    let body = html.as_bytes().to_vec();
+    let body = html
+        .replace("/test.mp3", path)
+        .replace("type='audio/mpeg'", &format!("type='{source_type}'"))
+        .into_bytes();
     session
         .load_document(
             document_start(document, body.len()),
@@ -70,10 +107,9 @@ fn contained_renderer_loads_plays_and_seeks_audio_only_mp3() {
         }
     }
     let request = request.unwrap();
+    assert_eq!(request.head.destination, ResourceDestination::Audio);
+    assert_eq!(request.head.url, format!("https://example.test{path}"));
     let request_id = request.head.request_id;
-    let bytes = decode_base64(include_str!(
-        "../../fixtures/media/test-1s-audio.mp3.base64"
-    ));
     let sink = session.fetch_response_sink(document);
     sink.start(FetchResponseHead {
         request_id,
@@ -82,7 +118,7 @@ fn contained_renderer_loads_plays_and_seeks_audio_only_mp3() {
             urls: vec![request.head.url],
             status: 200,
             headers: vec![
-                ("content-type".into(), "audio/mpeg".into()),
+                ("content-type".into(), content_type.into()),
                 ("content-length".into(), bytes.len().to_string()),
             ],
         },
@@ -114,12 +150,12 @@ fn contained_renderer_loads_plays_and_seeks_audio_only_mp3() {
                 );
                 saw_seeked |= presentation.layout.items.iter().any(|item| {
                     matches!(item, DisplayItem::Text { text, .. }
-                        if text.contains("seeked:0.5:https://example.test/test.mp3"))
+                        if text.contains(&format!("seeked:0.5:https://example.test{path}")))
                 });
                 if let Some(media) = presentation.runtime.media.as_ref() {
                     assert_eq!((media.width, media.height), (0, 0));
                     assert_eq!(media.video_codec, "none");
-                    assert_eq!(media.audio_codec, "MP3");
+                    assert_eq!(media.audio_codec, codec_name);
                     saw_audio_runtime = true;
                 }
                 session

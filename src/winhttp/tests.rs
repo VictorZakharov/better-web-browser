@@ -8,6 +8,7 @@ use std::net::TcpListener;
 
 mod cache;
 mod fetch_pipeline;
+mod prefetch;
 mod support;
 
 #[test]

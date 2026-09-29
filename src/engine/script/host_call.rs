@@ -2,6 +2,7 @@
 use super::binding_helpers::*;
 use super::*;
 
+mod audio_decode;
 mod broadcast_channel;
 mod canvas_presentation;
 pub(in crate::engine::script) mod clipboard;
@@ -71,6 +72,9 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     if let Some(value) = graph_audio::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = audio_decode::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = super::workers::worker_host_call(operation, args, state)? {
