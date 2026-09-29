@@ -9,16 +9,23 @@ internal static class ChromeRun
 {
     public static async Task<BenchmarkResult> ExecuteAsync(Options options)
     {
-        var profile = Path.Combine(Path.GetTempPath(), $"breeze-chromium-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(profile);
+        using var persistentProfile = options.ProfileDirectory is { } directory
+            ? ChromiumProfile.Open(directory)
+            : null;
+        var profile = persistentProfile?.Path ?? Path.Combine(Path.GetTempPath(), $"breeze-chromium-{Guid.NewGuid():N}");
+        if (persistentProfile is null) Directory.CreateDirectory(profile);
         Process? chrome = null;
         var stopwatch = Stopwatch.StartNew();
         var timeout = TimeSpan.FromMilliseconds(options.TimeoutMs);
         var result = NewResult(options);
         try
         {
+            var activePort = Path.Combine(profile, "DevToolsActivePort");
+            var previousPortWrite = File.Exists(activePort)
+                ? File.GetLastWriteTimeUtc(activePort)
+                : DateTime.MinValue;
             chrome = StartChrome(options, profile);
-            var port = await WaitForDevToolsAsync(chrome, profile, stopwatch, timeout);
+            var port = await WaitForDevToolsAsync(chrome, profile, previousPortWrite, stopwatch, timeout);
             result.WindowReadyMs = stopwatch.Elapsed.TotalMilliseconds;
             var pageSocket = await FindPageSocketAsync(port, timeout);
             using var cdp = new CdpConnection();
@@ -39,7 +46,7 @@ internal static class ChromeRun
             {
                 locale = options.Locale.Replace('-', '_')
             }, timeout);
-            await cdp.CallAsync(nextId++, "Network.setCacheDisabled", new { cacheDisabled = true }, timeout);
+            await cdp.CallAsync(nextId++, "Network.setCacheDisabled", new { cacheDisabled = options.CacheDisabled }, timeout);
             if (!string.IsNullOrWhiteSpace(options.UserAgent))
             {
                 await cdp.CallAsync(nextId++, "Network.setUserAgentOverride", new
@@ -213,7 +220,7 @@ internal static class ChromeRun
                 }
                 chrome.Dispose();
             }
-            try { DeleteFreshProfile(profile); }
+            try { if (persistentProfile is null) DeleteFreshProfile(profile); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {
                 // Preserve collected evidence, but keep cleanup failure visible and fail the run.
@@ -231,6 +238,8 @@ internal static class ChromeRun
         ViewportHeightCssPx = options.ViewportHeight,
         DeviceScaleFactor = options.DeviceScaleFactor,
         Locale = options.Locale,
+        FreshProfile = options.ProfileDirectory is null,
+        CacheDisabled = options.CacheDisabled,
         SettleMs = options.SettleMs
     };
 
@@ -266,7 +275,8 @@ internal static class ChromeRun
         return Process.Start(start) ?? throw new InvalidOperationException("Chromium did not start.");
     }
 
-    private static async Task<int> WaitForDevToolsAsync(Process chrome, string profile, Stopwatch stopwatch, TimeSpan timeout)
+    private static async Task<int> WaitForDevToolsAsync(Process chrome, string profile,
+        DateTime previousPortWrite, Stopwatch stopwatch, TimeSpan timeout)
     {
         var activePort = Path.Combine(profile, "DevToolsActivePort");
         var deadline = DateTime.UtcNow + timeout;
@@ -284,6 +294,12 @@ internal static class ChromeRun
             {
                 try
                 {
+                    // A reused profile may still contain the previous run's port.
+                    if (File.GetLastWriteTimeUtc(activePort) <= previousPortWrite)
+                    {
+                        await Task.Delay(20);
+                        continue;
+                    }
                     var lines = await File.ReadAllLinesAsync(activePort);
                     if (lines.Length >= 2 && int.TryParse(lines[0], out var port))
                     {

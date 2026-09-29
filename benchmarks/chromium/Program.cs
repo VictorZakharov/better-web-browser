@@ -29,6 +29,8 @@ internal sealed class Options
     public required string Url { get; init; }
     public required string Output { get; init; }
     public required string ChromePath { get; init; }
+    public string? ProfileDirectory { get; init; }
+    public bool CacheDisabled { get; init; } = true;
     public string? Screenshot { get; init; }
     public string? CompanionUrl { get; init; }
     public string? FilmstripDirectory { get; init; }
@@ -60,7 +62,7 @@ internal sealed class Options
         for (var index = 0; index < arguments.Length; index++)
         {
             var argument = arguments[index];
-            if (argument is "--early-scroll" or "--require-fixture-ready" or "--back-after-ready")
+            if (argument is "--early-scroll" or "--require-fixture-ready" or "--back-after-ready" or "--enable-cache")
             {
                 switches.Add(argument);
                 continue;
@@ -126,6 +128,10 @@ internal sealed class Options
             Url = url,
             Output = Required("--output"),
             ChromePath = Path.GetFullPath(chrome),
+            ProfileDirectory = values.TryGetValue("--profile-directory", out var profile)
+                ? ChromiumProfile.ValidatePath(profile)
+                : null,
+            CacheDisabled = !switches.Contains("--enable-cache"),
             Screenshot = values.GetValueOrDefault("--screenshot"),
             CompanionUrl = companion,
             FilmstripDirectory = filmstripDirectory is null ? null : Path.GetFullPath(filmstripDirectory),
