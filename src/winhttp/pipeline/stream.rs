@@ -232,6 +232,21 @@ impl HttpClient {
 
 fn check_request_policy(request: &FetchRequest, redirects: usize) -> Result<(), FetchError> {
     if request.context == RequestContext::Prefetch {
+        // An empty-destination prefetch is blockable mixed content. This check also runs for
+        // each redirect target, before a request can reach an insecure network endpoint.
+        // https://w3c.github.io/webappsec-mixed-content/#category-blockable
+        if !request.url.is_data()
+            && request
+                .origin
+                .as_ref()
+                .is_some_and(|origin| origin.is_potentially_trustworthy())
+            && !request.url.origin().is_potentially_trustworthy()
+        {
+            return Err(FetchError::new(
+                FetchErrorKind::Network,
+                "Mixed content blocked prefetch",
+            ));
+        }
         // Resource hints use CSP3's source-list union, not `connect-src` (the empty Fetch
         // destination's ordinary directive). Check every redirect target before dispatch.
         if request.url.is_data() || !request.policy.allows_resource_hint(request.url.as_str()) {

@@ -446,6 +446,12 @@
     globalThis.__receiveCapturedMediaFrame = (element, frame) => {
         if (!(element instanceof HTMLMediaElement) || !mediaStateFor(element).srcObject) return;
         const state = mediaStateFor(element);
+        if (frame === null) {
+            // The selected MediaStream lost its last live video track. Audio may
+            // continue, so clear only the video dimensions, not the resource.
+            state.videoWidth = state.videoHeight = 0;
+            return;
+        }
         const first = state.readyState === HTMLMediaElement.HAVE_NOTHING;
         state.videoWidth = Number(frame.width) || 0;
         state.videoHeight = Number(frame.height) || 0;

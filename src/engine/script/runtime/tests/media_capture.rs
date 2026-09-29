@@ -320,3 +320,51 @@ fn capture_stop_is_delivered_when_enumeration_fills_the_task_queue() {
         Some("ended")
     );
 }
+
+#[test]
+fn browser_revocation_rejects_pending_capture_and_ends_live_tracks() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><script>
+            navigator.mediaDevices.getUserMedia({audio: true}).then(stream => {
+                const track = stream.getAudioTracks()[0];
+                track.addEventListener('ended', () => document.body.setAttribute(
+                    'data-ended', `${track.readyState}:${stream.active}`));
+                document.body.setAttribute('data-started', track.readyState);
+            });
+            navigator.mediaDevices.getUserMedia({video: true}).then(
+                () => document.body.setAttribute('data-pending', 'started'),
+                error => document.body.setAttribute('data-pending', error.name));
+        </script></body>"#,
+        true,
+    );
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let initial = runtime.execute_initial(&script_inputs(&dom));
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert_eq!(initial.media_device_actions.len(), 2);
+    let document = DocumentId::new(1).unwrap();
+    let started = runtime.deliver_media_capture_update(MediaCaptureUpdate {
+        document,
+        request_id: initial.media_device_actions[0].request_id,
+        event: MediaCaptureEvent::Started {
+            camera: false,
+            microphone: true,
+        },
+    });
+    assert!(started.errors.is_empty(), "{:?}", started.errors);
+    let aborted = runtime.deliver_media_capture_update(MediaCaptureUpdate {
+        document,
+        request_id: initial.media_device_actions[1].request_id,
+        event: MediaCaptureEvent::Error(MediaCaptureError::Abort),
+    });
+    assert!(aborted.errors.is_empty(), "{:?}", aborted.errors);
+    let ended = runtime.deliver_media_capture_update(MediaCaptureUpdate {
+        document,
+        request_id: initial.media_device_actions[0].request_id,
+        event: MediaCaptureEvent::Ended,
+    });
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let body = dom.elements_named("body").next().unwrap();
+    assert_eq!(body.attr("data-started").as_deref(), Some("live"));
+    assert_eq!(body.attr("data-pending").as_deref(), Some("AbortError"));
+    assert_eq!(body.attr("data-ended").as_deref(), Some("ended:false"));
+}

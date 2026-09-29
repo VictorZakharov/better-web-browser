@@ -19,6 +19,39 @@ fn source_and_target(server: &LoopbackServer) -> (String, String) {
 }
 
 #[test]
+fn secure_document_prefetch_blocks_insecure_target_before_dispatch() {
+    let request = FetchRequest::prefetch(
+        "http://insecure.example.test/asset",
+        "https://secure.example.test/page",
+    )
+    .unwrap();
+    let error = client().fetch(request).unwrap_err();
+    assert_eq!(error.kind(), FetchErrorKind::Network);
+    assert_eq!(error.message(), "Mixed content blocked prefetch");
+}
+
+#[test]
+fn secure_document_prefetch_blocks_insecure_redirect_target() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let server = LoopbackServer::start({
+        let calls = calls.clone();
+        move |_| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            TestResponse::new(302, Vec::new())
+                .header("Location", "http://insecure.example.test/asset")
+        }
+    });
+    // HTTP loopback is potentially trustworthy, so the first hop is allowed.
+    let request =
+        FetchRequest::prefetch(&server.url("/redirect"), "https://secure.example.test/page")
+            .unwrap();
+    let error = client().fetch(request).unwrap_err();
+    assert_eq!(error.kind(), FetchErrorKind::Network);
+    assert_eq!(error.message(), "Mixed content blocked prefetch");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn default_same_origin_image_reuses_complete_prefetch() {
     let calls = Arc::new(AtomicUsize::new(0));
     let server = LoopbackServer::start({

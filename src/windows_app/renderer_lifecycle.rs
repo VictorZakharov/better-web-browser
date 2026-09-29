@@ -123,7 +123,7 @@ impl BrowserState {
         self.retire_permissions_for_tab(id);
         self.retire_geolocation_for_tab(id);
         self.retire_media_devices_for_tab(id);
-        self.retire_capture_for_tab(id);
+        self.retire_capture_for_document(id);
         self.retire_sensors_for_tab(id);
         self.retire_wake_locks_for_tab(id);
         let session = self.tabs.get_mut(id).and_then(|tab| {

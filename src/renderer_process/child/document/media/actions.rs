@@ -56,6 +56,18 @@ impl DocumentRuntime {
             self.page.reload_media_source(action.node);
             return Ok(None);
         }
+        if let ScriptMediaCommand::SelectVideo { selected } = &action.command {
+            if self.page.select_media_video_track(action.node, *selected) {
+                self.rendering.dirty = true;
+            }
+            // A MediaStream srcObject has no file-decoder session. Its track-set
+            // changes still have to hide an already presented capture frame.
+            return Ok(self
+                .media
+                .as_ref()
+                .filter(|playback| playback.node == action.node)
+                .map(|_| "configured"));
+        }
         if let ScriptMediaCommand::Commit { mime_type, bytes } = &action.command {
             if !supports_media_track(mime_type, "video/mp4", "avc1.")
                 || !mime_type.to_ascii_lowercase().contains("mp4a.40.2")
@@ -182,12 +194,7 @@ impl DocumentRuntime {
                 self.apply_playback_state(state);
                 Ok(Some("configured"))
             }
-            ScriptMediaCommand::SelectVideo { selected } => {
-                if self.page.select_media_video_track(action.node, *selected) {
-                    self.rendering.dirty = true;
-                }
-                Ok(Some("configured"))
-            }
+            ScriptMediaCommand::SelectVideo { .. } => unreachable!(),
             ScriptMediaCommand::Seek { position_100ns } => {
                 let decoded = connection
                     .seek_media_playback(source_id, *position_100ns)

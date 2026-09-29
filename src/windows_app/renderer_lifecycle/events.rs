@@ -322,8 +322,8 @@ impl BrowserState {
                 .broadcast_channels
                 .borrow_mut()
                 .retire_tab(id.get());
-            // Retire the browser-owned hardware stream before any recovery path
-            // can detach this renderer session or start its replacement.
+            // Revoke hardware before any recovery path replaces the renderer.
+            self.retire_capture_for_document(id);
             self.retire_sensors_for_tab(id);
             self.retire_wake_locks_for_tab(id);
             self.retire_permissions_for_tab(id);

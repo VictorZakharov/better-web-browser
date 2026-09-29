@@ -1,4 +1,5 @@
 use super::*;
+use better_web_browser::renderer_protocol::{MediaCaptureError, MediaCaptureEvent};
 
 #[test]
 fn explicit_no_suppresses_repeated_prompts_only_for_that_origin_and_device() {
@@ -55,4 +56,33 @@ fn focus_or_navigation_retirement_revokes_active_and_blocks_late_attach() {
     coordinator.retire_tab(tab);
     assert_eq!(count.load(Ordering::SeqCst), 2);
     assert_eq!(coordinator.active_kinds(active), None);
+}
+
+#[test]
+fn live_document_revocation_settles_pending_requests_and_ends_active_tracks() {
+    let tab = TabId::allocate();
+    let other_tab = TabId::allocate();
+    let mut coordinator = CaptureCoordinator::default();
+    let pending = context(tab, 1, 7, 13, "https://a.example/", camera());
+    let active = context(tab, 1, 7, 14, "https://a.example/", microphone());
+    let unrelated = context(other_tab, 2, 8, 15, "https://b.example/", camera());
+    coordinator.begin(pending.clone(), true).unwrap();
+    let (ticket, _) = prompt(coordinator.begin(active.clone(), true).unwrap());
+    coordinator
+        .complete_prompt(ticket, &active, true, None, Some(true))
+        .unwrap();
+    let revocations = Arc::new(AtomicUsize::new(0));
+    coordinator
+        .attach(ticket, &active, true, lease(&revocations))
+        .unwrap();
+    coordinator.begin(unrelated, true).unwrap();
+
+    let updates = coordinator.terminal_updates_for_tab(tab);
+    assert_eq!(updates.len(), 2);
+    assert!(updates.contains(&(pending, MediaCaptureEvent::Error(MediaCaptureError::Abort))));
+    assert!(updates.contains(&(active, MediaCaptureEvent::Ended)));
+    coordinator.retire_tab(tab);
+    assert_eq!(revocations.load(Ordering::SeqCst), 1);
+    assert!(coordinator.terminal_updates_for_tab(tab).is_empty());
+    assert_eq!(coordinator.pending.len(), 1, "other tab was also retired");
 }
