@@ -9,6 +9,9 @@ use crate::renderer_protocol::{
 };
 
 const MAX_MEDIA_DEVICE_ACTIONS_PER_TASK: usize = 64;
+// The browser admits at most eight simultaneous captures with at most two tracks each.
+// Keep enough reserved room for every Stop even if enumeration fills the request queue.
+const MAX_MEDIA_DEVICE_STOPS_PER_TASK: usize = 16;
 
 pub(super) fn dispatch(
     operation: &str,
@@ -75,7 +78,18 @@ pub(super) fn dispatch(
             .with_message("MediaDevices requires a secure context")
             .into());
     }
-    if state.pending_media_device_actions.len() >= MAX_MEDIA_DEVICE_ACTIONS_PER_TASK {
+    let pending_stops = state
+        .pending_media_device_actions
+        .iter()
+        .filter(|action| matches!(action.capture, Some(MediaCaptureAction::Stop { .. })))
+        .count();
+    let limit_reached = if operation == "mediaCaptureStop" {
+        pending_stops >= MAX_MEDIA_DEVICE_STOPS_PER_TASK
+    } else {
+        state.pending_media_device_actions.len() - pending_stops
+            >= MAX_MEDIA_DEVICE_ACTIONS_PER_TASK
+    };
+    if limit_reached {
         return Err(JsNativeError::range()
             .with_message("Media-device task queue limit exceeded")
             .into());
@@ -92,9 +106,6 @@ pub(super) fn dispatch(
             return Err(JsNativeError::range()
                 .with_message("Invalid capture track")
                 .into());
-        }
-        if track_id == 0 || track_id == 1 {
-            state.capture.end_track(u64::from(id), 1);
         }
         (
             id,
@@ -130,6 +141,9 @@ pub(super) fn dispatch(
             client: state.fetch_client,
             capture,
         });
+    if let Some(MediaCaptureAction::Stop { track_id: 0 | 1 }) = capture {
+        state.capture.end_track(u64::from(id), 1);
+    }
     Ok(Some(JsValue::from(id)))
 }
 

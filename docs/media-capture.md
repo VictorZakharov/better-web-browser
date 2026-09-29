@@ -17,7 +17,8 @@ the grant. All native startup, sample reads, and process destruction run off the
 Camera and microphone use separate AppContainer capture children even when a request asks for
 both. This allows `MediaStreamTrack.stop()` to stop only its corresponding device; when the last
 track stops, the stream ends. A pending request that loses its document or foreground status is
-aborted before a device can start. The browser maps each native sample back to the active
+canceled; if native startup has already begun, the capture Job is terminated promptly rather
+than waiting for the device-start timeout. The browser maps each native sample back to the active
 document/request only after rechecking ownership and grant state. Video uses bounded NV12
 samples with latest-frame replacement; microphone PCM16 remains ordered with a bounded queue.
 An overloaded renderer cannot silently lose a required control update, and a slow renderer
@@ -31,7 +32,9 @@ tracks clear queued speech, and a source remains bound to its selected track if 
 later removed from the stream. The HTML `<audio srcObject>` monitoring path is not implemented.
 
 Current scope deliberately does not claim advanced constraint selection, device picking, or
-capture from child frames. Add those behind the same browser-authoritative admission and
+capture from child frames. Unsupported optional `advanced` preference sets are skipped, while
+unsupported mandatory basic constraints reject before prompting. Add selection behind the same
+browser-authoritative admission and
 capability checks, not by exposing the private capture broker to page script. The security and
 track lifecycle decisions follow the [Media Capture and Streams specification](https://w3c.github.io/mediacapture-main/).
 

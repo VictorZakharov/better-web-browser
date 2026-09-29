@@ -3,8 +3,8 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `808734be98c3394ee3da0784cfd49e10a15837e28320e633322a536243de60d7`
-- Third-party packages: 212
+- Cargo.lock SHA-256: `cf8690fd9b2eb9992ecf6156ec8b149f2d70c677a933f921aed70e6c7ab4dec0`
+- Third-party packages: 216
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
@@ -24,6 +24,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `brotli-decompressor` | 5.0.3 | BSD-3-Clause/MIT | [upstream](https://github.com/dropbox/rust-brotli-decompressor) |
 | `bytemuck` | 1.25.2 | Zlib OR Apache-2.0 OR MIT | [upstream](https://github.com/Lokathor/bytemuck) |
 | `bytemuck_derive` | 1.12.0 | Zlib OR Apache-2.0 OR MIT | [upstream](https://github.com/Lokathor/bytemuck) |
+| `byteorder` | 1.5.0 | Unlicense OR MIT | [upstream](https://github.com/BurntSushi/byteorder) |
 | `byteorder-lite` | 0.1.0 | Unlicense OR MIT | [upstream](https://github.com/image-rs/byteorder-lite) |
 | `bytes` | 1.12.1 | MIT | [upstream](https://github.com/tokio-rs/bytes) |
 | `calendrical_calculations` | 0.2.4 | Apache-2.0 | [upstream](https://github.com/unicode-org/icu4x) |
@@ -91,6 +92,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `itoa` | 1.0.18 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/itoa) |
 | `ixdtf` | 0.6.6 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `kurbo` | 0.13.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/kurbo) |
+| `lewton` | 0.10.2 | MIT OR Apache-2.0 | [upstream](https://github.com/RustAudio/lewton) |
 | `libc` | 0.2.189 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/libc) |
 | `libloading` | 0.8.9 | ISC | [upstream](https://github.com/nagisa/rust_libloading/) |
 | `libm` | 0.2.16 | MIT | [upstream](https://github.com/rust-lang/compiler-builtins) |
@@ -108,6 +110,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `nom` | 7.1.3 | MIT | [upstream](https://github.com/Geal/nom) |
 | `num-conv` | 0.2.2 | MIT OR Apache-2.0 | [upstream](https://github.com/jhpratt/num-conv) |
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-traits) |
+| `ogg` | 0.8.0 | BSD-3-Clause | [upstream](https://github.com/RustAudio/ogg) |
 | `once_cell` | 1.21.4 | MIT OR Apache-2.0 | [upstream](https://github.com/matklad/once_cell) |
 | `parking_lot` | 0.12.5 | MIT OR Apache-2.0 | [upstream](https://github.com/Amanieu/parking_lot) |
 | `parking_lot_core` | 0.9.12 | MIT OR Apache-2.0 | [upstream](https://github.com/Amanieu/parking_lot) |
@@ -175,6 +178,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `tiny-skia` | 0.12.0 | BSD-3-Clause | [upstream](https://github.com/linebender/tiny-skia) |
 | `tiny-skia-path` | 0.12.0 | BSD-3-Clause | [upstream](https://github.com/linebender/tiny-skia/tree/master/path) |
 | `tinystr` | 0.8.4 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `tinyvec` | 1.13.3 | Zlib OR Apache-2.0 OR MIT | [upstream](https://github.com/Lokathor/tinyvec) |
 | `typenum` | 1.20.0 | MIT OR Apache-2.0 | [upstream](https://github.com/paholg/typenum) |
 | `unicode-bidi` | 0.3.18 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/unicode-bidi) |
 | `unicode-ident` | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | [upstream](https://github.com/dtolnay/unicode-ident) |

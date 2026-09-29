@@ -141,7 +141,9 @@ impl CaptureService {
             if cancelled.load(Ordering::Acquire) {
                 return Err(MediaCaptureError::Abort);
             }
-            session.start(capture_id).map_err(media_error_for_start)?;
+            session
+                .start_with_cancellation(capture_id, cancelled)
+                .map_err(media_error_for_start)?;
             if cancelled.load(Ordering::Acquire) {
                 return Err(MediaCaptureError::Abort);
             }

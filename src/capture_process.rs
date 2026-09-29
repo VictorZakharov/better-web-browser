@@ -10,6 +10,7 @@ pub(crate) mod launcher;
 mod native;
 
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 /// Browser-owned device grant. This is not a web-facing capability; only the trusted browser
 /// process may construct it after checking the current document, origin, foreground state, and
@@ -84,7 +85,17 @@ impl CaptureSession {
     }
 
     pub fn start(&mut self, capture_id: u64) -> Result<(), CaptureStartError> {
-        self.0.start(capture_id)
+        static NEVER_CANCELLED: AtomicBool = AtomicBool::new(false);
+        self.start_with_cancellation(capture_id, &NEVER_CANCELLED)
+    }
+
+    /// Start a capture generation while honoring browser-owned permission revocation.
+    pub fn start_with_cancellation(
+        &mut self,
+        capture_id: u64,
+        cancelled: &AtomicBool,
+    ) -> Result<(), CaptureStartError> {
+        self.0.start(capture_id, cancelled)
     }
 
     pub fn latest_video(&self) -> Result<Option<CapturedSample>, String> {

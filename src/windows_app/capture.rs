@@ -13,7 +13,7 @@ mod tests;
 pub(super) use service::{CaptureService, CaptureServiceStatus, WM_APP_CAPTURE};
 
 use super::tabs::TabId;
-use better_web_browser::fetch::Origin;
+use better_web_browser::fetch::{Origin, RequestClient};
 use better_web_browser::renderer_protocol::DocumentId;
 use std::collections::HashMap;
 
@@ -43,6 +43,8 @@ pub(super) struct CaptureKey {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct CaptureContext {
     pub(super) key: CaptureKey,
+    /// Preserve the exact resolved client across the permission prompt and worker callbacks.
+    pub(super) client: RequestClient,
     /// Browser-resolved effective origin, never a renderer-supplied URL string.
     pub(super) origin: Origin,
     pub(super) kinds: CaptureKinds,
@@ -51,7 +53,8 @@ pub(super) struct CaptureContext {
 impl CaptureContext {
     fn admissible(&self) -> bool {
         self.kinds.any()
-            && self.key.client_id == 0 // No child-frame Permissions Policy path exists yet.
+            && self.client.id == self.key.client_id
+            && self.client.id == 0 // No child-frame Permissions Policy path exists yet.
             && self.key.renderer_session != 0
             && self.key.request_id != 0
             && self.origin.is_potentially_trustworthy()

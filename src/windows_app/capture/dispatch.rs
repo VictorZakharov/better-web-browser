@@ -13,6 +13,7 @@ use std::sync::atomic::Ordering;
 
 struct Route {
     key: CaptureKey,
+    client: RequestClient,
     origin: Option<Origin>,
     sink: MediaCaptureSink,
 }
@@ -47,6 +48,7 @@ impl BrowserState {
                     client_id: request.client.id,
                     request_id: request.request_id,
                 },
+                client: request.client,
                 origin: owner.map(|owner| owner.origin),
                 sink: session.media_capture_sink(request.document),
             })
@@ -57,7 +59,7 @@ impl BrowserState {
         let request = MediaCaptureRequest {
             document: context.key.document,
             request_id: context.key.request_id,
-            client: RequestClient::default(),
+            client: context.client,
             action: MediaCaptureAction::Start {
                 camera: context.kinds.camera,
                 microphone: context.kinds.microphone,
@@ -131,6 +133,7 @@ impl BrowserState {
             MediaCaptureAction::Start { camera, microphone } => {
                 let context = CaptureContext {
                     key: route.key,
+                    client: route.client,
                     origin,
                     kinds: CaptureKinds { camera, microphone },
                 };

@@ -158,6 +158,35 @@ fn microphone_source_resamples_and_keeps_its_selected_track_after_removal() {
 }
 
 #[test]
+fn disconnected_analyser_receives_microphone_without_speaker_output() {
+    let dom = dom::parse_with_scripting("<body><script></script></body>", true);
+    let node = dom.elements_named("script").next().unwrap();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let id = create_capture(&mut runtime, &node, 16_000);
+    evaluate(
+        &mut runtime,
+        &node,
+        "window.analyser = context.createAnalyser(); source.connect(analyser);",
+    );
+    deliver_packet(&mut runtime, packet(id, 1, 8_000, &[8_192; 128]));
+    runtime.set_audio_activation(true);
+    evaluate(&mut runtime, &node, "__notifyAudioActivation();");
+    let (stream_id, speaker) = next_pcm(&mut runtime);
+    assert!(speaker.iter().all(|byte| *byte == 0));
+    evaluate(
+        &mut runtime,
+        &node,
+        &format!(
+            r#"__receiveAudioGraphStatus({stream_id}, 'accepted');
+               const samples = new Float32Array(analyser.fftSize);
+               analyser.getFloatTimeDomainData(samples);
+               if (!samples.some(value => value > 0.1))
+                   throw Error('disconnected analyser did not receive microphone audio');"#
+        ),
+    );
+}
+
+#[test]
 fn microphone_ring_is_bounded_and_disabling_or_stopping_clears_buffered_pcm() {
     let dom = dom::parse_with_scripting("<body><script></script></body>", true);
     let node = dom.elements_named("script").next().unwrap();

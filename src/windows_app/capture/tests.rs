@@ -21,6 +21,7 @@ fn context(
             client_id: 0,
             request_id: request,
         },
+        client: RequestClient::default(),
         origin: Origin::parse(url).unwrap(),
         kinds,
     }

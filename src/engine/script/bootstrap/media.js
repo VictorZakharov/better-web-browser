@@ -64,6 +64,7 @@
                 seeking: false,
                 preservesPitch: true,
                 srcObject: null,
+                awaitingSourceReset: 0,
                 buffered: emptyTimeRanges(),
                 seekable: emptyTimeRanges(),
                 played: emptyTimeRanges(),
@@ -171,21 +172,28 @@
             if (value !== null && !globalThis.__isCaptureStream?.(value))
                 throw new TypeError('Unsupported media source object');
             const state = mediaStateFor(this);
-            if (state.srcObject === value) return;
-            if (state.srcObject) globalThis.__detachCaptureStream?.(this, nodeId(this));
+            const previousSource = state.srcObject;
+            if (previousSource) globalThis.__detachCaptureStream?.(this, nodeId(this));
             state.srcObject = value;
-            state.currentSrc = '';
-            state.currentTime = 0;
-            state.duration = value ? Infinity : NaN;
-            state.readyState = HTMLMediaElement.HAVE_NOTHING;
-            state.networkState = value ? HTMLMediaElement.NETWORK_IDLE : HTMLMediaElement.NETWORK_EMPTY;
-            state.videoWidth = state.videoHeight = 0;
-            if (value) globalThis.__attachCaptureStream?.(this, nodeId(this));
+            const resetRequestId = resetMediaElement(this);
+            if (previousSource && !value) state.awaitingSourceReset = resetRequestId;
+            if (value) selectMediaSource(this);
+            else {
+                const generation = mediaLoadGeneration.get(this);
+                queueMediaTask(() => {
+                    if (mediaLoadGeneration.get(this) === generation) restartMediaLoad(this);
+                });
+            }
         }
         load() {
-            if (mediaStateFor(this).srcObject) return;
+            const state = mediaStateFor(this);
             traceMediaCallsite(this);
+            if (state.srcObject) globalThis.__detachCaptureStream?.(this, nodeId(this));
             resetMediaElement(this);
+            if (state.srcObject) {
+                selectMediaSource(this);
+                return;
+            }
             const generation = mediaLoadGeneration.get(this);
             queueMediaTask(() => {
                 if (mediaLoadGeneration.get(this) === generation) restartMediaLoad(this);
@@ -315,10 +323,18 @@
         const element = wrap(Number(input.target) || 0);
         if (!(element instanceof HTMLMediaElement)) return false;
         const state = mediaStateFor(element);
+        const requestId = Number(input.requestId) || 0;
+        // A prior decoder can complete before its queued reset. Its unsolicited
+        // loaded/clock replies have no resource ID, so wait for reset's acknowledgement.
+        if (state.awaitingSourceReset) {
+            if (input.disposition === 'reset' && requestId === state.awaitingSourceReset)
+                state.awaitingSourceReset = 0;
+            else return true;
+        }
+        if (state.srcObject) return true;
         if (input.disposition !== 'time')
             traceMediaLifecycle(element, 'response:' + input.disposition,
                 input.currentTime, input.duration);
-        const requestId = Number(input.requestId) || 0;
         if (requestId && requestId < (state.requestFloor || 0)) {
             pendingMediaRequests.delete(requestId);
             return true;

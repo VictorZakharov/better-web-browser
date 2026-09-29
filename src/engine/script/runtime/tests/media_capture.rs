@@ -104,6 +104,50 @@ fn denied_capture_rejects_and_invalid_constraints_do_not_request_hardware() {
 }
 
 #[test]
+fn unsupported_advanced_capture_preferences_fall_back_to_default_device() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><script>
+            navigator.mediaDevices.getUserMedia({video: {
+                advanced: [{deviceId: {exact: 'missing-camera'}}, {width: {min: 4096}}]
+            }}).then(stream => document.body.setAttribute('data-result', String(
+                stream.getVideoTracks().length === 1)),
+                error => document.body.setAttribute('data-result', error.name));
+        </script></body>"#,
+        true,
+    );
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let initial = runtime.execute_initial(&script_inputs(&dom));
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert_eq!(initial.media_device_actions.len(), 1);
+    let request = &initial.media_device_actions[0];
+    assert_eq!(
+        request.capture,
+        Some(MediaCaptureAction::Start {
+            camera: true,
+            microphone: false,
+        })
+    );
+
+    let result = runtime.deliver_media_capture_update(MediaCaptureUpdate {
+        document: DocumentId::new(1).unwrap(),
+        request_id: request.request_id,
+        event: MediaCaptureEvent::Started {
+            camera: true,
+            microphone: false,
+        },
+    });
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-result")
+            .as_deref(),
+        Some("true")
+    );
+}
+
+#[test]
 fn insecure_origin_cannot_expose_capture_devices() {
     let dom = dom::parse_with_scripting(
         r#"<body><script>
@@ -219,5 +263,60 @@ fn native_microphone_pcm_reaches_a_connected_web_audio_source() {
     assert!(
         got_pcm,
         "native PCM did not enter the connected Web Audio graph"
+    );
+}
+
+#[test]
+fn capture_stop_is_delivered_when_enumeration_fills_the_task_queue() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><script>
+            navigator.mediaDevices.getUserMedia({audio: true})
+                .then(stream => { window.captureStream = stream; });
+        </script></body>"#,
+        true,
+    );
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let initial = runtime.execute_initial(&script_inputs(&dom));
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    let request_id = initial.media_device_actions[0].request_id;
+    let started = runtime.deliver_media_capture_update(MediaCaptureUpdate {
+        document: DocumentId::new(1).unwrap(),
+        request_id,
+        event: MediaCaptureEvent::Started {
+            camera: false,
+            microphone: true,
+        },
+    });
+    assert!(started.errors.is_empty(), "{:?}", started.errors);
+    let stopped = runtime.execute_additional_with_loader(
+        &[ScriptInput {
+            source_url: "https://example.com/#stop-under-pressure".into(),
+            code: r#"
+                for (let i = 0; i < 64; ++i) navigator.mediaDevices.enumerateDevices();
+                captureStream.getAudioTracks()[0].stop();
+                document.body.setAttribute('data-ended',
+                    captureStream.getAudioTracks()[0].readyState);
+            "#
+            .into(),
+            node: dom.elements_named("script").next().unwrap(),
+            kind: ScriptKind::Classic,
+            fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+            finish_lifecycle: true,
+        }],
+        None,
+    );
+    assert!(stopped.errors.is_empty(), "{:?}", stopped.errors);
+    assert_eq!(stopped.media_device_actions.len(), 65);
+    assert_eq!(
+        stopped.media_device_actions.last().unwrap().capture,
+        Some(MediaCaptureAction::Stop { track_id: 2 })
+    );
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-ended")
+            .as_deref(),
+        Some("ended")
     );
 }

@@ -1,5 +1,43 @@
 use super::*;
 use std::io::Cursor;
+use std::sync::atomic::AtomicBool;
+
+#[test]
+fn start_wait_cancels_before_command_timeout() {
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let worker_cancelled = Arc::clone(&cancelled);
+    let revoke = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(40));
+        worker_cancelled.store(true, Ordering::Release);
+    });
+    let (_sender, events) = mpsc::channel::<Result<WorkerCaptureMessage, String>>();
+    let start = Instant::now();
+    let result = wait_for_start_event(|timeout| events.recv_timeout(timeout), 77, &cancelled);
+    revoke.join().unwrap();
+    assert!(start.elapsed() < Duration::from_secs(1));
+    assert!(matches!(
+        result,
+        Err(CaptureStartError::NotReadable(message)) if message.contains("cancelled")
+    ));
+}
+
+#[test]
+fn start_wait_rejects_started_when_revoked_at_response_boundary() {
+    let cancelled = AtomicBool::new(false);
+    let result = wait_for_start_event(
+        |timeout| {
+            assert!(timeout <= START_POLL_INTERVAL);
+            cancelled.store(true, Ordering::Release);
+            Ok(Ok(WorkerCaptureMessage::Started { capture_id: 77 }))
+        },
+        77,
+        &cancelled,
+    );
+    assert!(matches!(
+        result,
+        Err(CaptureStartError::NotReadable(message)) if message.contains("cancelled")
+    ));
+}
 
 #[test]
 fn ready_rejects_missing_or_extra_token_capabilities() {
@@ -151,7 +189,7 @@ fn contained_fake_child_handshake_samples_and_stop() {
     options.test_mode = true;
     let mut session = CaptureSession::launch(&options).unwrap();
     assert!(session.containment().satisfies(options.devices));
-    session.start(77).unwrap();
+    session.start(77, &AtomicBool::new(false)).unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     let mut video = None;
     let mut audio = None;

@@ -34,9 +34,11 @@
         // The native backend currently selects the system default device. Reject mandatory
         // constraints it cannot check rather than silently returning a nonconforming track.
         for (const [name, setting] of Object.entries(value)) {
-            if (name === 'advanced' ||
-                (setting && typeof setting === 'object' &&
-                    ('exact' in setting || 'min' in setting || 'max' in setting))) {
+            // Advanced sets express ordered preferences, not requirements. Until the
+            // backend can select among devices, none can improve on the default.
+            if (name === 'advanced') continue;
+            if (setting && typeof setting === 'object' &&
+                ('exact' in setting || 'min' in setting || 'max' in setting)) {
                 const error = new DOMException(`Unsupported mandatory ${name} constraint`,
                     'OverconstrainedError');
                 Object.defineProperty(error, 'constraint', { value: name });
@@ -88,9 +90,11 @@
         stop() {
             const state = trackState.get(this);
             if (state.ended) return;
+            // Do not make a failed broker admission irreversible: the caller
+            // must be able to retry a Stop that could not be queued.
+            native('mediaCaptureStop', state.requestId, state.trackId);
             state.ended = true;
             if (state.kind === 'audio') clearCapturedAudio(this);
-            native('mediaCaptureStop', state.requestId, state.trackId);
             for (const stream of streamsForTrack(this)) stream.__trackStopped();
         }
     }
@@ -187,7 +191,7 @@
     globalThis.__detachCaptureStream = (element, node) => {
         const stream = element.srcObject;
         const state = streamState.get(stream);
-        if (!state) return;
+        if (!state?.requestId) return;
         state.elements.delete(node);
         native('mediaCaptureDetach', state.requestId, node);
     };

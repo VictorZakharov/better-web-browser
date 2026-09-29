@@ -58,11 +58,6 @@ impl DocumentRuntime {
                 connection,
             );
         }
-        let nodes = self
-            .script_runtime
-            .as_ref()
-            .map(|runtime| runtime.capture_video_nodes(frame.request_id))
-            .unwrap_or_default();
         let mut outcome = self
             .script_runtime
             .as_mut()
@@ -75,6 +70,14 @@ impl DocumentRuntime {
                     frame.timestamp_100ns,
                 )
             })
+            .unwrap_or_default();
+        // Frame events run author script. A loadeddata/timeupdate listener may detach
+        // srcObject, stop the track, or disable it before this sample is painted.
+        // Read the live bindings after that callback, never from a stale snapshot.
+        let nodes = self
+            .script_runtime
+            .as_ref()
+            .map(|runtime| runtime.capture_video_nodes(frame.request_id))
             .unwrap_or_default();
         if frame.kind != MediaCaptureFrameKind::VideoNv12 || nodes.is_empty() {
             return self.complete_network_script_outcome(

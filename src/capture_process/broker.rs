@@ -15,13 +15,15 @@ use crate::renderer_process::windows::{
 use crate::renderer_protocol::Nonce;
 use std::collections::VecDeque;
 use std::os::windows::io::OwnedHandle;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use windows_sys::Win32::System::Threading::TerminateProcess;
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+const START_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const EXIT_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_AUDIO_PACKETS: usize = 8;
 type WorkerEvents = mpsc::Receiver<Result<WorkerCaptureMessage, String>>;
@@ -89,7 +91,11 @@ impl CaptureSession {
         // On every error, Drop kills the one-process Job and closes all inherited pipes.
     }
 
-    pub(crate) fn start(&mut self, capture_id: u64) -> Result<(), CaptureStartError> {
+    pub(crate) fn start(
+        &mut self,
+        capture_id: u64,
+        cancelled: &AtomicBool,
+    ) -> Result<(), CaptureStartError> {
         if capture_id == 0 || self.used {
             return Err(CaptureStartError::NotReadable(
                 "capture grant is one-shot".into(),
@@ -99,36 +105,19 @@ impl CaptureSession {
         lock(&self.samples)
             .expect(capture_id)
             .map_err(CaptureStartError::NotReadable)?;
-        let result = self
-            .writer
-            .send_browser(&BrowserCaptureMessage::Start { capture_id })
-            .map_err(|error| CaptureStartError::NotReadable(error.to_string()))
-            .and_then(|()| match self.events.recv_timeout(COMMAND_TIMEOUT) {
-                Ok(Ok(WorkerCaptureMessage::Started {
-                    capture_id: started,
-                })) if started == capture_id => Ok(()),
-                Ok(Ok(WorkerCaptureMessage::Failed {
-                    capture_id: failed,
-                    reason,
-                })) if failed == capture_id => Err(match reason {
-                    crate::capture_protocol::CaptureFailure::NoDevice => {
-                        CaptureStartError::NoDevice
-                    }
-                    crate::capture_protocol::CaptureFailure::AccessDenied => {
-                        CaptureStartError::AccessDenied
-                    }
-                    _ => CaptureStartError::NotReadable(format!(
-                        "capture source failed to start: {reason:?}"
-                    )),
-                }),
-                Ok(Ok(_)) => Err(CaptureStartError::NotReadable(
-                    "capture worker returned a stale start response".into(),
-                )),
-                Ok(Err(error)) => Err(CaptureStartError::NotReadable(error)),
-                Err(_) => Err(CaptureStartError::NotReadable(
-                    "capture source start timed out".into(),
-                )),
-            });
+        let result = (|| {
+            if cancelled.load(Ordering::Acquire) {
+                return Err(cancelled_start());
+            }
+            self.writer
+                .send_browser(&BrowserCaptureMessage::Start { capture_id })
+                .map_err(|error| CaptureStartError::NotReadable(error.to_string()))?;
+            wait_for_start_event(
+                |timeout| self.events.recv_timeout(timeout),
+                capture_id,
+                cancelled,
+            )
+        })();
         if result.is_err() {
             lock(&self.samples).retired = true;
             self.terminate(0x4c09);
@@ -181,6 +170,70 @@ impl CaptureSession {
             // The process handle is independent of the Job. Revocation still proceeds if a
             // damaged Job cannot be terminated; no reader thread is allowed to block Drop.
             unsafe { TerminateProcess(raw(&self.process), code) };
+        }
+    }
+}
+
+fn cancelled_start() -> CaptureStartError {
+    CaptureStartError::NotReadable("capture start cancelled".into())
+}
+
+fn wait_for_start_event(
+    mut receive: impl FnMut(
+        Duration,
+    ) -> Result<Result<WorkerCaptureMessage, String>, mpsc::RecvTimeoutError>,
+    capture_id: u64,
+    cancelled: &AtomicBool,
+) -> Result<(), CaptureStartError> {
+    let deadline = Instant::now() + COMMAND_TIMEOUT;
+    loop {
+        if cancelled.load(Ordering::Acquire) {
+            return Err(cancelled_start());
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(CaptureStartError::NotReadable(
+                "capture source start timed out".into(),
+            ));
+        }
+        match receive(remaining.min(START_POLL_INTERVAL)) {
+            Ok(Ok(WorkerCaptureMessage::Started {
+                capture_id: started,
+            })) if started == capture_id => {
+                return if cancelled.load(Ordering::Acquire) {
+                    Err(cancelled_start())
+                } else {
+                    Ok(())
+                };
+            }
+            Ok(Ok(WorkerCaptureMessage::Failed {
+                capture_id: failed,
+                reason,
+            })) if failed == capture_id => {
+                return Err(match reason {
+                    crate::capture_protocol::CaptureFailure::NoDevice => {
+                        CaptureStartError::NoDevice
+                    }
+                    crate::capture_protocol::CaptureFailure::AccessDenied => {
+                        CaptureStartError::AccessDenied
+                    }
+                    _ => CaptureStartError::NotReadable(format!(
+                        "capture source failed to start: {reason:?}"
+                    )),
+                });
+            }
+            Ok(Ok(_)) => {
+                return Err(CaptureStartError::NotReadable(
+                    "capture worker returned a stale start response".into(),
+                ));
+            }
+            Ok(Err(error)) => return Err(CaptureStartError::NotReadable(error)),
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(CaptureStartError::NotReadable(
+                    "capture worker event stream closed during start".into(),
+                ));
+            }
         }
     }
 }

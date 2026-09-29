@@ -10,6 +10,9 @@ use better_web_browser::renderer_protocol::{
 };
 use std::time::{Duration, Instant};
 
+#[path = "capture/frame_delivery.rs"]
+mod frame_delivery;
+
 #[test]
 fn capture_grant_presents_nv12_preview_and_ignores_frame_after_video_track_ended() {
     let _serial = SERIAL

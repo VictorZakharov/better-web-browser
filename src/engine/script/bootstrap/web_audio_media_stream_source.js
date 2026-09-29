@@ -11,6 +11,16 @@
         state.lastTimestamp = null;
     };
 
+    const captureGraphIsObserved = node => {
+        if (audioNodeReaches(node, node.context.destination)) return true;
+        // An analyser is pulled even when its branch is disconnected from the
+        // speakers; microphone metering must still receive its input quanta.
+        for (const candidate of audioContextState.get(node.context).nodes)
+            if (candidate instanceof AnalyserNode && audioNodeReaches(node, candidate))
+                return true;
+        return false;
+    };
+
     const captureSampleAt = (packets, position, channel) => {
         let remaining = position;
         for (const packet of packets) {
@@ -105,7 +115,7 @@
             const state = audioCaptureState.get(node);
             if (node.context.state === 'closed' || state.track.readyState !== 'live' ||
                 !state.track.enabled || state.track.muted ||
-                !audioNodeReaches(node, node.context.destination)) {
+                !captureGraphIsObserved(node)) {
                 clearCaptureAudio(state);
                 continue;
             }
