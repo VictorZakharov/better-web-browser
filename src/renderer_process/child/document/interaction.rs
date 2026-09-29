@@ -51,7 +51,10 @@ impl DocumentRuntime {
         }
         let force_accessibility_update = matches!(
             &input,
-            DocumentInput::Text(_) | DocumentInput::NativeText(_) | DocumentInput::Selection(_) | DocumentInput::Focus(_)
+            DocumentInput::Text(_)
+                | DocumentInput::NativeText(_)
+                | DocumentInput::Selection(_)
+                | DocumentInput::Focus(_)
         ) || (matches!(&input, DocumentInput::Scroll(_))
             && !self.layout.sticky_offsets.is_empty());
         let mut cursor = None;

@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod activation_tests;
 mod keyboard;
+mod native_text;
 mod pointer;
 mod queue;
 mod selection;
@@ -231,47 +232,6 @@ impl BrowserState {
             control.last_direction =
                 better_web_browser::renderer_protocol::TextSelectionDirection::None;
             control.last_native_input_sequence = sequence;
-        }
-    }
-
-    pub(super) unsafe fn apply_native_text_rejection(
-        &mut self,
-        document: better_web_browser::renderer_protocol::DocumentId,
-        rejection: &better_web_browser::renderer_protocol::NativeTextRejection,
-    ) {
-        if !self.navigation.owns_document(document)
-            || rejection.generation != self.native_text_generation
-            || rejection.sequence == 0
-            || rejection.sequence > self.renderer_input_sequence
-        {
-            return;
-        }
-        let Some(next_generation) = self.native_text_generation.checked_add(1) else {
-            self.contain_page_engine_failure(self.id, "native text generation overflow".into());
-            return;
-        };
-        self.pending_renderer_inputs
-            .discard_native_text_generation(document, rejection.generation);
-        self.native_text_generation = next_generation;
-        let window = self
-            .page_controls
-            .iter()
-            .find(|control| wire_node(control.spec.node_id) == Some(rejection.target))
-            .map(|control| control.window);
-        if let Some(window) = window {
-            // Win32 EN_CHANGE is synchronous even for programmatic SetWindowText.
-            // Suppress that echo; the renderer's DOM remains the authority.
-            self.suppress_page_control_edit = true;
-            if window_text(window) != rejection.value {
-                set_window_text(window, &rejection.value);
-            }
-            SendMessageW(
-                window,
-                EM_SETSEL,
-                rejection.selection_start as usize,
-                rejection.selection_end as isize,
-            );
-            self.suppress_page_control_edit = false;
         }
     }
 

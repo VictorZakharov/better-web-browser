@@ -85,10 +85,10 @@ pub use input::{
     DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, FullscreenAction,
     FullscreenDisposition, FullscreenRequest, FullscreenResponse, HistoryTraversalInput,
     InputModifiers, KeyPhase, KeyboardInput, LifecycleInput, MAX_PENDING_TEXT_SELECTIONS,
-    NativeTextInput, NavigationCause, NavigationDisposition, PointerButton, PointerCursor, PointerCursorResult,
-    PointerInput, PointerLockDisposition, PointerLockRequest, PointerLockResponse, PointerPhase,
-    PresentationAcknowledgement, ScrollInput, TextEditIntent, TextInput, TextSelectionDirection,
-    TextSelectionInput, TextSelectionUpdate, WheelInput,
+    NativeTextInput, NavigationCause, NavigationDisposition, PointerButton, PointerCursor,
+    PointerCursorResult, PointerInput, PointerLockDisposition, PointerLockRequest,
+    PointerLockResponse, PointerPhase, PresentationAcknowledgement, ScrollInput, TextEditIntent,
+    TextInput, TextSelectionDirection, TextSelectionInput, TextSelectionUpdate, WheelInput,
 };
 pub use message::{
     BrowserMessage, BrowsingContextId, ContainmentReport, Nonce,

@@ -111,6 +111,7 @@ mod microtasks;
 mod modules;
 mod mutations;
 mod native_editing;
+mod native_text_selection;
 mod navigator;
 mod network;
 mod network_body;

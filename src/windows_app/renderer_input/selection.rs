@@ -9,6 +9,19 @@ fn sequence_is_current(observed: u64, issued: u64, native: u64, previous: u64) -
     observed <= issued && observed >= native && observed >= previous
 }
 
+pub(super) unsafe fn changed_native_selection(
+    control: &page_controls::PageControlWindow,
+) -> Option<(u32, u32, (u32, u32))> {
+    let native = page_controls::selection::read_edit_selection(control.window);
+    if native == control.last_native_selection {
+        return None;
+    }
+    let (value, start, end) =
+        page_controls::selection::edit_text_and_selection(control.window, control.spec.kind);
+    (value == control.last_text && (start, end) != control.last_selection)
+        .then_some((start, end, native))
+}
+
 impl BrowserState {
     pub(in crate::windows_app) unsafe fn route_page_control_selection(
         &mut self,
@@ -31,15 +44,9 @@ impl BrowserState {
         if control.window != window || !page_controls::selection::is_text_edit(control.spec.kind) {
             return;
         }
-        let native = page_controls::selection::read_edit_selection(window);
-        if native == control.last_native_selection {
+        let Some((start, end, native)) = changed_native_selection(control) else {
             return;
-        }
-        let (value, start, end) =
-            page_controls::selection::edit_text_and_selection(window, control.spec.kind);
-        if value != control.last_text || (start, end) == control.last_selection {
-            return;
-        }
+        };
         let Some(target) = wire_node(control.spec.node_id) else {
             return;
         };
