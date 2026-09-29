@@ -1,5 +1,49 @@
 use super::super::tabs::{self, KeyModifiers, TabId};
 use super::super::*;
+use better_web_browser::renderer_protocol::TextEditIntent;
+use std::cell::Cell;
+
+thread_local! {
+    static PAGE_EDIT_INTENT: Cell<TextEditIntent> = const { Cell::new(TextEditIntent::Unspecified) };
+    static PAGE_EDIT_SELECTION: Cell<Option<PageEditSelection>> = const { Cell::new(None) };
+    static PAGE_IME_ACTIVE: Cell<bool> = const { Cell::new(false) };
+}
+
+#[derive(Clone, Copy)]
+struct PageEditSelection {
+    window: usize,
+    start: u32,
+    end: u32,
+}
+
+pub(in crate::windows_app) fn current_page_edit_intent() -> TextEditIntent {
+    PAGE_EDIT_INTENT.with(Cell::get)
+}
+
+pub(in crate::windows_app) fn current_page_edit_selection(window: Hwnd) -> Option<(u32, u32)> {
+    PAGE_EDIT_SELECTION.with(Cell::get).and_then(|selection| {
+        (selection.window == window as usize).then_some((selection.start, selection.end))
+    })
+}
+
+fn page_edit_intent(
+    message: u32,
+    wparam: usize,
+    ime_active: bool,
+    modifiers: KeyModifiers,
+) -> TextEditIntent {
+    if ime_active || modifiers.control || modifiers.alt {
+        return TextEditIntent::Unspecified;
+    }
+    match message {
+        WM_CHAR if wparam == 8 => TextEditIntent::DeleteContentBackward,
+        WM_CHAR if wparam >= 32 && wparam != 127 => TextEditIntent::InsertText,
+        WM_KEYDOWN if wparam == VK_DELETE && !modifiers.shift => {
+            TextEditIntent::DeleteContentForward
+        }
+        _ => TextEditIntent::Unspecified,
+    }
+}
 
 pub(super) unsafe fn reroute_tab_message(
     state: &BrowserState,
@@ -140,6 +184,9 @@ pub(in crate::windows_app) unsafe extern "system" fn page_control_proc(
     _subclass_id: usize,
     control_id: usize,
 ) -> Lresult {
+    if message == WM_IME_STARTCOMPOSITION {
+        PAGE_IME_ACTIVE.with(|active| active.set(true));
+    }
     if matches!(message, WM_SETFOCUS | WM_KILLFOCUS) {
         let parent = GetParent(window);
         let next = wparam as Hwnd;
@@ -156,7 +203,39 @@ pub(in crate::windows_app) unsafe extern "system" fn page_control_proc(
             );
         }
     }
-    DefSubclassProc(window, message, wparam, lparam)
+    let intent = page_edit_intent(
+        message,
+        wparam,
+        PAGE_IME_ACTIVE.with(Cell::get),
+        KeyModifiers {
+            control: GetKeyState(VK_CONTROL) < 0,
+            shift: GetKeyState(VK_SHIFT) < 0,
+            alt: GetKeyState(VK_MENU) < 0,
+        },
+    );
+    let previous = PAGE_EDIT_INTENT.with(|current| current.replace(intent));
+    let selection = (intent != TextEditIntent::Unspecified)
+        .then(|| {
+            let (start, end) = edit_selection(window);
+            PageEditSelection {
+                window: window as usize,
+                start,
+                end,
+            }
+        })
+        .filter(|selection| {
+            selection.start <= selection.end
+                && selection.end as usize
+                    <= better_web_browser::limits::MAX_RENDERER_TEXT_INPUT_BYTES
+        });
+    let previous_selection = PAGE_EDIT_SELECTION.with(|current| current.replace(selection));
+    let result = DefSubclassProc(window, message, wparam, lparam);
+    PAGE_EDIT_SELECTION.with(|current| current.set(previous_selection));
+    PAGE_EDIT_INTENT.with(|current| current.set(previous));
+    if message == WM_IME_ENDCOMPOSITION {
+        PAGE_IME_ACTIVE.with(|active| active.set(false));
+    }
+    result
 }
 
 fn is_select_all_shortcut(key: usize, modifiers: KeyModifiers) -> bool {
@@ -170,6 +249,47 @@ fn is_diagnostics_shortcut(message: u32, key: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_edit_intent_only_claims_ordinary_non_ime_typing_and_deletion() {
+        let plain = KeyModifiers::default();
+        assert_eq!(
+            page_edit_intent(WM_CHAR, 'a' as usize, false, plain),
+            TextEditIntent::InsertText
+        );
+        assert_eq!(
+            page_edit_intent(WM_CHAR, 8, false, plain),
+            TextEditIntent::DeleteContentBackward
+        );
+        assert_eq!(
+            page_edit_intent(WM_KEYDOWN, VK_DELETE, false, plain),
+            TextEditIntent::DeleteContentForward
+        );
+        assert_eq!(
+            page_edit_intent(WM_CHAR, 'a' as usize, true, plain),
+            TextEditIntent::Unspecified
+        );
+        assert_eq!(
+            page_edit_intent(0x0302, 0, false, plain),
+            TextEditIntent::Unspecified
+        );
+        assert_eq!(
+            page_edit_intent(WM_CHAR, 127, false, plain),
+            TextEditIntent::Unspecified
+        );
+        assert_eq!(
+            page_edit_intent(
+                WM_KEYDOWN,
+                VK_DELETE,
+                false,
+                KeyModifiers {
+                    control: true,
+                    ..plain
+                }
+            ),
+            TextEditIntent::Unspecified
+        );
+    }
 
     #[test]
     fn address_select_all_does_not_shadow_tab_search() {

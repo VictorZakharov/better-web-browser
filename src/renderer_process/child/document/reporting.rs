@@ -112,17 +112,23 @@ pub(super) fn runtime_report(
                     url,
                     replace,
                     state,
+                    scroll_y,
                 } => HistoryAction::Update {
                     url,
                     replace,
                     state,
+                    scroll_y,
                 },
                 crate::engine::script::ScriptHistoryAction::Traverse { delta } => {
                     HistoryAction::Traverse { delta }
                 }
+                crate::engine::script::ScriptHistoryAction::SetScrollRestoration { mode } => {
+                    HistoryAction::SetScrollRestoration { mode }
+                }
             })
             .collect(),
         history_traversal_ack: None,
+        native_text_rejection: None,
         cookie_updates: outcome.cookie_updates,
         runtime_active,
         runtime_stopped: outcome.runtime_stopped,

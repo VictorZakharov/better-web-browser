@@ -59,6 +59,8 @@
     let repairDetachedFocus = () => {};
     let queuePolicyViolation = () => {};
     let resetAttributeNameMode = () => {};
+    let transitionBeforeAttributeChange = () => null;
+    let transitionAfterAttributeChange = () => {};
     let invalidateMutationAncestors = () => {};
     let replaceElementInnerHtml = () => {};
     let constructCustomElement = () => { throw new TypeError('Illegal constructor'); };

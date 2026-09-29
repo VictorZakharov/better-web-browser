@@ -349,6 +349,8 @@
             finishCheckableActivation(activation, event);
             activateLabel(target, event);
             activateNavigation(target, event);
+            activatePopoverTarget(target, event);
+            popoverPointerEvent(target, event);
             return !event.defaultPrevented;
         }
     }

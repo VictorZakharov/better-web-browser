@@ -99,6 +99,18 @@ pub(super) unsafe fn set_window_text(window: Hwnd, text: &str) {
     SetWindowTextW(window, text.as_ptr());
 }
 
+pub(super) unsafe fn edit_selection(window: Hwnd) -> (u32, u32) {
+    let mut start = 0_u32;
+    let mut end = 0_u32;
+    SendMessageW(
+        window,
+        EM_GETSEL,
+        (&mut start as *mut u32) as usize,
+        (&mut end as *mut u32) as isize,
+    );
+    (start, end)
+}
+
 pub(super) fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(Some(0)).collect()
 }

@@ -56,11 +56,79 @@ fn permission_query_is_async_browser_authoritative_and_changes_live() {
 }
 
 #[test]
+fn clipboard_queries_are_browser_owned_and_gesture_free_write_stays_denied() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><script>
+            navigator.permissions.query({name:'clipboard-read'}).then(status => {
+                document.body.setAttribute('data-read', status.state);
+                status.onchange = () => document.body.setAttribute('data-read-change', status.state);
+            });
+            navigator.permissions.query({name:'clipboard-write'}).then(status => {
+                document.body.setAttribute('data-write', status.state);
+                status.addEventListener('change', event => {
+                    document.body.setAttribute('data-write-change', status.state);
+                    document.body.setAttribute('data-write-trusted', String(event.isTrusted));
+                });
+            });
+            navigator.permissions.query({name:'clipboard-write', allowWithoutGesture:true})
+                .then(status => document.body.setAttribute('data-strong', status.state));
+        </script></body>"#,
+        true,
+    );
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let initial = runtime.execute_initial(&script_inputs(&dom));
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert_eq!(initial.permission_actions.len(), 2);
+    assert_eq!(
+        initial.permission_actions[0].name,
+        PermissionName::ClipboardRead
+    );
+    assert_eq!(
+        initial.permission_actions[1].name,
+        PermissionName::ClipboardWrite
+    );
+    let body = dom.elements_named("body").next().unwrap();
+    assert_eq!(body.attr("data-read"), None);
+    assert_eq!(body.attr("data-write"), None);
+    assert_eq!(body.attr("data-strong").as_deref(), Some("denied"));
+    for (request, state) in initial
+        .permission_actions
+        .iter()
+        .zip([PermissionState::Prompt, PermissionState::Denied])
+    {
+        let settled = runtime.deliver_permission_update(PermissionUpdate {
+            document: DocumentId::new(1).unwrap(),
+            request_id: request.request_id,
+            name: request.name,
+            state,
+            rejected: false,
+        });
+        assert!(settled.errors.is_empty(), "{:?}", settled.errors);
+    }
+    assert_eq!(body.attr("data-read").as_deref(), Some("prompt"));
+    assert_eq!(body.attr("data-write").as_deref(), Some("denied"));
+    for request in &initial.permission_actions {
+        let changed = runtime.deliver_permission_update(PermissionUpdate {
+            document: DocumentId::new(1).unwrap(),
+            request_id: request.request_id,
+            name: request.name,
+            state: PermissionState::Granted,
+            rejected: false,
+        });
+        assert!(changed.errors.is_empty(), "{:?}", changed.errors);
+    }
+    assert_eq!(body.attr("data-read-change").as_deref(), Some("granted"));
+    assert_eq!(body.attr("data-write-change").as_deref(), Some("granted"));
+    assert_eq!(body.attr("data-write-trusted").as_deref(), Some("true"));
+    assert_eq!(body.attr("data-strong").as_deref(), Some("denied"));
+}
+
+#[test]
 fn unsupported_and_malformed_permission_descriptors_reject_without_browser_request() {
     let dom = dom::parse_with_scripting(
         r#"<body><script>
             Promise.all([
-                navigator.permissions.query({name:'clipboard-read'}),
+                navigator.permissions.query({name:'screen-wake-lock'}),
                 navigator.permissions.query({name:'not-a-permission'}),
                 navigator.permissions.query(null),
             ].map(promise => promise.then(() => 'accepted', error => error.name)))

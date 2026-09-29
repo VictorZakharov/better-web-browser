@@ -48,19 +48,29 @@
         get placeholder() { return this.getAttribute('placeholder') || ''; }
         set placeholder(value) { this.setAttribute('placeholder', value); }
         get form() { return associatedForm(this); }
-        get selectionStart() { return this.__selectionStart ?? 0; }
-        set selectionStart(value) { this.__selectionStart = Math.max(0, Number(value) || 0); }
-        get selectionEnd() { return this.__selectionEnd ?? this.value.length; }
-        set selectionEnd(value) { this.__selectionEnd = Math.max(0, Number(value) || 0); }
+        get selectionStart() { return Math.min(this.__selectionStart ?? 0, this.value.length); }
+        set selectionStart(value) {
+            this.setSelectionRange(value, this.selectionEnd, this.selectionDirection);
+        }
+        get selectionEnd() { return Math.min(this.__selectionEnd ?? this.value.length, this.value.length); }
+        set selectionEnd(value) {
+            this.setSelectionRange(this.selectionStart, value, this.selectionDirection);
+        }
         get selectionDirection() { return this.__selectionDirection || 'none'; }
         set selectionDirection(value) {
-            value = String(value);
-            this.__selectionDirection = value === 'forward' || value === 'backward' ? value : 'none';
+            this.setSelectionRange(this.selectionStart, this.selectionEnd, value);
         }
         setSelectionRange(start, end, direction = 'none') {
-            this.selectionStart = start;
-            this.selectionEnd = Math.max(this.selectionStart, Number(end) || 0);
-            this.selectionDirection = direction;
+            // HTML text-control selection offsets are UTF-16 code units. Values
+            // past the relevant value's end clamp there, including Infinity.
+            const length = this.value.length;
+            const offset = value => Math.min(length, Math.max(0, Math.trunc(Number(value) || 0)));
+            const selectedEnd = offset(end);
+            this.__selectionStart = Math.min(offset(start), selectedEnd);
+            this.__selectionEnd = selectedEnd;
+            direction = String(direction);
+            this.__selectionDirection = direction === 'forward' || direction === 'backward'
+                ? direction : 'none';
         }
         select() { this.setSelectionRange(0, this.value.length); }
         get list() {

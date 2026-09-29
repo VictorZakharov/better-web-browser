@@ -72,6 +72,50 @@ fn constructor_strings_and_base_urls_inherit_only_less_specific_components() {
 }
 
 #[test]
+fn non_special_constructor_strings_match_opaque_paths_without_an_authority() {
+    check(
+        r#"
+        const assert = (condition, message) => { if (!condition) throw Error(message); };
+        const mail = new URLPattern('mailto:alice@example.com?subject=:topic#read');
+        assert(mail.protocol === 'mailto' && mail.hostname === '' && mail.port === '',
+            'non-special shorthand has an empty authority');
+        assert(mail.pathname === 'alice@example.com' && mail.search === 'subject=:topic' &&
+            mail.hash === 'read', 'opaque path, query, and fragment stay distinct');
+        const result = mail.exec('mailto:alice@example.com?subject=hello#read');
+        assert(result?.search.groups.topic === 'hello', 'opaque URL query capture');
+        assert(!mail.test('mailto:bob@example.com?subject=hello#read'), 'opaque path mismatch');
+        assert(!mail.test('mailto:alice@example.com?subject=hello#other'), 'fragment mismatch');
+
+        const withBase = new URLPattern('mailto:alice@example.com',
+            'https://unrelated.example/path');
+        assert(withBase.hostname === '' && withBase.pathname === 'alice@example.com' &&
+            withBase.test('mailto:alice@example.com?any#suffix'),
+            'absolute opaque shorthand does not inherit its base URL');
+        const empty = new URLPattern('about:');
+        assert(empty.pathname === '' && empty.test('about:') &&
+            !empty.test('about:blank'), 'explicit empty opaque path is not a wildcard');
+        const about = new URLPattern('about:blank');
+        assert(about.test('about:blank') && !about.test('about:srcdoc'),
+            'ordinary opaque path');
+
+        const dots = new URLPattern('example:a/../b');
+        assert(dots.pathname === 'a/../b' && dots.test('example:a/../b') &&
+            !dots.test('example:b'), 'opaque dot segments are not collapsed');
+        const dictionary = new URLPattern({protocol: 'example', hostname: '',
+            pathname: 'a/../b'});
+        assert(dictionary.pathname === dots.pathname &&
+            dictionary.test({protocol: 'example', hostname: '', pathname: 'a/../b'}),
+            'dictionary path uses the same opaque canonicalization');
+        const encoded = new URLPattern('data:text/plain,hello world');
+        assert(encoded.pathname === 'text/plain,hello world' &&
+            encoded.test('data:text/plain,hello world') &&
+            !encoded.test('data:text/plain,hello%20world'),
+            'opaque URL path preserves a literal space distinct from percent encoding');
+    "#,
+    );
+}
+
+#[test]
 fn escaped_literals_optional_segments_and_case_options_are_real_matches() {
     check(
         r#"

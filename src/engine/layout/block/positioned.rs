@@ -237,3 +237,26 @@ pub(super) fn bottom_alignment_shift(
         0.0
     }
 }
+
+pub(super) fn popover_center_shift(
+    node: &NodeRef,
+    style: &ComputedStyle,
+    containing_height: f32,
+    border_box_height: f32,
+) -> f32 {
+    if !node.is_popover_open()
+        || style.position != Position::Fixed
+        || style.margin.top != Length::Auto
+        || style.margin.bottom != Length::Auto
+    {
+        return 0.0;
+    }
+    let (Some(top), Some(bottom)) = (
+        style.top.resolve(containing_height, style.font_size),
+        style.bottom.resolve(containing_height, style.font_size),
+    ) else {
+        return 0.0;
+    };
+    // CSS positioned layout splits positive free space between automatic margins.
+    (containing_height - top - bottom - border_box_height).max(0.0) / 2.0
+}

@@ -31,6 +31,7 @@ fn detailed_report() -> RuntimeReport {
                 url: "https://example.test/state".into(),
                 replace: true,
                 state: Some("{\"value\":1}".into()),
+                scroll_y: 40.5,
             },
             HistoryAction::Traverse { delta: -1 },
         ],
@@ -98,6 +99,7 @@ fn every_edge_vector_keeps_original_reports_when_its_count_limit_would_be_crosse
                             url,
                             replace: false,
                             state: None,
+                            scroll_y: 0.0,
                         })
                         .collect()
                 }

@@ -2,12 +2,15 @@
 
 mod dispatch;
 pub(in crate::windows_app) mod native;
+mod policy;
 #[cfg(test)]
 mod tests;
 
 use super::tabs::TabId;
 use better_web_browser::renderer_protocol::DocumentId;
 use std::collections::HashSet;
+
+pub(super) use policy::screen_wake_lock_allowed;
 
 const MAX_ACTIVE_LOCKS: usize = 64;
 const MAX_LOCKS_PER_TAB: usize = 16;

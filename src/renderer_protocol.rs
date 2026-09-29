@@ -65,8 +65,8 @@ pub use accessibility::{
 };
 pub use codec::{FrameReader, FrameWriter, ProtocolError};
 pub use document::{
-    DocumentId, DocumentStart, PresentedViewport, StreamingTransferAssembler, TransferAssembler,
-    TransferChunk,
+    DocumentId, DocumentStart, PresentedViewport, ScrollRestorationMode,
+    StreamingTransferAssembler, TransferAssembler, TransferChunk,
 };
 pub use fetch::{
     BrowserFetchError, BrowserFetchErrorKind, BrowserFetchResponse, FetchCache, FetchCredentials,
@@ -77,10 +77,10 @@ pub use fetch::{
 pub use input::{
     DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, FullscreenAction,
     FullscreenDisposition, FullscreenRequest, FullscreenResponse, HistoryTraversalInput,
-    InputModifiers, KeyPhase, KeyboardInput, LifecycleInput, NavigationCause,
+    InputModifiers, KeyPhase, KeyboardInput, LifecycleInput, NativeTextInput, NavigationCause,
     NavigationDisposition, PointerButton, PointerCursor, PointerCursorResult, PointerInput,
     PointerLockDisposition, PointerLockRequest, PointerLockResponse, PointerPhase,
-    PresentationAcknowledgement, ScrollInput, TextInput, WheelInput,
+    PresentationAcknowledgement, ScrollInput, TextEditIntent, TextInput, WheelInput,
 };
 pub use message::{
     BrowserMessage, BrowsingContextId, ContainmentReport, Nonce,
@@ -90,7 +90,7 @@ pub use message::{
 };
 pub use presentation::{
     AttributeDiagnostics, CustomPropertyDiagnostics, HistoryAction, MediaRuntimeReport,
-    NodeDiagnostics, NodeIdentityDiagnostics, PageDiagnostics, PageLoadReport,
+    NativeTextRejection, NodeDiagnostics, NodeIdentityDiagnostics, PageDiagnostics, PageLoadReport,
     PresentedGlyphRaster, PresentedImage, PresentedLayout, RendererPresentation,
     RendererRuntimeUpdate, ResourceDiagnostics, RuntimeReport, SelectorDiagnostics,
     ShadowRootDiagnostics, StyleDiagnostics, StyleReport,

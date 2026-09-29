@@ -109,6 +109,7 @@ pub(super) struct DocumentRuntime {
     scroll_drag: Option<(crate::engine::dom::NodeId, bool, f32, f32)>,
     scriptless_pointer_path: Vec<crate::engine::dom::NodeRef>,
     last_input_sequence: u64,
+    native_text_generation: u32,
     last_acknowledged_revision: u64,
     revision: u64,
     sent_images: HashSet<String>,

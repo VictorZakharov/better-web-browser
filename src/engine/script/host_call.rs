@@ -18,6 +18,7 @@ mod module_completion;
 pub(super) mod navigation;
 pub(in crate::engine::script) mod notification;
 pub(in crate::engine::script) mod permission;
+mod popover;
 mod protocol_handler;
 pub(in crate::engine::script) mod sensor;
 pub(in crate::engine::script) mod speech;
@@ -61,6 +62,9 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     if let Some(value) = protocol_handler::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = popover::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = clipboard::dispatch(operation, args, state)? {

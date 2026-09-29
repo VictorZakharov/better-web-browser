@@ -121,6 +121,7 @@ impl BrowserState {
                 return;
             }
         };
+        let page_scale = self.page_scale().max(f32::EPSILON);
         let is_active = self.tabs.active_id() == id && !self.processing_background_tab;
         if is_active {
             self.exit_pointer_lock();
@@ -160,6 +161,8 @@ impl BrowserState {
                 _ => tab.navigation.begin(),
             };
             tab.renderer_input_sequence = 0;
+            tab.native_text_generation = 0;
+            tab.suppress_page_control_edit = false;
             tab.pointer_cursor_request = None;
             tab.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
             tab.renderer_input_poll_budget = 0;
@@ -180,6 +183,12 @@ impl BrowserState {
             // The renderer is replaced for every full navigation. No older entry can retain
             // an identity that would authorize a same-document traversal into that process.
             tab.retire_history_documents();
+            if !matches!(history_mode, HistoryMode::Existing) {
+                let outgoing_y = tab.scroll_y.max(0) as f32 / page_scale;
+                if let Some(entry) = tab.history.get_mut(tab.history_index) {
+                    entry.scroll_y = Some(outgoing_y);
+                }
+            }
             match history_mode {
                 HistoryMode::Push | HistoryMode::ScriptPush => {
                     if matches!(history_mode, HistoryMode::Push) {
@@ -201,6 +210,15 @@ impl BrowserState {
                     tab.replace_current_history_url(url.clone());
                 }
             }
+            tab.pending_history_scroll_y =
+                matches!(history_mode, HistoryMode::Existing | HistoryMode::Recovery)
+                    .then(|| tab.history.get(tab.history_index))
+                    .flatten()
+                    .filter(|entry| {
+                        entry.scroll_restoration
+                            == better_web_browser::renderer_protocol::ScrollRestorationMode::Auto
+                    })
+                    .and_then(|entry| entry.scroll_y);
             tab.crashed = false;
             tab.omnibox_text.clone_from(&url);
             tab.title.clone_from(&url);
@@ -293,6 +311,8 @@ impl BrowserState {
                             )
                             .map_err(|error| error.to_string())?,
                         );
+                        let screen_wake_lock_allowed =
+                            super::wake_lock::screen_wake_lock_allowed(&response.headers);
                         if !post(Ok(super::document_activation::NavigationResult::Headers(
                             LoadedPage {
                                 stream: Some(stream.clone()),
@@ -302,6 +322,7 @@ impl BrowserState {
                                 status,
                                 content_type,
                                 policy,
+                                screen_wake_lock_allowed,
                                 bytes: 0,
                                 network_time,
                             },

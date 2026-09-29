@@ -255,6 +255,7 @@ fn parse_compound_selector_with_depth(
                         "read-write" => compound.requires_read_write = true,
                         "read-only" => compound.requires_read_only = true,
                         "fullscreen" => compound.requires_fullscreen = true,
+                        "popover-open" => compound.requires_popover_open = true,
                         "hover" => compound.requires_hover = true,
                         "focus" => compound.requires_focus = true,
                         "focus-within" => compound.requires_focus_within = true,

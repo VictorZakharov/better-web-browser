@@ -30,7 +30,8 @@
     const isInertOrHiddenForFocus = element => {
         for (let node = element; node; node = focusTreeParent(node)) {
             if (node instanceof Element &&
-                (node.hasAttribute('inert') || node.hasAttribute('hidden'))) return true;
+                (node.hasAttribute('inert') || node.hasAttribute('hidden') ||
+                    (node.hasAttribute('popover') && !node.matches(':popover-open')))) return true;
         }
         return false;
     };

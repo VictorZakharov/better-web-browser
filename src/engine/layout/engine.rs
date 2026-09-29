@@ -2,6 +2,7 @@ use super::*;
 mod block_measure;
 pub(super) mod box_tree;
 mod intrinsic_widths;
+mod popover;
 
 #[cfg(test)]
 mod fullscreen;
@@ -204,6 +205,15 @@ fn layout_page_for_output<M: TextMeasurer>(
         .max(engine.scrollable_overflow_bottom(&root))
         .max(viewport_height);
     block::paint_order::finalize(&mut engine.output);
+    popover::append_top_layer(
+        page,
+        styles,
+        &mut engine.output,
+        viewport_width,
+        viewport_height,
+        &mut *engine.measurer,
+        emit_paint,
+    );
     if emit_paint {
         // Text display items retain text-node IDs, so resolve their inherited
         // eligibility alongside element IDs in one ancestor-first DOM walk.

@@ -126,8 +126,11 @@
         setAttributeNS(namespace, qualifiedName, value) {
             const extracted = validateAndExtractAttributeName(namespace, qualifiedName);
             value = String(value);
+            const transitionBefore = extracted.namespace === null ?
+                transitionBeforeAttributeChange(this, extracted.localName, value) : null;
             const record = host('attrSetNs', nodeId(this), extracted.namespace || '',
                 extracted.prefix || '', extracted.localName, value);
+            transitionAfterAttributeChange(this, transitionBefore);
             const oldValue = record?.value ?? null;
             const current = record ? { ...record, value } : { ...extracted, value };
             if (this.localName === 'img' && current.namespace === null &&
@@ -139,8 +142,10 @@
         }
         removeAttribute(name) {
             name = normalizedQualifiedName(this, name);
+            const transitionBefore = transitionBeforeAttributeChange(this, name);
             const record = host('attrRemove', nodeId(this), name);
             if (!record) return;
+            transitionAfterAttributeChange(this, transitionBefore);
             if (this.localName === 'img' &&
                 (record.localName === 'src' || record.localName === 'srcset'))
                 resetImageElementState(this);
@@ -152,8 +157,11 @@
         removeAttributeNS(namespace, localName) {
             namespace = normalizedNamespace(namespace);
             localName = String(localName);
+            const transitionBefore = namespace === null ?
+                transitionBeforeAttributeChange(this, localName) : null;
             const record = host('attrRemoveNs', nodeId(this), namespace || '', localName);
             if (!record) return;
+            transitionAfterAttributeChange(this, transitionBefore);
             if (this.localName === 'img' && record.namespace === null &&
                 (record.localName === 'src' || record.localName === 'srcset'))
                 resetImageElementState(this);

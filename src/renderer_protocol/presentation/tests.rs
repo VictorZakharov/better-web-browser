@@ -1,5 +1,6 @@
 use super::*;
 mod borders;
+mod native_text;
 mod navigation;
 mod sticky;
 use crate::document::Document;

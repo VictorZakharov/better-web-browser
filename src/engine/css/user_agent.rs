@@ -60,6 +60,26 @@ pub(super) fn apply_user_agent_defaults(
         return;
     };
     style.display = user_agent_display(tag);
+    if node.namespace_uri() == Some("http://www.w3.org/1999/xhtml")
+        && node.attr("popover").is_some()
+    {
+        // HTML rendering's popover UA rules participate below the author origin.
+        // https://html.spec.whatwg.org/multipage/rendering.html#flow-content-3
+        if node.is_popover_open() {
+            style.position = Position::Fixed;
+            style.top = Length::Px(0.0);
+            style.right = Length::Px(0.0);
+            style.bottom = Length::Px(0.0);
+            style.left = Length::Px(0.0);
+            style.margin = uniform_edges(Length::Auto);
+            style.background_color = Color::WHITE;
+            style.border_width = uniform_edges(Length::Px(2.0));
+            style.border_colors = [Some(Color::BLACK); 4];
+            style.padding = uniform_edges(Length::Em(0.25));
+        } else if !(tag == "dialog" && node.attr("open").is_some()) {
+            style.display = Display::None;
+        }
+    }
     // HTML's UA rules, not an inherited CSS property: row groups start in the
     // middle and rows/cells inherit their parent's alignment below author rules.
     // https://html.spec.whatwg.org/multipage/rendering.html#tables

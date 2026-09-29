@@ -5,12 +5,15 @@
             super();
             if (token !== audioContextToken) throw new TypeError('Illegal constructor');
             audioContextState.set(this, { channels, length, sampleRate, time: 0,
-                state: 'suspended', nodes: new Set(), connections: 0,
+                state: 'suspended', nodes: new Set(), panners: new Set(),
+                connections: 0,
                 renderStarted: false, onstatechange: null, oncomplete: null,
                 suspensions: new Map(), advance: null, delayBytes: 0,
                 sourceSnapshotBytes: 0, automationCurveBytes: 0 });
             Object.defineProperty(this, 'destination', { enumerable: true,
                 value: new AudioDestinationNode(audioNodeToken, this) });
+            Object.defineProperty(this, 'listener', { enumerable: true,
+                value: new AudioListener(audioListenerToken, this) });
         }
         get sampleRate() { return audioContextState.get(this).sampleRate; }
         get currentTime() { return audioContextState.get(this).time; }
@@ -30,6 +33,7 @@
         createBufferSource() { return new AudioBufferSourceNode(this); }
         createConstantSource() { return new ConstantSourceNode(this); }
         createStereoPanner() { return new StereoPannerNode(this); }
+        createPanner() { return new PannerNode(this); }
         createDelay(maxDelayTime = 1) { return new DelayNode(this, { maxDelayTime }); }
         createChannelSplitter(numberOfOutputs = 6) {
             return new ChannelSplitterNode(this, { numberOfOutputs });
@@ -109,6 +113,7 @@
             if ((node instanceof AudioScheduledSourceNode || node instanceof DelayNode ||
                 node instanceof IIRFilterNode || node instanceof BiquadFilterNode ||
                 node instanceof DynamicsCompressorNode || node instanceof ConvolverNode ||
+                node instanceof WaveShaperNode ||
                 node instanceof AnalyserNode) && !cache.has(node))
                 renderAudioNode(context, node, frame, frames, cache);
         return samples;

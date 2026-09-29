@@ -59,6 +59,7 @@ fn clone_in(identity: Rc<NodeIdAllocator>, source: &NodeRef, deep: bool) -> Node
             mathml_annotation_xml_integration_point: element
                 .mathml_annotation_xml_integration_point,
             fullscreen: std::cell::Cell::new(false),
+            popover_order: std::cell::Cell::new(0),
             hovered: std::cell::Cell::new(false),
             focused: std::cell::Cell::new(false),
             focus_within: std::cell::Cell::new(false),

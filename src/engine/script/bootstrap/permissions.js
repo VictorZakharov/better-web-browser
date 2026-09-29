@@ -9,7 +9,7 @@
     const statuses = new Map();
     const slots = new WeakMap();
     const names = new Set([
-        'notifications', 'geolocation', 'accelerometer',
+        'notifications', 'geolocation', 'clipboard-read', 'clipboard-write', 'accelerometer',
         'gyroscope', 'magnetometer', 'ambient-light-sensor'
     ]);
     const keyFor = name => name;
@@ -54,6 +54,10 @@
                 // each perform their own WebIDL dictionary conversion.
                 const name = descriptorName(descriptor.name);
                 if (!names.has(name)) throw new TypeError('Unsupported permission name');
+                // Breeze never allows clipboard writes without activation, even
+                // after session consent. This stronger W3C descriptor stays denied.
+                if (name === 'clipboard-write' && Boolean(descriptor.allowWithoutGesture))
+                    return Promise.resolve(new PermissionStatus(token, name, 'denied'));
                 return new Promise((resolve, reject) => {
                     try {
                         const id = Number(host('permissionQuery', name));

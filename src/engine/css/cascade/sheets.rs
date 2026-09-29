@@ -11,6 +11,7 @@ mod parsed;
 #[cfg(test)]
 mod rebuild_tests;
 mod registry;
+mod transitions;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct SheetInput {
@@ -26,6 +27,7 @@ struct SheetInput {
 #[derive(Debug, Default)]
 pub(super) struct CompiledRules {
     pub(super) rules: Vec<Rule>,
+    transition_rule_indices: Vec<usize>,
     pub(super) index: RuleIndex,
     inputs: Vec<Rc<SheetInput>>,
     parsed: Vec<Rc<parsed::ParsedSheet>>,
@@ -160,9 +162,11 @@ pub(super) fn collect(
         .iter()
         .find(|set| set.environment == Some(environment));
     let (rules, parsed) = parsed::assemble(&mut inputs, environment, previous.map(Rc::as_ref));
+    let transition_rule_indices = transitions::rule_indices(&rules);
     let compiled = Rc::new(CompiledRules {
         index: RuleIndex::new(&rules),
         rules,
+        transition_rule_indices,
         inputs,
         parsed,
         environment: Some(environment),

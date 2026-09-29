@@ -53,6 +53,7 @@ impl DocumentRuntime {
                                 url: url.clone(),
                                 replace: false,
                                 state: None,
+                                scroll_y: self.page.dom.document.scroll_offset.get().1.max(0.0),
                             },
                         );
                     }

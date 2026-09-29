@@ -3,6 +3,7 @@
 use super::BrowserTab;
 use better_web_browser::limits::MAX_SESSION_HISTORY_ENTRIES;
 use better_web_browser::renderer_protocol::DocumentId;
+use better_web_browser::renderer_protocol::ScrollRestorationMode;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -11,12 +12,15 @@ static NEXT_HISTORY_DOCUMENT_GROUP: AtomicU64 = AtomicU64::new(1);
 /// One session-history entry. `document` identifies only a currently live renderer document;
 /// `group` preserves the shared document state after that renderer has been retired.
 /// See HTML Standard §7.4.1.2, where pushState entries share their document state.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(in crate::windows_app) struct HistoryEntry {
     pub(in crate::windows_app) url: String,
     pub(in crate::windows_app) document: Option<DocumentId>,
     pub(in crate::windows_app) group: HistoryDocumentGroup,
     pub(in crate::windows_app) state: Option<String>,
+    pub(in crate::windows_app) scroll_restoration: ScrollRestorationMode,
+    /// Last viewport Y in CSS pixels, saved separately for each session-history entry.
+    pub(in crate::windows_app) scroll_y: Option<f32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,6 +52,8 @@ impl HistoryEntry {
             document: None,
             group: HistoryDocumentGroup::new(),
             state: None,
+            scroll_restoration: ScrollRestorationMode::Auto,
+            scroll_y: None,
         }
     }
 
@@ -62,6 +68,8 @@ impl HistoryEntry {
             document: Some(document),
             group: current.group,
             state,
+            scroll_restoration: current.scroll_restoration,
+            scroll_y: current.scroll_y,
         }
     }
 }

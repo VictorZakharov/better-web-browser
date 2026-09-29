@@ -29,10 +29,11 @@ fn style_named_properties_do_not_claim_unknown_capabilities() {
         const element = document.createElement('div');
         for (const style of [element.style, document.styleSheets[0].cssRules[0].style]) {
             for (const name of ['breezeUnknownProperty', 'perspective', 'WebkitPerspective',
-                                'webkitPerspective', 'transition', 'filter']) {
+                                'webkitPerspective', 'filter']) {
                 checks.push(style[name] === undefined, !(name in style));
             }
-            for (const name of ['display', 'width', 'backgroundColor', 'background-color', 'cssFloat'])
+            for (const name of ['display', 'width', 'backgroundColor', 'background-color',
+                                'cssFloat', 'transition'])
                 checks.push(typeof style[name] === 'string', name in style);
             style.backgroundColor = 'blue';
             checks.push(style['background-color'] === 'blue',

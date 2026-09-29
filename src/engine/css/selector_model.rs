@@ -38,6 +38,7 @@ pub(super) struct CompoundSelector {
     pub(super) requires_read_write: bool,
     pub(super) requires_read_only: bool,
     pub(super) requires_fullscreen: bool,
+    pub(super) requires_popover_open: bool,
     pub(super) requires_hover: bool,
     pub(super) requires_focus: bool,
     pub(super) requires_focus_within: bool,

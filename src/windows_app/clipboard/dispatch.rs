@@ -83,6 +83,7 @@ impl BrowserState {
                 .clipboard
                 .borrow_mut()
                 .decide(owner.origin.clone(), access, accepted);
+            self.broadcast_permission_changes(&owner.origin.serialize());
             accepted
         };
         if !allowed || !self.request_is_current(tab_id, &request, session_id, &owner.origin) {

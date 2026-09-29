@@ -25,6 +25,8 @@ pub(super) fn dispatch(
     let name = match argument_string(args, 1)?.as_str() {
         "notifications" => PermissionName::Notifications,
         "geolocation" => PermissionName::Geolocation,
+        "clipboard-read" => PermissionName::ClipboardRead,
+        "clipboard-write" => PermissionName::ClipboardWrite,
         "accelerometer" => PermissionName::Accelerometer,
         "gyroscope" => PermissionName::Gyroscope,
         "magnetometer" => PermissionName::Magnetometer,

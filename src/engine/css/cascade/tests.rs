@@ -26,6 +26,20 @@ fn animation_origin_overrides_normal_author_but_not_important_author_style() {
 }
 
 #[test]
+fn sampled_transition_declaration_changes_the_same_computed_width_used_by_layout() {
+    let dom = dom::parse("<style>div {display:block;width:20px}</style><div></div>");
+    let target = dom.elements_named("div").next().unwrap();
+    let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
+    assert_eq!(styles.get(&target).width, Length::Px(20.0));
+    assert!(target.set_animation_style("width:60px"));
+    styles.refresh_subtrees(&dom.document, std::slice::from_ref(&target), &[]);
+    assert_eq!(styles.get(&target).width, Length::Px(60.0));
+    assert!(target.set_animation_style(""));
+    styles.refresh_subtrees(&dom.document, std::slice::from_ref(&target), &[]);
+    assert_eq!(styles.get(&target).width, Length::Px(20.0));
+}
+
+#[test]
 fn unmatched_pseudos_are_lazy_but_cssom_and_later_matches_remain_live() {
     let dom = dom::parse(
         "<style>p {color:red} p.active::before {content:attr(data-label);color:blue}</style><p data-label=first>text</p>",

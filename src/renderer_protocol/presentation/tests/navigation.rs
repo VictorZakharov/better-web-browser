@@ -31,6 +31,31 @@ fn history_traversal_ack_is_bounded_and_survives_wire_round_trip() {
 }
 
 #[test]
+fn history_update_scroll_snapshot_round_trips_and_rejects_invalid_offsets() {
+    let mut presentation = sample();
+    presentation.runtime.history_actions = vec![HistoryAction::Update {
+        url: "https://example.test/#step".into(),
+        replace: false,
+        state: None,
+        scroll_y: 120.25,
+    }];
+    let decoded = RendererPresentation::decode(&presentation.encode().unwrap()).unwrap();
+    assert_eq!(
+        decoded.runtime.history_actions,
+        presentation.runtime.history_actions
+    );
+    for invalid in [f32::NAN, f32::INFINITY, -1.0] {
+        presentation.runtime.history_actions = vec![HistoryAction::Update {
+            url: "https://example.test/#step".into(),
+            replace: false,
+            state: None,
+            scroll_y: invalid,
+        }];
+        assert!(presentation.encode().is_err());
+    }
+}
+
+#[test]
 fn navigation_payload_survives_wire_round_trip_and_unrelated_updates() {
     let mut presentation = sample();
     presentation.runtime = post().coalesce(RuntimeReport::default()).unwrap();

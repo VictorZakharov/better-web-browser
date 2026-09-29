@@ -138,9 +138,19 @@
         set value(value) {
             value = finiteFloat(value, 'AudioParam value');
             const state = audioParamState.get(this);
+            // Repeated immediate writes (for example, moving a spatial source
+            // every animation frame) must not exhaust the automation-event
+            // budget with set events that are all already in the past.
+            const now = state.context.currentTime;
+            if (state.events.length && state.events.every(event =>
+                event.type === 'set' && event.time <= now)) {
+                state.events = [];
+                state.checkpoints = [];
+                state.timelineDirty = false;
+            }
             state.intrinsic = value;
             scheduleAudioParamEvent(this,
-                { type: 'set', value, time: state.context.currentTime });
+                { type: 'set', value, time: now });
         }
         get automationRate() { return audioParamState.get(this).rate; }
         set automationRate(value) {

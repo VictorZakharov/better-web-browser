@@ -1,4 +1,35 @@
 use super::*;
+
+#[test]
+fn same_document_entries_inherit_restoration_mode_and_saved_viewport_position() {
+    use better_web_browser::renderer_protocol::ScrollRestorationMode;
+
+    let mut tab = BrowserTab::new(TabId::first());
+    assert_eq!(
+        tab.history[0].scroll_restoration,
+        ScrollRestorationMode::Auto
+    );
+    tab.history[0].scroll_restoration = ScrollRestorationMode::Manual;
+    tab.history[0].scroll_y = Some(237.6);
+    let next = HistoryEntry::same_document(
+        "https://example.test/#two".into(),
+        &tab.history[0],
+        DocumentId::new(7).unwrap(),
+        None,
+    );
+    assert_eq!(next.scroll_restoration, ScrollRestorationMode::Manual);
+    assert_eq!(next.scroll_y, Some(237.6));
+    tab.push_history_entry(next);
+    assert_eq!(tab.history[0].scroll_y, Some(237.6));
+    assert_eq!(
+        tab.history[1].scroll_restoration,
+        ScrollRestorationMode::Manual
+    );
+    assert_eq!(
+        HistoryEntry::new("https://example.test/other".into()).scroll_restoration,
+        ScrollRestorationMode::Auto
+    );
+}
 use better_web_browser::limits::MAX_SESSION_HISTORY_ENTRIES;
 
 #[test]

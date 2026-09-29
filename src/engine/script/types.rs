@@ -220,15 +220,20 @@ pub enum ScriptFontAction {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ScriptHistoryAction {
     Update {
         url: String,
         replace: bool,
         state: Option<String>,
+        /// Viewport offset when this action ran, before later script scrolls in the task.
+        scroll_y: f32,
     },
     Traverse {
         delta: i32,
+    },
+    SetScrollRestoration {
+        mode: crate::renderer_protocol::ScrollRestorationMode,
     },
 }
 
@@ -370,6 +375,14 @@ pub enum UserInputEvent {
         selection_start: u32,
         selection_end: u32,
     },
+    NativeText {
+        target: NodeRef,
+        value: String,
+        selection_start: u32,
+        selection_end: u32,
+        input_type: &'static str,
+        pre_selection: Option<(u32, u32)>,
+    },
     Focus {
         target: Option<NodeRef>,
         focused: bool,
@@ -435,6 +448,14 @@ pub enum UserInputEvent {
 pub struct UserInputResult {
     pub outcome: ScriptOutcome,
     pub default_allowed: bool,
+    pub rejected_text: Option<RejectedTextEdit>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RejectedTextEdit {
+    pub value: String,
+    pub selection_start: u32,
+    pub selection_end: u32,
 }
 
 pub(crate) fn is_classic_javascript_type(script_type: &str) -> bool {

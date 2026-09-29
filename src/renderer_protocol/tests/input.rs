@@ -52,6 +52,19 @@ fn document_input_and_presentation_acknowledgements_round_trip() {
             selection_start: 0,
             selection_end: 8,
         })),
+        BrowserMessage::Input(DocumentInput::NativeText(NativeTextInput {
+            text: TextInput {
+                document,
+                sequence: 8,
+                target,
+                value: "typed".into(),
+                selection_start: 5,
+                selection_end: 5,
+            },
+            generation: 2,
+            intent: TextEditIntent::InsertText,
+            pre_selection: Some((0, 0)),
+        })),
         BrowserMessage::Input(DocumentInput::Focus(FocusInput {
             document,
             sequence: 4,
@@ -76,6 +89,8 @@ fn document_input_and_presentation_acknowledgements_round_trip() {
             state: Some("{\"t\":\"null\"}".into()),
             history_length: 3,
             history_index: 1,
+            scroll_restoration: ScrollRestorationMode::Manual,
+            scroll_y: Some(123.5),
         })),
         BrowserMessage::PresentationAcknowledged(PresentationAcknowledgement {
             document,
@@ -164,6 +179,8 @@ fn document_input_rejects_stale_sequences_and_unbounded_values() {
             state: Some("x".repeat(crate::limits::MAX_HISTORY_STATE_BYTES + 1)),
             history_length: 1,
             history_index: 0,
+            scroll_restoration: ScrollRestorationMode::Auto,
+            scroll_y: None,
         },
         HistoryTraversalInput {
             document,
@@ -172,6 +189,18 @@ fn document_input_rejects_stale_sequences_and_unbounded_values() {
             state: None,
             history_length: 1,
             history_index: 1,
+            scroll_restoration: ScrollRestorationMode::Auto,
+            scroll_y: None,
+        },
+        HistoryTraversalInput {
+            document,
+            sequence: 1,
+            url: "https://example.test/".into(),
+            state: None,
+            history_length: 1,
+            history_index: 0,
+            scroll_restoration: ScrollRestorationMode::Auto,
+            scroll_y: Some(f32::NAN),
         },
     ] {
         let mut writer = FrameWriter::new(Vec::new(), session());
@@ -194,6 +223,57 @@ fn document_input_rejects_stale_sequences_and_unbounded_values() {
         Err(ProtocolError::InvalidPayload(
             "presentation acknowledgement"
         ))
+    ));
+}
+
+#[test]
+fn native_pre_edit_selection_is_independent_of_shorter_post_edit_value() {
+    let input = NativeTextInput {
+        text: TextInput {
+            document: DocumentId::new(3).unwrap(),
+            sequence: 1,
+            target: DocumentNodeId::new((3_u128 << 64) | 1).unwrap(),
+            value: "ab".into(),
+            selection_start: 2,
+            selection_end: 2,
+        },
+        generation: 4,
+        intent: TextEditIntent::DeleteContentBackward,
+        pre_selection: Some((3, 3)),
+    };
+    let message = BrowserMessage::Input(DocumentInput::NativeText(input.clone()));
+    let mut bytes = Vec::new();
+    FrameWriter::new(&mut bytes, session())
+        .send_browser(&message)
+        .unwrap();
+    assert_eq!(
+        FrameReader::new(Cursor::new(bytes), session())
+            .read_browser()
+            .unwrap(),
+        message
+    );
+
+    let mut invalid = input;
+    invalid.pre_selection = Some((3, 2));
+    assert!(matches!(
+        DocumentInput::NativeText(invalid).validate(),
+        Err(ProtocolError::InvalidPayload("native pre-edit selection"))
+    ));
+}
+
+#[test]
+fn scroll_restoration_mode_rejects_unknown_wire_tags() {
+    assert_eq!(
+        ScrollRestorationMode::from_wire_tag(0).unwrap(),
+        ScrollRestorationMode::Auto
+    );
+    assert_eq!(
+        ScrollRestorationMode::from_wire_tag(1).unwrap(),
+        ScrollRestorationMode::Manual
+    );
+    assert!(matches!(
+        ScrollRestorationMode::from_wire_tag(2),
+        Err(ProtocolError::InvalidPayload("scroll restoration mode"))
     ));
 }
 

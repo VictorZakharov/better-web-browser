@@ -28,13 +28,26 @@ impl BrowserState {
             if !self.navigation.owns_document(document) {
                 break;
             }
-            if let HistoryAction::Update {
-                url,
-                replace,
-                state,
-            } = action
-            {
-                self.apply_history_update(document, url, *replace, state.as_deref());
+            match action {
+                HistoryAction::Update {
+                    url,
+                    replace,
+                    state,
+                    scroll_y,
+                } => {
+                    self.apply_history_update(document, url, *replace, state.as_deref(), *scroll_y);
+                }
+                HistoryAction::SetScrollRestoration { mode } => {
+                    let index = self.history_index;
+                    if let Some(entry) = self.history.get_mut(index) {
+                        entry.scroll_restoration = *mode;
+                    }
+                    if *mode == better_web_browser::renderer_protocol::ScrollRestorationMode::Manual
+                    {
+                        self.pending_history_scroll_y = None;
+                    }
+                }
+                HistoryAction::Traverse { .. } => {}
             }
         }
     }
@@ -87,6 +100,7 @@ impl BrowserState {
         url: &str,
         replace: bool,
         state: Option<&str>,
+        scroll_y: f32,
     ) {
         let valid = self
             .current_url()
@@ -99,6 +113,7 @@ impl BrowserState {
             );
             return;
         }
+        self.save_active_history_scroll_at(scroll_y);
         let entry = HistoryEntry::same_document(
             url.to_owned(),
             &self.history[self.history_index],
@@ -125,6 +140,28 @@ impl BrowserState {
         );
     }
 
+    pub(in crate::windows_app) fn save_active_history_scroll(&mut self) {
+        // Parser scripts may pushState before the replacement document's first paint;
+        // the UI still has the outgoing document's scroll offset at that point.
+        let scroll_y = if self.renderer_revision == 0 {
+            0
+        } else {
+            self.scroll_y.max(0)
+        } as f32
+            / self.page_scale().max(f32::EPSILON);
+        self.save_active_history_scroll_at(scroll_y);
+    }
+
+    fn save_active_history_scroll_at(&mut self, scroll_y: f32) {
+        if !scroll_y.is_finite() || scroll_y < 0.0 {
+            return;
+        }
+        let index = self.history_index;
+        if let Some(entry) = self.history.get_mut(index) {
+            entry.scroll_y = Some(scroll_y);
+        }
+    }
+
     pub(in crate::windows_app) unsafe fn go_back(&mut self) {
         self.traverse_history(-1);
     }
@@ -135,7 +172,26 @@ impl BrowserState {
 
     pub(in crate::windows_app) unsafe fn reload(&mut self) {
         if let Some(url) = self.current_url().map(str::to_owned) {
+            self.save_active_history_scroll();
             self.begin_navigation(url, HistoryMode::Existing);
+        }
+    }
+
+    pub(in crate::windows_app) unsafe fn try_restore_history_scroll(&mut self) {
+        let Some(css_y) = self.pending_history_scroll_y else {
+            return;
+        };
+        if self.history.get(self.history_index).is_none_or(|entry| {
+            entry.scroll_restoration
+                != better_web_browser::renderer_protocol::ScrollRestorationMode::Auto
+        }) {
+            self.pending_history_scroll_y = None;
+            return;
+        }
+        let pixels = (css_y * self.page_scale()).round() as i32;
+        self.scroll_to(pixels);
+        if self.scroll_y >= pixels {
+            self.pending_history_scroll_y = None;
         }
     }
 
@@ -180,9 +236,12 @@ impl BrowserState {
                 state: target.state,
                 history_length: self.history.len() as u32,
                 history_index: target_index as u32,
+                scroll_restoration: target.scroll_restoration,
+                scroll_y: target.scroll_y,
             })) {
                 return TraversalResult::AdmissionFailed;
             }
+            self.save_active_history_scroll();
             self.history_traversals.in_flight = Some((document, sequence));
             self.history_index = target_index;
             self.set_history_url(&target.url);
@@ -190,6 +249,7 @@ impl BrowserState {
                 .record("history", format!("traverse same document: {}", target.url));
             TraversalResult::SameDocument
         } else {
+            self.save_active_history_scroll();
             self.history_index = target_index;
             self.begin_navigation(target.url, HistoryMode::Existing);
             TraversalResult::NewDocument

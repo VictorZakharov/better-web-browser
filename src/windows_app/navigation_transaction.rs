@@ -220,6 +220,7 @@ mod tests {
             status: 200,
             content_type: "text/html".into(),
             policy: Default::default(),
+            screen_wake_lock_allowed: true,
             bytes: 4,
             network_time: Duration::ZERO,
         }

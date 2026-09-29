@@ -1,7 +1,9 @@
 //! Renderer-owned hit testing, DOM event dispatch, default actions, and input sequencing.
 
 mod default_actions;
+mod history;
 mod hit_testing;
+mod native_text;
 mod pointer;
 mod rendering;
 mod scrolling;
@@ -11,9 +13,9 @@ use super::*;
 use crate::engine::dom::{NodeId, NodeRef};
 use crate::engine::{ControlKind, ControlSpec, DisplayItem, UserInputEvent, UserInputModifiers};
 use crate::renderer_protocol::{
-    DocumentInput, DocumentLifecycle, DocumentNodeId, InputModifiers, KeyPhase,
-    NavigationDisposition, PointerButton, PointerCursor, PointerCursorResult, PointerInput,
-    PointerPhase, PresentationAcknowledgement,
+    DocumentInput, DocumentLifecycle, DocumentNodeId, InputModifiers, KeyPhase, NativeTextInput,
+    NativeTextRejection, NavigationDisposition, PointerButton, PointerCursor, PointerCursorResult,
+    PointerInput, PointerPhase, PresentationAcknowledgement,
 };
 
 pub(in crate::renderer_process::child) struct InteractionResult {
@@ -46,12 +48,14 @@ impl DocumentRuntime {
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_audio_activation(self.media_activation.allows(1_000));
         }
-        let force_accessibility_update =
-            matches!(&input, DocumentInput::Text(_) | DocumentInput::Focus(_))
-                || (matches!(&input, DocumentInput::Scroll(_))
-                    && !self.layout.sticky_offsets.is_empty());
+        let force_accessibility_update = matches!(
+            &input,
+            DocumentInput::Text(_) | DocumentInput::NativeText(_) | DocumentInput::Focus(_)
+        ) || (matches!(&input, DocumentInput::Scroll(_))
+            && !self.layout.sticky_offsets.is_empty());
         let mut cursor = None;
         let mut history_traversal_ack = None;
+        let mut native_text_rejection = None;
         let (mut outcome, navigation) = match input {
             DocumentInput::Wheel(input) => (self.wheel_input(input)?, None),
             DocumentInput::Pointer(input) => {
@@ -130,6 +134,17 @@ impl DocumentRuntime {
                 }
                 (result.outcome, None)
             }
+            DocumentInput::NativeText(input) => {
+                let Some((outcome, rejection)) = self.native_text_input(input)? else {
+                    return Ok(InteractionResult {
+                        presentation: None,
+                        navigation: None,
+                        cursor: None,
+                    });
+                };
+                native_text_rejection = rejection;
+                (outcome, None)
+            }
             DocumentInput::Focus(input) => {
                 if !input.focused {
                     self.pointer_down = [None; 3];
@@ -187,32 +202,7 @@ impl DocumentRuntime {
             }
             DocumentInput::History(input) => {
                 history_traversal_ack = Some(input.sequence);
-                let mut outcome = self
-                    .script_runtime
-                    .as_mut()
-                    .map(|runtime| {
-                        runtime.apply_history_traversal(
-                            &input.url,
-                            input.state.as_deref(),
-                            input.history_length,
-                            input.history_index,
-                        )
-                    })
-                    .unwrap_or_default();
-                self.page.source_url.clone_from(&input.url);
-                self.reader.source_url.clone_from(&input.url);
-                outcome.viewport_scroll_y = crate::engine::fragment_navigation::scroll_to_fragment(
-                    &self.page.dom.document,
-                    &input.url,
-                    &self.layout.node_bounds,
-                    &self.layout.scroll_boxes,
-                    self.layout.content_height - self.viewport.height,
-                );
-                if let Some(y) = outcome.viewport_scroll_y {
-                    self.page.dom.document.scroll_offset.set((0.0, y));
-                }
-                outcome.render_requested = true;
-                (outcome, None)
+                (self.apply_history_input(input), None)
             }
         };
         self.admit_user_input_outcome(&mut outcome, connection)?;
@@ -228,6 +218,9 @@ impl DocumentRuntime {
                 }
                 _ => return Err("history traversal produced no renderer report".into()),
             }
+        }
+        if let Some(rejection) = native_text_rejection {
+            native_text::attach_rejection(&mut presentation, rejection)?;
         }
         Ok(InteractionResult {
             presentation,

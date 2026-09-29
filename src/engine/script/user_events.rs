@@ -31,12 +31,52 @@ pub(super) fn dispatch(
             .errors
             .push(format!("Web Audio activation callback: {error}"));
     }
+    let native_text = matches!(event, UserInputEvent::NativeText { .. });
     let payload = payload(host, event);
-    let invocation = format!(
-        "document.__dispatchNativeInput({});",
+    let native_text_target = native_text
+        .then(|| payload.get("target").and_then(serde_json::Value::as_u64))
+        .flatten();
+    let call = format!(
+        "document.__dispatchNativeInput({})",
         serde_json::to_string(&payload).unwrap_or_else(|_| "null".into())
     );
+    let invocation = if native_text {
+        format!("JSON.stringify({call})")
+    } else {
+        call
+    };
+    let mut rejected_native_text = false;
     let default_allowed = match context.eval(Source::from_bytes(&invocation)) {
+        Ok(value) if native_text => {
+            let serialized = value
+                .to_string(context)
+                .map(|text| text.to_std_string_escaped());
+            match serialized
+                .ok()
+                .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            {
+                Some(serde_json::Value::Array(fields)) if fields.len() == 1 => {
+                    match fields[0].as_bool() {
+                        Some(allowed) => {
+                            rejected_native_text = !allowed;
+                            allowed
+                        }
+                        None => {
+                            outcome
+                                .errors
+                                .push("invalid native text dispatch verdict".into());
+                            false
+                        }
+                    }
+                }
+                _ => {
+                    outcome
+                        .errors
+                        .push("invalid native text dispatch verdict".into());
+                    false
+                }
+            }
+        }
         Ok(value) => value.to_boolean(),
         Err(error) => {
             outcome
@@ -51,6 +91,25 @@ pub(super) fn dispatch(
             .push(format!("dispatch trusted user input promise jobs: {error}"));
     }
     super::module_lifecycle::drain(context, host, &mut outcome);
+    // A canceled beforeinput may queue Promise jobs that write a different
+    // value/selection. Snapshot only after that checkpoint so the generation-
+    // scoped Win32 rollback uses the final renderer-owned DOM state.
+    let rejected_text = if rejected_native_text {
+        let snapshot = native_text_target
+            .ok_or_else(|| "native text target is missing".to_string())
+            .and_then(|target| native_text_rollback(context, target));
+        match snapshot {
+            Ok(snapshot) => Some(snapshot),
+            Err(error) => {
+                outcome
+                    .errors
+                    .push(format!("native text rollback snapshot: {error}"));
+                None
+            }
+        }
+    } else {
+        None
+    };
     if user_initiated && host.borrow().navigation_url.is_some() {
         host.borrow_mut().navigation_options.user_initiated = true;
     }
@@ -58,7 +117,43 @@ pub(super) fn dispatch(
     UserInputResult {
         outcome,
         default_allowed,
+        rejected_text,
     }
+}
+
+fn native_text_rollback(
+    context: &mut Context,
+    target: u64,
+) -> Result<super::types::RejectedTextEdit, String> {
+    let call = format!("JSON.stringify(document.__nativeTextSnapshot({target}))");
+    let serialized = context
+        .eval(Source::from_bytes(&call))
+        .map_err(|error| error.to_string())?
+        .to_string(context)
+        .map_err(|error| error.to_string())?
+        .to_std_string_escaped();
+    let fields: serde_json::Value =
+        serde_json::from_str(&serialized).map_err(|error| error.to_string())?;
+    let fields = fields.as_array().ok_or("snapshot is not an array")?;
+    if fields.len() != 3 {
+        return Err("snapshot field count is invalid".into());
+    }
+    let value = fields[0].as_str().ok_or("snapshot value is invalid")?;
+    let start = fields[1].as_u64().ok_or("snapshot start is invalid")?;
+    let end = fields[2].as_u64().ok_or("snapshot end is invalid")?;
+    let start = u32::try_from(start).map_err(|error| error.to_string())?;
+    let end = u32::try_from(end).map_err(|error| error.to_string())?;
+    if value.len() > crate::limits::MAX_RENDERER_TEXT_INPUT_BYTES
+        || start > end
+        || usize::try_from(end).unwrap_or(usize::MAX) > value.encode_utf16().count()
+    {
+        return Err("snapshot exceeds native text IPC bounds".into());
+    }
+    Ok(super::types::RejectedTextEdit {
+        value: value.to_owned(),
+        selection_start: start,
+        selection_end: end,
+    })
 }
 
 fn pointer_boundary(state: &mut HostState, target: Option<NodeRef>) -> serde_json::Value {
@@ -150,6 +245,20 @@ fn payload(host: &Rc<RefCell<HostState>>, event: UserInputEvent) -> serde_json::
         } => serde_json::json!({
             "kind": "text", "target": target(Some(node)), "value": value,
             "selectionStart": selection_start, "selectionEnd": selection_end
+        }),
+        UserInputEvent::NativeText {
+            target: node,
+            value,
+            selection_start,
+            selection_end,
+            input_type,
+            pre_selection,
+        } => serde_json::json!({
+            "kind": "nativeText", "target": target(Some(node)), "value": value,
+            "selectionStart": selection_start, "selectionEnd": selection_end,
+            "inputType": input_type,
+            "beforeSelectionStart": pre_selection.map(|(start, _)| start),
+            "beforeSelectionEnd": pre_selection.map(|(_, end)| end)
         }),
         UserInputEvent::Focus {
             target: node,

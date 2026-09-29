@@ -54,6 +54,9 @@ impl BrowserState {
         {
             return;
         }
+        if let Some(rejection) = &update.runtime.native_text_rejection {
+            self.apply_native_text_rejection(update.document, rejection);
+        }
         self.apply_script_viewport_scroll(update.runtime.viewport_scroll_y);
         self.queue_css_wheel_scroll(update.runtime.viewport_wheel_delta_y);
         self.schedule_script_runtime_wakeup();

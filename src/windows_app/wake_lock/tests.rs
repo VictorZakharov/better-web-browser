@@ -81,7 +81,7 @@ fn authority_requires_a_committed_top_level_fetch_client() {
     );
     assert!(registry.committed_root(first).is_err());
     registry
-        .install_root(first, "https://example.test/", Default::default())
+        .install_root(first, "https://example.test/", Default::default(), true)
         .unwrap();
     assert!(
         registry
@@ -95,7 +95,54 @@ fn authority_requires_a_committed_top_level_fetch_client() {
             DocumentId::new(72).unwrap(),
             "http://example.test/",
             Default::default(),
+            true,
         )
         .unwrap();
     assert!(registry.committed_root(first).is_err());
+}
+
+#[test]
+fn committed_response_policy_denies_native_wake_lock_admission() {
+    let registry = crate::windows_app::renderer_fetch::RendererFetchRegistry::default();
+    let document = DocumentId::new(73).unwrap();
+    let root = better_web_browser::fetch::RequestClient::default();
+    let mut headers = better_web_browser::fetch::HeaderList::new();
+    headers
+        .append("permissions-policy", "screen-wake-lock=()")
+        .unwrap();
+    registry
+        .install_root(
+            document,
+            "https://example.test/",
+            Default::default(),
+            screen_wake_lock_allowed(&headers),
+        )
+        .unwrap();
+    assert!(!dispatch::committed_client_allows_wake_lock(
+        &registry, document, root
+    ));
+    headers.remove("permissions-policy");
+    let next = DocumentId::new(74).unwrap();
+    registry
+        .install_root(
+            next,
+            "https://example.test/",
+            Default::default(),
+            screen_wake_lock_allowed(&headers),
+        )
+        .unwrap();
+    assert!(dispatch::committed_client_allows_wake_lock(
+        &registry, next, root
+    ));
+    assert!(!dispatch::committed_client_allows_wake_lock(
+        &registry, document, root
+    ));
+    assert!(!dispatch::committed_client_allows_wake_lock(
+        &registry,
+        next,
+        better_web_browser::fetch::RequestClient {
+            id: 1,
+            opaque: false
+        },
+    ));
 }

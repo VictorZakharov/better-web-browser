@@ -18,6 +18,18 @@ impl ScriptRuntime {
 }
 
 impl HostState {
+    pub(super) fn transition_rule_candidate(
+        &mut self,
+        node: &NodeRef,
+        name: &str,
+        next_value: &str,
+    ) -> bool {
+        let (version, styles) = self.take_computed_styles();
+        let possible = styles.may_transition_on_attribute(node, name, next_value);
+        self.computed_styles = Some((version, styles));
+        possible
+    }
+
     pub(super) fn invalidate_style_rules_for_mutation(
         &mut self,
         target: Option<&NodeRef>,
@@ -118,6 +130,25 @@ impl HostState {
         property: &str,
     ) -> Option<String> {
         self.computed_style_property_for(node, property, None)
+    }
+
+    pub(super) fn computed_style_properties(
+        &mut self,
+        node: &NodeRef,
+        properties: &[String],
+    ) -> Vec<String> {
+        let (version, mut styles) = self.take_computed_styles();
+        let values = styles.computed_style_for_node(node).map_or_else(
+            || vec![String::new(); properties.len()],
+            |style| {
+                properties
+                    .iter()
+                    .map(|property| resolved_property_value(style, property).unwrap_or_default())
+                    .collect()
+            },
+        );
+        self.computed_styles = Some((version, styles));
+        values
     }
 
     pub(super) fn computed_pseudo_style_property(

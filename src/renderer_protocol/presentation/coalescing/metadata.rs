@@ -11,6 +11,11 @@ pub(super) fn presentation_merge_is_bounded(
     previous: &RendererPresentation,
     next: &RendererPresentation,
 ) -> bool {
+    // A cancellation verdict must be installed against its own control snapshot;
+    // a later presentation may already contain script-written or new-generation text.
+    if previous.runtime.native_text_rejection.is_some() {
+        return false;
+    }
     resources::merged_bytes(previous, next)
         .zip(merged_runtime_bytes(&previous.runtime, &next.runtime))
         .is_some_and(|(resources, runtime)| {
@@ -22,6 +27,9 @@ pub(super) fn runtime_merge_is_bounded(
     previous: &RendererRuntimeUpdate,
     next: &RendererRuntimeUpdate,
 ) -> bool {
+    if previous.runtime.native_text_rejection.is_some() {
+        return false;
+    }
     merged_runtime_bytes(&previous.runtime, &next.runtime).is_some_and(|runtime| {
         runtime.saturating_add(runtime_update_overhead(next)) <= MAX_CONTROL_PAYLOAD
     })
@@ -37,6 +45,9 @@ pub(super) fn runtime_bytes(value: &RuntimeReport) -> usize {
 }
 
 fn merged_runtime_bytes(previous: &RuntimeReport, next: &RuntimeReport) -> Option<usize> {
+    if previous.native_text_rejection.is_some() && next.native_text_rejection.is_some() {
+        return None;
+    }
     let counts = |value: &RuntimeReport| {
         [
             value.errors.len(),
@@ -77,7 +88,7 @@ fn edge_bytes(value: &RuntimeReport) -> usize {
         .iter()
         .fold(strings, |bytes, action| match action {
             HistoryAction::Update { url, state, .. } => bytes
-                .saturating_add(7)
+                .saturating_add(11)
                 .saturating_add(url.len())
                 .saturating_add(
                     state
@@ -85,12 +96,20 @@ fn edge_bytes(value: &RuntimeReport) -> usize {
                         .map_or(0, |state| 4_usize.saturating_add(state.len())),
                 ),
             HistoryAction::Traverse { .. } => bytes.saturating_add(5),
+            HistoryAction::SetScrollRestoration { .. } => bytes.saturating_add(2),
         })
 }
 
 fn snapshot_bytes(previous: &RuntimeReport, next: &RuntimeReport) -> usize {
     // Fixed fields and vector prefixes in encode_runtime, excluding optional bodies.
-    let mut bytes = 47_usize;
+    let mut bytes = 48_usize;
+    if let Some(rejection) = next
+        .native_text_rejection
+        .as_ref()
+        .or(previous.native_text_rejection.as_ref())
+    {
+        bytes = bytes.saturating_add(8 + 4 + 16 + 4 + rejection.value.len() + 4 + 4);
+    }
     if next
         .history_traversal_ack
         .or(previous.history_traversal_ack)

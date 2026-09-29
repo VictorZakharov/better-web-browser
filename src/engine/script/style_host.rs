@@ -76,6 +76,38 @@ pub(super) fn style_host_call(
         let value = argument_string(args, 1)?;
         return Ok(Some(normalize_css_color(&value)));
     }
+    if operation == "computedStyleBatch" {
+        let Some(JsValue::Array(properties)) = args.get(2) else {
+            return Ok(Some(JsValue::Array(Vec::new())));
+        };
+        if properties.len() > 64 {
+            return Err(JsNativeError::range()
+                .with_message("too many computed properties")
+                .into());
+        }
+        let Some(node) = state.node(argument_id(args, 1)) else {
+            return Ok(Some(JsValue::Array(Vec::new())));
+        };
+        let properties = properties
+            .iter()
+            .map(JsValue::string_value)
+            .collect::<Vec<_>>();
+        return Ok(Some(JsValue::Array(
+            state
+                .computed_style_properties(&node, &properties)
+                .into_iter()
+                .map(js_string)
+                .collect(),
+        )));
+    }
+    if operation == "mayTransitionOnAttribute" {
+        let node = state.node(argument_id(args, 1));
+        let name = argument_string(args, 2)?;
+        let next = argument_string(args, 3)?;
+        return Ok(Some(JsValue::from(node.as_ref().is_some_and(|node| {
+            state.transition_rule_candidate(node, &name, &next)
+        }))));
+    }
     if operation == "setAnimationStyle" {
         let node = state.node(argument_id(args, 1));
         let declarations = argument_string(args, 2)?;

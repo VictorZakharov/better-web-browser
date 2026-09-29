@@ -4,15 +4,10 @@ use super::super::*;
 mod tests;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
-    pub(super) fn button_fit_content_width(
-        &mut self,
-        node: &NodeRef,
-        basis: f32,
-        available: f32,
-    ) -> f32 {
-        // HTML button layout: auto inline-size is fit-content even for block and
-        // absolutely positioned buttons. Out-of-flow labels do not contribute.
-        // https://html.spec.whatwg.org/multipage/rendering.html#button-layout
+    pub(super) fn fit_content_width(&mut self, node: &NodeRef, basis: f32, available: f32) -> f32 {
+        // HTML's UA widths for buttons and open popovers are fit-content.
+        // Their out-of-flow descendants do not contribute to intrinsic size.
+        // https://html.spec.whatwg.org/multipage/rendering.html
         let margins = self
             .styles
             .get(node)

@@ -221,7 +221,7 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
         }
         0x0211 => wake_lock::decode_update(payload).map(BrowserMessage::WakeLockUpdate),
         0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d | 0x014f | 0x0151 | 0x0153
-        | 0x0155 => decode_browser_input(kind, payload),
+        | 0x0155 | 0x0157 => decode_browser_input(kind, payload),
         0x8001 => decode_test_command(payload).map(BrowserMessage::Test),
         _ => Err(ProtocolError::UnexpectedMessage(kind)),
     }

@@ -17,7 +17,10 @@ pub(super) fn history_host_call(
     if operation == "fragmentNavigation" {
         return fragment_navigation(args, state).map(Some);
     }
-    if operation != "historyUpdate" && operation != "historyTraverse" {
+    if operation != "historyUpdate"
+        && operation != "historyTraverse"
+        && operation != "historyScrollRestoration"
+    {
         return Ok(None);
     }
     if state.history_actions.len() >= MAX_SCRIPT_NAVIGATIONS {
@@ -39,6 +42,21 @@ pub(super) fn history_host_call(
         state
             .history_actions
             .push(ScriptHistoryAction::Traverse { delta });
+        return Ok(Some(JsValue::undefined()));
+    }
+    if operation == "historyScrollRestoration" {
+        let mode = match argument_string(args, 1)?.as_str() {
+            "auto" => crate::renderer_protocol::ScrollRestorationMode::Auto,
+            "manual" => crate::renderer_protocol::ScrollRestorationMode::Manual,
+            _ => {
+                return Err(JsNativeError::typ()
+                    .with_message("Invalid scroll restoration mode")
+                    .into());
+            }
+        };
+        state
+            .history_actions
+            .push(ScriptHistoryAction::SetScrollRestoration { mode });
         return Ok(Some(JsValue::undefined()));
     }
     let value = argument_string(args, 1)?;
@@ -73,6 +91,7 @@ pub(super) fn history_host_call(
         url: resolved.clone(),
         replace,
         state: serialized_state,
+        scroll_y: state.document.scroll_offset.get().1.max(0.0),
     });
     Ok(Some(js_string(resolved)))
 }
@@ -109,6 +128,7 @@ fn fragment_navigation(args: &[JsValue], state: &mut HostState) -> JsResult<JsVa
             url: resolved.clone(),
             replace: args.get(2).and_then(JsValue::as_boolean).unwrap_or(false),
             state: None,
+            scroll_y: state.document.scroll_offset.get().1.max(0.0),
         });
     }
     Ok(JsValue::Array(vec![

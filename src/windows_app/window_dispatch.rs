@@ -6,7 +6,10 @@ mod input;
 use super::tabs::{KeyModifiers, TabId, TabStripHit};
 use super::*;
 use input::reroute_tab_message;
-pub(super) use input::{chrome_control_proc, dispatch_browser_input, page_control_proc};
+pub(super) use input::{
+    chrome_control_proc, current_page_edit_intent, current_page_edit_selection,
+    dispatch_browser_input, page_control_proc,
+};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub(super) unsafe extern "system" fn main_window_proc(

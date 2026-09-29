@@ -18,10 +18,12 @@ impl BrowserState {
                 return;
             }
         };
-        if let Err(error) =
-            self.renderer_fetches
-                .install_root(document, &page.final_url, Arc::clone(&page.policy))
-        {
+        if let Err(error) = self.renderer_fetches.install_root(
+            document,
+            &page.final_url,
+            Arc::clone(&page.policy),
+            page.screen_wake_lock_allowed,
+        ) {
             self.navigation.fail();
             self.set_status(&format!("Could not install document policy: {error}"));
             return;
@@ -62,6 +64,7 @@ impl BrowserState {
                 &page.final_url,
                 page.redirected,
             ),
+            scroll_restoration: self.history[self.history_index].scroll_restoration,
             viewport: self.renderer_viewport(),
             prefers_dark_color_scheme: self.app.prefers_dark_color_scheme.get(),
         };
@@ -113,8 +116,13 @@ impl BrowserState {
                 // parser scripts can report pushState updates. First paint is not a safe
                 // commit point: runtime updates may arrive ahead of the first presentation.
                 self.commit_history_document(&metrics.final_url, redirected, document);
+                if redirected {
+                    self.pending_history_scroll_y = None;
+                }
                 self.reader_url.clone_from(&metrics.final_url);
                 self.renderer_input_sequence = 0;
+                self.native_text_generation = 0;
+                self.suppress_page_control_edit = false;
                 self.pointer_cursor_request = None;
                 self.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
                 self.renderer_input_poll_budget = 0;

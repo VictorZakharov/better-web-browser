@@ -30,9 +30,21 @@ chain returns to the original URL. This follows the HTML Standard's history-entr
 steps, which replace the document state and serialize null at the first redirect.
 
 This slice bounds each serialized state to 32 KiB and the tab's retained history to 512 entries.
-It does not yet implement per-entry `scrollRestoration`, a back/forward document cache, or joint
-session history across nested browsing contexts. Those remain separate compatibility work; a
-getter-only `scrollRestoration` would misrepresent the actual scrolling behavior.
+Each entry also owns its `history.scrollRestoration` mode and saved viewport Y position. The
+mode defaults to `auto`, `pushState()` inherits the current mode, and setting an invalid mode
+throws rather than silently accepting it. Back/Forward restores a saved CSS-pixel viewport
+position for `auto` entries and leaves viewport placement to the page for `manual` entries.
+Each same-document history update snapshots the renderer's viewport position when that API call
+runs, so a later `scrollTo()` in the same task cannot rewrite an earlier entry's position.
+The browser retries an auto restoration while a refetched document grows during streaming,
+but stops if the user scrolls or script requests a viewport scroll. A script's scroll request
+in a `popstate` handler takes precedence over the browser's saved position. A handler that changes
+the target entry to `manual` likewise suppresses automatic restoration; parser-time mode changes
+on a refetched document cancel any pending viewport restore.
+
+This is deliberately a **viewport-only** implementation. Nested scrollable regions and child
+navigables do not yet have per-entry restoration data. A back/forward document cache and joint
+session history across nested browsing contexts also remain separate compatibility work.
 
 The regression coverage in `tests/live_runtime/history_traversal.rs` drives a hidden Breeze run
 against a counted loopback server. It checks state restoration, URL and event order, retained
@@ -50,6 +62,13 @@ same-document `popstate` effect before the second Back navigates away. The rende
 test asserts the traversal acknowledgement. `tests/live_runtime/history_group.rs` checks that a
 refetched document retains its group's remaining entries, and that a fragment-bearing entry restores
 both its URL and state on refetch without sending the fragment to the server.
+Focused tests check mode inheritance, invalid enum values, protocol bounds, and the mode visible
+inside `popstate`.
+`tests/live_runtime/history_scroll_restoration.rs` checks saved viewport restoration across
+same-document Back/Forward and a cross-document refetch, including `manual` entries that must
+not move the viewport automatically. It also checks parser-time updates after a scrolled-away
+document, multiple scroll and History calls in one task, and mode changes before automatic
+restoration on either a refetch or `popstate`.
 
 Compatibility references:
 

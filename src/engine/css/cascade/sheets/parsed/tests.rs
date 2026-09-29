@@ -26,6 +26,7 @@ fn compile(
     CompiledRules {
         index: RuleIndex::new(&rules),
         rules,
+        transition_rule_indices: Vec::new(),
         inputs,
         parsed,
         environment: Some(environment),

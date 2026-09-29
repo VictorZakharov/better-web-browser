@@ -38,6 +38,8 @@ mod history_ordering;
 mod history_queue;
 #[path = "live_runtime/history_redirect.rs"]
 mod history_redirect;
+#[path = "live_runtime/history_scroll_restoration.rs"]
+mod history_scroll_restoration;
 #[path = "live_runtime/history_traversal.rs"]
 mod history_traversal;
 #[path = "live_runtime/indexed_db.rs"]

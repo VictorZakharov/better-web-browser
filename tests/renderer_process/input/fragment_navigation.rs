@@ -67,7 +67,7 @@ fn block_link_padding_and_nested_children_follow_fragment_without_new_document()
             if !report.history_actions.is_empty() {
                 assert!(matches!(
                     report.history_actions.as_slice(),
-                    [better_web_browser::renderer_protocol::HistoryAction::Update { url, replace: false, state: None }]
+                    [better_web_browser::renderer_protocol::HistoryAction::Update { url, replace: false, state: None, .. }]
                     if url == &format!("https://example.test/{}#section", initial.document.get())
                 ));
                 assert!(report.viewport_scroll_y.unwrap() > 900.0);

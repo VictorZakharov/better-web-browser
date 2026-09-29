@@ -33,12 +33,6 @@
         value = String(value);
         if (value !== 'none' && value !== '2x' && value !== '4x')
             throw new TypeError('Invalid WaveShaper oversample mode');
-        // Neither ordinary interpolation nor output-rate averaging is the
-        // upsample/filter/downsample chain required for 2x and 4x. Do not
-        // report those modes as working until that signal path exists.
-        if (value !== 'none')
-            throw new AudioDOMException('WaveShaper oversampling is unavailable',
-                'NotSupportedError');
         return value;
     };
 
@@ -57,7 +51,8 @@
                     'NotSupportedError');
             super(audioNodeToken, context, 1, 1);
             audioWaveShaperState.set(this, {
-                curve: null, samples: null, curveSet: false, oversample
+                curve: null, samples: null, curveSet: false, oversample,
+                oversampleDsp: null
             });
             if (curve) this.curve = curve;
             audioNodeState.get(this).render = (frame, frames, cache) =>
@@ -100,7 +95,10 @@
         }
         get oversample() { return waveShaperState(this).oversample; }
         set oversample(value) {
-            waveShaperState(this).oversample = validateWaveShaperOversample(value);
+            const state = waveShaperState(this);
+            const mode = validateWaveShaperOversample(value);
+            if (mode !== state.oversample) state.oversampleDsp = null;
+            state.oversample = mode;
         }
     }
 
@@ -112,21 +110,14 @@
                 edge.source, frame, frames, cache, edge.output).length);
         const input = mixAudioInputs(node.context, node, frame, frames, cache,
             channels);
-        const curve = audioWaveShaperState.get(node).samples;
+        const state = audioWaveShaperState.get(node);
+        const curve = state.samples;
         if (!curve) return input;
-        const last = curve.length - 1;
+        if (state.oversample !== 'none') return renderOversampledWaveShaper(input,
+            curve, state.oversample === '2x' ? 2 : 4, state);
         for (const channel of input) {
-            for (let i = 0; i < frames; ++i) {
-                const position = (channel[i] + 1) * last / 2;
-                if (position < 0) channel[i] = curve[0];
-                else if (position >= last) channel[i] = curve[last];
-                else {
-                    const lower = Math.floor(position);
-                    const fraction = position - lower;
-                    channel[i] = (1 - fraction) * curve[lower] +
-                        fraction * curve[lower + 1];
-                }
-            }
+            for (let i = 0; i < frames; ++i)
+                channel[i] = waveShaperSample(curve, channel[i]);
         }
         return input;
     };

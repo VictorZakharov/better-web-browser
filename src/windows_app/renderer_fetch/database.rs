@@ -379,6 +379,7 @@ mod tests {
             policy: Arc::new(Default::default()),
             url: "https://host.test/worker.js".into(),
             origin: Origin::opaque(),
+            screen_wake_lock_allowed: false,
         };
         assert_eq!(database_origin(&client), None);
         client.origin = Origin::parse("https://other.test/page").unwrap();

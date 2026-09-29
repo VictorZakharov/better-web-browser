@@ -112,6 +112,7 @@ mod tests {
                         PolicyContainer::from_headers("https://example.test/current", &headers)
                             .unwrap(),
                     ),
+                    true,
                 )
                 .unwrap();
             assert_eq!(
@@ -143,6 +144,7 @@ mod tests {
                     PolicyContainer::from_headers("https://example.test/current", &headers)
                         .unwrap(),
                 ),
+                true,
             )
             .unwrap();
         assert!(matches!(
@@ -196,6 +198,7 @@ mod tests {
                 next,
                 "https://example.test/new",
                 Arc::new(PolicyContainer::default()),
+                true,
             )
             .unwrap();
         assert!(

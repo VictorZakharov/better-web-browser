@@ -108,10 +108,78 @@
         if (allowed && input.phase === 'down' && input.key === 'Enter') implicitSubmission(target);
         return allowed;
     };
+    const authoritativeText = target => [String(target.value),
+        Number(target.selectionStart) || 0, Number(target.selectionEnd) || 0];
+    // Read rollback state after the native event's microtask checkpoint. A
+    // beforeinput listener may cancel the edit and then change the value in a
+    // Promise job; the renderer's final DOM state must win over Win32's edit.
+    Object.defineProperty(document, '__nativeTextSnapshot', {
+        configurable: false,
+        value(id) {
+            const target = wrap(Number(id) || 0);
+            if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return null;
+            const snapshot = authoritativeText(target);
+            // Bound the JS serialization before Rust applies the exact UTF-8
+            // MAX_RENDERER_TEXT_INPUT_BYTES (64 KiB) codec limit.
+            return snapshot[0].length <= 65536 ? snapshot : null;
+        }
+    });
+    const nativeEditData = (previous, next, start, end, inputType) => {
+        const prefix = previous.slice(0, start);
+        const suffix = previous.slice(end);
+        if (inputType === 'insertText') {
+            if (!next.startsWith(prefix) || !next.endsWith(suffix) ||
+                next.length < prefix.length + suffix.length) return undefined;
+            return next.slice(start, next.length - suffix.length);
+        }
+        if (start !== end) return next === prefix + suffix ? null : undefined;
+        if (inputType === 'deleteContentBackward') {
+            const remaining = next.slice(0, next.length - suffix.length);
+            return next.length < previous.length && next.endsWith(suffix) &&
+                prefix.startsWith(remaining) ? null : undefined;
+        }
+        if (inputType === 'deleteContentForward') {
+            return next.length < previous.length && next.startsWith(prefix) &&
+                suffix.endsWith(next.slice(prefix.length)) ? null : undefined;
+        }
+        return undefined;
+    };
     const dispatchNativeText = input => {
-        if (pointerDrag?.active) return true;
+        if (pointerDrag?.active) return input.kind === 'nativeText' ? [false] : true;
         const target = nativeTarget(input.target);
         const value = String(input.value);
+        const ordinaryEdit = input.kind === 'nativeText' &&
+            target instanceof HTMLInputElement && /^(text|search|password)$/i.test(target.type);
+        // Input Events Level 2: typed text and ordinary backward/forward deletion
+        // get a cancelable beforeinput before the DOM edit, then input after it.
+        // Paste, IME composition, accessibility replacements, and other
+        // unclassified Win32 changes are not falsely labeled insertText: they
+        // retain the legacy commit path with inputType "" until separately modeled.
+        // https://www.w3.org/TR/input-events-2/#interface-InputEvent-Attributes
+        const inputType = ordinaryEdit ? String(input.inputType || '') : 'insertText';
+        let editData = null;
+        if (ordinaryEdit && inputType) {
+            const before = String(target.value);
+            const start = input.beforeSelectionStart;
+            const end = input.beforeSelectionEnd;
+            if (!Number.isInteger(start) || !Number.isInteger(end) ||
+                start < 0 || start > end || end > before.length) {
+                return [false];
+            }
+            editData = nativeEditData(before, value, start, end, inputType);
+            if (editData === undefined) return [false];
+            try { target.setSelectionRange(start, end); }
+            catch (_error) { return [false]; }
+            const allowed = target.dispatchEvent(markTrusted(new InputEvent('beforeinput', {
+                bubbles: true, cancelable: true, composed: true, inputType, data: editData
+            })));
+            // The native EDIT has already changed. The host reads the renderer's
+            // authoritative state after Promise jobs for generation-scoped rollback.
+            if (!allowed || String(target.value) !== before ||
+                target.selectionStart !== start || target.selectionEnd !== end) {
+                return [false];
+            }
+        }
         // A user edit is an internal operation, not the programmatic value
         // setter: it sets the dirty flag, marks user-edited length state, and
         // retains unconvertible number text for badInput.
@@ -131,7 +199,7 @@
         }
         refreshPatternVerdict(target);
         const allowed = target.dispatchEvent(markTrusted(new InputEvent('input', {
-            bubbles: true, composed: true, inputType: 'insertText', data: null
+            bubbles: true, composed: true, inputType, data: editData
         })));
         if (target instanceof HTMLSelectElement && changed) {
             target.dispatchEvent(markTrusted(new Event('change', { bubbles: true })));
@@ -143,7 +211,7 @@
         } else if (target instanceof HTMLInputElement && target.type === 'range' && changed) {
             target.dispatchEvent(markTrusted(new Event('change', { bubbles: true })));
         }
-        return allowed;
+        return input.kind === 'nativeText' ? [true] : allowed;
     };
     const dispatchNativeFocus = input => {
         const next = input.focused ? focusTargetForElement(nativeTarget(input.target)) : null;
@@ -191,6 +259,7 @@
                 case 'pointer': return dispatchNativePointer(input);
                 case 'keyboard': return dispatchNativeKeyboard(input);
                 case 'text': return dispatchNativeText(input);
+                case 'nativeText': return dispatchNativeText(input);
                 case 'focus': return dispatchNativeFocus(input);
                 case 'simple': return dispatchNativeSimple(input);
                 case 'imageResource': return dispatchNativeImageResource(input);

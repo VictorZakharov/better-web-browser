@@ -8,6 +8,7 @@ mod fullscreen;
 mod layers;
 mod nesting;
 mod object;
+mod popover;
 mod queries;
 mod root_units;
 mod shadow;

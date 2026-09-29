@@ -88,6 +88,11 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         return true;
     }
     match property.as_str() {
+        "transition"
+        | "transition-property"
+        | "transition-duration"
+        | "transition-delay"
+        | "transition-timing-function" => super::values::transitions::supports(&property, &value),
         "content" => GeneratedContent::parse(&value).is_some(),
         "display" => matches!(
             value.as_str(),
