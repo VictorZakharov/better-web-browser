@@ -80,3 +80,18 @@ The decoded file is 20,333 bytes with SHA-256
 FFmpeg is a development-only fixture generator, not a runtime, build, or test
 dependency. The fixture tests decoding, play/pause, and seeking in the contained
 Windows Media Foundation worker before Breeze advertises `audio/flac` support.
+
+## Self-authored Ogg/Vorbis audio fixture
+
+`test-2s-audio.ogg.base64` is a two-second 440 Hz mono sine wave generated
+from a synthetic signal, not a third-party recording. It was produced with
+the same development-only FFmpeg `N-111280-gd51b0580e4-20230625`:
+
+```text
+ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=440:sample_rate=44100:duration=2 -ac 1 -c:a libvorbis -q:a 2 -y test-2s-audio.ogg
+```
+
+The decoded fixture file is 6,675 bytes with SHA-256
+`1e65839c935c43c481f9e7a7df3888a2ab2ce9e9fb05f5d0b86c846f536e4a7b`.
+FFmpeg is not a runtime, build, or test dependency. The fixture exercises the
+pure-Rust Vorbis decoder and silent playback in the contained media worker.

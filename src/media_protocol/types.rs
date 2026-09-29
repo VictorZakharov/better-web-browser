@@ -172,6 +172,7 @@ pub enum MediaCodecFamily {
     /// AAC profile not established by the native stream subtype alone.
     Aac = 5,
     Flac = 6,
+    Vorbis = 7,
 }
 
 impl MediaCodecFamily {
@@ -188,6 +189,7 @@ impl MediaCodecFamily {
             4 => Ok(Self::Mp3),
             5 => Ok(Self::Aac),
             6 => Ok(Self::Flac),
+            7 => Ok(Self::Vorbis),
             _ => Err(MediaProtocolError::InvalidPayload("codec family")),
         }
     }

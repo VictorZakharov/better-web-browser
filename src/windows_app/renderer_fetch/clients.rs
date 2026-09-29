@@ -12,7 +12,7 @@ pub(super) struct Clients {
     root: Option<Client>,
     records: HashMap<u64, Option<Client>>,
     admitted_hint_origins: HashSet<String>,
-    admitted_prefetch_urls: HashSet<String>,
+    admitted_prefetches: Vec<prefetch::PrefetchKey>,
 }
 
 #[derive(Clone)]
@@ -49,7 +49,7 @@ impl Clients {
             self.root = None;
             self.records.clear();
             self.admitted_hint_origins.clear();
-            self.admitted_prefetch_urls.clear();
+            self.admitted_prefetches.clear();
         }
     }
 

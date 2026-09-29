@@ -170,6 +170,16 @@ impl RendererSession {
         )
     }
 
+    pub fn media_capture_sink(&self, document: DocumentId) -> super::MediaCaptureSink {
+        super::MediaCaptureSink::new(
+            document,
+            self.media_capture_updates.clone(),
+            Arc::clone(&self.media_capture_overflow),
+            Arc::clone(&self.media_capture_frames),
+            self.wake.clone(),
+        )
+    }
+
     pub fn sensor_update_sink(&self, document: DocumentId) -> super::SensorUpdateSink {
         super::SensorUpdateSink::new(
             document,

@@ -19,5 +19,5 @@ pub(super) fn dispatch(
     if let Some(value) = sensor::dispatch(operation, args, state)? {
         return Ok(Some(value));
     }
-    media_devices::dispatch(operation, state)
+    media_devices::dispatch(operation, args, state)
 }

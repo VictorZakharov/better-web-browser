@@ -12,6 +12,7 @@ mod document;
 mod fetch;
 mod geolocation;
 mod input;
+mod media_capture;
 mod media_devices;
 mod message;
 mod notification;
@@ -34,6 +35,10 @@ pub use database::{DATABASE_RETIRE_CLIENT_PAYLOAD, DatabaseCommand, DatabaseEven
 pub use geolocation::{
     GeolocationAction, GeolocationErrorCode, GeolocationEvent, GeolocationPosition,
     GeolocationRequest, GeolocationUpdate,
+};
+pub use media_capture::{
+    MAX_CAPTURE_FRAME_BYTES, MediaCaptureAction, MediaCaptureError, MediaCaptureEvent,
+    MediaCaptureFrame, MediaCaptureFrameKind, MediaCaptureRequest, MediaCaptureUpdate,
 };
 pub use media_devices::{
     MediaDeviceError, MediaDeviceRequest, MediaDeviceResult, MediaDeviceUpdate,
@@ -99,7 +104,7 @@ pub use state::{
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
 pub const PROTOCOL_MAJOR: u16 = 14;
-pub const PROTOCOL_MINOR: u16 = 8;
+pub const PROTOCOL_MINOR: u16 = 9;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

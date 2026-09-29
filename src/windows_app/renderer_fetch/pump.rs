@@ -1,6 +1,7 @@
 //! Resumable response bodies: backpressure never occupies a network scheduling slot.
 use super::*;
 use scheduler::Step;
+mod hints;
 
 pub(super) enum Job {
     Request(Box<RendererFetchRequest>, FetchSignal),
@@ -68,7 +69,7 @@ fn start(
 ) -> Step<Job> {
     let id = request.head.request_id;
     if request.head.initiator == FetchInitiator::NetworkHint {
-        return resolve_network_hint(request, signal, client, sink, document, registry);
+        return hints::resolve_network_hint(request, signal, client, sink, document, registry);
     }
     let target = request.head.resulting_client;
     let result = (|| {
@@ -198,102 +199,6 @@ fn begin_body(
     })))
 }
 
-fn resolve_network_hint(
-    request: RendererFetchRequest,
-    signal: FetchSignal,
-    client: &winhttp::HttpClient,
-    sink: &FetchResponseSink,
-    document: DocumentId,
-    registry: &RendererFetchRegistry,
-) -> Step<Job> {
-    let id = request.head.request_id;
-    let result = (|| {
-        request
-            .validate()
-            .map_err(|error| FetchError::new(FetchErrorKind::InvalidRequest, error.to_string()))?;
-        validate_document_identity(document, request.head.document)?;
-        if request.head.method != "GET"
-            || !request.head.headers.is_empty()
-            || !request.body.is_empty()
-            || request.head.resulting_client.id != 0
-            || request.head.script_source.is_some()
-            || request.head.mode != FetchMode::NoCors
-            || request.head.credentials != FetchCredentials::Omit
-            || request.head.cache != FetchCache::Default
-            || request.head.redirect != FetchRedirect::Follow
-            || request.head.referrer != FetchReferrer::Client
-            || request.head.referrer_policy != FetchReferrerPolicy::StrictOriginWhenCrossOrigin
-        {
-            return Err(FetchError::new(
-                FetchErrorKind::InvalidRequest,
-                "invalid network hint intent",
-            ));
-        }
-        match request.head.destination {
-            ResourceDestination::Fetch => {
-                let should_resolve = registry
-                    .clients
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .admit_network_hint(document, request.head.client, &request.head.url)?;
-                if should_resolve {
-                    client.warm_origin_dns(&request.head.url, &signal)?;
-                }
-            }
-            ResourceDestination::Document => {
-                let owner = registry
-                    .clients
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .admit_prefetch(document, request.head.client, &request.head.url)?;
-                if let Some(owner) = owner {
-                    let fetch = navigation_prefetch_request(&request.head.url, &owner, signal)?;
-                    // Speculative bytes never cross into the renderer. Only a complete stream may
-                    // enter the browser's private HTTP cache for a matching future navigation.
-                    client.fetch_stream(fetch)?.into_buffered()?;
-                }
-            }
-            _ => {
-                return Err(FetchError::new(
-                    FetchErrorKind::InvalidRequest,
-                    "unsupported network hint destination",
-                ));
-            }
-        }
-        Ok(())
-    })();
-    let response = FetchResponseHead {
-        request_id: id,
-        result: match result {
-            Ok(()) => FetchResponseResult::Success {
-                response_type: FetchResponseType::Basic,
-                urls: vec![request.head.url],
-                status: 204,
-                headers: Vec::new(),
-            },
-            Err(error) => FetchResponseResult::Failure(wire_error(&error)),
-        },
-    };
-    let _ = sink.start(response);
-    let _ = sink.end(id, 0);
-    Step::Done(0)
-}
-
-fn navigation_prefetch_request(
-    url: &str,
-    owner: &RendererFetchClient,
-    signal: FetchSignal,
-) -> Result<FetchRequest, FetchError> {
-    // Preserve the navigation partition (including credentials). A no-CORS subresource fetch
-    // would warm a different cache entry and could not safely be aliased to a navigation.
-    let mut fetch = FetchRequest::navigation(url)?;
-    fetch.origin = Some(owner.origin.clone());
-    fetch.referrer = Referrer::Url(FetchUrl::parse(&owner.url)?);
-    fetch.redirect = RedirectMode::Error;
-    fetch.response_body_limit = 2 * 1024 * 1024;
-    Ok(fetch.with_signal(signal))
-}
-
 impl BodyJob {
     fn advance(&mut self, sink: &FetchResponseSink) -> Result<bool, ()> {
         if self.pending.is_none() {
@@ -344,38 +249,5 @@ impl BodyJob {
             },
         );
         Err(())
-    }
-}
-
-#[cfg(test)]
-mod prefetch_tests {
-    use super::*;
-
-    #[test]
-    fn prefetch_has_future_navigation_cache_identity_without_following_redirects() {
-        let source = "https://example.test/current";
-        let owner = RendererFetchClient {
-            policy: Default::default(),
-            url: source.into(),
-            origin: FetchUrl::parse(source).unwrap().origin(),
-        };
-        let request = navigation_prefetch_request(
-            "https://example.test/next",
-            &owner,
-            FetchSignal::default(),
-        )
-        .unwrap();
-        let navigation = FetchRequest::navigation("https://example.test/next").unwrap();
-        assert_eq!(request.context, navigation.context);
-        assert_eq!(request.destination, navigation.destination);
-        assert_eq!(request.mode, navigation.mode);
-        assert_eq!(request.credentials, navigation.credentials);
-        assert_eq!(request.cache, navigation.cache);
-        assert_eq!(request.origin, Some(owner.origin));
-        assert_eq!(
-            request.referrer,
-            Referrer::Url(FetchUrl::parse(source).unwrap())
-        );
-        assert_eq!(request.redirect, RedirectMode::Error);
     }
 }

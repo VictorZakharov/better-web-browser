@@ -228,6 +228,12 @@ impl Broker {
                     self.emit_event(RendererEvent::MediaDeviceRequest(request))?;
                 }
             }
+            RendererMessage::MediaCaptureRequest(request) => {
+                request.validate()?;
+                if self.active_document == Some(request.document) {
+                    self.emit_event(RendererEvent::MediaCaptureRequest(request))?;
+                }
+            }
             RendererMessage::SensorRequest(request) => {
                 request.validate()?;
                 if self.active_document == Some(request.document) {

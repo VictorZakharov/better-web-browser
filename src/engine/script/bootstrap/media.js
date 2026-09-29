@@ -64,6 +64,7 @@
                 seeking: false,
                 preservesPitch: true,
                 srcObject: null,
+                awaitingSourceReset: 0,
                 buffered: emptyTimeRanges(),
                 seekable: emptyTimeRanges(),
                 played: emptyTimeRanges(),
@@ -168,18 +169,46 @@
         }
         get srcObject() { return mediaStateFor(this).srcObject; }
         set srcObject(value) {
-            if (value !== null) throw new TypeError('MediaStream playback is not supported');
-            mediaStateFor(this).srcObject = null;
+            if (value !== null && !globalThis.__isCaptureStream?.(value))
+                throw new TypeError('Unsupported media source object');
+            const state = mediaStateFor(this);
+            const previousSource = state.srcObject;
+            if (previousSource) globalThis.__detachCaptureStream?.(this, nodeId(this));
+            state.srcObject = value;
+            const resetRequestId = resetMediaElement(this);
+            if (previousSource && !value) state.awaitingSourceReset = resetRequestId;
+            if (value) selectMediaSource(this);
+            else {
+                const generation = mediaLoadGeneration.get(this);
+                queueMediaTask(() => {
+                    if (mediaLoadGeneration.get(this) === generation) restartMediaLoad(this);
+                });
+            }
         }
         load() {
+            const state = mediaStateFor(this);
             traceMediaCallsite(this);
+            if (state.srcObject) globalThis.__detachCaptureStream?.(this, nodeId(this));
             resetMediaElement(this);
+            if (state.srcObject) {
+                selectMediaSource(this);
+                return;
+            }
             const generation = mediaLoadGeneration.get(this);
             queueMediaTask(() => {
                 if (mediaLoadGeneration.get(this) === generation) restartMediaLoad(this);
             });
         }
         play() {
+            if (mediaStateFor(this).srcObject) {
+                const state = mediaStateFor(this);
+                if (!state.paused) return Promise.resolve();
+                state.paused = false;
+                this.dispatchEvent(markTrusted(new Event('play')));
+                if (state.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA)
+                    this.dispatchEvent(markTrusted(new Event('playing')));
+                return Promise.resolve();
+            }
             if (!host('mediaPlaybackSupported'))
                 return Promise.reject(new DOMException('Embedded media playback is not supported yet', 'NotSupportedError'));
             const state = mediaStateFor(this);
@@ -205,6 +234,13 @@
         }
         pause() {
             const state = mediaStateFor(this);
+            if (state.srcObject) {
+                if (!state.paused) {
+                    state.paused = true;
+                    this.dispatchEvent(markTrusted(new Event('pause')));
+                }
+                return;
+            }
             rejectSeekingPlayback(this);
             rejectDeferredMediaPlayback(this,
                 new DOMException('Playback was interrupted by pause()', 'AbortError'));
@@ -287,10 +323,18 @@
         const element = wrap(Number(input.target) || 0);
         if (!(element instanceof HTMLMediaElement)) return false;
         const state = mediaStateFor(element);
+        const requestId = Number(input.requestId) || 0;
+        // A prior decoder can complete before its queued reset. Its unsolicited
+        // loaded/clock replies have no resource ID, so wait for reset's acknowledgement.
+        if (state.awaitingSourceReset) {
+            if (input.disposition === 'reset' && requestId === state.awaitingSourceReset)
+                state.awaitingSourceReset = 0;
+            else return true;
+        }
+        if (state.srcObject) return true;
         if (input.disposition !== 'time')
             traceMediaLifecycle(element, 'response:' + input.disposition,
                 input.currentTime, input.duration);
-        const requestId = Number(input.requestId) || 0;
         if (requestId && requestId < (state.requestFloor || 0)) {
             pendingMediaRequests.delete(requestId);
             return true;
@@ -397,4 +441,29 @@
                 pending?.reject(new DOMException('Media playback is unavailable', 'NotSupportedError'));
                 return false;
         }
+    };
+
+    globalThis.__receiveCapturedMediaFrame = (element, frame) => {
+        if (!(element instanceof HTMLMediaElement) || !mediaStateFor(element).srcObject) return;
+        const state = mediaStateFor(element);
+        if (frame === null) {
+            // The selected MediaStream lost its last live video track. Audio may
+            // continue, so clear only the video dimensions, not the resource.
+            state.videoWidth = state.videoHeight = 0;
+            return;
+        }
+        const first = state.readyState === HTMLMediaElement.HAVE_NOTHING;
+        state.videoWidth = Number(frame.width) || 0;
+        state.videoHeight = Number(frame.height) || 0;
+        state.currentTime = Math.max(0, Number(frame.time) || 0);
+        state.readyState = HTMLMediaElement.HAVE_ENOUGH_DATA;
+        if (first) {
+            element.dispatchEvent(markTrusted(new Event('durationchange')));
+            element.dispatchEvent(markTrusted(new Event('loadedmetadata')));
+            element.dispatchEvent(markTrusted(new Event('loadeddata')));
+            element.dispatchEvent(markTrusted(new Event('canplay')));
+            element.dispatchEvent(markTrusted(new Event('canplaythrough')));
+            if (!state.paused) element.dispatchEvent(markTrusted(new Event('playing')));
+        }
+        element.dispatchEvent(markTrusted(new Event('timeupdate')));
     };

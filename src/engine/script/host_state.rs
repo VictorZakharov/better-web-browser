@@ -6,6 +6,7 @@ use crate::engine::MediaEnvironment;
 use crate::navigation::resolve_url;
 
 mod base_url;
+mod capture;
 mod cookies;
 mod csp;
 mod fetches;
@@ -63,6 +64,7 @@ pub(super) struct HostState {
     pub(super) performance_clock: super::performance_clock::PerformanceClock,
     pub(super) console: Vec<String>,
     pub(super) compression_streams: super::host_call::compression_host::CompressionStreams,
+    pub(super) audio_decodes: super::audio_decode::AudioDecodes,
     pub(super) text_decoders: super::text_encoding_host::TextDecoders,
     pub(super) navigation_url: Option<String>,
     pub(super) navigation_options: crate::navigation::request::NavigationOptions,
@@ -109,6 +111,7 @@ pub(super) struct HostState {
     pub(super) permission_query_count: usize,
     pub(super) pending_geolocation_actions: Vec<super::types::ScriptGeolocationAction>,
     pub(super) pending_media_device_actions: Vec<super::types::ScriptMediaDeviceAction>,
+    pub(super) capture: capture::CaptureBindings,
     pub(super) pending_sensor_actions: Vec<super::types::ScriptSensorAction>,
     pub(super) pending_broadcast_actions: Vec<super::types::ScriptBroadcastAction>,
     pub(super) active_broadcast_channels: HashSet<u64>,
@@ -197,6 +200,7 @@ impl HostState {
             performance_clock: Default::default(),
             console: Vec::new(),
             compression_streams: Default::default(),
+            audio_decodes: Default::default(),
             text_decoders: Default::default(),
             navigation_url: None,
             navigation_options: Default::default(),
@@ -241,6 +245,7 @@ impl HostState {
             permission_query_count: 0,
             pending_geolocation_actions: Vec::new(),
             pending_media_device_actions: Vec::new(),
+            capture: Default::default(),
             pending_sensor_actions: Vec::new(),
             pending_broadcast_actions: Vec::new(),
             active_broadcast_channels: HashSet::new(),

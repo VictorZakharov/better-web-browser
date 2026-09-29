@@ -10,6 +10,7 @@ use super::*;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 mod canvas_presentation;
+mod capture;
 mod completions;
 pub(super) mod document_lifecycle;
 mod document_streams;

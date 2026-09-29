@@ -69,6 +69,7 @@ impl EventSender {
                 | RendererEvent::PermissionRequest(_)
                 | RendererEvent::GeolocationRequest(_)
                 | RendererEvent::MediaDeviceRequest(_)
+                | RendererEvent::MediaCaptureRequest(_)
                 | RendererEvent::SensorRequest(_)
                 | RendererEvent::ClipboardRequest(_)
         ) {
@@ -248,6 +249,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::PermissionRequest(request) => Some(request.document),
         RendererEvent::GeolocationRequest(request) => Some(request.document),
         RendererEvent::MediaDeviceRequest(request) => Some(request.document),
+        RendererEvent::MediaCaptureRequest(request) => Some(request.document),
         RendererEvent::SensorRequest(request) => Some(request.document),
         RendererEvent::ClipboardRequest(request) => Some(request.document),
         RendererEvent::FullscreenRequested(request) => Some(request.document),

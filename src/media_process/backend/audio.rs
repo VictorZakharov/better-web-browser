@@ -1,3 +1,4 @@
+use super::ogg_vorbis::VorbisDecoder;
 use super::{
     ComApartment, MediaFoundation, output_type, seek_source_reader, select_stream, source_reader,
     stream::copy_sample, verify_native_type,
@@ -16,7 +17,54 @@ use windows::Win32::Media::MediaFoundation::{
 const PCM_BITS_PER_SAMPLE: u32 = 16;
 
 /// Pull-driven allowlisted audio-to-PCM decoder owned by the restricted media process.
-pub(in crate::media_process) struct AudioDecoder {
+pub(in crate::media_process) enum AudioDecoder {
+    Native(MfAudioDecoder),
+    Vorbis(Box<VorbisDecoder>),
+}
+
+impl AudioDecoder {
+    pub(in crate::media_process) fn open(
+        bytes: &[u8],
+        codec: MediaCodecFamily,
+        expected_samples: u32,
+        expected_sample_rate: u32,
+        expected_channels: u16,
+    ) -> Result<Self, String> {
+        if codec == MediaCodecFamily::Vorbis {
+            return VorbisDecoder::open(
+                bytes,
+                expected_samples,
+                expected_sample_rate,
+                expected_channels,
+            )
+            .map(|decoder| Self::Vorbis(Box::new(decoder)));
+        }
+        MfAudioDecoder::open(
+            bytes,
+            codec,
+            expected_samples,
+            expected_sample_rate,
+            expected_channels,
+        )
+        .map(Self::Native)
+    }
+
+    pub(in crate::media_process) fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
+        match self {
+            Self::Native(decoder) => decoder.seek(position_100ns),
+            Self::Vorbis(decoder) => decoder.seek(position_100ns),
+        }
+    }
+
+    pub(in crate::media_process) fn next_sample(&mut self) -> Result<Option<Vec<u8>>, String> {
+        match self {
+            Self::Native(decoder) => decoder.next_sample(),
+            Self::Vorbis(decoder) => decoder.next_sample(),
+        }
+    }
+}
+
+pub(in crate::media_process) struct MfAudioDecoder {
     reader: IMFSourceReader,
     remaining_samples: u32,
     total_samples: u32,
@@ -26,8 +74,8 @@ pub(in crate::media_process) struct AudioDecoder {
     _apartment: ComApartment,
 }
 
-impl AudioDecoder {
-    pub(in crate::media_process) fn open(
+impl MfAudioDecoder {
+    fn open(
         bytes: &[u8],
         codec: MediaCodecFamily,
         expected_samples: u32,
@@ -108,14 +156,14 @@ impl AudioDecoder {
         })
     }
 
-    pub(in crate::media_process) fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
+    fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
         seek_source_reader(&self.reader, position_100ns)?;
         self.remaining_samples = self.total_samples;
         self.last_timestamp = None;
         Ok(())
     }
 
-    pub(in crate::media_process) fn next_sample(&mut self) -> Result<Option<Vec<u8>>, String> {
+    fn next_sample(&mut self) -> Result<Option<Vec<u8>>, String> {
         if self.remaining_samples == 0 {
             return Ok(None);
         }

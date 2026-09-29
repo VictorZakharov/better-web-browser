@@ -191,6 +191,8 @@ pub struct ScriptGeolocationAction {
 pub struct ScriptMediaDeviceAction {
     pub request_id: u64,
     pub client: crate::fetch::RequestClient,
+    /// None is pre-capture enumeration; Some is a browser-authorized capture intent.
+    pub capture: Option<crate::renderer_protocol::MediaCaptureAction>,
 }
 
 #[derive(Clone, Debug)]

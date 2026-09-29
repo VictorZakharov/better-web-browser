@@ -11,6 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 mod attribute_host;
+mod audio_decode;
 mod binding_helpers;
 mod bootstrap;
 mod canvas_host;

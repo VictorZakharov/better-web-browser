@@ -14,11 +14,14 @@
             || essence === 'audio/x-wav' || essence === 'audio/vnd.wave';
         const mpeg = essence === 'audio/mpeg';
         const aac = essence === 'audio/aac';
+        // RFC 5334 names Ogg's Vorbis codec identifier. Codec-less Ogg can also
+        // contain Opus, FLAC or video, so it cannot be reported as "probably".
+        const ogg = essence === 'audio/ogg';
         // RFC 9639 registers native FLAC as audio/flac; audio/x-flac is its deprecated
         // alias. This decoder does not imply support for FLAC in Ogg or another container.
         const flac = essence === 'audio/flac' || essence === 'audio/x-flac';
         if (flac) return parameters.length ? '' : 'maybe';
-        if (!mp4 && !wave && !mpeg && !aac) return '';
+        if (!mp4 && !wave && !mpeg && !aac && !ogg) return '';
 
         const codecParameters = parameters.filter(parameter => /^codecs(?:\s|=|$)/.test(parameter));
         if (codecParameters.length > 1) return '';
@@ -33,6 +36,7 @@
             ? 'probably' : '';
         if (mpeg) return codecs.length === 1 && codecs[0] === 'mp3' ? 'probably' : '';
         if (aac) return codecs.length === 1 && codecs[0] === 'mp4a.40.2' ? 'probably' : '';
+        if (ogg) return codecs.length === 1 && codecs[0] === 'vorbis' ? 'probably' : '';
         const hasAudio = codecs.includes('mp4a.40.2');
         const hasVideo = codecs.some(codec => /^avc1\.[0-9a-f]{6}$/.test(codec));
         if (codecs.length !== Number(hasAudio) + Number(hasVideo)) return '';

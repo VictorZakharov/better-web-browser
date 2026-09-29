@@ -7,7 +7,7 @@ pub(crate) mod windows;
 
 pub use broker::stream::{SensorDeliveryGate, SensorSinkError};
 pub use broker::{
-    ClipboardUpdateSink, DatabaseEventSink, FetchResponseSink, NavigationBody,
+    ClipboardUpdateSink, DatabaseEventSink, FetchResponseSink, MediaCaptureSink, NavigationBody,
     NotificationUpdateSink, PermissionUpdateSink, RendererCrashSurface, RendererEvent,
     RendererExit, RendererExitReason, RendererSession, RendererSnapshot, RendererState,
     SensorUpdateSink, SpeechUpdateSink, WebSocketEventSink,

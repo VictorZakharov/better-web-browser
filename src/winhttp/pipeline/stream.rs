@@ -107,12 +107,7 @@ impl HttpClient {
     ) -> Result<StreamingFetchResponse, FetchError> {
         request.validate()?;
         request.signal.check()?;
-        request.policy.check_request_with_script(
-            request.destination,
-            request.url.as_str(),
-            0,
-            request.script_source.as_ref(),
-        )?;
+        check_request_policy(&request, 0)?;
         let body_limit = request.response_body_limit;
         if request.url.is_data() {
             return fetch_data_url(request)
@@ -122,12 +117,7 @@ impl HttpClient {
         let mut url_list = vec![request.url.clone()];
         for redirect_count in 0..=MAX_REDIRECTS {
             request.signal.check()?;
-            request.policy.check_request_with_script(
-                request.destination,
-                request.url.as_str(),
-                redirect_count,
-                request.script_source.as_ref(),
-            )?;
+            check_request_policy(&request, redirect_count)?;
             if needs_cors_check(&request) && request.mode == RequestMode::SameOrigin {
                 return Err(FetchError::new(
                     FetchErrorKind::Cors,
@@ -238,6 +228,41 @@ impl HttpClient {
         }
         unreachable!("the bounded redirect loop always returns")
     }
+}
+
+fn check_request_policy(request: &FetchRequest, redirects: usize) -> Result<(), FetchError> {
+    if request.context == RequestContext::Prefetch {
+        // An empty-destination prefetch is blockable mixed content. This check also runs for
+        // each redirect target, before a request can reach an insecure network endpoint.
+        // https://w3c.github.io/webappsec-mixed-content/#category-blockable
+        if !request.url.is_data()
+            && request
+                .origin
+                .as_ref()
+                .is_some_and(|origin| origin.is_potentially_trustworthy())
+            && !request.url.origin().is_potentially_trustworthy()
+        {
+            return Err(FetchError::new(
+                FetchErrorKind::Network,
+                "Mixed content blocked prefetch",
+            ));
+        }
+        // Resource hints use CSP3's source-list union, not `connect-src` (the empty Fetch
+        // destination's ordinary directive). Check every redirect target before dispatch.
+        if request.url.is_data() || !request.policy.allows_resource_hint(request.url.as_str()) {
+            return Err(FetchError::new(
+                FetchErrorKind::Network,
+                "Content Security Policy blocked prefetch",
+            ));
+        }
+        return Ok(());
+    }
+    request.policy.check_request_with_script(
+        request.destination,
+        request.url.as_str(),
+        redirects,
+        request.script_source.as_ref(),
+    )
 }
 
 fn manual_redirect(

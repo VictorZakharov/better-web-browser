@@ -3,6 +3,9 @@ using System.Text.Json;
 
 internal static class Program
 {
+    private const int FilmstripIntervalMs = 250;
+    private const int FilmstripDurationMs = 3_000;
+
     private static async Task<int> Main(string[] arguments)
     {
         ProcessTreeTests.Run();
@@ -15,7 +18,11 @@ internal static class Program
         try
         {
             var light = await CaptureAsync(chrome, root, "light", """
-                <!doctype html><html><body>
+                <!doctype html><html><head><style>
+                  /* Keep producing compositor frames through the CI filmstrip window. */
+                  main { animation: slide 4s linear infinite alternate; }
+                  @keyframes slide { from { transform: translateX(0); } to { transform: translateX(12px); } }
+                </style></head><body>
                   <main><h1>Light DOM control</h1><p>This ordinary document remains a valid populated baseline.</p></main>
                 </body></html>
                 """);
@@ -28,7 +35,8 @@ internal static class Program
                 Assert(manifest.GetProperty("source").GetString() == "compositor_screencast_latest_frame",
                     "filmstrip must identify its compositor sampling source");
                 var frames = manifest.GetProperty("frames").EnumerateArray().ToArray();
-                Assert(frames.Length == 4, "filmstrip did not complete all four wall-clock samples");
+                Assert(frames.Length == FilmstripDurationMs / FilmstripIntervalMs,
+                    "filmstrip did not complete every wall-clock sample");
                 Assert(frames.All(frame => frame.GetProperty("error").ValueKind == JsonValueKind.Null),
                     "filmstrip reported a failed sample");
                 Assert(frames.Any(frame => frame.GetProperty("source_frame_ms").GetDouble() >= 0),
@@ -121,8 +129,8 @@ internal static class Program
             ViewportWidth = 640,
             ViewportHeight = 400,
             FilmstripDirectory = name == "light" ? Path.Combine(root, "light-film") : null,
-            FilmstripIntervalMs = 250,
-            FilmstripDurationMs = 1000,
+            FilmstripIntervalMs = FilmstripIntervalMs,
+            FilmstripDurationMs = FilmstripDurationMs,
             SettleMs = 100,
             TimeoutMs = 15_000
         };

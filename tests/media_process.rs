@@ -355,7 +355,14 @@ fn malformed_crashed_and_hung_workers_fail_without_harming_a_sibling() {
         MediaTestCommand::WriteMalformedFrame,
         MediaTestCommand::Hang,
     ] {
-        let mut victim = MediaSession::launch(options()).expect("launch media fault victim");
+        let mut launch = options();
+        if fault == MediaTestCommand::Crash {
+            // Windows may spend longer than the 750 ms command deadline reporting an
+            // injected abort under CI load. Keep the short deadline for the hang path;
+            // the crash must still exit on its own before this bounded wait ends.
+            launch.command_timeout = Duration::from_secs(5);
+        }
+        let mut victim = MediaSession::launch(launch).expect("launch media fault victim");
         victim
             .inject_failure(fault)
             .unwrap_or_else(|error| panic!("contain {fault:?}: {error}"));

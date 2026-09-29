@@ -233,6 +233,11 @@ impl Broker {
         // document's bounded event capacity.
         self.resources().events.discard_document(document);
         self.resources().state_updates.discard_document(document);
+        self.resources()
+            .media_capture_frames
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .discard_document(document);
         if self
             .outgoing_state_update
             .as_ref()

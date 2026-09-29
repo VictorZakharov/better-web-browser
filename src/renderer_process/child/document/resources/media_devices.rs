@@ -2,7 +2,7 @@
 
 use super::super::{AdvanceResult, DocumentRuntime};
 use crate::renderer_process::child::connection::ChildConnection;
-use crate::renderer_protocol::{MediaDeviceRequest, MediaDeviceUpdate};
+use crate::renderer_protocol::{MediaCaptureRequest, MediaDeviceRequest, MediaDeviceUpdate};
 use std::time::Instant;
 
 impl DocumentRuntime {
@@ -11,11 +11,20 @@ impl DocumentRuntime {
         connection: &mut ChildConnection,
     ) -> Result<(), String> {
         for action in std::mem::take(&mut self.pending_media_device_requests) {
-            connection.send_media_device_request(MediaDeviceRequest {
-                document: self.id,
-                request_id: action.request_id,
-                client: action.client,
-            })?;
+            if let Some(capture) = action.capture {
+                connection.send_media_capture_request(MediaCaptureRequest {
+                    document: self.id,
+                    request_id: action.request_id,
+                    client: action.client,
+                    action: capture,
+                })?;
+            } else {
+                connection.send_media_device_request(MediaDeviceRequest {
+                    document: self.id,
+                    request_id: action.request_id,
+                    client: action.client,
+                })?;
+            }
         }
         Ok(())
     }

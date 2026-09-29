@@ -29,6 +29,7 @@ use source::*;
 mod audio;
 mod fragmented_mp4;
 mod h264;
+mod ogg_vorbis;
 mod playback;
 mod stream;
 mod video_buffer;
@@ -48,6 +49,9 @@ pub(super) struct DecodedMedia {
 }
 
 pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, String> {
+    if ogg_vorbis::is_ogg(bytes) {
+        return ogg_vorbis::decode(bytes, limits, Instant::now());
+    }
     decode_sources(bytes, bytes, bytes.len() as u64, limits)
 }
 

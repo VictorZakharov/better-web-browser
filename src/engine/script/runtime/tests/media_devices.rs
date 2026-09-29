@@ -10,7 +10,7 @@ fn secure_document_enumerates_only_after_browser_update() {
             document.body.setAttribute('data-shape', String(
                 navigator.mediaDevices instanceof MediaDevices &&
                 typeof navigator.mediaDevices.enumerateDevices === 'function' &&
-                !('getUserMedia' in navigator.mediaDevices)));
+                typeof navigator.mediaDevices.getUserMedia === 'function'));
             navigator.mediaDevices.enumerateDevices().then(devices => {
                 document.body.setAttribute('data-devices', JSON.stringify(devices));
                 document.body.setAttribute('data-types', devices.map(d =>

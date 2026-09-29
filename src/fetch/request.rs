@@ -9,6 +9,8 @@ use crate::limits::MAX_RESPONSE_BODY_BYTES;
 pub enum RequestContext {
     Navigation,
     Subresource,
+    /// Browser-owned `link[rel=prefetch]`; never exposes response bytes to the renderer.
+    Prefetch,
     Script,
     /// Internal script loader: may consume no-cors bytes, never exposed as a Fetch Response.
     WorkerScript,
@@ -172,6 +174,17 @@ impl FetchRequest {
             signal: FetchSignal::default(),
             response_body_limit: MAX_RESPONSE_BODY_BYTES,
         })
+    }
+
+    /// HTML's prefetch link creates a potential-CORS request with an empty destination.
+    /// The caller supplies the link's CORS setting and the authoritative owner policy.
+    /// https://html.spec.whatwg.org/multipage/links.html#link-type-prefetch
+    pub fn prefetch(url: &str, document_url: &str) -> Result<Self, FetchError> {
+        let mut request = Self::subresource(url, document_url, RequestDestination::Fetch)?;
+        request.context = RequestContext::Prefetch;
+        request.credentials = CredentialsMode::Include;
+        request.response_body_limit = 2 * 1024 * 1024;
+        Ok(request)
     }
 
     pub fn script(url: &str, document_url: &str) -> Result<Self, FetchError> {

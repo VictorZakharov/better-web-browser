@@ -1,3 +1,4 @@
+mod capture;
 mod commands;
 mod deadlines;
 mod document;
@@ -87,6 +88,9 @@ pub(super) struct BrokerResources {
     pub(super) geolocation_overflow: Arc<std::sync::atomic::AtomicBool>,
     pub(super) media_device_updates: mpsc::Receiver<crate::renderer_protocol::MediaDeviceUpdate>,
     pub(super) media_device_overflow: Arc<std::sync::atomic::AtomicBool>,
+    pub(super) media_capture_updates: mpsc::Receiver<crate::renderer_protocol::MediaCaptureUpdate>,
+    pub(super) media_capture_overflow: Arc<std::sync::atomic::AtomicBool>,
+    pub(super) media_capture_frames: Arc<Mutex<super::capture_stream::FrameMailbox>>,
     pub(super) sensor_updates: mpsc::Receiver<super::stream::QueuedSensorUpdate>,
     pub(super) sensor_overflow: Arc<std::sync::atomic::AtomicBool>,
     pub(super) clipboard_updates: mpsc::Receiver<crate::renderer_protocol::ClipboardUpdate>,
@@ -170,6 +174,8 @@ impl Broker {
             self.process_permission_updates();
             self.process_geolocation_updates();
             self.process_media_device_updates();
+            self.process_media_capture_updates();
+            self.process_media_capture_frames();
             self.process_sensor_updates();
             self.process_clipboard_updates();
             self.process_navigation();

@@ -40,6 +40,12 @@ impl DocumentRuntime {
                     continue;
                 }
             };
+            if matches!(resource, PageResource::Prefetch { .. }) {
+                // HTML prefetch fires load for any completed HTTP response, including 404.
+                // Only a network error (handled above) fires error.
+                retained |= self.dispatch_resource_event(&resource, "load")?;
+                continue;
+            }
             if !response.is_success() {
                 self.record_resource_diagnostic(format!(
                     "{label}: server returned HTTP {}",
@@ -50,12 +56,6 @@ impl DocumentRuntime {
             }
             if matches!(resource, PageResource::OriginHint { .. }) {
                 // DNS has no response body and never mutates the active document.
-                continue;
-            }
-            if matches!(resource, PageResource::Prefetch { .. }) {
-                // The browser owns the HTTP cache. A prefetch response only completes the link;
-                // its bytes never become script-visible or part of the current document.
-                retained |= self.dispatch_resource_event(&resource, "load")?;
                 continue;
             }
             let eligible = matches!(

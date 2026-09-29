@@ -7,6 +7,8 @@ mod lifecycle;
 mod reconfiguration;
 #[path = "media_source_seeking.rs"]
 mod seeking;
+#[path = "media_src_object.rs"]
+mod src_object;
 #[path = "media_source_starvation.rs"]
 mod starvation;
 #[path = "media_source_tasks.rs"]

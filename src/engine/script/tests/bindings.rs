@@ -200,7 +200,7 @@ fn exposes_links_interactive_elements_and_script_reflection() {
                     linked.crossOrigin === 'use-credentials' && linked.as === 'script' &&
                     linked.relList.supports('preload') && linked.relList.supports('stylesheet') &&
                     linked.relList.supports('dns-prefetch') && linked.relList.supports('preconnect') &&
-                    !linked.relList.supports('prefetch') &&
+                    linked.relList.supports('prefetch') &&
                     anchor.relList.supports('noopener') &&
                     (() => { try { anchor.classList.supports('anything'); return false; }
                               catch (error) { return error instanceof TypeError; } })()

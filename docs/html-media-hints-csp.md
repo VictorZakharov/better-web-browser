@@ -19,12 +19,14 @@ waits for loading to finish instead of being rejected simply because no
 decoder is ready yet.
 
 The tested complete-resource formats are PCM WAV, MP3, AAC in M4A, ADTS
-AAC, and native FLAC on Windows hosts with a Media Foundation FLAC decoder.
+AAC, Ogg/Vorbis, and native FLAC on Windows hosts with a Media Foundation FLAC decoder.
 The media worker decodes audio to PCM, drives the XAudio2 output path,
 and supports play, pause, volume, and seek without fabricating a video frame.
 `HTMLMediaElement.canPlayType()` makes the conservative `maybe` claim for
 `audio/flac` and its deprecated `audio/x-flac` alias, without claiming Ogg
-FLAC. Media Capabilities distinguishes complete-file FLAC from unsupported
+FLAC. `audio/ogg; codecs="vorbis"` reports `probably`, while codec-less Ogg
+reports `maybe`; Ogg FLAC and Opus remain unsupported. Media Capabilities
+distinguishes complete-file FLAC from unsupported
 Media Source FLAC, but derives `decodingInfo()` support from MIME/type policy,
 not a per-host native decoder query; a host without that optional decoder may
 still report file support. `audio/m4a` and `audio/x-m4a` share the proven
@@ -42,7 +44,7 @@ same-origin because the current decoder path receives opaque encoded bytes in
 the renderer. Sending cross-origin cookies with those bytes would make an
 untrusted renderer able to read cookie-protected cross-origin responses.
 
-Remaining media boundaries are important: Ogg/WebM audio, DRM, and
+Remaining media boundaries are important: other Ogg codecs, WebM audio, DRM, and
 detached `new Audio(src)` resource discovery are not implemented here. The
 latter needs script-originated resource discovery and detached-node lifetime
 through the renderer host, not merely an `Audio` constructor property.
@@ -57,19 +59,27 @@ do not delay the document's `load` event, and are bounded by per-document and
 browser-wide admission limits. They are lower priority than normal resources.
 Only HTTP(S) origins without URL credentials are eligible.
 
-The first `rel=prefetch` subset handles up to two same-origin HTML document
-URLs per top-level document. The browser rechecks the live CSP and origin,
-then fetches with the origin, referrer, credential mode, and private-cache
-partition of a future navigation. It consumes the complete body before cache
-admission, never exposes speculative bytes to the renderer, and rejects
-redirects or responses over the 2 MiB per-entry budget. A completed link
-receives `load` or `error`, but does not delay the current document's `load`.
-Only cacheable responses with server-supplied freshness can be reused; an
-ordinary navigation still goes to the network otherwise. Cookie changes
-partition the cache and prevent reuse across credential states. Cross-origin
-and non-document prefetches, `as`, `crossorigin`, `integrity`, `media`, and explicit
-referrer policy are not yet supported. Consequently, `relList.supports()`
-does not advertise full `prefetch` support.
+`rel=prefetch` admits up to two distinct hints per top-level document, for
+HTTP(S) documents and subresources on the same or another origin. Its Fetch
+destination is empty even when `as` names a resource type. Absent `crossorigin`
+uses no-CORS and included credentials; `anonymous` and `use-credentials` use
+CORS with same-origin and included credentials respectively. The link's
+`referrerpolicy` applies, while `type` and `media` do not change the prefetch
+destination or gate this hint. The browser derives the owner URL and policy,
+checks CSP's resource-hint source-list union on every redirect, consumes the
+body under a 2 MiB cap, and never exposes speculative bytes to the renderer.
+Completed HTTP responses (including 404) fire `load`; network/CORS failures
+fire `error`. Prefetch does not delay the document's `load`.
+
+Only complete responses with explicit freshness or validators enter the bounded
+private cache; immediate reuse requires freshness. Same-origin future navigation and compatible subresource loads
+can reuse them when URL, owner origin, effective credentials, Cookie, referrer,
+Origin, and `Vary` agree. A cross-origin no-CORS prefetch cannot become a
+readable CORS response through cache reuse. Cookie changes and nonmatching
+request modes cause a normal network fetch. The browser may decline work
+beyond the quota or size cap; embedded-document hints and `integrity`-bearing
+prefetch links remain a conservative unsupported subset. This functional
+top-level processing model is now advertised by `relList.supports('prefetch')`.
 
 ## CSP policy delivery and timing
 

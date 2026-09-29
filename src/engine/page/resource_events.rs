@@ -127,6 +127,9 @@ mod tests {
         let link = page.dom.elements_named("link").next().unwrap();
         let prefetch = PageResource::Prefetch {
             url: "https://example.test/next".into(),
+            mode: crate::fetch::RequestMode::NoCors,
+            credentials: crate::fetch::CredentialsMode::Include,
+            referrer_policy: crate::fetch::ReferrerPolicy::StrictOriginWhenCrossOrigin,
         };
         assert_eq!(page.resource_event_key(&link), Some(prefetch.clone()));
         assert!(page.resources.contains(&prefetch));

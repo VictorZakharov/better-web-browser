@@ -1,7 +1,5 @@
 use super::support::{LoopbackServer, TestResponse};
-use crate::fetch::{
-    FetchErrorKind, FetchRequest, FetchUrl, RedirectMode, Referrer, RequestCache, RequestMode,
-};
+use crate::fetch::{FetchErrorKind, FetchRequest, FetchUrl, Referrer, RequestCache, RequestMode};
 use crate::winhttp::HttpClient;
 use std::sync::{
     Arc,
@@ -58,11 +56,9 @@ fn complete_document_prefetch_reuses_navigation_partition_but_not_new_cookie_sta
         request.referrer = Referrer::Url(source);
         request
     };
-    // A prefetch is browser-owned, consumes the full stream, and differs only in its
-    // conservative redirect policy and body limit from a future navigation.
-    let mut prefetch = navigation();
-    prefetch.redirect = RedirectMode::Error;
-    prefetch.response_body_limit = 2 * 1024 * 1024;
+    // The link request is no-CORS with an empty destination; compatible, complete same-origin
+    // bytes may satisfy a later navigation without weakening cookie/referrer partitioning.
+    let prefetch = FetchRequest::prefetch(&target, &source).unwrap();
     assert_eq!(
         client
             .fetch_stream(prefetch)

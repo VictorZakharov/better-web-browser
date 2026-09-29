@@ -35,6 +35,7 @@
         const element = wrap(Number(input.target) || 0);
         if (!(element instanceof HTMLMediaElement) || mediaSourceForElement.has(element)) return false;
         const state = mediaStateFor(element);
+        if (state.srcObject || state.awaitingSourceReset) return true;
         switch (input.disposition) {
             case 'loading':
                 beginOrdinaryMediaLoad(element);
@@ -111,12 +112,23 @@
         state.played = emptyTimeRanges();
         state.videoWidth = state.videoHeight = 0;
         state.playbackRate = state.defaultPlaybackRate;
-        mediaCommand(element, 0, 'reset');
+        const resetRequestId = nextMediaRequest++;
+        if (state.awaitingSourceReset) state.awaitingSourceReset = resetRequestId;
+        mediaCommand(element, resetRequestId, 'reset');
         updateTextTracks(element);
         if (hadResource) queueMediaEvent(element, 'emptied');
         if (positionChanged) queueMediaEvent(element, 'timeupdate');
+        return resetRequestId;
     };
     const selectMediaSource = element => {
+        const state = mediaStateFor(element);
+        if (state.srcObject) {
+            state.duration = Infinity;
+            state.networkState = HTMLMediaElement.NETWORK_IDLE;
+            queueMediaEvent(element, 'loadstart');
+            globalThis.__attachCaptureStream?.(element, nodeId(element));
+            return;
+        }
         const value = element.getAttribute('src');
         const source = objectUrlValue(value);
         if (!(source instanceof MediaSource)) {
@@ -124,26 +136,28 @@
             return;
         }
         if (source.readyState !== 'closed') {
-            const state = mediaStateFor(element);
             state.error = new MediaError(MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED,
                 'The MediaSource is already attached');
             state.networkState = HTMLMediaElement.NETWORK_NO_SOURCE;
             queueMediaEvent(element, 'error');
             return;
         }
-        const state = mediaStateFor(element);
         state.networkState = HTMLMediaElement.NETWORK_LOADING;
         state.currentSrc = value;
         queueMediaEvent(element, 'loadstart');
         source.__attach(element);
     };
     const restartMediaLoad = element => {
-        if (!(objectUrlValue(element.getAttribute('src')) instanceof MediaSource))
+        if (!mediaStateFor(element).srcObject
+            && !(objectUrlValue(element.getAttribute('src')) instanceof MediaSource))
             mediaCommand(element, 0, 'reload');
         selectMediaSource(element);
     };
     const mediaSourceAttributeChanged = element => {
-        if (mediaStateFor(element).networkState !== HTMLMediaElement.NETWORK_EMPTY
+        const state = mediaStateFor(element);
+        if (state.srcObject)
+            globalThis.__detachCaptureStream?.(element, nodeId(element));
+        if (state.srcObject || state.networkState !== HTMLMediaElement.NETWORK_EMPTY
             || mediaSourceForElement.has(element)
             || [...pendingMediaRequests.values()].some(request => request.element === element))
             resetMediaElement(element);

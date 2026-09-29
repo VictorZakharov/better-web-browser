@@ -41,19 +41,17 @@ Reference: [HTML slot assignment](https://html.spec.whatwg.org/multipage/scripti
 
 ## Document prefetch
 
-`<link rel="prefetch">` can speculatively fetch a same-origin, top-level
-document into the browser's existing private HTTP cache. The browser, rather
-than the renderer, constructs the future-navigation cache identity and checks
-the document's CSP resource-hint rule. Only complete cacheable responses are
-reused; redirects are not speculatively followed, cookie changes partition
-reuse, duplicate URLs are not fetched again, and each document may admit at
-most two distinct URLs. Prefetch failures do not fail the document.
+The original slice of `<link rel="prefetch">` speculatively fetched only a
+same-origin, top-level document into the browser's private HTTP cache. Its
+hidden browser test inserted a link, observed its load event, navigated, and
+verified that one network GET served both stages. It deliberately left
+cross-origin resources, redirects, and `relList.supports("prefetch")` open.
 
-This is intentionally narrower than the full HTML link-processing model:
-cross-origin and non-document prefetches are not supported, and
-`relList.supports("prefetch")` remains an underclaim until that model is
-complete. The hidden browser test inserts a link, observes its load event,
-navigates, and verifies one network GET serves both stages.
+The later [resource-hint contract](html-media-hints-csp.md#origin-hints)
+documents the expanded behavior and current limits: cross-origin and
+subresource prefetch, potential-CORS credentials, redirect CSP checks,
+compatible cache reuse, and completion events. Prefetch failures still do not
+fail the document.
 
 References: [HTML prefetch](https://html.spec.whatwg.org/multipage/links.html#link-type-prefetch)
 and [CSP resource hints](https://www.w3.org/TR/CSP3/#does-resource-hint-request-violate-policy).
