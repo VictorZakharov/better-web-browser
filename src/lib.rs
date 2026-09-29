@@ -30,6 +30,9 @@ pub(crate) mod media_frame_protocol;
 pub mod media_process;
 pub mod media_protocol;
 
+pub(crate) mod iso_bmff_audio;
+pub(crate) mod ogg_vorbis_headers;
+
 #[cfg(target_os = "windows")]
 pub mod renderer_process;
 

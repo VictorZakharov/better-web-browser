@@ -3,8 +3,8 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `cf8690fd9b2eb9992ecf6156ec8b149f2d70c677a933f921aed70e6c7ab4dec0`
-- Third-party packages: 216
+- Cargo.lock SHA-256: `bbc9207a35bbce9f3d3555a73750dad38131c6f40f7ba734dd7f41e0d78580c7`
+- Third-party packages: 236
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
@@ -22,6 +22,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `bitflags` | 2.13.1 | MIT OR Apache-2.0 | [upstream](https://github.com/bitflags/bitflags) |
 | `block-buffer` | 0.10.4 | MIT OR Apache-2.0 | [upstream](https://github.com/RustCrypto/utils) |
 | `brotli-decompressor` | 5.0.3 | BSD-3-Clause/MIT | [upstream](https://github.com/dropbox/rust-brotli-decompressor) |
+| `built` | 0.7.7 | MIT | [upstream](https://github.com/lukaslueg/built) |
 | `bytemuck` | 1.25.2 | Zlib OR Apache-2.0 OR MIT | [upstream](https://github.com/Lokathor/bytemuck) |
 | `bytemuck_derive` | 1.12.0 | Zlib OR Apache-2.0 OR MIT | [upstream](https://github.com/Lokathor/bytemuck) |
 | `byteorder` | 1.5.0 | Unlicense OR MIT | [upstream](https://github.com/BurntSushi/byteorder) |
@@ -32,9 +33,12 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `cexpr` | 0.6.0 | Apache-2.0/MIT | [upstream](https://github.com/jethrogb/rust-cexpr) |
 | `cfg-if` | 1.0.4 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/cfg-if) |
 | `clang-sys` | 1.9.1 | Apache-2.0 | [upstream](https://github.com/KyleMayes/clang-sys) |
+| `claxon` | 0.4.3 | Apache-2.0 | [upstream](https://github.com/ruuda/claxon) |
 | `color_quant` | 1.1.0 | MIT | [upstream](https://github.com/image-rs/color_quant.git) |
 | `core_maths` | 0.1.1 | MIT | [upstream](https://github.com/robertbastian/core_maths) |
 | `cpufeatures` | 0.2.17 | MIT OR Apache-2.0 | [upstream](https://github.com/RustCrypto/utils) |
+| `crc` | 3.4.0 | MIT OR Apache-2.0 | [upstream](https://github.com/mrhooray/crc-rs.git) |
+| `crc-catalog` | 2.5.0 | MIT OR Apache-2.0 | [upstream](https://github.com/akhilles/crc-catalog.git) |
 | `crc32fast` | 1.5.0 | MIT OR Apache-2.0 | [upstream](https://github.com/srijs/rust-crc32fast) |
 | `crypto-common` | 0.1.7 | MIT OR Apache-2.0 | [upstream](https://github.com/RustCrypto/traits) |
 | `cssparser` | 0.37.0 | MPL-2.0 | [upstream](https://github.com/servo/rust-cssparser) |
@@ -54,6 +58,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `fastrand` | 2.5.0 | Apache-2.0 OR MIT | [upstream](https://github.com/smol-rs/fastrand) |
 | `fdeflate` | 0.3.7 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/fdeflate) |
 | `find-msvc-tools` | 0.1.13 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/cc-rs) |
+| `flacenc` | 0.5.1 | Apache-2.0 | [upstream](https://github.com/yotarok/flacenc-rs/) |
 | `flate2` | 1.1.9 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/flate2-rs) |
 | `float-cmp` | 0.9.0 | MIT | [upstream](https://github.com/mikedilger/float-cmp) |
 | `foldhash` | 0.2.0 | Zlib | [upstream](https://github.com/orlp/foldhash) |
@@ -68,8 +73,10 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `glob` | 0.3.4 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/glob) |
 | `gzip-header` | 1.1.0 | MIT/Apache-2.0 | [upstream](https://github.com/oyvindln/gzip-header) |
 | `harfrust` | 0.5.2 | MIT | [upstream](https://github.com/harfbuzz/harfrust) |
+| `hash32` | 0.3.1 | MIT OR Apache-2.0 | [upstream](https://github.com/japaric/hash32) |
 | `hashbrown` | 0.16.1 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/hashbrown) |
 | `hashbrown` | 0.17.1 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/hashbrown) |
+| `heapless` | 0.8.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-embedded/heapless) |
 | `home` | 0.5.12 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/cargo) |
 | `html5ever` | 0.39.0 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/html5ever) |
 | `icu_calendar` | 2.3.0 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
@@ -92,6 +99,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `itoa` | 1.0.18 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/itoa) |
 | `ixdtf` | 0.6.6 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `kurbo` | 0.13.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/kurbo) |
+| `lazy_static` | 1.5.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang-nursery/lazy-static.rs) |
 | `lewton` | 0.10.2 | MIT OR Apache-2.0 | [upstream](https://github.com/RustAudio/lewton) |
 | `libc` | 0.2.189 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/libc) |
 | `libloading` | 0.8.9 | ISC | [upstream](https://github.com/nagisa/rust_libloading/) |
@@ -101,6 +109,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `lock_api` | 0.4.14 | MIT OR Apache-2.0 | [upstream](https://github.com/Amanieu/parking_lot) |
 | `log` | 0.4.33 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/log) |
 | `markup5ever` | 0.39.0 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/html5ever) |
+| `md-5` | 0.10.6 | MIT OR Apache-2.0 | [upstream](https://github.com/RustCrypto/hashes) |
 | `memchr` | 2.8.3 | Unlicense OR MIT | [upstream](https://github.com/BurntSushi/memchr) |
 | `memmap2` | 0.9.11 | MIT OR Apache-2.0 | [upstream](https://github.com/RazrFalcon/memmap2-rs) |
 | `minimal-lexical` | 0.2.1 | MIT/Apache-2.0 | [upstream](https://github.com/Alexhuszagh/minimal-lexical) |
@@ -108,6 +117,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `moxcms` | 0.8.1 | BSD-3-Clause OR Apache-2.0 | [upstream](https://github.com/awxkee/moxcms.git) |
 | `new_debug_unreachable` | 1.0.6 | MIT | [upstream](https://github.com/mbrubeck/rust-debug-unreachable) |
 | `nom` | 7.1.3 | MIT | [upstream](https://github.com/Geal/nom) |
+| `num-complex` | 0.4.6 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-complex) |
 | `num-conv` | 0.2.2 | MIT OR Apache-2.0 | [upstream](https://github.com/jhpratt/num-conv) |
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-traits) |
 | `ogg` | 0.8.0 | BSD-3-Clause | [upstream](https://github.com/RustAudio/ogg) |
@@ -138,13 +148,16 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `read-fonts` | 0.41.0 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
 | `regex` | 1.13.1 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/regex) |
 | `regex-automata` | 0.4.18 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/regex) |
+| `regex-lite` | 0.1.9 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/regex) |
 | `regex-syntax` | 0.8.11 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/regex) |
 | `resb` | 0.1.2 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `resvg` | 0.48.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/resvg) |
 | `rgb` | 0.8.53 | MIT | [upstream](https://github.com/kornelski/rust-rgb) |
 | `roxmltree` | 0.21.1 | MIT OR Apache-2.0 | [upstream](https://github.com/RazrFalcon/roxmltree) |
 | `rustc-hash` | 2.1.3 | Apache-2.0 OR MIT | [upstream](https://github.com/rust-lang/rustc-hash) |
+| `rustversion` | 1.0.23 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/rustversion) |
 | `scopeguard` | 1.2.0 | MIT OR Apache-2.0 | [upstream](https://github.com/bluss/scopeguard) |
+| `seq-macro` | 0.3.6 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/seq-macro) |
 | `serde` | 1.0.229 | MIT OR Apache-2.0 | [upstream](https://github.com/serde-rs/serde) |
 | `serde_core` | 1.0.229 | MIT OR Apache-2.0 | [upstream](https://github.com/serde-rs/serde) |
 | `serde_derive` | 1.0.229 | MIT OR Apache-2.0 | [upstream](https://github.com/serde-rs/serde) |
@@ -165,6 +178,13 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `string_cache_codegen` | 0.6.1 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/string-cache) |
 | `svgtypes` | 0.16.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/svgtypes) |
 | `swash` | 0.2.10 | Apache-2.0 OR MIT | [upstream](https://github.com/dfrg/swash) |
+| `symphonia` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
+| `symphonia-bundle-mp3` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
+| `symphonia-codec-aac` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
+| `symphonia-common` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
+| `symphonia-core` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
+| `symphonia-format-isomp4` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
+| `symphonia-metadata` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
 | `syn` | 2.0.119 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/syn) |
 | `syn` | 3.0.3 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/syn) |
 | `synstructure` | 0.13.2 | MIT | [upstream](https://github.com/mystor/synstructure) |

@@ -1,4 +1,4 @@
-use super::{DecodedAudio, MAX_DECODED_BYTES};
+use super::{DecodedAudio, resample};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone, Copy)]
@@ -131,15 +131,7 @@ pub(super) fn decode(
 ) -> Result<DecodedAudio, String> {
     let (format, data) = parse(bytes)?;
     let input_frames = data.len() / format.block_align;
-    let output_frames =
-        ((input_frames as f64 * target_rate / f64::from(format.rate)).round() as usize).max(1);
-    let output_bytes = output_frames
-        .checked_mul(format.channels)
-        .and_then(|samples| samples.checked_mul(4))
-        .ok_or("decoded audio size overflow")?;
-    if output_bytes > MAX_DECODED_BYTES {
-        return Err("decoded audio exceeds the 16 MiB AudioBuffer limit".into());
-    }
+    resample::output_frames(input_frames, format.channels, format.rate, target_rate)?;
     let sample_bytes = usize::from(format.bits / 8);
     let mut source = vec![Vec::with_capacity(input_frames); format.channels];
     for (frame_index, frame) in data.chunks_exact(format.block_align).enumerate() {
@@ -151,28 +143,5 @@ pub(super) fn decode(
             samples.push(sample(&frame[start..start + sample_bytes], format));
         }
     }
-    let channels = if target_rate == f64::from(format.rate) {
-        source
-    } else {
-        let mut output = vec![Vec::with_capacity(output_frames); format.channels];
-        let ratio = f64::from(format.rate) / target_rate;
-        for index in 0..output_frames {
-            if index.is_multiple_of(4096) && cancelled.load(Ordering::Relaxed) {
-                return Err("audio decoding was cancelled".into());
-            }
-            let position = (index as f64 * ratio).min((input_frames - 1) as f64);
-            let first = position.floor() as usize;
-            let second = (first + 1).min(input_frames - 1);
-            let fraction = (position - first as f64) as f32;
-            for (destination, source) in output.iter_mut().zip(&source) {
-                destination.push(source[first] * (1.0 - fraction) + source[second] * fraction);
-            }
-        }
-        output
-    };
-    Ok(DecodedAudio {
-        channels,
-        sample_rate: target_rate,
-        frames: output_frames,
-    })
+    resample::finish(source, format.rate, target_rate, cancelled)
 }

@@ -7,16 +7,25 @@ license = "MIT"
 
 [dependencies]
 base64 = "0.22.1"
+# Pure-Rust Apache-2.0 native FLAC decoder shared by Web Audio and the media worker.
+claxon = "=0.4.3"
 cssparser = "0.37.0"
 data-url = "0.3.2"
 encoding_rs = "0.8.35"
 flate2 = { version = "1.1.9", default-features = false, features = ["rust_backend"] }
+# Pure-Rust Apache-2.0 FLAC encoder for MediaRecorder.
+flacenc = { version = "0.5.1", default-features = false }
 getrandom = "0.4.3"
 html5ever = "0.39.0"
 image = { version = "0.25.10", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "webp"] }
+# Pure-Rust Vorbis decoder and Ogg container parser shared by Web Audio and media worker.
+lewton = "=0.10.2"
+ogg = "=0.8.0"
 psl2 = { version = "0.1.12", default-features = false, features = ["fast-lookup"] }
 resvg = { version = "0.48.1", default-features = false }
 sha2 = "0.10.9"
+# MPL-2.0 MP3 and AAC-in-MP4 demux/decode for Web Audio and contained playback.
+symphonia = { version = "=0.6.1", default-features = false, features = ["mp3", "aac", "isomp4"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 time = { version = "0.3.55", default-features = false, features = ["std", "parsing"] }
@@ -30,10 +39,6 @@ xml = "1.4.0"
 xmlparser = "0.13.6"
 
 [target.'cfg(windows)'.dependencies]
-# Pure-Rust Ogg/Vorbis decoder (MIT OR Apache-2.0) and BSD-3-Clause container parser;
-# both consume bounded encoded bytes only inside the restricted media worker.
-lewton = "=0.10.2"
-ogg = "=0.8.0"
 accesskit = "0.24.1"
 accesskit_windows = "0.34.0"
 fontique = { version = "0.11.1", default-features = false, features = ["system"] }

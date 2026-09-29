@@ -127,18 +127,7 @@ fn adts_aac_is_decoded_as_audio_only_and_seekable() {
 }
 
 #[test]
-fn native_flac_is_decoded_as_audio_only_and_seekable() {
-    let capability = super::super::capabilities::probe(MediaLimits::default());
-    assert!(
-        capability.startup_hresult >= 0 && capability.flac_hresult >= 0,
-        "FLAC decoder probe failed: {capability:?}"
-    );
-    if capability.flac_decoders == 0 {
-        eprintln!(
-            "skipping native FLAC decode: this Windows host has no FLAC Media Foundation decoder"
-        );
-        return;
-    }
+fn flac_is_decoded_as_audio_only_and_seekable_without_media_foundation_codec() {
     let bytes = decode_fixture(include_str!(
         "../../../../tests/fixtures/media/test-1s-audio.flac.base64"
     ));

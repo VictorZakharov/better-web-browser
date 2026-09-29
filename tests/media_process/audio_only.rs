@@ -10,20 +10,6 @@ fn verify_playback(bytes: &[u8], codec: MediaCodecFamily) {
     let mut options = decode_options();
     options.silent_audio = true;
     let mut session = MediaSession::launch(options).expect("launch hidden contained media worker");
-    if codec == MediaCodecFamily::Flac {
-        let capability = session.probe().expect("probe contained FLAC decoder");
-        assert!(
-            capability.startup_hresult >= 0 && capability.flac_hresult >= 0,
-            "contained FLAC decoder probe failed: {capability:?}"
-        );
-        if capability.flac_decoders == 0 {
-            eprintln!(
-                "skipping contained FLAC playback: this Windows host has no FLAC Media Foundation decoder"
-            );
-            session.shutdown().expect("clean media worker shutdown");
-            return;
-        }
-    }
     let (source, report) = session
         .decode_owned_audio_fixture(bytes)
         .expect("decode audio without a video frame");
@@ -150,7 +136,35 @@ fn aac_mp4_audio_only_play_pause_seek() {
 }
 
 #[test]
-fn mp3_audio_only_play_pause_seek() {
+fn ordinary_m4a_aac_plays_without_media_foundation_codec() {
+    let bytes = decode_base64(include_str!("../fixtures/media/test-0.4s-tone.m4a.base64"));
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut options = decode_options();
+    options.silent_audio = true;
+    let mut session = MediaSession::launch(options).expect("launch hidden contained media worker");
+    let (source, report) = session
+        .decode_owned_audio_fixture(&bytes)
+        .expect("decode ordinary AAC-in-M4A without a host codec");
+    assert_eq!(report.video_codec, MediaCodecFamily::None);
+    assert_eq!(report.audio_codec, MediaCodecFamily::Aac);
+    assert_eq!(report.audio_sample_rate, 44_100);
+    assert_eq!(report.audio_channels, 1);
+    assert_eq!(report.duration_100ns, 4_000_000);
+    assert_eq!(report.audio_decoded_bytes, 17_640 * 2);
+    session
+        .set_owned_fixture_playback(source, true, 0)
+        .expect("start silent M4A playback");
+    let sought = session
+        .seek_owned_fixture_playback(source, 2_000_000)
+        .expect("seek ordinary M4A source");
+    assert!((1_500_000..=2_500_000).contains(&sought.position_100ns));
+    session.shutdown().expect("clean media worker shutdown");
+}
+
+#[test]
+fn mp3_audio_only_play_pause_seek_without_media_foundation_codec() {
     let bytes = decode_base64(include_str!("../fixtures/media/test-1s-audio.mp3.base64"));
     verify_playback(&bytes, MediaCodecFamily::Mp3);
 }
@@ -162,7 +176,7 @@ fn adts_aac_audio_only_play_pause_seek() {
 }
 
 #[test]
-fn native_flac_audio_only_play_pause_seek() {
+fn flac_audio_only_play_pause_seek_without_media_foundation_codec() {
     let bytes = decode_base64(include_str!("../fixtures/media/test-1s-audio.flac.base64"));
     assert_eq!(bytes.len(), 20_333);
     assert_eq!(

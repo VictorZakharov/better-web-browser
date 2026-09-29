@@ -31,6 +31,13 @@ Audio graph. It does not play through speakers merely because capture began. Dis
 tracks clear queued speech, and a source remains bound to its selected track if the track is
 later removed from the stream. The HTML `<audio srcObject>` monitoring path is not implemented.
 
+The same granted microphone track can feed the bounded audio-only
+`MediaRecorder` path. It emits real lossless FLAC Blob chunks; video and
+multi-track recording remain unsupported. Track changes, stopping, and grant
+revocation end or fault the recording instead of preserving access to a retired
+device. See the [encoded-audio and recording contract](audio-codecs-and-recording.md)
+for MIME, chunk, resource, and test details.
+
 Current scope deliberately does not claim advanced constraint selection, device picking, or
 capture from child frames. Unsupported optional `advanced` preference sets are skipped, while
 unsupported mandatory basic constraints reject before prompting. Add selection behind the same

@@ -24,9 +24,11 @@ mod adaptive_audio;
 mod append;
 mod audio_only;
 mod capabilities;
+mod compressed_audio;
 mod source;
 use source::*;
 mod audio;
+mod flac;
 mod fragmented_mp4;
 mod h264;
 mod ogg_vorbis;
@@ -49,8 +51,14 @@ pub(super) struct DecodedMedia {
 }
 
 pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, String> {
+    if flac::is_flac(bytes) {
+        return flac::decode(bytes, limits, Instant::now());
+    }
     if ogg_vorbis::is_ogg(bytes) {
         return ogg_vorbis::decode(bytes, limits, Instant::now());
+    }
+    if let Some(kind) = compressed_audio::classify(bytes) {
+        return compressed_audio::decode(bytes, kind, limits, Instant::now());
     }
     decode_sources(bytes, bytes, bytes.len() as u64, limits)
 }

@@ -11,17 +11,11 @@ use crate::limits::{
 use crate::media_protocol::{
     MediaBufferedExtent, MediaCodecFamily, MediaDecodeReport, MediaLimits,
 };
+use crate::ogg_vorbis_headers;
 use lewton::inside_ogg::OggStreamReader;
-use ogg::reading::PacketReader;
 use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Instant;
-
-mod setup_guard;
-
-const MAX_HEADER_PACKET_BYTES: usize = 256 * 1024;
-const MIN_SAMPLE_RATE: u32 = 8_000;
-const MAX_SAMPLE_RATE: u32 = 192_000;
 
 pub(super) fn is_ogg(bytes: &[u8]) -> bool {
     bytes.starts_with(b"OggS")
@@ -38,7 +32,7 @@ pub(super) fn decode(
     {
         return Err("encoded Ogg source exceeds worker limits".into());
     }
-    let (sample_rate, channels) = preflight_headers(bytes)?;
+    let (sample_rate, channels) = ogg_vorbis_headers::preflight(bytes, 2)?;
     let mut reader = OggStreamReader::new(Cursor::new(bytes))
         .map_err(|error| format!("open Ogg/Vorbis decoder: {error}"))?;
     if reader.ident_hdr.audio_sample_rate != sample_rate
@@ -152,7 +146,7 @@ impl VorbisDecoder {
         {
             return Err("Ogg/Vorbis playback exceeds worker limits".into());
         }
-        let format = preflight_headers(bytes)?;
+        let format = ogg_vorbis_headers::preflight(bytes, 2)?;
         if format != (expected_sample_rate, expected_channels) {
             return Err("Ogg/Vorbis format disagreed with decode report".into());
         }
@@ -239,80 +233,6 @@ impl VorbisDecoder {
             return Ok(Some(bytes));
         }
     }
-}
-
-fn preflight_headers(bytes: &[u8]) -> Result<(u32, u16), String> {
-    if !is_ogg(bytes) || bytes.len() > MAX_MEDIA_ENCODED_QUEUE_BYTES {
-        return Err("source is not a bounded Ogg stream".into());
-    }
-    let mut packets = PacketReader::new(Cursor::new(bytes));
-    let mut serial = None;
-    let mut format = None;
-    for (index, kind) in [1_u8, 3, 5].into_iter().enumerate() {
-        let packet = packets
-            .read_packet()
-            .map_err(|error| format!("read Ogg/Vorbis header: {error}"))?
-            .ok_or_else(|| "Ogg/Vorbis headers are incomplete".to_string())?;
-        if packet.data.len() > MAX_HEADER_PACKET_BYTES
-            || packet.data.get(..7) != Some(&[kind, b'v', b'o', b'r', b'b', b'i', b's'])
-            || serial.is_some_and(|value| value != packet.stream_serial())
-            || (index == 0 && !packet.first_in_stream())
-        {
-            return Err("Ogg/Vorbis header is invalid or too large".into());
-        }
-        serial = Some(packet.stream_serial());
-        match index {
-            0 => {
-                let header = lewton::header::read_header_ident(&packet.data)
-                    .map_err(|error| format!("read Vorbis identification: {error}"))?;
-                let channels = u16::from(header.audio_channels);
-                if !(1..=2).contains(&channels)
-                    || !(MIN_SAMPLE_RATE..=MAX_SAMPLE_RATE).contains(&header.audio_sample_rate)
-                {
-                    return Err("Ogg/Vorbis format exceeds supported PCM output".into());
-                }
-                format = Some((header.audio_sample_rate, channels));
-            }
-            1 => validate_comments(&packet.data)?,
-            _ => setup_guard::inspect(&packet.data)?,
-        }
-    }
-    format.ok_or_else(|| "Ogg/Vorbis identification is missing".into())
-}
-
-fn validate_comments(packet: &[u8]) -> Result<(), String> {
-    // Lewton allocates from the vendor/comment lengths before it checks EOF.
-    // Reject impossible sizes first, using the actual bounded packet length.
-    let mut offset = 7;
-    let vendor = take_length(packet, &mut offset)?;
-    offset = offset
-        .checked_add(vendor)
-        .filter(|end| *end <= packet.len())
-        .ok_or_else(|| "Ogg/Vorbis vendor length exceeds header".to_string())?;
-    let count = take_length(packet, &mut offset)?;
-    if count > packet.len() / 4 {
-        return Err("Ogg/Vorbis comment count exceeds header".into());
-    }
-    for _ in 0..count {
-        let length = take_length(packet, &mut offset)?;
-        offset = offset
-            .checked_add(length)
-            .filter(|end| *end <= packet.len())
-            .ok_or_else(|| "Ogg/Vorbis comment length exceeds header".to_string())?;
-    }
-    if packet.get(offset) != Some(&1) {
-        return Err("Ogg/Vorbis comment framing is invalid".into());
-    }
-    Ok(())
-}
-
-fn take_length(packet: &[u8], offset: &mut usize) -> Result<usize, String> {
-    let bytes: [u8; 4] = packet
-        .get(*offset..offset.saturating_add(4))
-        .and_then(|bytes| bytes.try_into().ok())
-        .ok_or_else(|| "Ogg/Vorbis comment header is truncated".to_string())?;
-    *offset += 4;
-    Ok(u32::from_le_bytes(bytes) as usize)
 }
 
 fn checked_pcm_bytes(samples: &[i16], channels: u16) -> Result<usize, String> {

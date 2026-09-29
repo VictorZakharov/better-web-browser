@@ -72,6 +72,11 @@ configuration checks currently derive support from media-type policy, not a
 per-host decoder query. The contained-worker capability probe allows tests to
 skip only the host-dependent waveform path when the native decoder is absent.
 
+This describes that batch's original host-dependent baseline. Native FLAC
+playback now uses the contained pure-Rust decoder described in
+[encoded audio and recording](audio-codecs-and-recording.md); its direct,
+worker, and renderer tests no longer skip based on an installed host codec.
+
 Reference: [FLAC media type registration (RFC 9639)](https://www.rfc-editor.org/rfc/rfc9639.html).
 
 ## Script-generation policy

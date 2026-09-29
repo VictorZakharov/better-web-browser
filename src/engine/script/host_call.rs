@@ -13,6 +13,7 @@ pub(in crate::engine::script) mod geolocation;
 mod graph_audio;
 mod graphics;
 pub(in crate::engine::script) mod media_devices;
+mod media_recorder;
 mod module_completion;
 pub(super) mod navigation;
 pub(in crate::engine::script) mod notification;
@@ -75,6 +76,9 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     if let Some(value) = audio_decode::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = media_recorder::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = super::workers::worker_host_call(operation, args, state)? {

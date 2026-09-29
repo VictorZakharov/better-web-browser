@@ -1,3 +1,5 @@
+use super::compressed_audio::{self, CompressedDecoder};
+use super::flac::FlacDecoder;
 use super::ogg_vorbis::VorbisDecoder;
 use super::{
     ComApartment, MediaFoundation, output_type, seek_source_reader, select_stream, source_reader,
@@ -19,6 +21,8 @@ const PCM_BITS_PER_SAMPLE: u32 = 16;
 /// Pull-driven allowlisted audio-to-PCM decoder owned by the restricted media process.
 pub(in crate::media_process) enum AudioDecoder {
     Native(MfAudioDecoder),
+    Compressed(Box<CompressedDecoder>),
+    Flac(Box<FlacDecoder>),
     Vorbis(Box<VorbisDecoder>),
 }
 
@@ -30,6 +34,28 @@ impl AudioDecoder {
         expected_sample_rate: u32,
         expected_channels: u16,
     ) -> Result<Self, String> {
+        if matches!(codec, MediaCodecFamily::Mp3 | MediaCodecFamily::Aac)
+            && let Some(kind) = compressed_audio::classify(bytes)
+            && kind.codec() == codec
+        {
+            return CompressedDecoder::open(
+                bytes,
+                kind,
+                expected_samples,
+                expected_sample_rate,
+                expected_channels,
+            )
+            .map(|decoder| Self::Compressed(Box::new(decoder)));
+        }
+        if codec == MediaCodecFamily::Flac && super::flac::is_flac(bytes) {
+            return FlacDecoder::open(
+                bytes,
+                expected_samples,
+                expected_sample_rate,
+                expected_channels,
+            )
+            .map(|decoder| Self::Flac(Box::new(decoder)));
+        }
         if codec == MediaCodecFamily::Vorbis {
             return VorbisDecoder::open(
                 bytes,
@@ -52,6 +78,8 @@ impl AudioDecoder {
     pub(in crate::media_process) fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
         match self {
             Self::Native(decoder) => decoder.seek(position_100ns),
+            Self::Compressed(decoder) => decoder.seek(position_100ns),
+            Self::Flac(decoder) => decoder.seek(position_100ns),
             Self::Vorbis(decoder) => decoder.seek(position_100ns),
         }
     }
@@ -59,6 +87,8 @@ impl AudioDecoder {
     pub(in crate::media_process) fn next_sample(&mut self) -> Result<Option<Vec<u8>>, String> {
         match self {
             Self::Native(decoder) => decoder.next_sample(),
+            Self::Compressed(decoder) => decoder.next_sample(),
+            Self::Flac(decoder) => decoder.next_sample(),
             Self::Vorbis(decoder) => decoder.next_sample(),
         }
     }

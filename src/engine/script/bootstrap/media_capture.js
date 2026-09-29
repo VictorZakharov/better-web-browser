@@ -18,6 +18,7 @@
     const active = new Map();
     const captureTracks = new Map();
     const streamsByCapture = new Map();
+    let recorderCaptureFrame = null;
     let nextStreamId = 1;
 
     // A track or capture session must not keep throwaway derived MediaStreams alive.
@@ -328,6 +329,8 @@
         const bytes = Number(frames) * Number(channels) * 2;
         if (pcmBytes.length !== bytes || bytes > 3840 || bytes <= 0) return;
         const samples = track.enabled ? pcmBytes : new Uint8Array(bytes);
+        recorderCaptureFrame?.(track, sequence, timestamp100ns,
+            sampleRate, channels, frames, samples);
         for (const attached of streamsForCapture(Number(id))) {
             // MediaStreamAudioSourceNode retains the selected audio track after
             // it is removed from the original stream's current track set.
@@ -336,4 +339,8 @@
                     sampleRate, channels, frames, samples);
         }
     };
+    Object.defineProperty(globalThis, '__installMediaRecorderCapture', {
+        configurable: true,
+        value(callback) { recorderCaptureFrame = callback; }
+    });
 })();

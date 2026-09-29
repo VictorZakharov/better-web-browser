@@ -1,35 +1,13 @@
 //! A native FLAC `<source>` must reach the contained decoder without fabricating video.
 
 use super::*;
-use better_web_browser::media_process::{MediaLaunchOptions, MediaSession};
 use std::time::Instant;
 
-fn host_has_flac_decoder() -> bool {
-    let mut options = MediaLaunchOptions::new(env!("CARGO_BIN_EXE_better-web-browser"));
-    options.test_mode = true;
-    options.silent_audio = true;
-    options.command_timeout = Duration::from_secs(3);
-    let mut session = MediaSession::launch(options).expect("launch hidden codec probe");
-    let report = session.probe().expect("probe native FLAC availability");
-    assert!(
-        report.startup_hresult >= 0 && report.flac_hresult >= 0,
-        "FLAC decoder probe failed: {report:?}"
-    );
-    session.shutdown().expect("stop hidden codec probe");
-    report.flac_decoders > 0
-}
-
 #[test]
-fn native_flac_source_type_decodes_in_contained_renderer() {
+fn native_flac_source_type_decodes_in_contained_renderer_without_host_codec() {
     let _serial = SERIAL
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if !host_has_flac_decoder() {
-        eprintln!(
-            "skipping renderer FLAC source: this Windows host has no Media Foundation FLAC decoder"
-        );
-        return;
-    }
     let mut launch = options();
     launch.enable_media = true;
     launch.unresponsive_timeout = Duration::from_millis(500);
