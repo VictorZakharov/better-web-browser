@@ -41,6 +41,8 @@
             return new IIRFilterNode(this, { feedforward, feedback });
         }
         createBiquadFilter() { return new BiquadFilterNode(this); }
+        createDynamicsCompressor() { return new DynamicsCompressorNode(this); }
+        createConvolver() { return new ConvolverNode(this); }
         createWaveShaper() { return new WaveShaperNode(this); }
         createPeriodicWave(real, imag, constraints = {}) {
             if (real === undefined || imag === undefined)
@@ -106,6 +108,7 @@
         for (const node of state.nodes)
             if ((node instanceof AudioScheduledSourceNode || node instanceof DelayNode ||
                 node instanceof IIRFilterNode || node instanceof BiquadFilterNode ||
+                node instanceof DynamicsCompressorNode || node instanceof ConvolverNode ||
                 node instanceof AnalyserNode) && !cache.has(node))
                 renderAudioNode(context, node, frame, frames, cache);
         return samples;

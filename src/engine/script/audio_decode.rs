@@ -1,6 +1,10 @@
 //! Document-owned, bounded Web Audio decoding. Encoded bytes never enter the browser process.
 //! The parsing and sample-rate conversion run on a worker thread, not V8's control thread.
 
+mod flac;
+mod ogg_vorbis;
+mod resample;
+mod symphonia;
 #[cfg(test)]
 mod tests;
 mod wav;
@@ -85,7 +89,15 @@ impl AudioDecodes {
         thread::Builder::new()
             .name("breeze-audio-decode".into())
             .spawn(move || {
-                let result = wav::decode(&bytes, sample_rate, &worker_cancelled);
+                let result = if bytes.starts_with(b"OggS") {
+                    ogg_vorbis::decode(&bytes, sample_rate, &worker_cancelled)
+                } else if bytes.starts_with(b"fLaC") {
+                    flac::decode(&bytes, sample_rate, &worker_cancelled)
+                } else if let Some(kind) = symphonia::sniff(&bytes) {
+                    symphonia::decode(&bytes, sample_rate, &worker_cancelled, kind)
+                } else {
+                    wav::decode(&bytes, sample_rate, &worker_cancelled)
+                };
                 let _ = sender.send(result);
             })
             .map_err(|_| "audio decoder thread is unavailable")?;

@@ -18,6 +18,7 @@ mod inserted_scripts;
 mod media_capture;
 mod media_capture_membership;
 mod media_devices;
+mod media_recorder;
 mod notification;
 mod permission;
 mod protocol_handler;

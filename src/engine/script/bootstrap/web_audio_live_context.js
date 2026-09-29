@@ -249,6 +249,7 @@
         ConstantSourceNode, StereoPannerNode, DelayNode,
         MediaStreamAudioSourceNode,
         ChannelSplitterNode, ChannelMergerNode, IIRFilterNode, BiquadFilterNode,
+        DynamicsCompressorNode, ConvolverNode,
         WaveShaperNode, PeriodicWave, AnalyserNode,
         BaseAudioContext, AudioContext, OfflineAudioContext, OfflineAudioCompletionEvent
     });

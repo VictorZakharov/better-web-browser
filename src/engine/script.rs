@@ -32,6 +32,7 @@ mod idle_callbacks;
 pub(crate) mod import_maps;
 mod media_environment;
 mod media_host;
+mod media_recorder;
 mod module_evaluation;
 mod module_lifecycle;
 mod module_loader;

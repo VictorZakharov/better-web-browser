@@ -78,8 +78,30 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=440:sample_rate=4
 The decoded file is 20,333 bytes with SHA-256
 `dd8080cb04e28222c585c552e6f76a6669c789aeb621b802ecfe728949adc7ad`.
 FFmpeg is a development-only fixture generator, not a runtime, build, or test
-dependency. The fixture tests decoding, play/pause, and seeking in the contained
-Windows Media Foundation worker before Breeze advertises `audio/flac` support.
+dependency. The fixture tests decoding, play/pause, and seeking through the
+pure-Rust FLAC decoder in the contained media worker, independent of an
+installed Windows Media Foundation FLAC codec.
+
+## Self-authored Web Audio MP3 and AAC-in-M4A fixtures
+
+`test-0.4s-tone.mp3.base64` and `test-0.4s-tone.m4a.base64` encode the same
+0.4-second 440 Hz mono synthetic sine wave, not a third-party recording.
+They exercise MP3 and AAC-in-ISO-BMFF `decodeAudioData` and contained media
+playback paths. The locally
+installed FFmpeg `N-111280-gd51b0580e4-20230625` generated them with:
+
+```text
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'sine=frequency=440:sample_rate=44100:duration=0.4' -ac 1 -c:a libmp3lame -b:a 96k -y synthetic-tone.mp3
+ffmpeg -hide_banner -loglevel error -f lavfi -i 'sine=frequency=440:sample_rate=44100:duration=0.4' -ac 1 -c:a aac -b:a 96k -movflags +faststart -y synthetic-tone.m4a
+```
+
+| Decoded file | Bytes | SHA-256 |
+| --- | ---: | --- |
+| MP3 | 5,686 | `1180594624bafb2d762b80dab5c219c263a42d164d99312b9c6a06402d3bf24f` |
+| M4A | 6,076 | `b6ee3c425b03eb330de086c518485057ec41f4f8b52878fbc91e27c3daacdd43` |
+
+FFmpeg is a development-only fixture generator, not a runtime, build, or test
+dependency. The Base64 encoding keeps both binary fixtures reviewable.
 
 ## Self-authored Ogg/Vorbis audio fixture
 

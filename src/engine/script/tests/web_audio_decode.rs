@@ -122,3 +122,83 @@ fn decode_audio_data_rejects_unsupported_bytes_and_detached_input() {
     );
     assert_eq!(console.len(), 3, "unexpected decode logs: {console:?}");
 }
+
+#[test]
+fn decode_audio_data_accepts_complete_native_flac_in_audio_context() {
+    // The fixture is a self-authored, one-second 440 Hz mono tone. Exercise the
+    // JavaScript/worker boundary as well as the codec, not just the Rust parser.
+    let encoded = include_str!("../../../../tests/fixtures/media/test-1s-audio.flac.base64")
+        .lines()
+        .collect::<String>();
+    let html = r#"<body><script>
+        const context = new OfflineAudioContext(1, 128, 48000);
+        const binary = atob('__FLAC_FIXTURE__');
+        const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+        const input = bytes.buffer;
+        context.decodeAudioData(input).then(buffer => {
+            const channel = buffer.getChannelData(0);
+            if (buffer.sampleRate !== 48000 || buffer.numberOfChannels !== 1 ||
+                buffer.length !== 48000 ||
+                !channel.some(sample => sample > 0.05) ||
+                !channel.some(sample => sample < -0.05))
+                throw Error('FLAC decoded AudioBuffer was not real resampled PCM');
+            console.log('FLAC decodeAudioData passed');
+        });
+        if (input.byteLength !== 0) throw Error('FLAC ArrayBuffer was not detached');
+    </script>"#
+        .replace("__FLAC_FIXTURE__", &encoded);
+    let console = execute_decode_html_until_logged(&html, &["log: FLAC decodeAudioData passed"]);
+    assert_eq!(console, ["log: FLAC decodeAudioData passed"]);
+}
+
+#[test]
+fn decode_audio_data_accepts_ogg_mp3_and_m4a_in_audio_context() {
+    // Synthetic fixtures traverse the page API and native worker. A byte
+    // sniffer or metadata-only decoder cannot satisfy these PCM assertions.
+    let cases = [
+        (
+            "Ogg/Vorbis",
+            include_str!("../../../../tests/fixtures/media/test-2s-audio.ogg.base64"),
+            92_000,
+            98_000,
+        ),
+        (
+            "MP3",
+            include_str!("../../../../tests/fixtures/media/test-0.4s-tone.mp3.base64"),
+            17_000,
+            22_000,
+        ),
+        (
+            "AAC-in-M4A",
+            include_str!("../../../../tests/fixtures/media/test-0.4s-tone.m4a.base64"),
+            17_000,
+            22_000,
+        ),
+    ];
+    for (label, fixture, min_frames, max_frames) in cases {
+        let encoded = fixture.lines().collect::<String>();
+        let html = r#"<body><script>
+            const context = new OfflineAudioContext(1, 128, 48000);
+            const binary = atob('__FIXTURE__');
+            const input = Uint8Array.from(binary,
+                character => character.charCodeAt(0)).buffer;
+            context.decodeAudioData(input).then(buffer => {
+                const channel = buffer.getChannelData(0);
+                if (buffer.sampleRate !== 48000 || buffer.numberOfChannels !== 1 ||
+                    buffer.length < __MIN_FRAMES__ || buffer.length > __MAX_FRAMES__ ||
+                    !channel.some(sample => sample > 0.02) ||
+                    !channel.some(sample => sample < -0.02))
+                    throw Error('audio decode did not produce resampled bipolar PCM');
+                console.log('format decodeAudioData passed');
+            });
+            if (input.byteLength !== 0)
+                throw Error('encoded ArrayBuffer was not detached');
+        </script>"#
+            .replace("__FIXTURE__", &encoded)
+            .replace("__MIN_FRAMES__", &min_frames.to_string())
+            .replace("__MAX_FRAMES__", &max_frames.to_string());
+        let console =
+            execute_decode_html_until_logged(&html, &["log: format decodeAudioData passed"]);
+        assert_eq!(console, ["log: format decodeAudioData passed"], "{label}");
+    }
+}

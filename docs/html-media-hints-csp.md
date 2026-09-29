@@ -19,7 +19,8 @@ waits for loading to finish instead of being rejected simply because no
 decoder is ready yet.
 
 The tested complete-resource formats are PCM WAV, MP3, AAC in M4A, ADTS
-AAC, Ogg/Vorbis, and native FLAC on Windows hosts with a Media Foundation FLAC decoder.
+AAC, Ogg/Vorbis, and native FLAC. FLAC uses a contained pure-Rust decoder
+without requiring a host Media Foundation FLAC codec.
 The media worker decodes audio to PCM, drives the XAudio2 output path,
 and supports play, pause, volume, and seek without fabricating a video frame.
 `HTMLMediaElement.canPlayType()` makes the conservative `maybe` claim for
@@ -28,8 +29,7 @@ FLAC. `audio/ogg; codecs="vorbis"` reports `probably`, while codec-less Ogg
 reports `maybe`; Ogg FLAC and Opus remain unsupported. Media Capabilities
 distinguishes complete-file FLAC from unsupported
 Media Source FLAC, but derives `decodingInfo()` support from MIME/type policy,
-not a per-host native decoder query; a host without that optional decoder may
-still report file support. `audio/m4a` and `audio/x-m4a` share the proven
+not a per-host native decoder query. `audio/m4a` and `audio/x-m4a` share the proven
 AAC-in-MP4 decoder path with `audio/mp4`; a codec hint for a video-only M4A
 still returns unsupported. A complete H.264-only fragmented MP4 uses a
 worker-owned monotonic playback clock rather than requiring a fabricated audio
