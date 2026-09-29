@@ -70,8 +70,12 @@
         }
         get min() { return this.getAttribute('min') || ''; }
         set min(value) { this.setAttribute('min', value); }
+        get minLength() { return nonNegativeLongAttribute(this, 'minlength'); }
+        set minLength(value) { setNonNegativeLongAttribute(this, 'minlength', value); }
         get max() { return this.getAttribute('max') || ''; }
         set max(value) { this.setAttribute('max', value); }
+        get maxLength() { return nonNegativeLongAttribute(this, 'maxlength'); }
+        set maxLength(value) { setNonNegativeLongAttribute(this, 'maxlength', value); }
         get step() { return this.getAttribute('step') || ''; }
         set step(value) { this.setAttribute('step', value); }
         get pattern() { return this.getAttribute('pattern') || ''; }

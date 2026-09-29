@@ -13,10 +13,10 @@
             this.textContent = String(value);
             reconcileTextSelectionValue(this);
         }
-        get minLength() { return reflectedInteger(this, 'minlength', -1); }
-        set minLength(value) { this.setAttribute('minlength', String(Math.trunc(Number(value)))); }
-        get maxLength() { return reflectedInteger(this, 'maxlength', -1); }
-        set maxLength(value) { this.setAttribute('maxlength', String(Math.trunc(Number(value)))); }
+        get minLength() { return nonNegativeLongAttribute(this, 'minlength'); }
+        set minLength(value) { setNonNegativeLongAttribute(this, 'minlength', value); }
+        get maxLength() { return nonNegativeLongAttribute(this, 'maxlength'); }
+        set maxLength(value) { setNonNegativeLongAttribute(this, 'maxlength', value); }
         get wrap() { return (this.getAttribute('wrap') || 'soft').toLowerCase() === 'hard' ? 'hard' : 'soft'; }
         set wrap(value) { this.setAttribute('wrap', value); }
         get required() { return this.hasAttribute('required'); }

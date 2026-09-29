@@ -146,16 +146,18 @@ pub(crate) fn strip_newlines(value: &str) -> String {
     value.replace("\r\n", "").replace(['\r', '\n'], "")
 }
 
-/// Parses non-negative integers for length/size attributes.
+/// HTML non-negative integer parsing consumes a signed decimal prefix.
+/// https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-non-negative-integers
 pub(crate) fn parse_non_negative(value: &str) -> Option<u64> {
-    let trimmed = value.trim_matches(|char| matches!(char, ' ' | '\t' | '\n' | '\x0C' | '\r'));
-    if trimmed.is_empty()
-        || trimmed.starts_with(['+', '-'])
-        || !trimmed.bytes().all(|byte| byte.is_ascii_digit())
-    {
+    let trimmed = value.trim_start_matches([' ', '\t', '\n', '\x0C', '\r']);
+    let negative = trimmed.starts_with('-');
+    let unsigned = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
+    let digit_count = unsigned.bytes().take_while(u8::is_ascii_digit).count();
+    if digit_count == 0 {
         return None;
     }
-    trimmed.parse().ok()
+    let parsed: u64 = unsigned[..digit_count].parse().ok()?;
+    (!negative || parsed == 0).then_some(parsed)
 }
 
 /// Textarea API normalization: CRLF and CR become LF.
@@ -340,63 +342,4 @@ pub(crate) fn refresh_pattern_verdict(node: &Node) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn float_grammar_matches_the_platform_subset() {
-        for valid in [
-            "12",
-            "-1.5",
-            "+.5",
-            "5.",
-            "1e3",
-            "1E-3",
-            "  12  ",
-            "\t-0.25\n",
-        ] {
-            assert!(is_valid_float(valid), "{valid}");
-        }
-        for invalid in [
-            "",
-            "   ",
-            "abc",
-            "inf",
-            "-Infinity",
-            "NaN",
-            "0x1",
-            "1.2.3",
-            "e5",
-            "1e",
-            "+",
-            ".",
-            "1,000",
-            "12px",
-            "--1",
-        ] {
-            assert!(!is_valid_float(invalid), "{invalid}");
-        }
-        assert_eq!(parse_float_value("0.1"), Some(0.1));
-        assert_eq!(parse_float_value("1e308"), Some(1e308));
-        assert_eq!(parse_float_value("1e309"), None);
-    }
-
-    #[test]
-    fn number_serialization_uses_shortest_plain_or_exponent() {
-        for (value, expected) in [
-            (0.0, "0"),
-            (-0.0, "0"),
-            (50.0, "50"),
-            (0.3, "0.3"),
-            (-2.5, "-2.5"),
-            (100.0, "100"),
-            (0.000001, "0.000001"),
-            (0.0000001, "1e-7"),
-            (1e21, "1e+21"),
-            (1e22, "1e+22"),
-            (1e20, "100000000000000000000"),
-        ] {
-            assert_eq!(number_to_string(value), expected, "{value}");
-        }
-    }
-}
+mod tests;
