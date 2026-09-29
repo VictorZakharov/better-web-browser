@@ -70,6 +70,31 @@ pub(super) fn merge_outcome(
     target
         .file_picker_actions
         .append(&mut source.file_picker_actions);
+    for selection in source.selection_actions {
+        if let Some(existing) = target
+            .selection_actions
+            .iter_mut()
+            .find(|existing| existing.node == selection.node)
+        {
+            *existing = selection;
+        } else {
+            if target.selection_actions.len()
+                == crate::renderer_protocol::MAX_PENDING_TEXT_SELECTIONS
+            {
+                target.selection_actions.remove(0);
+            }
+            target.selection_actions.push(selection);
+        }
+        while target
+            .selection_actions
+            .iter()
+            .map(|action| action.value.len())
+            .sum::<usize>()
+            > crate::limits::MAX_RENDERER_TEXT_INPUT_BYTES
+        {
+            target.selection_actions.remove(0);
+        }
+    }
     target
         .broadcast_actions
         .append(&mut source.broadcast_actions);

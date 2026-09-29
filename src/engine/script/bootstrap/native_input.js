@@ -175,7 +175,9 @@
             }
             editData = nativeEditData(before, value, start, end, inputType);
             if (editData === undefined) return [false];
-            try { target.setSelectionRange(start, end); }
+            // Native ingress must not echo a pre-edit value snapshot back to the
+            // HWND; only author selection changes enqueue mirror actions.
+            try { __applyNativeTextSelection(target, start, end, 'none'); }
             catch (_error) { return [false]; }
             const allowed = target.dispatchEvent(markTrusted(new InputEvent('beforeinput', {
                 bubbles: true, cancelable: true, composed: true, inputType, data: editData
@@ -201,9 +203,8 @@
             const setter = nativeValueSetters.find(([kind]) => target instanceof kind)?.[1];
             if (setter) Reflect.apply(setter, target, [value]);
         }
-        if (typeof target.setSelectionRange === 'function') {
-            try { target.setSelectionRange(input.selectionStart, input.selectionEnd); } catch (_error) {}
-        }
+        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)
+            __applyNativeTextSelection(target, input.selectionStart, input.selectionEnd, input.direction);
         refreshPatternVerdict(target);
         const allowed = target.dispatchEvent(markTrusted(new InputEvent('input', {
             bubbles: true, composed: true, inputType, data: editData
@@ -267,6 +268,12 @@
                 case 'keyboard': return dispatchNativeKeyboard(input);
                 case 'text': return dispatchNativeText(input);
                 case 'nativeText': return dispatchNativeText(input);
+                case 'selection': {
+                    const target = nativeTarget(input.target);
+                    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)
+                        __applyNativeTextSelection(target, input.selectionStart, input.selectionEnd, input.direction);
+                    return true;
+                }
                 case 'focus': return dispatchNativeFocus(input);
                 case 'simple': return dispatchNativeSimple(input);
                 case 'imageResource': return dispatchNativeImageResource(input);

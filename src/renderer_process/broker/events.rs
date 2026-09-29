@@ -126,6 +126,20 @@ impl EventSender {
                 });
                 RendererEvent::PointerCursor(next)
             }
+            RendererEvent::TextSelectionUpdate(next) => {
+                if state.events.iter().any(|queued| {
+                    matches!(queued, RendererEvent::TextSelectionUpdate(previous)
+                        if previous.document == next.document && previous.target == next.target
+                            && previous.observed_input_sequence > next.observed_input_sequence)
+                }) {
+                    return Ok(());
+                }
+                state.events.retain(|queued| {
+                    !matches!(queued, RendererEvent::TextSelectionUpdate(previous)
+                        if previous.document == next.document && previous.target == next.target)
+                });
+                RendererEvent::TextSelectionUpdate(next)
+            }
             event => event,
         };
         while state.receiver_open
@@ -231,6 +245,10 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         | RendererEvent::FetchAbort { document, .. }
         | RendererEvent::DocumentFailed { document, .. }
         | RendererEvent::PointerCursor(crate::renderer_protocol::PointerCursorResult {
+            document,
+            ..
+        })
+        | RendererEvent::TextSelectionUpdate(crate::renderer_protocol::TextSelectionUpdate {
             document,
             ..
         })

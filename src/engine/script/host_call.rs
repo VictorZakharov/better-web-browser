@@ -25,6 +25,7 @@ pub(in crate::engine::script) mod sensor;
 pub(in crate::engine::script) mod speech;
 mod storage;
 mod task_scheduling;
+mod text_selection;
 mod user_capabilities;
 pub(super) fn dispatch_host_call(
     operation: &str,
@@ -72,6 +73,9 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     if let Some(value) = file_picker::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = text_selection::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = super::wake_lock_host::dispatch(operation, args, state)? {

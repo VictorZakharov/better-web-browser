@@ -40,6 +40,8 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/embedded_elements.js"),
     include_str!("bootstrap/frame_elements.js"),
     include_str!("bootstrap/shadow_dom.js"),
+    include_str!("bootstrap/text_control_selection.js"),
+    include_str!("bootstrap/textarea_element.js"),
     include_str!("bootstrap/forms.js"),
     include_str!("bootstrap/form_collections.js"),
     include_str!("bootstrap/input_element.js"),

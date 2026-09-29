@@ -7,6 +7,7 @@ mod native_text;
 mod pointer;
 mod rendering;
 mod scrolling;
+mod selection;
 mod viewport;
 
 use super::*;
@@ -50,7 +51,7 @@ impl DocumentRuntime {
         }
         let force_accessibility_update = matches!(
             &input,
-            DocumentInput::Text(_) | DocumentInput::NativeText(_) | DocumentInput::Focus(_)
+            DocumentInput::Text(_) | DocumentInput::NativeText(_) | DocumentInput::Selection(_) | DocumentInput::Focus(_)
         ) || (matches!(&input, DocumentInput::Scroll(_))
             && !self.layout.sticky_offsets.is_empty());
         let mut cursor = None;
@@ -145,6 +146,7 @@ impl DocumentRuntime {
                 native_text_rejection = rejection;
                 (outcome, None)
             }
+            DocumentInput::Selection(input) => (self.selection_input(input)?, None),
             DocumentInput::Focus(input) => {
                 if !input.focused {
                     self.pointer_down = [None; 3];
@@ -292,7 +294,7 @@ impl DocumentRuntime {
         self.start_pending_media_device_requests(connection)?;
         self.start_pending_sensor_requests(connection)?;
         self.start_pending_clipboard_requests(connection)?;
-        connection.send_state_mutations(self.id, outcome)
+        connection.send_state_mutations(self.id, self.last_input_sequence, outcome)
     }
 
     pub(super) fn presentation_after_user_input(

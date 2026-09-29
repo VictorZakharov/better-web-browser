@@ -150,6 +150,8 @@ mod table_geometry;
 mod tasks;
 mod template_inertness;
 mod template_shadow_reflection;
+mod text_control_selection;
+mod text_control_selection_snapshots;
 mod text_encoding;
 mod text_tracks;
 mod timer_diagnostics;

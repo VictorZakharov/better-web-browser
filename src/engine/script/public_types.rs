@@ -5,7 +5,7 @@ pub use super::types::{
     ScriptClipboardAction, ScriptFetchOptions, ScriptFontAction, ScriptFullscreenAction,
     ScriptGeolocationAction, ScriptGraphAudioAction, ScriptHistoryAction, ScriptInput, ScriptKind,
     ScriptMediaAction, ScriptMediaCommand, ScriptMediaDeviceAction, ScriptNotificationAction,
-    ScriptOutcome, ScriptPointerLockAction, ScriptProtocolHandlerAction, ScriptSensorAction,
-    ScriptSpeechAction, UserInputEvent, UserInputModifiers, UserInputResult,
+    ScriptOutcome, ScriptPointerLockAction, ScriptProtocolHandlerAction, ScriptSelectionAction,
+    ScriptSensorAction, ScriptSpeechAction, UserInputEvent, UserInputModifiers, UserInputResult,
 };
 pub use super::wake_lock_host::ScriptWakeLockAction;

@@ -167,6 +167,7 @@ impl BrowserState {
             tab.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
             tab.renderer_input_poll_budget = 0;
             tab.pending_renderer_inputs.clear();
+            tab.pending_text_selections.clear();
             tab.history_traversals.clear();
             tab.renderer_revision = 0;
             tab.video_presentation = Default::default();

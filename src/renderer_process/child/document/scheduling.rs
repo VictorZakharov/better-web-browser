@@ -124,7 +124,7 @@ impl DocumentRuntime {
         ))?;
         self.advance_parser(connection, &mut outcome)?;
         if self.encoding_restart_pending() {
-            connection.send_state_mutations(self.id, &mut outcome)?;
+            connection.send_state_mutations(self.id, self.last_input_sequence, &mut outcome)?;
             return Ok(AdvanceResult::EncodingRestart);
         }
         self.execute_pending_parser_script(connection, &mut outcome)?;

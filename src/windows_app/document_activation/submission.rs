@@ -127,6 +127,7 @@ impl BrowserState {
                 self.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
                 self.renderer_input_poll_budget = 0;
                 self.pending_renderer_inputs.clear();
+                self.pending_text_selections.clear();
                 self.renderer_revision = 0;
                 self.renderer_load_metrics = Some(metrics);
                 self.renderer_next_timer = None;

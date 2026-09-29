@@ -124,13 +124,16 @@ fn safely_supersedes(newer: &DocumentInput, pending: &DocumentInput) -> bool {
         (DocumentInput::Text(newer), DocumentInput::Text(pending)) => {
             newer.document == pending.document && newer.target == pending.target
         }
+        (DocumentInput::Selection(newer), DocumentInput::Selection(pending)) => {
+            newer.document == pending.document && newer.target == pending.target
+        }
         _ => false,
     }
 }
 
 fn is_continuous(input: &DocumentInput) -> bool {
     match input {
-        DocumentInput::Scroll(_) => true,
+        DocumentInput::Scroll(_) | DocumentInput::Selection(_) => true,
         DocumentInput::Pointer(input) => {
             matches!(input.phase, PointerPhase::Move | PointerPhase::LockedMove)
         }
@@ -150,6 +153,9 @@ fn can_compact_across(newer: &DocumentInput, pending: &DocumentInput) -> bool {
                 && newer.buttons == pending.buttons
                 && newer.modifiers == pending.modifiers
         }
+        (DocumentInput::Selection(newer), DocumentInput::Selection(pending)) => {
+            newer.document == pending.document && newer.target == pending.target
+        }
         _ => false,
     }
 }
@@ -159,7 +165,7 @@ mod tests {
     use super::*;
     use better_web_browser::renderer_protocol::{
         DocumentId, DocumentNodeId, InputModifiers, NativeTextInput, PointerButton, PointerInput,
-        ScrollInput, TextEditIntent, TextInput,
+        ScrollInput, TextEditIntent, TextInput, TextSelectionDirection, TextSelectionInput,
     };
 
     fn document() -> DocumentId {
@@ -201,6 +207,17 @@ mod tests {
             y,
             modifiers: InputModifiers::default(),
             target: Some(target),
+        })
+    }
+
+    fn selection(sequence: u64, local_node: u64) -> DocumentInput {
+        DocumentInput::Selection(TextSelectionInput {
+            document: document(),
+            sequence,
+            target: DocumentNodeId::new((7_u128 << 64) | u128::from(local_node)).unwrap(),
+            selection_start: 0,
+            selection_end: sequence as u32,
+            direction: TextSelectionDirection::None,
         })
     }
 
@@ -345,6 +362,28 @@ mod tests {
             pending.inputs.back().unwrap().sequence(),
             activation_sequence
         );
+    }
+
+    #[test]
+    fn selection_supersedes_within_continuous_run_but_not_across_discrete_input() {
+        let mut pending = PendingRendererInputs::default();
+        assert_eq!(pending.enqueue(selection(1, 2)), QueueResult::Queued);
+        assert_eq!(pending.enqueue(scroll(2, 8.0)), QueueResult::Queued);
+        assert_eq!(pending.enqueue(pointer_move(3)), QueueResult::Queued);
+        assert_eq!(pending.enqueue(selection(4, 2)), QueueResult::Coalesced);
+        assert_eq!(pending.enqueue(selection(5, 3)), QueueResult::Queued);
+        assert_eq!(pending.enqueue(activation(6)), QueueResult::Queued);
+        assert_eq!(pending.enqueue(selection(7, 2)), QueueResult::Queued);
+        for expected in [
+            scroll(2, 8.0),
+            pointer_move(3),
+            selection(4, 2),
+            selection(5, 3),
+            activation(6),
+            selection(7, 2),
+        ] {
+            assert_eq!(pending.pop_front(), Some(expected));
+        }
     }
 
     #[test]

@@ -5,9 +5,11 @@
     const editingCommands = new Set([
         'selectall', 'inserttext', 'inserthtml', 'delete'
     ]);
+    // This legacy command path requires exposed selection offsets; Email has
+    // editable text but no HTML text-control selection API.
     const textControl = element => element instanceof HTMLTextAreaElement ||
         (element instanceof HTMLInputElement &&
-            /^(text|search|tel|url|email|password)$/.test(element.type));
+            /^(text|search|tel|url|password)$/.test(element.type));
     const editorContext = () => {
         const active = focusedAreaForDocument(document) || document.activeElement;
         if (textControl(active)) return { control: active, host: active, range: null };

@@ -270,6 +270,51 @@ fn scripted_file_click_inside_real_keyboard_activation_can_request_picker() {
 }
 
 #[test]
+fn pointer_up_click_cannot_reuse_consumed_file_picker_activation() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><button id=open>Open</button><input id=first type=file>
+        <input id=second type=file><script>
+            const button = document.getElementById('open');
+            button.addEventListener('pointerdown', () =>
+                document.getElementById('first').showPicker());
+            button.addEventListener('click', () => {
+                try { document.getElementById('second').showPicker(); }
+                catch (error) { document.body.setAttribute('data-consumed', error.name); }
+            });
+        </script></body>"#,
+        true,
+    );
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let initial = runtime.execute_initial(&file_input_script_inputs(&dom));
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    let button = dom.elements_named("button").next().unwrap();
+    let pointer = |phase, buttons, activate| UserInputEvent::Pointer {
+        target: Some(button.clone()),
+        phase,
+        button: 0,
+        buttons,
+        x: 10.0,
+        y: 10.0,
+        activate,
+        modifiers: UserInputModifiers::default(),
+    };
+    let down = runtime.dispatch_user_input(pointer("down", 1, false));
+    assert!(down.outcome.errors.is_empty(), "{:?}", down.outcome.errors);
+    assert_eq!(down.outcome.file_picker_actions.len(), 1);
+    let up = runtime.dispatch_user_input(pointer("up", 0, true));
+    assert!(up.outcome.errors.is_empty(), "{:?}", up.outcome.errors);
+    assert!(up.outcome.file_picker_actions.is_empty());
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-consumed")
+            .as_deref(),
+        Some("NotAllowedError")
+    );
+}
+
+#[test]
 fn file_show_picker_requires_activation_and_checks_mutability_first() {
     let dom = dom::parse_with_scripting(
         r#"<body><button id=open>Open</button><input id=upload type=file style="display:none">

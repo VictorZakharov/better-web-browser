@@ -113,6 +113,9 @@ pub(super) fn finish_host(
         .file_picker_actions
         .append(&mut state.pending_file_picker_actions);
     outcome
+        .selection_actions
+        .append(&mut state.pending_selection_actions);
+    outcome
         .permission_actions
         .append(&mut state.pending_permission_actions);
     outcome

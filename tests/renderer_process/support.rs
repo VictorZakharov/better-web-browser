@@ -77,6 +77,7 @@ pub(super) fn load_html_document_with_selectors(
                 return *presentation;
             }
             better_web_browser::renderer_process::RendererEvent::Diagnostic { .. } => {}
+            RendererEvent::TextSelectionUpdate(update) if update.document == document => {}
             event => panic!("unexpected renderer event while loading document: {event:?}"),
         }
     }
@@ -154,6 +155,7 @@ pub(super) fn wait_for_presentation(
                     update.runtime.errors
                 );
             }
+            RendererEvent::TextSelectionUpdate(update) if update.document == document => {}
             event => panic!("unexpected event while waiting for {wanted}: {event:?}"),
         }
     }

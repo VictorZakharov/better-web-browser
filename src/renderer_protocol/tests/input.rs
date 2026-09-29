@@ -65,6 +65,14 @@ fn document_input_and_presentation_acknowledgements_round_trip() {
             intent: TextEditIntent::InsertText,
             pre_selection: Some((0, 0)),
         })),
+        BrowserMessage::Input(DocumentInput::Selection(TextSelectionInput {
+            document,
+            sequence: 9,
+            target,
+            selection_start: 2,
+            selection_end: 7,
+            direction: TextSelectionDirection::Backward,
+        })),
         BrowserMessage::Input(DocumentInput::Focus(FocusInput {
             document,
             sequence: 4,
@@ -108,6 +116,44 @@ fn document_input_and_presentation_acknowledgements_round_trip() {
     for expected in messages {
         assert_eq!(reader.read_browser().unwrap(), expected);
     }
+}
+
+#[test]
+fn directional_text_selection_updates_round_trip_and_validate_offsets() {
+    let document = DocumentId::new(11).unwrap();
+    let target = DocumentNodeId::new((7_u128 << 64) | 9).unwrap();
+    let update = RendererMessage::TextSelectionUpdate(TextSelectionUpdate {
+        document,
+        target,
+        value: "A💡B".into(),
+        selection_start: 1,
+        selection_end: 4,
+        direction: TextSelectionDirection::Forward,
+        observed_input_sequence: 17,
+    });
+    let mut bytes = Vec::new();
+    FrameWriter::new(&mut bytes, session())
+        .send_renderer(&update)
+        .unwrap();
+    assert_eq!(
+        FrameReader::new(Cursor::new(bytes), session())
+            .read_renderer()
+            .unwrap(),
+        update
+    );
+    let invalid = RendererMessage::TextSelectionUpdate(TextSelectionUpdate {
+        document,
+        target,
+        value: "abcd".into(),
+        selection_start: 5,
+        selection_end: 4,
+        direction: TextSelectionDirection::None,
+        observed_input_sequence: 0,
+    });
+    assert!(matches!(
+        FrameWriter::new(Vec::new(), session()).send_renderer(&invalid),
+        Err(ProtocolError::InvalidPayload("text selection offsets"))
+    ));
 }
 
 #[test]

@@ -133,8 +133,12 @@
         popoverTargetAttributeChanged(element, record.namespace, record.localName);
         if (record.namespace === null && record.localName === 'type'
             && element.localName === 'input'
-            && String(oldValue || '').toLowerCase() !== String(newValue || '').toLowerCase())
+            && String(oldValue || '').toLowerCase() !== String(newValue || '').toLowerCase()) {
             invalidateInputFileSelection(element);
+            textInputTypeChanged(element, oldValue, newValue);
+        }
+        if (record.namespace === null && record.localName === 'value'
+            && element.localName === 'input') reconcileTextSelectionValue(element);
         eventHandlerAttributeChanged(element, record, newValue);
         queueMutationRecord(element, 'attributes', {
             attributeName: record.localName,

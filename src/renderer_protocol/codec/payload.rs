@@ -228,7 +228,7 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
         }
         0x0211 => wake_lock::decode_update(payload).map(BrowserMessage::WakeLockUpdate),
         0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d | 0x014f | 0x0151 | 0x0153
-        | 0x0155 | 0x0157 => decode_browser_input(kind, payload),
+        | 0x0155 | 0x0157 | 0x0159 => decode_browser_input(kind, payload),
         0x8001 => test_command::decode(payload).map(BrowserMessage::Test),
         _ => Err(ProtocolError::UnexpectedMessage(kind)),
     }
@@ -332,7 +332,9 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
         | RendererMessage::DocumentFailed { .. }
         | RendererMessage::NavigationRequested { .. }
         | RendererMessage::PointerCursor(_) => return encode_renderer_document(message),
-        RendererMessage::FullscreenRequest(_) | RendererMessage::PointerLockRequest(_) => {
+        RendererMessage::FullscreenRequest(_)
+        | RendererMessage::PointerLockRequest(_)
+        | RendererMessage::TextSelectionUpdate(_) => {
             return encode_renderer_input(message);
         }
         RendererMessage::CookieMutation(_)
@@ -408,7 +410,7 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
         0x0102 | 0x0104 | 0x0106 | 0x0108 | 0x010a | 0x010c | 0x0112 | 0x0114 | 0x0116 | 0x0118
         | 0x011a | 0x011e | 0x0120 => decode_renderer_document(kind, payload),
         0x0132 | 0x0134 | 0x0136 | 0x013a => decode_renderer_state(kind, payload),
-        0x0150 | 0x0152 => decode_renderer_input(kind, payload),
+        0x0150 | 0x0152 | 0x0156 => decode_renderer_input(kind, payload),
         0x8002 => {
             require_length(payload, 16)?;
             if payload[3] != 0 {

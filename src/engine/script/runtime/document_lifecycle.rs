@@ -202,6 +202,7 @@ impl ScriptRuntime {
         host.pending_protocol_handler_actions.clear();
         host.pending_clipboard_actions.clear();
         host.pending_file_picker_actions.clear();
+        host.pending_selection_actions.clear();
         host.pending_permission_actions.clear();
         host.pending_geolocation_actions.clear();
         host.pending_media_device_actions.clear();

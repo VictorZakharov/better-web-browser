@@ -2,6 +2,7 @@ use super::ProtocolError;
 use super::input::{
     DocumentInput, FullscreenRequest, FullscreenResponse, NavigationCause, NavigationDisposition,
     PointerCursorResult, PointerLockRequest, PointerLockResponse, PresentationAcknowledgement,
+    TextSelectionUpdate,
 };
 use super::state::{
     CookieMutation, CookieStateSnapshot, PolicyMutation, StateSnapshotApplied,
@@ -268,6 +269,7 @@ pub enum RendererMessage {
         cause: NavigationCause,
     },
     PointerCursor(PointerCursorResult),
+    TextSelectionUpdate(TextSelectionUpdate),
     FullscreenRequest(FullscreenRequest),
     PointerLockRequest(PointerLockRequest),
     CookieMutation(CookieMutation),

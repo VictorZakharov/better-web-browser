@@ -84,10 +84,11 @@ pub use file_picker::{
 pub use input::{
     DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, FullscreenAction,
     FullscreenDisposition, FullscreenRequest, FullscreenResponse, HistoryTraversalInput,
-    InputModifiers, KeyPhase, KeyboardInput, LifecycleInput, NativeTextInput, NavigationCause,
-    NavigationDisposition, PointerButton, PointerCursor, PointerCursorResult, PointerInput,
-    PointerLockDisposition, PointerLockRequest, PointerLockResponse, PointerPhase,
-    PresentationAcknowledgement, ScrollInput, TextEditIntent, TextInput, WheelInput,
+    InputModifiers, KeyPhase, KeyboardInput, LifecycleInput, MAX_PENDING_TEXT_SELECTIONS,
+    NativeTextInput, NavigationCause, NavigationDisposition, PointerButton, PointerCursor, PointerCursorResult,
+    PointerInput, PointerLockDisposition, PointerLockRequest, PointerLockResponse, PointerPhase,
+    PresentationAcknowledgement, ScrollInput, TextEditIntent, TextInput, TextSelectionDirection,
+    TextSelectionInput, TextSelectionUpdate, WheelInput,
 };
 pub use message::{
     BrowserMessage, BrowsingContextId, ContainmentReport, Nonce,
@@ -111,7 +112,7 @@ pub use state::{
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
 pub const PROTOCOL_MAJOR: u16 = 14;
-pub const PROTOCOL_MINOR: u16 = 10;
+pub const PROTOCOL_MINOR: u16 = 11;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

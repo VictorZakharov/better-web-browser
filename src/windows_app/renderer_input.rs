@@ -5,6 +5,7 @@ mod activation_tests;
 mod keyboard;
 mod pointer;
 mod queue;
+mod selection;
 mod wheel;
 
 pub(super) use pointer::current_buttons;
@@ -170,26 +171,27 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn route_page_control_text(&mut self, index: usize) {
+        // Until the new document's first presentation, the old page's HWNDs can still be
+        // visible. Never address their node IDs to the replacement renderer.
+        if self.renderer_revision == 0 || self.suppress_page_control_focus {
+            return;
+        }
         let Some(control) = self.page_controls.get(index) else {
             return;
         };
         let window = control.window;
         let spec = control.spec.clone();
-        let value = if spec.kind == ControlKind::Select {
+        let (value, selection_start, selection_end) = if spec.kind == ControlKind::Select {
             let selected = SendMessageW(window, CB_GETCURSEL, 0, 0);
-            (selected >= 0)
+            let value = (selected >= 0)
                 .then_some(selected as usize)
                 .and_then(|selected| spec.options.get(selected))
                 .map(|option| option.value.clone())
-                .unwrap_or_default()
-        } else {
-            window_text(window)
-        };
-        let (selection_start, selection_end) = if spec.kind == ControlKind::Select {
+                .unwrap_or_default();
             let end = value.encode_utf16().count().min(u32::MAX as usize) as u32;
-            (end, end)
+            (value, end, end)
         } else {
-            edit_selection(window)
+            page_controls::selection::edit_text_and_selection(window, spec.kind)
         };
         let Some(target) = wire_node(spec.node_id) else {
             return;
@@ -201,7 +203,7 @@ impl BrowserState {
             document,
             sequence,
             target,
-            value,
+            value: value.clone(),
             selection_start,
             selection_end,
         };
@@ -218,7 +220,18 @@ impl BrowserState {
         } else {
             DocumentInput::Text(text)
         };
-        let _ = self.submit_renderer_input(input);
+        let accepted = self.submit_renderer_input(input);
+        if accepted
+            && spec.kind != ControlKind::Select
+            && let Some(control) = self.page_controls.get_mut(index)
+        {
+            control.last_text = value;
+            control.last_selection = (selection_start, selection_end);
+            control.last_native_selection = page_controls::selection::read_edit_selection(window);
+            control.last_direction =
+                better_web_browser::renderer_protocol::TextSelectionDirection::None;
+            control.last_native_input_sequence = sequence;
+        }
     }
 
     pub(super) unsafe fn apply_native_text_rejection(
@@ -263,6 +276,9 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn route_page_control_focus(&mut self, id: usize, focused: bool) {
+        if self.renderer_revision == 0 {
+            return;
+        }
         let Some(index) = id.checked_sub(ID_PAGE_CONTROL_BASE) else {
             return;
         };

@@ -15,10 +15,21 @@ pub(super) fn dispatch(
             ..
         } | UserInputEvent::Keyboard { phase: "down", .. }
     );
+    let starts_activation = matches!(
+        &event,
+        UserInputEvent::Pointer {
+            phase: "down" | "activate",
+            ..
+        } | UserInputEvent::Keyboard { phase: "down", .. }
+    );
     {
         let mut state = host.borrow_mut();
         state.user_input_active = user_initiated;
-        state.file_picker_activation_consumed = false;
+        // A pointer-up click shares the pointer-down activation, even though
+        // native down/up are delivered as separate renderer input messages.
+        if starts_activation {
+            state.file_picker_activation_consumed = false;
+        }
     }
     let notify_audio = {
         let mut state = host.borrow_mut();
@@ -263,6 +274,16 @@ fn payload(host: &Rc<RefCell<HostState>>, event: UserInputEvent) -> serde_json::
             "inputType": input_type,
             "beforeSelectionStart": pre_selection.map(|(start, _)| start),
             "beforeSelectionEnd": pre_selection.map(|(_, end)| end)
+        }),
+        UserInputEvent::Selection {
+            target: node,
+            selection_start,
+            selection_end,
+            direction,
+        } => serde_json::json!({
+            "kind": "selection", "target": target(Some(node)),
+            "selectionStart": selection_start, "selectionEnd": selection_end,
+            "direction": direction.as_str()
         }),
         UserInputEvent::Focus {
             target: node,

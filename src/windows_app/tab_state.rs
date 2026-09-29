@@ -18,7 +18,9 @@ use better_web_browser::engine::dom::NodeId;
 use better_web_browser::fetch::FetchController;
 use better_web_browser::renderer_process::RendererSession;
 use better_web_browser::renderer_process::RendererSnapshot;
-use better_web_browser::renderer_protocol::{DocumentId, PointerCursor, PresentedGlyphRaster};
+use better_web_browser::renderer_protocol::{
+    DocumentId, DocumentNodeId, PointerCursor, PresentedGlyphRaster, TextSelectionUpdate,
+};
 use better_web_browser::storage::SessionStorage;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -48,6 +50,7 @@ pub(super) struct BrowserTab {
     pub(super) page_layout: LayoutOutput,
     pub(super) paint_index: PaintIndex,
     pub(super) page_controls: Vec<PageControlWindow>,
+    pub(super) pending_text_selections: HashMap<DocumentNodeId, TextSelectionUpdate>,
     pub(super) surface: Surface,
     pub(super) content_height: i32,
     pub(super) scroll_y: i32,
@@ -117,6 +120,7 @@ impl BrowserTab {
             page_layout: LayoutOutput::default(),
             paint_index: PaintIndex::default(),
             page_controls: Vec::new(),
+            pending_text_selections: HashMap::new(),
             surface: Surface::Page,
             content_height: 0,
             scroll_y: 0,
@@ -188,6 +192,7 @@ impl BrowserTab {
         self.renderer_clock_pending = false;
         self.renderer_work_pending = false;
         self.page_controls.clear();
+        self.pending_text_selections.clear();
         if let Some(session) = self.renderer_session.take() {
             session.terminate_in_background();
         }

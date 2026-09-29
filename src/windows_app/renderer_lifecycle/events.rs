@@ -154,6 +154,9 @@ impl BrowserState {
                 RendererEvent::FilePickerRequest(request) => {
                     self.handle_file_picker_request(id, request);
                 }
+                RendererEvent::TextSelectionUpdate(update) => {
+                    self.process_for_tab(id, |state| state.apply_text_selection_update(update));
+                }
                 RendererEvent::Presentation(presentation) => {
                     self.process_for_tab(id, |state| {
                         state.activate_renderer_presentation(*presentation)

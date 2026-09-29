@@ -111,7 +111,7 @@ impl DocumentRuntime {
             .script_runtime
             .as_mut()
             .map(|runtime| runtime.take_restart_state(&mut retired));
-        connection.send_state_mutations(self.id, &mut retired)?;
+        connection.send_state_mutations(self.id, self.last_input_sequence, &mut retired)?;
         let text = self.into_text();
         let result = Self::load_source(
             input.start.clone(),

@@ -81,3 +81,41 @@ fn runtime_reporting_leaves_small_diagnostics_unchanged() {
     assert!(report.errors.is_empty());
     round_trip(report);
 }
+
+#[test]
+fn combining_script_tasks_keeps_native_value_snapshots_within_the_shared_budget() {
+    use crate::engine::dom::NodeId;
+    use crate::engine::script::ScriptSelectionAction;
+    use crate::renderer_protocol::TextSelectionDirection;
+    let root = NodeId::from_wire((1_u128 << 64) | 1).unwrap();
+    let action = |index| ScriptSelectionAction {
+        node: NodeId::from_wire((1_u128 << 64) | index).unwrap(),
+        value: "x".repeat(crate::limits::MAX_RENDERER_TEXT_INPUT_BYTES / 2),
+        selection_start: 0,
+        selection_end: 0,
+        direction: TextSelectionDirection::None,
+    };
+    let mut combined = ScriptOutcome {
+        selection_actions: vec![action(2), action(3)],
+        ..Default::default()
+    };
+    merge_outcome(
+        &mut combined,
+        ScriptOutcome {
+            selection_actions: vec![action(4)],
+            ..Default::default()
+        },
+        root,
+    );
+    assert_eq!(combined.selection_actions.len(), 2);
+    assert_eq!(combined.selection_actions[0].node, action(3).node);
+    assert_eq!(combined.selection_actions[1].node, action(4).node);
+    assert_eq!(
+        combined
+            .selection_actions
+            .iter()
+            .map(|action| action.value.len())
+            .sum::<usize>(),
+        crate::limits::MAX_RENDERER_TEXT_INPUT_BYTES
+    );
+}
