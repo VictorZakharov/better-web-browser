@@ -567,6 +567,16 @@ not evidence that any individual API is fully conformant: HTML5test does not
 exercise a real camera or microphone permission decision. Focused and hidden
 integration tests cover the admitted media and capture behavior and its limits.
 
+The subsequent [audio decoding, recording, and Web Audio batch](docs/audio-codecs-and-recording.md)
+rendered **487 / 588** in three identical hidden fresh-profile release runs,
+compared with **485 / 588** in three same-day runs of the preserved preceding
+release executable. All six used Breeze's default identity, 1280×720 at 125%
+scale, `en-US`, and a 10-second settle. Each returned HTTP 200, executed seven
+page scripts, and had no JavaScript errors or renderer exits. The **+2** is a
+batch-level observation, not a claim that HTML5test exercises the complete
+codec, recording, or Web Audio behavior; focused tests cover the bounded
+implementations and documented limits.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -575,8 +585,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-29-media-capture-run1.json `
-  -Screenshot target/html5test/2026-09-29-media-capture-run1.png
+  -Output target/html5test/2026-09-29-audio-after-run1.json `
+  -Screenshot target/html5test/2026-09-29-audio-after-run1.png
 ```
 
 New releases must refresh or explicitly date these observations using the
