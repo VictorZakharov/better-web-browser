@@ -15,7 +15,11 @@ system acquisition is advisory and its success is not exposed to pages. Tests
 use a fake provider rather than changing the user's display power state. This
 slice uses the existing `windows-sys` dependency and no copied upstream code.
 
-The response `Permissions-Policy: screen-wake-lock=()` header is not yet
-retained at browser admission, so top-level policy denial is not enforced.
-The recommended active-lock indicator and user revocation control are also
-not implemented. There is no worker exposure or support for other lock types.
+The browser reads the final top-level `Permissions-Policy` response dictionary
+before wake-lock admission. Its last `screen-wake-lock` member controls the
+feature: empty or effectively empty inner lists deny before any OS request,
+while `self` or `*` allow. This is not general Permissions Policy support;
+quoted source expressions conservatively deny and frame delegation remains
+outside this slice. The recommended active-lock indicator and user revocation
+control are also not implemented. There is no worker exposure or support for
+other lock types.

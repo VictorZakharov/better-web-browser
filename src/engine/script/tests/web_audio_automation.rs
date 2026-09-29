@@ -1,6 +1,26 @@
 use super::*;
 
 #[test]
+fn repeated_immediate_audio_param_writes_do_not_exhaust_automation_budget() {
+    let (_, outcome) = execute_html(
+        r#"<body><script>
+        const context = new OfflineAudioContext(2, 128, 8000);
+        const panner = context.createPanner();
+        for (let i = 0; i < 5000; i++)
+            panner.positionX.value = i % 2;
+        if (panner.positionX.value !== 1)
+            throw Error('last immediate position write was not retained');
+        console.log('AudioParam immediate compaction passed');
+    </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        outcome.console,
+        ["log: AudioParam immediate compaction passed"]
+    );
+}
+
+#[test]
 fn exponential_ramp_has_exact_geometric_samples() {
     let (_, outcome) = execute_html(
         r#"<body><script>

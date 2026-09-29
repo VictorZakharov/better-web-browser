@@ -1,6 +1,117 @@
 use super::*;
 
 #[test]
+fn history_updates_capture_scroll_at_each_call_not_at_report_end() {
+    let dom = dom::parse_with_scripting(
+        r#"<!doctype html><body><script>
+            history.pushState(null, '', '#zero');
+            scrollTo(0, 100.5);
+            history.pushState(null, '', '#one');
+            scrollTo(0, 300.25);
+            history.replaceState(null, '', '#two');
+        </script></body>"#,
+        true,
+    );
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    runtime.set_layout_viewport(800.0, 600.0);
+    runtime.set_layout_content_height(2000.0);
+    let script = dom.elements_named("script").next().unwrap();
+    let outcome = runtime.execute_initial(&[ScriptInput {
+        source_url: "https://example.com/".into(),
+        code: script.text_content(),
+        node: script,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    }]);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(outcome.viewport_scroll_y, Some(300.25));
+    assert!(matches!(
+        outcome.history_actions.as_slice(),
+        [
+            ScriptHistoryAction::Update { scroll_y: 0.0, .. },
+            ScriptHistoryAction::Update {
+                scroll_y: 100.5,
+                ..
+            },
+            ScriptHistoryAction::Update {
+                scroll_y: 300.25,
+                ..
+            }
+        ]
+    ));
+}
+
+#[test]
+fn scroll_restoration_is_an_entry_mode_with_enum_validation() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output></output><script>
+            const result = [history.scrollRestoration];
+            history.scrollRestoration = 'manual';
+            history.pushState({ step: 1 }, '', '#one');
+            history.replaceState({ step: 2 }, '', '#two');
+            result.push(history.scrollRestoration);
+            for (const invalid of ['automatic', Symbol('invalid')]) {
+                try { history.scrollRestoration = invalid; result.push('accepted'); }
+                catch (error) { result.push(error.name); }
+            }
+            result.push(history.scrollRestoration);
+            document.querySelector('output').textContent = result.join('|');
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "auto|manual|TypeError|TypeError|manual"
+    );
+    assert!(matches!(
+        outcome.history_actions.as_slice(),
+        [
+            ScriptHistoryAction::SetScrollRestoration {
+                mode: crate::renderer_protocol::ScrollRestorationMode::Manual,
+            },
+            ScriptHistoryAction::Update { replace: false, .. },
+            ScriptHistoryAction::Update { replace: true, .. }
+        ]
+    ));
+}
+
+#[test]
+fn traversal_exposes_target_restoration_mode_before_popstate() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><output></output><script>
+            addEventListener('popstate', () => {
+                document.querySelector('output').textContent = history.scrollRestoration;
+            });
+        </script></body>"#,
+        true,
+    );
+    let script = dom.elements_named("script").next().unwrap();
+    let input = ScriptInput {
+        source_url: "https://example.com/".into(),
+        code: script.text_content(),
+        node: script,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: false,
+    };
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    assert!(runtime.execute_initial(&[input]).errors.is_empty());
+    let traversal = runtime.apply_history_traversal(
+        "https://example.com/#step",
+        None,
+        2,
+        1,
+        crate::renderer_protocol::ScrollRestorationMode::Manual,
+    );
+    assert!(traversal.errors.is_empty(), "{:?}", traversal.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "manual"
+    );
+}
+
+#[test]
 fn history_state_is_a_storage_clone_and_failed_updates_leave_the_entry_intact() {
     let (dom, outcome) = execute_html(
         r#"<body><output></output><script>
@@ -77,7 +188,13 @@ fn history_traversal_restores_state_before_popstate_and_queues_hashchange() {
         dom.elements_named("output").next().unwrap().text_content(),
         "0|undefined|undefined"
     );
-    let traversal = runtime.apply_history_traversal("https://example.com/", None, 2, 0);
+    let traversal = runtime.apply_history_traversal(
+        "https://example.com/",
+        None,
+        2,
+        0,
+        crate::renderer_protocol::ScrollRestorationMode::Auto,
+    );
     assert!(traversal.errors.is_empty(), "{:?}", traversal.errors);
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
@@ -89,8 +206,13 @@ fn history_traversal_restores_state_before_popstate_and_queues_hashchange() {
         "popstate:true:true:true::true:https://example.com/;hashchange:true:true:https://example.com/#first:https://example.com/"
     );
     let serialized = r#"{"t":"object","id":1,"n":false,"v":[["step",1]]}"#;
-    let forward =
-        runtime.apply_history_traversal("https://example.com/#first", Some(serialized), 2, 1);
+    let forward = runtime.apply_history_traversal(
+        "https://example.com/#first",
+        Some(serialized),
+        2,
+        1,
+        crate::renderer_protocol::ScrollRestorationMode::Auto,
+    );
     assert!(forward.errors.is_empty(), "{:?}", forward.errors);
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
@@ -291,7 +413,12 @@ fn a_new_document_uses_tab_history_metrics_and_discarded_forward_entries() {
     assert!(runtime.execute_initial(&[]).errors.is_empty());
     let initial_state = r#"{"t":"object","id":1,"n":false,"v":[["step",3]]}"#;
     runtime
-        .set_history_metrics(5, 2, Some(initial_state))
+        .set_history_metrics(
+            5,
+            2,
+            Some(initial_state),
+            crate::renderer_protocol::ScrollRestorationMode::Auto,
+        )
         .unwrap();
     let first = runtime.execute_additional_with_loader(&[input(script.text_content())], None);
 
@@ -301,7 +428,14 @@ fn a_new_document_uses_tab_history_metrics_and_discarded_forward_entries() {
         dom.elements_named("output").next().unwrap().text_content(),
         "5:3|4:4"
     );
-    runtime.set_history_metrics(512, 511, None).unwrap();
+    runtime
+        .set_history_metrics(
+            512,
+            511,
+            None,
+            crate::renderer_protocol::ScrollRestorationMode::Auto,
+        )
+        .unwrap();
     let second = runtime.execute_additional_with_loader(
         &[input("history.pushState(null, '', '/at-capacity'); document.querySelector('output').textContent += '|' + history.length;".into())],
         None,

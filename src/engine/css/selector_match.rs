@@ -242,6 +242,13 @@ pub(super) fn compound_matches(
     if selector.requires_fullscreen && !node.is_fullscreen() {
         return false;
     }
+    if selector.requires_popover_open
+        && (!node.is_popover_open()
+            || node.attr("popover").is_none()
+            || node.namespace_uri() != Some("http://www.w3.org/1999/xhtml"))
+    {
+        return false;
+    }
     if selector.requires_has_slotted && !matches_has_slotted(node) {
         return false;
     }

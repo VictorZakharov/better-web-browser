@@ -31,6 +31,7 @@ pub(super) fn resolve_height_constraints(
     viewport: RectF,
     vertical_insets: f32,
     margins: ResolvedEdges,
+    popover_fit_content: bool,
 ) -> (Option<f32>, f32, Option<f32>) {
     let resolve = |height| {
         resolve_content_height(
@@ -44,6 +45,7 @@ pub(super) fn resolve_height_constraints(
     };
     let mut specified = used_content_height.or_else(|| resolve(style.height));
     if specified.is_none()
+        && !popover_fit_content
         && matches!(style.position, Position::Absolute | Position::Fixed)
         && let Some(basis) = percentage_basis
         && let (Some(top), Some(bottom)) = (

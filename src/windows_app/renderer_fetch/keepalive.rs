@@ -253,6 +253,7 @@ mod tests {
                 document,
                 "https://old.example.test/page",
                 Default::default(),
+                true,
             )
             .unwrap();
         let mut wire = super::super::tests::intent(document, "https://old.example.test/collect");

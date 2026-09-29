@@ -49,6 +49,10 @@ pub(super) fn apply_declaration(
     ) {
         return;
     }
+    if values::transitions::supported_property(name) {
+        values::transitions::apply(&mut style.transition, name, value);
+        return;
+    }
     match name {
         "content" => {
             if let Some(content) = GeneratedContent::parse(value) {

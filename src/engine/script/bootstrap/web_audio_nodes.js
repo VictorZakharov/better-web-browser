@@ -2,21 +2,21 @@
     const audioNodeState = new WeakMap();
     const audioScheduledState = new WeakMap();
     const audioOscillatorState = new WeakMap();
+    const audioNodeSuccessors = node => node instanceof AudioListener ?
+        [...audioContextState.get(audioListenerContext.get(node)).panners] :
+        audioNodeState.get(node).outputs.flatMap(port =>
+            [...port].map(edge => edge.destination instanceof AudioParam ?
+                audioParamState.get(edge.destination).owner : edge.destination));
     const audioNodeReaches = (source, target) => {
         if (source === target) return true;
         const seen = new Set([source]);
-        const pending = audioNodeState.get(source).outputs.flatMap(port =>
-            [...port].map(edge => edge.destination instanceof AudioParam ?
-                audioParamState.get(edge.destination).owner : edge.destination));
+        const pending = audioNodeSuccessors(source);
         while (pending.length) {
             const node = pending.pop();
             if (node === target) return true;
             if (seen.has(node)) continue;
             seen.add(node);
-            for (const port of audioNodeState.get(node).outputs)
-                for (const edge of port) pending.push(
-                    edge.destination instanceof AudioParam ?
-                        audioParamState.get(edge.destination).owner : edge.destination);
+            pending.push(...audioNodeSuccessors(node));
         }
         return false;
     };

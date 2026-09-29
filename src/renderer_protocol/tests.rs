@@ -171,6 +171,7 @@ fn document_start_diagnostic_selectors_round_trip_and_are_bounded() {
         history_length: 1,
         history_index: 0,
         history_state: Some("{\"t\":\"null\"}".into()),
+        scroll_restoration: ScrollRestorationMode::Manual,
         viewport: PresentedViewport {
             width: 800.0,
             height: 600.0,

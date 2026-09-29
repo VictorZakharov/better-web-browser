@@ -19,6 +19,7 @@ pub(super) struct LoadedPage {
     pub(super) status: u16,
     pub(super) content_type: String,
     pub(super) policy: std::sync::Arc<better_web_browser::fetch::csp::PolicyContainer>,
+    pub(super) screen_wake_lock_allowed: bool,
     pub(super) bytes: u64,
     pub(super) network_time: Duration,
 }
@@ -33,6 +34,7 @@ impl LoadedPage {
             status: 200,
             content_type: "text/html".into(),
             policy: Default::default(),
+            screen_wake_lock_allowed: true,
             bytes: HOME_HTML.len() as u64,
             network_time: Duration::ZERO,
         }
@@ -151,6 +153,11 @@ impl BrowserState {
             return;
         }
         let first_presentation = self.renderer_revision == 0;
+        if first_presentation {
+            // History actions emitted by parser scripts belong to the new document.
+            // The shell may still hold the outgoing document's scroll offset here.
+            self.scroll_y = 0;
+        }
         let presentation_install_started = Instant::now();
         self.renderer_revision = presentation.revision;
         self.record_renderer_presentation_incident(&presentation, first_presentation);
@@ -283,13 +290,20 @@ impl BrowserState {
             }
         }
         self.update_active_tab_title(&presentation.title);
+        if presentation.runtime.viewport_scroll_y.is_some() {
+            self.pending_history_scroll_y = None;
+        }
         self.apply_script_viewport_scroll(presentation.runtime.viewport_scroll_y);
+        self.try_restore_history_scroll();
         self.queue_css_wheel_scroll(presentation.runtime.viewport_wheel_delta_y);
         if layout_changed {
             self.update_scrollbar();
         }
         if controls_changed {
             self.recreate_page_controls();
+        }
+        if let Some(rejection) = &presentation.runtime.native_text_rejection {
+            self.apply_native_text_rejection(presentation.document, rejection);
         }
 
         let error_count = presentation.runtime.errors.len();

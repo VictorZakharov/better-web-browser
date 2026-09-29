@@ -94,6 +94,7 @@ pub(super) fn document_start(document: DocumentId, body_length: usize) -> Docume
         history_length: 1,
         history_index: 0,
         history_state: None,
+        scroll_restoration: better_web_browser::renderer_protocol::ScrollRestorationMode::Auto,
         viewport: PresentedViewport {
             width: 800.0,
             height: 600.0,

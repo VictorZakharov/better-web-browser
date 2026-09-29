@@ -16,7 +16,9 @@ pub use diagnostics::{
     StyleDiagnostics,
 };
 
-use super::{AccessibilityUpdate, DocumentId, ProtocolError};
+use super::{
+    AccessibilityUpdate, DocumentId, DocumentNodeId, ProtocolError, ScrollRestorationMode,
+};
 use crate::document::Document;
 use crate::engine::css::Color;
 use crate::engine::{DecodedImage, DisplayItem, FormSpec, LayoutOutput};
@@ -36,6 +38,8 @@ pub struct RuntimeReport {
     pub history_actions: Vec<HistoryAction>,
     /// The renderer has applied this browser History input and finished its popstate task.
     pub history_traversal_ack: Option<u64>,
+    /// A canceled native EDIT proposal, fenced by the browser's input generation.
+    pub native_text_rejection: Option<NativeTextRejection>,
     pub cookie_updates: Vec<String>,
     pub runtime_active: bool,
     pub runtime_stopped: bool,
@@ -44,14 +48,28 @@ pub struct RuntimeReport {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativeTextRejection {
+    pub sequence: u64,
+    pub generation: u32,
+    pub target: DocumentNodeId,
+    pub value: String,
+    pub selection_start: u32,
+    pub selection_end: u32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum HistoryAction {
     Update {
         url: String,
         replace: bool,
         state: Option<String>,
+        scroll_y: f32,
     },
     Traverse {
         delta: i32,
+    },
+    SetScrollRestoration {
+        mode: ScrollRestorationMode,
     },
 }
 

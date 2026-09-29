@@ -197,11 +197,13 @@ fn records_ordered_same_document_history_updates_and_advances_the_document_url()
                 url: first,
                 replace: false,
                 state: Some(first_state),
+                ..
             },
             ScriptHistoryAction::Update {
                 url: second,
                 replace: true,
                 state: Some(second_state),
+                ..
             },
         ] => {
             assert_eq!(first, "https://example.com/watch?v=first");

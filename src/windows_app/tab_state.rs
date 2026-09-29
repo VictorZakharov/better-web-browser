@@ -54,6 +54,8 @@ pub(super) struct BrowserTab {
     pub(super) scroll_animation: ScrollAnimation,
     pub(super) history: Vec<HistoryEntry>,
     pub(super) history_index: usize,
+    /// Pending CSS-pixel viewport restoration for a refetched history entry.
+    pub(super) pending_history_scroll_y: Option<f32>,
     pub(super) history_traversals: HistoryTraversalQueue,
     pub(super) script_navigation: ScriptNavigationGuard,
     pub(super) navigation: NavigationTransaction,
@@ -71,6 +73,8 @@ pub(super) struct BrowserTab {
     pub(super) renderer_launch_receiver: Option<mpsc::Receiver<Result<RendererSession, String>>>,
     pub(super) renderer_started_once: bool,
     pub(super) renderer_input_sequence: u64,
+    pub(super) native_text_generation: u32,
+    pub(super) suppress_page_control_edit: bool,
     pub(super) pointer_cursor_request: Option<u64>,
     pub(super) pointer_cursor: PointerCursor,
     pub(super) renderer_input_poll_budget: u8,
@@ -118,6 +122,7 @@ impl BrowserTab {
             scroll_animation: ScrollAnimation::default(),
             history: vec![HistoryEntry::new(HOME_URL.into())],
             history_index: 0,
+            pending_history_scroll_y: None,
             history_traversals: HistoryTraversalQueue::default(),
             script_navigation: ScriptNavigationGuard::default(),
             navigation: NavigationTransaction::new(LoadedPage::home()),
@@ -133,6 +138,8 @@ impl BrowserTab {
             renderer_launch_receiver: None,
             renderer_started_once: false,
             renderer_input_sequence: 0,
+            native_text_generation: 0,
+            suppress_page_control_edit: false,
             pointer_cursor_request: None,
             pointer_cursor: PointerCursor::Default,
             renderer_input_poll_budget: 0,
@@ -162,6 +169,8 @@ impl BrowserTab {
         self.document_fetch.abort();
         self.renderer_websockets.cancel_all();
         self.renderer_input_sequence = 0;
+        self.native_text_generation = 0;
+        self.suppress_page_control_edit = false;
         self.pointer_cursor_request = None;
         self.pointer_cursor = PointerCursor::Default;
         self.renderer_input_poll_budget = 0;

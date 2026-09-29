@@ -20,6 +20,7 @@ pub(in crate::windows_app) struct Client {
     pub policy: Arc<better_web_browser::fetch::csp::PolicyContainer>,
     pub url: String,
     pub origin: Origin,
+    pub screen_wake_lock_allowed: bool,
 }
 
 impl Clients {
@@ -58,6 +59,7 @@ impl Clients {
         document: DocumentId,
         url: &str,
         policy: Arc<better_web_browser::fetch::csp::PolicyContainer>,
+        screen_wake_lock_allowed: bool,
     ) -> Result<(), FetchError> {
         self.activate(document);
         let origin = FetchUrl::parse(url)?.origin();
@@ -65,6 +67,7 @@ impl Clients {
             url: url.into(),
             origin,
             policy,
+            screen_wake_lock_allowed,
         });
         Ok(())
     }
@@ -83,6 +86,7 @@ impl Clients {
                     policy: Default::default(),
                     url: root.into(),
                     origin: FetchUrl::parse(root)?.origin(),
+                    screen_wake_lock_allowed: false,
                 },
             }
         } else {
@@ -167,6 +171,8 @@ impl Clients {
             } else {
                 url.origin()
             },
+            // Child wake-lock requests are denied until frame policy is modeled.
+            screen_wake_lock_allowed: false,
         });
         Ok(())
     }

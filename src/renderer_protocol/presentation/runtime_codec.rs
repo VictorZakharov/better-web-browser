@@ -1,10 +1,12 @@
 //! Bounded serialization of document runtime updates, independent of presentation pixels.
 use super::super::wire::{WireReader, WireWriter};
-use super::{HistoryAction, MediaRuntimeReport, ProtocolError, RuntimeReport};
+use super::{HistoryAction, MediaRuntimeReport, NativeTextRejection, ProtocolError, RuntimeReport};
+use crate::limits::MAX_RENDERER_TEXT_INPUT_BYTES;
 use crate::limits::{
     MAX_HISTORY_STATE_BYTES, MAX_RUNTIME_REPORT_ENTRIES, MAX_RUNTIME_REPORT_TEXT_BYTES,
     MAX_URL_BYTES,
 };
+use crate::renderer_protocol::DocumentNodeId;
 
 pub(in crate::renderer_protocol) fn encode_runtime(
     writer: &mut WireWriter,
@@ -52,9 +54,12 @@ pub(in crate::renderer_protocol) fn encode_runtime(
                 url,
                 replace,
                 state,
+                scroll_y,
             } => {
                 if url.is_empty()
                     || url.len() > MAX_URL_BYTES
+                    || !scroll_y.is_finite()
+                    || *scroll_y < 0.0
                     || state
                         .as_ref()
                         .is_some_and(|value| value.len() > MAX_HISTORY_STATE_BYTES)
@@ -68,10 +73,15 @@ pub(in crate::renderer_protocol) fn encode_runtime(
                 if let Some(state) = state {
                     writer.string(state)?;
                 }
+                writer.f32(*scroll_y);
             }
             HistoryAction::Traverse { delta } => {
                 writer.u8(2);
                 writer.i32(*delta);
+            }
+            HistoryAction::SetScrollRestoration { mode } => {
+                writer.u8(3);
+                writer.u8(mode.wire_tag());
             }
         }
     }
@@ -83,6 +93,22 @@ pub(in crate::renderer_protocol) fn encode_runtime(
             ));
         }
         writer.u64(sequence);
+    }
+    writer.bool(report.native_text_rejection.is_some());
+    if let Some(rejection) = &report.native_text_rejection {
+        if rejection.sequence == 0
+            || rejection.value.len() > MAX_RENDERER_TEXT_INPUT_BYTES
+            || rejection.selection_start > rejection.selection_end
+            || rejection.selection_end as usize > rejection.value.encode_utf16().count()
+        {
+            return Err(ProtocolError::InvalidPayload("native text rejection"));
+        }
+        writer.u64(rejection.sequence);
+        writer.u32(rejection.generation);
+        writer.u128(rejection.target.get());
+        writer.string(&rejection.value)?;
+        writer.u32(rejection.selection_start);
+        writer.u32(rejection.selection_end);
     }
     encode_strings(
         writer,
@@ -148,16 +174,29 @@ pub(in crate::renderer_protocol) fn decode_runtime(
     let mut history_actions = Vec::with_capacity(history_action_count);
     for _ in 0..history_action_count {
         history_actions.push(match reader.u8()? {
-            1 => HistoryAction::Update {
-                url: reader.string(MAX_URL_BYTES)?,
-                replace: reader.bool()?,
-                state: reader
+            1 => {
+                let url = reader.string(MAX_URL_BYTES)?;
+                let replace = reader.bool()?;
+                let state = reader
                     .bool()?
                     .then(|| reader.string(MAX_HISTORY_STATE_BYTES))
-                    .transpose()?,
-            },
+                    .transpose()?;
+                let scroll_y = reader.f32()?;
+                if !scroll_y.is_finite() || scroll_y < 0.0 {
+                    return Err(ProtocolError::InvalidPayload("history scroll position"));
+                }
+                HistoryAction::Update {
+                    url,
+                    replace,
+                    state,
+                    scroll_y,
+                }
+            }
             2 => HistoryAction::Traverse {
                 delta: reader.i32()?,
+            },
+            3 => HistoryAction::SetScrollRestoration {
+                mode: crate::renderer_protocol::ScrollRestorationMode::from_wire_tag(reader.u8()?)?,
             },
             _ => return Err(ProtocolError::InvalidPayload("history action tag")),
         });
@@ -168,6 +207,25 @@ pub(in crate::renderer_protocol) fn decode_runtime(
             "history traversal acknowledgement",
         ));
     }
+    let native_text_rejection = if reader.bool()? {
+        let rejection = NativeTextRejection {
+            sequence: reader.u64()?,
+            generation: reader.u32()?,
+            target: DocumentNodeId::new(reader.u128()?)?,
+            value: reader.string(MAX_RENDERER_TEXT_INPUT_BYTES)?,
+            selection_start: reader.u32()?,
+            selection_end: reader.u32()?,
+        };
+        if rejection.sequence == 0
+            || rejection.selection_start > rejection.selection_end
+            || rejection.selection_end as usize > rejection.value.encode_utf16().count()
+        {
+            return Err(ProtocolError::InvalidPayload("native text rejection"));
+        }
+        Some(rejection)
+    } else {
+        None
+    };
     let cookie_updates = decode_strings(reader)?;
     let runtime_active = reader.bool()?;
     let runtime_stopped = reader.bool()?;
@@ -188,6 +246,7 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         viewport_wheel_delta_y,
         history_actions,
         history_traversal_ack,
+        native_text_rejection,
         cookie_updates,
         runtime_active,
         runtime_stopped,

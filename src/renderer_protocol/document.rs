@@ -30,6 +30,38 @@ pub struct PresentedViewport {
     pub prefers_dark_color_scheme: bool,
 }
 
+/// HTML session-history scroll restoration is owned by each history entry.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScrollRestorationMode {
+    #[default]
+    Auto,
+    Manual,
+}
+
+impl ScrollRestorationMode {
+    pub const fn wire_tag(self) -> u8 {
+        match self {
+            Self::Auto => 0,
+            Self::Manual => 1,
+        }
+    }
+
+    pub fn from_wire_tag(tag: u8) -> Result<Self, ProtocolError> {
+        match tag {
+            0 => Ok(Self::Auto),
+            1 => Ok(Self::Manual),
+            _ => Err(ProtocolError::InvalidPayload("scroll restoration mode")),
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Manual => "manual",
+        }
+    }
+}
+
 impl PresentedViewport {
     pub fn validate(self) -> Result<Self, ProtocolError> {
         let dimensions = [self.width, self.height, self.style_width];
@@ -57,6 +89,7 @@ pub struct DocumentStart {
     pub history_length: u32,
     pub history_index: u32,
     pub history_state: Option<String>,
+    pub scroll_restoration: ScrollRestorationMode,
     pub viewport: PresentedViewport,
     pub prefers_dark_color_scheme: bool,
     /// Browser-authoritative notification decision for this document's origin.

@@ -25,6 +25,7 @@ pub(super) fn encode_document_start(
     if let Some(state) = &start.history_state {
         writer.string(state)?;
     }
+    writer.u8(start.scroll_restoration.wire_tag());
     encode_viewport(writer, start.viewport);
     writer.bool(start.prefers_dark_color_scheme);
     writer.u8(match start.notification_permission {
@@ -70,6 +71,9 @@ pub(super) fn decode_document_start(
             .bool()?
             .then(|| reader.string(crate::limits::MAX_HISTORY_STATE_BYTES))
             .transpose()?,
+        scroll_restoration: crate::renderer_protocol::ScrollRestorationMode::from_wire_tag(
+            reader.u8()?,
+        )?,
         viewport: decode_viewport(reader)?,
         prefers_dark_color_scheme: reader.bool()?,
         notification_permission: match reader.u8()? {

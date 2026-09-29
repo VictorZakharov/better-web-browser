@@ -4,11 +4,23 @@ use super::{Key, *};
 use crate::windows_app::{
     app_state::BrowserState,
     platform::{IsIconic, IsWindowVisible},
+    renderer_fetch::RendererFetchRegistry,
 };
 use better_web_browser::fetch::RequestClient;
 use better_web_browser::renderer_protocol::{
-    WakeLockAction, WakeLockDisposition, WakeLockRequest, WakeLockUpdate,
+    DocumentId, WakeLockAction, WakeLockDisposition, WakeLockRequest, WakeLockUpdate,
 };
+
+pub(super) fn committed_client_allows_wake_lock(
+    registry: &RendererFetchRegistry,
+    document: DocumentId,
+    requested: RequestClient,
+) -> bool {
+    requested == RequestClient::default()
+        && registry.committed_root(document).is_ok_and(|client| {
+            client.origin.is_potentially_trustworthy() && client.screen_wake_lock_allowed
+        })
+}
 
 impl BrowserState {
     pub(in crate::windows_app) fn handle_wake_lock_request(
@@ -36,15 +48,13 @@ impl BrowserState {
         let disposition = match request.action {
             WakeLockAction::Acquire => {
                 // Only a committed top-level document can request a platform display lock.
-                // Frame ancestor trust and Permissions-Policy are not yet represented, so
-                // descendants fail closed rather than borrowing the top-level origin.
-                // The response Permissions-Policy header is not yet retained here;
-                // top-level screen-wake-lock=() denial remains an explicit gap.
-                let secure = request.client == RequestClient::default()
-                    && tab
-                        .renderer_fetches
-                        .committed_root(request.document)
-                        .is_ok_and(|client| client.origin.is_potentially_trustworthy());
+                // Frame ancestor policy is not represented, so descendants fail
+                // closed rather than borrowing the top-level response authority.
+                let secure = committed_client_allows_wake_lock(
+                    &tab.renderer_fetches,
+                    request.document,
+                    request.client,
+                );
                 if secure && visible && self.app.wake_locks.borrow_mut().acquire(key) {
                     WakeLockDisposition::Granted
                 } else {

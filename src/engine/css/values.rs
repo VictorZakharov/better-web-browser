@@ -13,6 +13,7 @@ mod object;
 pub use object::{ObjectFit, ObjectPosition};
 mod text_transform;
 pub use text_transform::TextTransform;
+pub(super) mod transitions;
 mod vertical_align;
 mod viewport;
 pub use vertical_align::VerticalAlign;
@@ -172,6 +173,7 @@ pub enum BackgroundSize {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComputedStyle {
+    pub(crate) transition: transitions::TransitionSettings,
     pub generated_content: GeneratedContent,
     pub display: Display,
     pub position: Position,
@@ -276,6 +278,7 @@ pub struct ComputedStyle {
 impl ComputedStyle {
     pub(crate) fn initial() -> Self {
         Self {
+            transition: transitions::TransitionSettings::default(),
             generated_content: GeneratedContent::Normal,
             display: Display::Inline,
             position: Position::Static,

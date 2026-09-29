@@ -1,6 +1,7 @@
     let historyLength = 1;
     let historyIndex = 0;
     let historyState = null;
+    let scrollRestorationMode = 'auto';
     const historyCapacity = host('historyCapacity');
     const advanceHistoryIndex = () => {
         historyIndex = Math.min(historyIndex + 1, historyCapacity - 1);
@@ -48,6 +49,14 @@
     windowObject.history = {
         get length() { return historyLength; },
         get state() { return historyState; },
+        get scrollRestoration() { return scrollRestorationMode; },
+        set scrollRestoration(value) {
+            const mode = historyString(value);
+            if (mode !== 'auto' && mode !== 'manual')
+                throw new TypeError('Invalid scroll restoration mode');
+            host('historyScrollRestoration', mode);
+            scrollRestorationMode = mode;
+        },
         pushState(state, _title, url) {
             if (arguments.length < 2) throw new TypeError('pushState requires two arguments');
             historyString(_title);
@@ -63,15 +72,16 @@
         go(delta = 0) { host('historyTraverse', (+delta) | 0); }
     };
     // The shell owns tab-wide history. Seed the new Document before running author scripts.
-    windowObject.__setHistoryMetrics = (length, index, serialized = null) => {
+    windowObject.__setHistoryMetrics = (length, index, serialized = null, restoration = 'auto') => {
         const state = serialized === null ? null : deserializeHistoryState(String(serialized));
         historyLength = Number(length);
         historyIndex = Number(index);
         historyState = state;
+        scrollRestorationMode = restoration;
     };
     // Called only when the native session-history traversal activates another entry for
     // this Document. The URL and state are observable before popstate; hashchange is a task.
-    windowObject.__applyHistoryTraversal = (url, serialized, length, index) => {
+    windowObject.__applyHistoryTraversal = (url, serialized, length, index, restoration = 'auto') => {
         const oldURL = currentUrl;
         const newURL = String(url);
         const state = serialized === null ? null : deserializeHistoryState(String(serialized));
@@ -79,6 +89,7 @@
         historyState = state;
         historyLength = Number(length);
         historyIndex = Number(index);
+        scrollRestorationMode = restoration;
         firePopState();
         const fragment = value => {
             const marker = value.indexOf('#');

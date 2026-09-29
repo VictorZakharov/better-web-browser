@@ -46,6 +46,7 @@ impl BrowserState {
         if delta == 0 {
             return;
         }
+        self.pending_history_scroll_y = None;
         self.note_scroll_activity();
         let notches = self.scroll_animation.consume_wheel_delta(delta);
         if notches == 0 {
@@ -58,6 +59,7 @@ impl BrowserState {
         if !delta.is_finite() || delta == 0.0 {
             return;
         }
+        self.pending_history_scroll_y = None;
         let scale = self.page_scale();
         let distance = self.scroll_animation.consume_css_delta(delta, scale);
         if distance != 0 {

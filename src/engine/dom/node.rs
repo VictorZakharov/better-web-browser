@@ -13,6 +13,7 @@ pub(crate) mod control_validity;
 pub(crate) mod control_values;
 mod control_version;
 mod focus;
+mod popover;
 pub(crate) mod stylesheets;
 
 use crate::engine::AdoptedStyleSheet;
@@ -183,6 +184,8 @@ pub struct ElementData {
     pub shadow_root: RefCell<Option<NodeRef>>,
     pub mathml_annotation_xml_integration_point: bool,
     pub fullscreen: Cell<bool>,
+    /// Zero means hidden; positive values order elements in the popover top layer.
+    pub popover_order: Cell<u64>,
     pub hovered: Cell<bool>,
     pub focused: Cell<bool>,
     pub focus_within: Cell<bool>,

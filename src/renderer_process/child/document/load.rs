@@ -143,6 +143,7 @@ impl DocumentRuntime {
             scroll_drag: None,
             scriptless_pointer_path: Vec::new(),
             last_input_sequence: 0,
+            native_text_generation: 0,
             last_acknowledged_revision: 0,
             revision: 0,
             sent_images: HashSet::new(),
@@ -212,6 +213,7 @@ impl DocumentRuntime {
                 start.history_length,
                 start.history_index,
                 start.history_state.as_deref(),
+                start.scroll_restoration,
             )?;
             runtime.script_runtime = Some(script_runtime);
             runtime.dispatch_initial_media_selections()?;

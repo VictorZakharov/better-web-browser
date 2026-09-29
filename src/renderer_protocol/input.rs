@@ -1,10 +1,10 @@
 //! Document-scoped native input, lifecycle, and presentation acknowledgement values.
 
-use super::{DocumentId, ProtocolError};
-use crate::limits::{
-    MAX_HISTORY_STATE_BYTES, MAX_RENDERER_TEXT_INPUT_BYTES, MAX_SESSION_HISTORY_ENTRIES,
-    MAX_URL_BYTES,
-};
+mod native_text;
+pub use native_text::{NativeTextInput, TextEditIntent, TextInput};
+
+use super::{DocumentId, ProtocolError, ScrollRestorationMode};
+use crate::limits::{MAX_HISTORY_STATE_BYTES, MAX_SESSION_HISTORY_ENTRIES, MAX_URL_BYTES};
 
 mod pointer_lock;
 pub use pointer_lock::{PointerLockDisposition, PointerLockRequest, PointerLockResponse};
@@ -125,17 +125,6 @@ pub struct KeyboardInput {
     pub target: Option<DocumentNodeId>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TextInput {
-    pub document: DocumentId,
-    pub sequence: u64,
-    pub target: DocumentNodeId,
-    pub value: String,
-    /// UTF-16 offsets supplied by the native Windows control.
-    pub selection_start: u32,
-    pub selection_end: u32,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FocusInput {
     pub document: DocumentId,
@@ -180,7 +169,7 @@ pub struct LifecycleInput {
     pub state: DocumentLifecycle,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HistoryTraversalInput {
     pub document: DocumentId,
     pub sequence: u64,
@@ -188,6 +177,9 @@ pub struct HistoryTraversalInput {
     pub state: Option<String>,
     pub history_length: u32,
     pub history_index: u32,
+    pub scroll_restoration: ScrollRestorationMode,
+    /// Saved viewport Y in CSS pixels. The browser restores it only in `auto` mode.
+    pub scroll_y: Option<f32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -196,6 +188,7 @@ pub enum DocumentInput {
     Pointer(PointerInput),
     Keyboard(KeyboardInput),
     Text(TextInput),
+    NativeText(NativeTextInput),
     Focus(FocusInput),
     Scroll(ScrollInput),
     Lifecycle(LifecycleInput),
@@ -209,6 +202,7 @@ impl DocumentInput {
             Self::Pointer(input) => input.document,
             Self::Keyboard(input) => input.document,
             Self::Text(input) => input.document,
+            Self::NativeText(input) => input.text.document,
             Self::Focus(input) => input.document,
             Self::Scroll(input) => input.document,
             Self::Lifecycle(input) => input.document,
@@ -222,6 +216,7 @@ impl DocumentInput {
             Self::Pointer(input) => input.sequence,
             Self::Keyboard(input) => input.sequence,
             Self::Text(input) => input.sequence,
+            Self::NativeText(input) => input.text.sequence,
             Self::Focus(input) => input.sequence,
             Self::Scroll(input) => input.sequence,
             Self::Lifecycle(input) => input.sequence,
@@ -286,17 +281,8 @@ impl DocumentInput {
                     Ok(())
                 }
             }
-            Self::Text(input) => {
-                let utf16_length = input.value.encode_utf16().count();
-                if input.value.len() > MAX_RENDERER_TEXT_INPUT_BYTES
-                    || input.selection_start > input.selection_end
-                    || input.selection_end as usize > utf16_length
-                {
-                    Err(ProtocolError::InvalidPayload("text input"))
-                } else {
-                    Ok(())
-                }
-            }
+            Self::Text(input) => input.validate(),
+            Self::NativeText(input) => input.validate(),
             Self::Focus(_) | Self::Lifecycle(_) => Ok(()),
             Self::Scroll(input) => validate_coordinates(input.x, input.y),
             Self::History(input) => {
@@ -309,6 +295,9 @@ impl DocumentInput {
                     || input.history_length == 0
                     || input.history_length as usize > MAX_SESSION_HISTORY_ENTRIES
                     || input.history_index >= input.history_length
+                    || input.scroll_y.is_some_and(|y| {
+                        !y.is_finite() || !(0.0..=MAX_INPUT_COORDINATE).contains(&y)
+                    })
                 {
                     Err(ProtocolError::InvalidPayload("history traversal input"))
                 } else {

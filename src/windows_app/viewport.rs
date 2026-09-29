@@ -204,6 +204,7 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn handle_scroll(&mut self, command: u16) {
+        self.pending_history_scroll_y = None;
         let viewport = self.viewport_height();
         let target = match command {
             SB_LINEUP => self.scroll_y - 42,

@@ -3,6 +3,9 @@
 use super::values::LineHeight;
 use super::*;
 
+mod lengths;
+use lengths::serialize_length;
+
 const MAX_DIAGNOSTIC_CUSTOM_PROPERTIES: usize = 64;
 
 pub(crate) fn diagnostic_custom_properties(style: &ComputedStyle) -> (u64, Vec<(String, String)>) {
@@ -39,6 +42,10 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         return super::variables::substitute_variables(value, &style.custom_properties);
     }
     let value = match property {
+        "transition-property" => style.transition.properties.join(", "),
+        "transition-duration" => values::transitions::serialize_times(&style.transition.durations),
+        "transition-delay" => values::transitions::serialize_times(&style.transition.delays),
+        "transition-timing-function" => style.transition.easings.join(", "),
         "align-content" => style.align_content.css_text(),
         "vertical-align" => style.vertical_align.css_keyword().to_string(),
         "background-color" => serialize_color(style.background_color),
@@ -66,6 +73,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "border-left-width" => serialize_length(style.border_width.left),
         "border-right-width" => serialize_length(style.border_width.right),
         "border-top-width" => serialize_length(style.border_width.top),
+        "border-radius" => serialize_length(style.border_radius),
         "border-collapse" => if style.border_collapse {
             "collapse"
         } else {
@@ -94,6 +102,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         }
         .to_string(),
         "flex-grow" => serialize_number(style.flex_grow),
+        "flex-shrink" => serialize_number(style.flex_shrink),
         "flex-wrap" => if style.flex_wrap { "wrap" } else { "nowrap" }.to_string(),
         "float" => match style.float {
             Float::None => "none",
@@ -102,6 +111,8 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         }
         .to_string(),
         "font-size" => serialize_px(style.font_size),
+        "width" => serialize_length(style.width),
+        "height" => serialize_length(style.height),
         "font-weight" => style.font_weight.to_string(),
         "top" => serialize_length(style.top),
         "right" => serialize_length(style.right),
@@ -118,6 +129,10 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
             }
         }
         "opacity" => serialize_number(style.opacity),
+        "margin-bottom" => serialize_length(style.margin.bottom),
+        "margin-left" => serialize_length(style.margin.left),
+        "margin-right" => serialize_length(style.margin.right),
+        "margin-top" => serialize_length(style.margin.top),
         "object-fit" => style.object_fit.css_text().to_string(),
         "object-position" => style.object_position.css_text(style.font_size),
         "aspect-ratio" => style.aspect_ratio.css_text(),
@@ -204,15 +219,6 @@ fn serialize_px(value: f32) -> String {
     format!("{}px", serialize_number(value))
 }
 
-fn serialize_length(value: Length) -> String {
-    match value {
-        Length::Px(value) => serialize_px(value),
-        Length::Percent(value) => format!("{}%", serialize_number(value)),
-        Length::Auto => "auto".to_string(),
-        _ => "0px".to_string(),
-    }
-}
-
 // These computed properties are exposed to CSSOM View's scroll-into-view
 // algorithm. Relative font/viewport units have already been normalized by
 // the cascade; scroll-padding percentages retain their scrollport basis.
@@ -269,6 +275,7 @@ mod tests {
         let mut style = ComputedStyle::initial();
         style.flex_direction = FlexDirection::Column;
         style.flex_grow = 2.5;
+        style.flex_shrink = 0.75;
         style.flex_wrap = true;
 
         assert_eq!(
@@ -280,8 +287,43 @@ mod tests {
             Some("2.5")
         );
         assert_eq!(
+            resolved_property_value(&style, "flex-shrink").as_deref(),
+            Some("0.75")
+        );
+        assert_eq!(
             resolved_property_value(&style, "flex-wrap").as_deref(),
             Some("wrap")
+        );
+    }
+
+    #[test]
+    fn serializes_computed_box_values_used_by_transitions() {
+        let mut style = ComputedStyle::initial();
+        style.border_radius = Length::Px(8.0);
+        style.margin.top = Length::Px(3.0);
+        style.margin.right = Length::Percent(10.0);
+        style.margin.bottom = Length::Px(5.0);
+        style.margin.left = Length::Auto;
+
+        assert_eq!(
+            resolved_property_value(&style, "border-radius").as_deref(),
+            Some("8px")
+        );
+        assert_eq!(
+            resolved_property_value(&style, "margin-top").as_deref(),
+            Some("3px")
+        );
+        assert_eq!(
+            resolved_property_value(&style, "margin-right").as_deref(),
+            Some("10%")
+        );
+        assert_eq!(
+            resolved_property_value(&style, "margin-bottom").as_deref(),
+            Some("5px")
+        );
+        assert_eq!(
+            resolved_property_value(&style, "margin-left").as_deref(),
+            Some("auto")
         );
     }
 

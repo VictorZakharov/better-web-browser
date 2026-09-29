@@ -40,11 +40,12 @@ impl RendererFetchRegistry {
         document: DocumentId,
         url: &str,
         policy: Arc<better_web_browser::fetch::csp::PolicyContainer>,
+        screen_wake_lock_allowed: bool,
     ) -> Result<(), String> {
         self.clients
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .install_root(document, url, policy)
+            .install_root(document, url, policy, screen_wake_lock_allowed)
             .map_err(|error| error.to_string())
     }
     pub(in crate::windows_app) fn resolve_client(

@@ -8,6 +8,9 @@ impl LayoutOutput {
             rect.x += x;
             rect.y += y;
         }
+        if node.is_popover_open() {
+            return Some(rect);
+        }
         for parent in std::iter::successors(Node::composed_parent(node), Node::composed_parent) {
             if let Some((x, y)) = self.sticky_offsets.get(&parent.id()) {
                 rect.x += x;
@@ -16,6 +19,11 @@ impl LayoutOutput {
             if let Some(scroll) = self.scroll_boxes.get(&parent.id()) {
                 rect.x -= scroll.offset_x;
                 rect.y -= scroll.offset_y;
+            }
+            // The top-layer root has the viewport as its containing block; its DOM
+            // ancestors cannot scroll or clip its visual geometry.
+            if parent.is_popover_open() {
+                break;
             }
         }
         Some(rect)
@@ -44,6 +52,9 @@ impl LayoutOutput {
                 }
             }
             if parent.id() == node.id() {
+                if parent.is_popover_open() {
+                    break;
+                }
                 continue;
             }
             if let Some(scroll) = self.scroll_boxes.get(&parent.id()) {
@@ -63,6 +74,9 @@ impl LayoutOutput {
                 {
                     return false;
                 }
+            }
+            if parent.is_popover_open() {
+                break;
             }
         }
         true

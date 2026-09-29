@@ -92,6 +92,23 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             *style = source.clone();
             style.custom_properties = custom_properties;
         }
+        "transition" => style.transition.clone_from(&source.transition),
+        "transition-property" => style
+            .transition
+            .properties
+            .clone_from(&source.transition.properties),
+        "transition-duration" => style
+            .transition
+            .durations
+            .clone_from(&source.transition.durations),
+        "transition-delay" => style
+            .transition
+            .delays
+            .clone_from(&source.transition.delays),
+        "transition-timing-function" => style
+            .transition
+            .easings
+            .clone_from(&source.transition.easings),
         "content" => style
             .generated_content
             .clone_from(&source.generated_content),

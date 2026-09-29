@@ -42,6 +42,8 @@ fn document_scoped_history_input_restores_state_before_ordered_events() {
             state: Some(r#"{"t":"object","id":1,"n":false,"v":[["step",1]]}"#.into()),
             history_length: 3,
             history_index: 1,
+            scroll_restoration: better_web_browser::renderer_protocol::ScrollRestorationMode::Auto,
+            scroll_y: None,
         }))
         .expect("send same-document traversal");
 
@@ -160,7 +162,7 @@ fn assert_navigation_history_order(report: &RuntimeReport, one: &str, two: &str)
     assert!(
         matches!(
             report.history_actions.as_slice(),
-            [HistoryAction::Update { url, replace: false, state: Some(_) }] if url == one
+            [HistoryAction::Update { url, replace: false, state: Some(_), .. }] if url == one
         ),
         "history update was dropped from navigation report: {report:?}"
     );

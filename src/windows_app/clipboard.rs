@@ -49,14 +49,14 @@ impl ClipboardService {
         }
     }
 
-    fn decision(&self, origin: &Origin, access: Access) -> Option<bool> {
+    pub(in crate::windows_app) fn decision(&self, origin: &Origin, access: Access) -> Option<bool> {
         self.grants.get(origin).and_then(|grants| match access {
             Access::Read => grants.read,
             Access::Write => grants.write,
         })
     }
 
-    fn decide(&mut self, origin: Origin, access: Access, allowed: bool) {
+    pub(in crate::windows_app) fn decide(&mut self, origin: Origin, access: Access, allowed: bool) {
         let grants = self.grants.entry(origin).or_default();
         match access {
             Access::Read => grants.read = Some(allowed),

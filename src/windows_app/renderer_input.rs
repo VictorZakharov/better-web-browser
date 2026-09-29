@@ -14,7 +14,7 @@ use super::*;
 use better_web_browser::engine::dom::NodeId;
 use better_web_browser::renderer_protocol::{
     DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, InputModifiers, KeyPhase,
-    KeyboardInput, LifecycleInput, PointerButton, PointerInput, PointerPhase,
+    KeyboardInput, LifecycleInput, NativeTextInput, PointerButton, PointerInput, PointerPhase,
     PresentationAcknowledgement, ScrollInput, TextInput,
 };
 use keyboard::key_and_code;
@@ -189,14 +189,69 @@ impl BrowserState {
         let Some((document, sequence)) = self.next_renderer_input() else {
             return;
         };
-        let _ = self.submit_renderer_input(DocumentInput::Text(TextInput {
+        let text = TextInput {
             document,
             sequence,
             target,
             value,
             selection_start,
             selection_end,
-        }));
+        };
+        let input = if matches!(
+            spec.kind,
+            ControlKind::Text | ControlKind::Search | ControlKind::Password
+        ) {
+            DocumentInput::NativeText(NativeTextInput {
+                text,
+                generation: self.native_text_generation,
+                intent: super::window_dispatch::current_page_edit_intent(),
+                pre_selection: super::window_dispatch::current_page_edit_selection(window),
+            })
+        } else {
+            DocumentInput::Text(text)
+        };
+        let _ = self.submit_renderer_input(input);
+    }
+
+    pub(super) unsafe fn apply_native_text_rejection(
+        &mut self,
+        document: better_web_browser::renderer_protocol::DocumentId,
+        rejection: &better_web_browser::renderer_protocol::NativeTextRejection,
+    ) {
+        if !self.navigation.owns_document(document)
+            || rejection.generation != self.native_text_generation
+            || rejection.sequence == 0
+            || rejection.sequence > self.renderer_input_sequence
+        {
+            return;
+        }
+        let Some(next_generation) = self.native_text_generation.checked_add(1) else {
+            self.contain_page_engine_failure(self.id, "native text generation overflow".into());
+            return;
+        };
+        self.pending_renderer_inputs
+            .discard_native_text_generation(document, rejection.generation);
+        self.native_text_generation = next_generation;
+        let window = self
+            .page_controls
+            .iter()
+            .find(|control| wire_node(control.spec.node_id) == Some(rejection.target))
+            .map(|control| control.window);
+        if let Some(window) = window {
+            // Win32 EN_CHANGE is synchronous even for programmatic SetWindowText.
+            // Suppress that echo; the renderer's DOM remains the authority.
+            self.suppress_page_control_edit = true;
+            if window_text(window) != rejection.value {
+                set_window_text(window, &rejection.value);
+            }
+            SendMessageW(
+                window,
+                EM_SETSEL,
+                rejection.selection_start as usize,
+                rejection.selection_end as isize,
+            );
+            self.suppress_page_control_edit = false;
+        }
     }
 
     pub(super) unsafe fn route_page_control_focus(&mut self, id: usize, focused: bool) {
@@ -324,18 +379,6 @@ impl BrowserState {
 
 pub(super) fn wire_node(node: NodeId) -> Option<DocumentNodeId> {
     DocumentNodeId::new(node.to_wire()).ok()
-}
-
-unsafe fn edit_selection(window: Hwnd) -> (u32, u32) {
-    let mut start = 0_u32;
-    let mut end = 0_u32;
-    SendMessageW(
-        window,
-        EM_GETSEL,
-        (&mut start as *mut u32) as usize,
-        (&mut end as *mut u32) as isize,
-    );
-    (start, end)
 }
 
 pub(super) unsafe fn pointer_modifiers(wparam: Wparam) -> InputModifiers {

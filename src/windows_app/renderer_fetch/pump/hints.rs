@@ -120,6 +120,7 @@ mod tests {
             policy: Default::default(),
             url: source.into(),
             origin: FetchUrl::parse(source).unwrap().origin(),
+            screen_wake_lock_allowed: true,
         };
         let document = DocumentId::new(1).unwrap();
         for (wire_mode, wire_credentials, mode, credentials) in [

@@ -87,6 +87,18 @@ impl PendingRendererInputs {
         self.inputs.clear();
     }
 
+    pub(super) fn discard_native_text_generation(
+        &mut self,
+        document: better_web_browser::renderer_protocol::DocumentId,
+        generation: u32,
+    ) {
+        self.inputs.retain(|input| {
+            !matches!(input,
+            DocumentInput::NativeText(edit)
+                if edit.text.document == document && edit.generation == generation)
+        });
+    }
+
     pub(super) fn is_empty(&self) -> bool {
         self.inputs.is_empty()
     }
@@ -146,8 +158,8 @@ fn can_compact_across(newer: &DocumentInput, pending: &DocumentInput) -> bool {
 mod tests {
     use super::*;
     use better_web_browser::renderer_protocol::{
-        DocumentId, DocumentNodeId, InputModifiers, PointerButton, PointerInput, ScrollInput,
-        TextInput,
+        DocumentId, DocumentNodeId, InputModifiers, NativeTextInput, PointerButton, PointerInput,
+        ScrollInput, TextEditIntent, TextInput,
     };
 
     fn document() -> DocumentId {
@@ -230,6 +242,35 @@ mod tests {
             modifiers: InputModifiers::default(),
             target: None,
         })
+    }
+
+    #[test]
+    fn canceled_generation_discards_queued_native_edits_without_reordering_other_input() {
+        let target = DocumentNodeId::new((7_u128 << 64) | 1).unwrap();
+        let native = |sequence, generation| {
+            DocumentInput::NativeText(NativeTextInput {
+                text: TextInput {
+                    document: document(),
+                    sequence,
+                    target,
+                    value: format!("edit{sequence}"),
+                    selection_start: 0,
+                    selection_end: 0,
+                },
+                generation,
+                intent: TextEditIntent::InsertText,
+                pre_selection: Some((0, 0)),
+            })
+        };
+        let mut pending = PendingRendererInputs::default();
+        assert_eq!(pending.enqueue(native(1, 0)), QueueResult::Queued);
+        assert_eq!(pending.enqueue(native(2, 0)), QueueResult::Queued);
+        assert_eq!(pending.enqueue(activation(3)), QueueResult::Queued);
+        assert_eq!(pending.enqueue(native(4, 1)), QueueResult::Queued);
+        pending.discard_native_text_generation(document(), 0);
+        assert_eq!(pending.pop_front(), Some(activation(3)));
+        assert_eq!(pending.pop_front(), Some(native(4, 1)));
+        assert!(pending.is_empty());
     }
 
     #[test]

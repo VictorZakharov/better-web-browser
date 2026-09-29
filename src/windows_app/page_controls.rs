@@ -282,6 +282,9 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn activate_page_control(&mut self, id: usize, notification: usize) {
+        if self.suppress_page_control_edit && notification == EN_CHANGE {
+            return;
+        }
         let Some(index) = id.checked_sub(ID_PAGE_CONTROL_BASE) else {
             return;
         };

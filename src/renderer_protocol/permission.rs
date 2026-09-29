@@ -7,6 +7,8 @@ use crate::fetch::RequestClient;
 pub enum PermissionName {
     Notifications,
     Geolocation,
+    ClipboardRead,
+    ClipboardWrite,
     Accelerometer,
     Gyroscope,
     Magnetometer,
@@ -18,6 +20,8 @@ impl PermissionName {
         match self {
             Self::Notifications => "notifications",
             Self::Geolocation => "geolocation",
+            Self::ClipboardRead => "clipboard-read",
+            Self::ClipboardWrite => "clipboard-write",
             Self::Accelerometer => "accelerometer",
             Self::Gyroscope => "gyroscope",
             Self::Magnetometer => "magnetometer",

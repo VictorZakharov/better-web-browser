@@ -74,8 +74,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         });
         let automatic_width = if node.tag_name() == Some("select") && style.width == Length::Auto {
             select_data(node).preferred_width(style.font_size) + horizontal_insets
-        } else if authored_button && style.width == Length::Auto {
-            self.button_fit_content_width(node, percentage_basis, available_width)
+        } else if (authored_button || node.is_popover_open()) && style.width == Length::Auto {
+            self.fit_content_width(node, percentage_basis, available_width)
         } else if block_image.is_none()
             && style.width == Length::Auto
             && matches!(style.position, Position::Absolute | Position::Fixed)
@@ -142,6 +142,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             self.viewport,
             vertical_insets,
             margins,
+            node.is_popover_open(),
         );
         let specified_height = specified_height.map(|height| (height - gutter_bottom).max(0.0));
         let minimum_height = (minimum_height - gutter_bottom).max(0.0);
@@ -277,6 +278,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             percentage_height_basis.unwrap_or(self.viewport.height),
             border_box_height,
             margins.bottom,
+        ) + positioned::popover_center_shift(
+            node,
+            &style,
+            self.viewport.height,
+            border_box_height,
         );
         if bottom_shift != 0.0 {
             self.translate_layout_subtree(

@@ -3,6 +3,7 @@
     // https://www.w3.org/TR/web-animations-1/#dom-element-animate
     const documentAnimations = new Set();
     const animationAppliedStyles = new WeakMap();
+    const transitionAppliedStyles = new WeakMap();
     let animationFrameHandle = null;
     const animationNow = () => performance.now();
     const animationEndTime = timing => Math.max(0,
@@ -16,10 +17,17 @@
             for (const [property, value] of sampleAnimationValues(animation.effect,
                 progress, animation.__underlying)) declarations.set(property, value);
         }
+        for (const [property, value] of transitionAppliedStyles.get(target) ?? [])
+            if (!declarations.has(property)) declarations.set(property, value);
         const style = [...declarations].map(([name, value]) => `${name}: ${value};`).join(' ');
         if (animationAppliedStyles.get(target) === style) return;
         animationAppliedStyles.set(target, style);
         host('setAnimationStyle', nodeId(target), style);
+    };
+    const setTransitionStyles = (target, declarations) => {
+        if (declarations?.size) transitionAppliedStyles.set(target, declarations);
+        else transitionAppliedStyles.delete(target);
+        applyAnimationStyles(target);
     };
     const animationTargetProperties = animation => new Set(
         animation.effect?.__frames.flatMap(frame => [...frame.values.keys()]) ?? []);

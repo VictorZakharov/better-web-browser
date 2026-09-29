@@ -13,6 +13,7 @@
         connectCustomElementTree(root);
     };
     const disconnectElementTree = root => {
+        disconnectPopoverTree(root);
         disconnectFrameTree(root);
         disconnectCustomElementTree(root);
     };

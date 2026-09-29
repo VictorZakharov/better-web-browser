@@ -69,6 +69,11 @@ impl RuntimeReport {
                 "coalesced history acknowledgements",
             ));
         }
+        if self.native_text_rejection.is_some() && next.native_text_rejection.is_some() {
+            return Err(ProtocolError::InvalidPayload(
+                "coalesced native text rejections",
+            ));
+        }
         next.scripts_executed = self.scripts_executed.saturating_add(next.scripts_executed);
         next.dom_mutations = self.dom_mutations.saturating_add(next.dom_mutations);
         self.errors.append(&mut next.errors);
@@ -91,6 +96,9 @@ impl RuntimeReport {
         next.history_actions = self.history_actions;
         if next.history_traversal_ack.is_none() {
             next.history_traversal_ack = self.history_traversal_ack;
+        }
+        if next.native_text_rejection.is_none() {
+            next.native_text_rejection = self.native_text_rejection;
         }
         self.cookie_updates.append(&mut next.cookie_updates);
         next.cookie_updates = self.cookie_updates;
@@ -288,6 +296,7 @@ mod tests {
                 url: "https://example.test/first-state".into(),
                 replace: false,
                 state: None,
+                scroll_y: 0.0,
             }],
             cookie_updates: vec!["first=1".into()],
             runtime_active: true,
@@ -321,6 +330,7 @@ mod tests {
                 url: "https://example.test/next-state".into(),
                 replace: true,
                 state: None,
+                scroll_y: 0.0,
             }],
             cookie_updates: vec!["next=2".into()],
             runtime_stopped: true,
@@ -365,11 +375,13 @@ mod tests {
                     url: "https://example.test/first-state".into(),
                     replace: false,
                     state: None,
+                    scroll_y: 0.0,
                 },
                 HistoryAction::Update {
                     url: "https://example.test/next-state".into(),
                     replace: true,
                     state: None,
+                    scroll_y: 0.0,
                 }
             ]
         );

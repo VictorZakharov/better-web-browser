@@ -407,12 +407,14 @@ impl ScriptRuntime {
             return UserInputResult {
                 outcome: lifecycle_error("the document's initial scripts have not executed"),
                 default_allowed: false,
+                rejected_text: None,
             };
         }
         let Some(context) = self.context.as_deref_mut() else {
             return UserInputResult {
                 outcome: inactive_runtime_outcome(),
                 default_allowed: false,
+                rejected_text: None,
             };
         };
         let host = Rc::clone(&self.host);
@@ -427,6 +429,7 @@ impl ScriptRuntime {
             Err(payload) => UserInputResult {
                 outcome: self.finish_guarded_run(Err(payload)),
                 default_allowed: false,
+                rejected_text: None,
             },
         }
     }

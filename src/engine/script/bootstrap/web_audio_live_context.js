@@ -246,7 +246,7 @@
     Object.assign(globalThis, {
         AudioBuffer, AudioParam, AudioNode, AudioScheduledSourceNode,
         AudioDestinationNode, GainNode, OscillatorNode, AudioBufferSourceNode,
-        ConstantSourceNode, StereoPannerNode, DelayNode,
+        ConstantSourceNode, StereoPannerNode, PannerNode, AudioListener, DelayNode,
         MediaStreamAudioSourceNode,
         ChannelSplitterNode, ChannelMergerNode, IIRFilterNode, BiquadFilterNode,
         DynamicsCompressorNode, ConvolverNode,

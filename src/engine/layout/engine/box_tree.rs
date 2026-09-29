@@ -85,6 +85,11 @@ impl<'a> BoxTree<'a> {
         let mut pending = raw_children(node, self.base);
         pending.reverse();
         while let Some(child) = pending.pop() {
+            // Open popovers participate in the top layer, not their DOM parent's box tree.
+            // A separate root pass lays each one out in top-layer order.
+            if child.is_popover_open() {
+                continue;
+            }
             if self.get(&child).display == Display::Contents {
                 pending.extend(raw_children(&child, self.base).into_iter().rev());
             } else if self.get(&child).display != Display::None {

@@ -129,7 +129,7 @@ fn wave_shaper_shapes_each_input_channel_before_destination_downmix() {
 }
 
 #[test]
-fn wave_shaper_rejects_unsupported_oversampling_and_second_nonnull_curve() {
+fn wave_shaper_accepts_oversampling_and_rejects_invalid_modes_or_second_curve() {
     let (_, outcome) = execute_html(
         r#"<body><script>
         const context = new OfflineAudioContext(1, 128, 8000);
@@ -141,14 +141,17 @@ fn wave_shaper_rejects_unsupported_oversampling_and_second_nonnull_curve() {
         shaper.curve = null;
         try { shaper.curve = new Float32Array([-1, 1]); }
         catch (error) { errors.push(error.name); }
-        try { shaper.oversample = '2x'; }
-        catch (error) { errors.push(error.name); }
+        shaper.oversample = '2x';
+        if (shaper.oversample !== '2x') throw Error('2x mode was not stored');
+        shaper.oversample = '4x';
+        if (shaper.oversample !== '4x') throw Error('4x mode was not stored');
         try { shaper.oversample = 'invalid'; }
         catch (error) { errors.push(error.name); }
+        if (shaper.oversample !== '4x') throw Error('invalid mode changed state');
         try { new WaveShaperNode(context, {curve: [1]}); }
         catch (error) { errors.push(error.name); }
         if (errors.join(',') !==
-            'InvalidStateError,InvalidStateError,NotSupportedError,TypeError,InvalidStateError')
+            'InvalidStateError,InvalidStateError,TypeError,InvalidStateError')
             throw Error('WaveShaper validation mismatch: ' + errors.join(','));
         console.log('WaveShaper validation passed');
     </script>"#,

@@ -129,6 +129,8 @@
         if (newValue) refreshWindowNamedPropertyValues([newValue], true);
     };
     const queueAttributeMutation = (element, record, oldValue, newValue) => {
+        popoverAttributeChanged(element, record.namespace, record.localName, oldValue, newValue);
+        popoverTargetAttributeChanged(element, record.namespace, record.localName);
         if (record.namespace === null && record.localName === 'type'
             && element.localName === 'input'
             && String(oldValue || '').toLowerCase() !== String(newValue || '').toLowerCase())
@@ -146,7 +148,9 @@
     // DOM's "set an attribute value" is an internal algorithm. CSSOM uses it
     // to update inline style without invoking an author-overridden setAttribute.
     const setAttributeValueInternal = (element, name, value) => {
+        const transitionBefore = transitionBeforeAttributeChange(element, name, value);
         const record = host('attrSet', nodeId(element), name, value);
+        transitionAfterAttributeChange(element, transitionBefore);
         const oldValue = record?.value ?? null;
         const current = record ? { ...record, value } : {
             namespace: null, prefix: null, localName: name, qualifiedName: name, value
@@ -177,7 +181,10 @@
     const setAttachedAttributeValue = (attribute, value) => {
         const element = attribute.ownerElement;
         const oldValue = attribute.value;
+        const transitionBefore = attribute.namespaceURI === null ?
+            transitionBeforeAttributeChange(element, attribute.localName, value) : null;
         host('attrSetNs', nodeId(element), attribute.namespaceURI || '', attribute.prefix || '', attribute.localName, value);
+        transitionAfterAttributeChange(element, transitionBefore);
         attributeStates.get(attribute).value = value;
         maybeRefreshNamedProperties(element, attribute.namespaceURI, attribute.localName,
             oldValue, attribute.value);

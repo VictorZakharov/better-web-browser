@@ -1,7 +1,9 @@
-use crate::limits::{MAX_HISTORY_STATE_BYTES, MAX_RENDERER_TEXT_INPUT_BYTES, MAX_URL_BYTES};
+use crate::limits::{MAX_HISTORY_STATE_BYTES, MAX_URL_BYTES};
 use crate::renderer_protocol::input::*;
 use crate::renderer_protocol::wire::{WireReader, WireWriter};
 use crate::renderer_protocol::{BrowserMessage, DocumentId, ProtocolError, RendererMessage};
+
+mod text;
 
 pub(super) fn encode_browser_input(
     message: &BrowserMessage,
@@ -43,11 +45,19 @@ pub(super) fn encode_browser_input(
                     0x0143
                 }
                 DocumentInput::Text(input) => {
-                    writer.u128(input.target.get());
-                    writer.string(&input.value)?;
-                    writer.u32(input.selection_start);
-                    writer.u32(input.selection_end);
+                    text::encode(&mut writer, input)?;
                     0x0145
+                }
+                DocumentInput::NativeText(input) => {
+                    text::encode(&mut writer, &input.text)?;
+                    writer.u32(input.generation);
+                    writer.u8(input.intent.tag());
+                    writer.bool(input.pre_selection.is_some());
+                    if let Some((start, end)) = input.pre_selection {
+                        writer.u32(start);
+                        writer.u32(end);
+                    }
+                    0x0157
                 }
                 DocumentInput::Focus(input) => {
                     writer.bool(input.focused);
@@ -71,6 +81,11 @@ pub(super) fn encode_browser_input(
                     }
                     writer.u32(input.history_length);
                     writer.u32(input.history_index);
+                    writer.u8(input.scroll_restoration.wire_tag());
+                    writer.bool(input.scroll_y.is_some());
+                    if let Some(scroll_y) = input.scroll_y {
+                        writer.f32(scroll_y);
+                    }
                     0x0155
                 }
             }
@@ -180,13 +195,16 @@ pub(super) fn decode_browser_input(
                 modifiers: decode_modifiers(&mut reader)?,
                 target: decode_target(&mut reader)?,
             }),
-            0x0145 => DocumentInput::Text(TextInput {
-                document,
-                sequence,
-                target: DocumentNodeId::new(reader.u128()?)?,
-                value: reader.string(MAX_RENDERER_TEXT_INPUT_BYTES)?,
-                selection_start: reader.u32()?,
-                selection_end: reader.u32()?,
+            0x0145 => DocumentInput::Text(text::decode(&mut reader, document, sequence)?),
+            0x0157 => DocumentInput::NativeText(NativeTextInput {
+                text: text::decode(&mut reader, document, sequence)?,
+                generation: reader.u32()?,
+                intent: TextEditIntent::from_tag(reader.u8()?)?,
+                pre_selection: if reader.bool()? {
+                    Some((reader.u32()?, reader.u32()?))
+                } else {
+                    None
+                },
             }),
             0x0147 => DocumentInput::Focus(FocusInput {
                 document,
@@ -215,6 +233,10 @@ pub(super) fn decode_browser_input(
                     .transpose()?,
                 history_length: reader.u32()?,
                 history_index: reader.u32()?,
+                scroll_restoration: crate::renderer_protocol::ScrollRestorationMode::from_wire_tag(
+                    reader.u8()?,
+                )?,
+                scroll_y: reader.bool()?.then(|| reader.f32()).transpose()?,
             }),
             _ => return Err(ProtocolError::UnexpectedMessage(kind)),
         };

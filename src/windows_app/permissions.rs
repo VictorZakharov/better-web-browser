@@ -1,7 +1,9 @@
 //! Browser-owned Permissions API queries and live status subscriptions.
 
 use super::app_state::BrowserState;
+use super::clipboard::{Access as ClipboardAccess, ClipboardService};
 use super::tabs::TabId;
+use better_web_browser::fetch::Origin;
 use better_web_browser::renderer_process::PermissionUpdateSink;
 use better_web_browser::renderer_protocol::{
     DocumentId, NotificationPermission, PermissionName, PermissionRequest, PermissionState,
@@ -26,6 +28,21 @@ pub(super) struct PermissionService {
 
 const MAX_SUBSCRIPTIONS_PER_DOCUMENT: usize = 64;
 const MAX_SUBSCRIPTIONS_GLOBAL: usize = 4096;
+
+fn clipboard_permission_state(
+    clipboard: &ClipboardService,
+    serialized_origin: &str,
+    access: ClipboardAccess,
+) -> PermissionState {
+    let Ok(origin) = Origin::parse(serialized_origin) else {
+        return PermissionState::Denied;
+    };
+    match clipboard.decision(&origin, access) {
+        None => PermissionState::Prompt,
+        Some(true) => PermissionState::Granted,
+        Some(false) => PermissionState::Denied,
+    }
+}
 
 fn can_register(global_count: usize, document_count: usize) -> bool {
     global_count < MAX_SUBSCRIPTIONS_GLOBAL && document_count < MAX_SUBSCRIPTIONS_PER_DOCUMENT
@@ -166,6 +183,14 @@ impl BrowserState {
                 Some(false) => PermissionState::Denied,
                 None => PermissionState::Prompt,
             },
+            PermissionName::ClipboardRead | PermissionName::ClipboardWrite => {
+                let access = if name == PermissionName::ClipboardRead {
+                    ClipboardAccess::Read
+                } else {
+                    ClipboardAccess::Write
+                };
+                clipboard_permission_state(&self.app.clipboard.borrow(), origin, access)
+            }
             PermissionName::Accelerometer
             | PermissionName::Gyroscope
             | PermissionName::Magnetometer
@@ -189,6 +214,8 @@ impl BrowserState {
         for name in [
             PermissionName::Notifications,
             PermissionName::Geolocation,
+            PermissionName::ClipboardRead,
+            PermissionName::ClipboardWrite,
             PermissionName::Accelerometer,
             PermissionName::Gyroscope,
             PermissionName::Magnetometer,
@@ -224,5 +251,41 @@ mod tests {
         assert!(can_register(4095, 63));
         assert!(!can_register(4096, 0));
         assert!(!can_register(0, 64));
+    }
+
+    #[test]
+    fn clipboard_queries_reflect_separate_browser_grants_without_accessing_the_os() {
+        let mut clipboard = ClipboardService::default();
+        let origin = Origin::parse("https://example.test/").unwrap();
+        let other = Origin::parse("https://other.test/").unwrap();
+        let state = |clipboard: &ClipboardService, origin: &Origin, access| {
+            clipboard_permission_state(clipboard, &origin.serialize(), access)
+        };
+        assert_eq!(
+            state(&clipboard, &origin, ClipboardAccess::Read),
+            PermissionState::Prompt
+        );
+        clipboard.decide(origin.clone(), ClipboardAccess::Read, true);
+        clipboard.decide(origin.clone(), ClipboardAccess::Write, false);
+        assert_eq!(
+            state(&clipboard, &origin, ClipboardAccess::Read),
+            PermissionState::Granted
+        );
+        assert_eq!(
+            state(&clipboard, &origin, ClipboardAccess::Write),
+            PermissionState::Denied
+        );
+        assert_eq!(
+            state(&clipboard, &other, ClipboardAccess::Read),
+            PermissionState::Prompt
+        );
+        assert_eq!(
+            state(&clipboard, &other, ClipboardAccess::Write),
+            PermissionState::Prompt
+        );
+        assert_eq!(
+            clipboard_permission_state(&clipboard, "not a URL", ClipboardAccess::Read),
+            PermissionState::Denied
+        );
     }
 }

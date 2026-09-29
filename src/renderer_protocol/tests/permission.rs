@@ -42,3 +42,39 @@ fn permission_frames_have_distinct_kinds_and_reject_the_wrong_direction() {
         Err(ProtocolError::UnexpectedMessage(0x0221))
     ));
 }
+
+#[test]
+fn clipboard_permission_names_survive_both_protocol_directions() {
+    let document = DocumentId::new(43).unwrap();
+    for name in [
+        PermissionName::ClipboardRead,
+        PermissionName::ClipboardWrite,
+    ] {
+        let request = RendererMessage::PermissionRequest(PermissionRequest {
+            document,
+            request_id: 8,
+            client: crate::fetch::RequestClient::default(),
+            embedded: false,
+            name,
+        });
+        let update = BrowserMessage::PermissionUpdate(PermissionUpdate {
+            document,
+            request_id: 8,
+            name,
+            state: PermissionState::Granted,
+            rejected: false,
+        });
+        assert_eq!(
+            FrameReader::new(Cursor::new(encoded_renderer(&request)), session())
+                .read_renderer()
+                .unwrap(),
+            request
+        );
+        assert_eq!(
+            FrameReader::new(Cursor::new(encoded_browser(&update)), session())
+                .read_browser()
+                .unwrap(),
+            update
+        );
+    }
+}

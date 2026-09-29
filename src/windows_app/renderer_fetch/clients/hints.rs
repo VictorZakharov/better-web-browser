@@ -68,6 +68,7 @@ mod tests {
                 document,
                 "https://example.test/",
                 Arc::new(PolicyContainer::from_headers("https://example.test/", &headers).unwrap()),
+                true,
             )
             .unwrap();
         let root = RequestClient {
@@ -110,7 +111,7 @@ mod tests {
             Arc::new(PolicyContainer::from_headers("https://example.test/", &headers).unwrap());
         let mut clients = Clients::default();
         clients
-            .install_root(first, "https://example.test/", policy.clone())
+            .install_root(first, "https://example.test/", policy.clone(), true)
             .unwrap();
         let root = RequestClient {
             id: 0,
@@ -137,7 +138,7 @@ mod tests {
                 .is_err()
         );
         clients
-            .install_root(second, "https://example.test/", policy)
+            .install_root(second, "https://example.test/", policy, true)
             .unwrap();
         assert!(
             clients

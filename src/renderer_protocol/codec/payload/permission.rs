@@ -7,6 +7,8 @@ fn write_name(writer: &mut WireWriter, name: PermissionName) {
     writer.u8(match name {
         PermissionName::Notifications => 1,
         PermissionName::Geolocation => 2,
+        PermissionName::ClipboardRead => 8,
+        PermissionName::ClipboardWrite => 9,
         PermissionName::Accelerometer => 4,
         PermissionName::Gyroscope => 5,
         PermissionName::Magnetometer => 6,
@@ -18,6 +20,8 @@ fn read_name(reader: &mut WireReader<'_>) -> Result<PermissionName, ProtocolErro
     Ok(match reader.u8()? {
         1 => PermissionName::Notifications,
         2 => PermissionName::Geolocation,
+        8 => PermissionName::ClipboardRead,
+        9 => PermissionName::ClipboardWrite,
         4 => PermissionName::Accelerometer,
         5 => PermissionName::Gyroscope,
         6 => PermissionName::Magnetometer,
