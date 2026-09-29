@@ -6,6 +6,8 @@
     const constructing = globalThis.__constructingFormData;
     delete globalThis.__constructingFormData;
     const FormDataConstructor = FormData;
+    const formDataEntries = globalThis.__internalFormDataEntries;
+    delete globalThis.__internalFormDataEntries;
     const validateForSubmission = globalThis.__staticFormValidation;
     const reportInvalidControl = globalThis.__reportInvalidControl;
     delete globalThis.__staticFormValidation;
@@ -32,6 +34,9 @@
     };
     const methods = ['get', 'post', 'dialog'];
     const encodings = ['application/x-www-form-urlencoded', 'multipart/form-data', 'text/plain'];
+    // Keep this aligned with navigation::request::MAX_FORM_BODY_BYTES. The
+    // renderer rejects larger submissions before copying bytes into a host call.
+    const maxNavigationBodyBytes = 5 * 1024 * 1024;
     const reflect = (attribute, normalize = value => value || '') => ({
         enumerable: true, configurable: true,
         get() { return normalize(this.getAttribute(attribute)); },
@@ -104,21 +109,26 @@
         // Network navigation supports HTTP(S); never turn another scheme into a GET.
         if (!['http:', 'https:'].includes(url.protocol)) return;
         const target = attribute(form, button, 'target') ?? document.querySelector('base[target]')?.getAttribute('target') ?? '';
-        const pairs = Array.from(entries, ([name, value]) =>
-            [newline(name), newline(value instanceof File ? value.name : value)]);
+        const pairs = formDataEntries(entries).map(([name, value]) =>
+            [newline(name), newline(data.fileName(value) ?? value)]);
         let post = null;
         const encoding = enumerated(attribute(form, button, 'enctype'), encodings, encodings[0]);
         if (method === 'get') url.search = '?' + new URLSearchParams(pairs).toString();
         else {
             let body;
-            if (encoding === 'multipart/form-data') body = data.extractBody(entries);
+            if (encoding === 'multipart/form-data')
+                body = data.extractBody(entries, maxNavigationBodyBytes);
             else {
                 const text = encoding === 'text/plain'
                     ? pairs.map(([name, value]) => name + '=' + value + '\r\n').join('')
                     : new URLSearchParams(pairs).toString();
                 body = { bytes: data.encoder.encode(text), type: encoding };
             }
-            post = { content_type: body.type, body: Array.from(body.bytes) };
+            if (body.bytes.length > maxNavigationBodyBytes)
+                throw new RangeError('Form submission exceeds the 5 MiB body limit');
+            // The private host call carries one bounded base64 string; a decimal
+            // byte array would create millions of JS values for an ordinary file.
+            post = { content_type: body.type, body: data.bytesToBase64(body.bytes) };
         }
         const noreferrer = /(?:^|\s)noreferrer(?:\s|$)/i.test(form.getAttribute('rel') || '');
         const sameContext = !target || /^(?:_self|_top|_parent)$/i.test(target);

@@ -62,7 +62,8 @@
             if (!this.dispatchEvent(markTrusted(new Event('reset', { bubbles: true, cancelable: true })))) return;
             host('formResetControls', nodeId(this));
             for (const control of this.getRootNode().querySelectorAll('input')) {
-                if (control.type === 'file' && control.form === this) inputFileSelections.delete(control);
+                if (control.type === 'file' && control.form === this)
+                    invalidateInputFileSelection(control);
             }
             // Reset restores live values without value setters, so pattern
             // verdicts cached from pre-reset values would go stale by their

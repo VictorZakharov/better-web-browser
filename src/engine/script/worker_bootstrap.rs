@@ -23,6 +23,7 @@ pub(super) const WORKER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/streams_encoding.js"),
     include_str!("bootstrap/streams_compression.js"),
     include_str!("bootstrap/blob_chunks.js"),
+    include_str!("bootstrap/form_data.js"),
     include_str!("bootstrap/network_data.js"),
     include_str!("bootstrap/network_body.js"),
     include_str!("bootstrap/network_types.js"),

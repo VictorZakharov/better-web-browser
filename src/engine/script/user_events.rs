@@ -15,7 +15,11 @@ pub(super) fn dispatch(
             ..
         } | UserInputEvent::Keyboard { phase: "down", .. }
     );
-    host.borrow_mut().user_input_active = user_initiated;
+    {
+        let mut state = host.borrow_mut();
+        state.user_input_active = user_initiated;
+        state.file_picker_activation_consumed = false;
+    }
     let notify_audio = {
         let mut state = host.borrow_mut();
         if state.audio_activated && !state.audio_activation_notified {

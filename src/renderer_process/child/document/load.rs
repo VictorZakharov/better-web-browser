@@ -119,6 +119,7 @@ impl DocumentRuntime {
             pending_media_device_requests: Vec::new(),
             pending_sensor_requests: Vec::new(),
             pending_clipboard_requests: Vec::new(),
+            file_pickers: HashMap::new(),
             active_script_fetches: HashMap::new(),
             pending_worker_actions: Vec::new(),
             deferred_network_load: PageLoadReport::default(),

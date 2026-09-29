@@ -88,9 +88,10 @@ impl BrowserState {
         for (index, spec) in specs.into_iter().enumerate() {
             let id = ID_PAGE_CONTROL_BASE + index;
             let (class, style, text) = match spec.kind {
-                ControlKind::Submit | ControlKind::Button | ControlKind::Reset => {
-                    ("BUTTON", BS_OWNERDRAW | WS_TABSTOP, spec.label.clone())
-                }
+                ControlKind::Submit
+                | ControlKind::Button
+                | ControlKind::Reset
+                | ControlKind::File => ("BUTTON", BS_OWNERDRAW | WS_TABSTOP, spec.label.clone()),
                 ControlKind::Select => (
                     "COMBOBOX",
                     CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL,
@@ -202,7 +203,10 @@ impl BrowserState {
             if visible {
                 let is_button = matches!(
                     control.spec.kind,
-                    ControlKind::Submit | ControlKind::Button | ControlKind::Reset
+                    ControlKind::Submit
+                        | ControlKind::Button
+                        | ControlKind::Reset
+                        | ControlKind::File
                 );
                 let [border_top, border_right, border_bottom, border_left] =
                     control.spec.border_width;
@@ -307,7 +311,7 @@ impl BrowserState {
             ControlKind::Select if notification == CBN_SELCHANGE => {
                 self.route_page_control_text(index)
             }
-            ControlKind::Submit | ControlKind::Button | ControlKind::Reset
+            ControlKind::Submit | ControlKind::Button | ControlKind::Reset | ControlKind::File
                 if notification == BN_CLICKED =>
             {
                 self.route_page_control_activation(index)

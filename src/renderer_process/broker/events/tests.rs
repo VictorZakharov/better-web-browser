@@ -283,3 +283,31 @@ fn cancelled_transactional_fetch_batches_are_discarded_and_reusable() {
             if document == replacement && requests.is_empty()
     ));
 }
+
+#[test]
+fn stale_file_picker_intent_is_discarded_on_navigation() {
+    let (sender, receiver) = bounded();
+    let stale = DocumentId::new(41).unwrap();
+    let current = DocumentId::new(42).unwrap();
+    let request = |document| {
+        RendererEvent::FilePickerRequest(crate::renderer_protocol::FilePickerRequest {
+            document,
+            request_id: 7,
+            node: DocumentNodeId::new((1u128 << 64) | 2).unwrap(),
+            client: crate::fetch::RequestClient {
+                id: 0,
+                opaque: false,
+            },
+            multiple: false,
+            accept: String::new(),
+        })
+    };
+    sender.try_send(request(stale)).unwrap();
+    sender.discard_document(stale);
+    sender.try_send(request(current)).unwrap();
+    assert!(matches!(
+        receiver.try_recv().unwrap(),
+        RendererEvent::FilePickerRequest(value) if value.document == current
+    ));
+    assert!(receiver.try_recv().is_err());
+}

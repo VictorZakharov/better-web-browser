@@ -291,6 +291,9 @@ impl ScriptRuntime {
             .clipboard_actions
             .append(&mut self.host.borrow_mut().pending_clipboard_actions);
         outcome
+            .file_picker_actions
+            .append(&mut self.host.borrow_mut().pending_file_picker_actions);
+        outcome
             .worker_actions
             .append(&mut self.host.borrow_mut().pending_worker_actions);
         outcome

@@ -15,6 +15,7 @@ mod color_scheme;
 mod document_activation;
 mod document_navigation;
 mod document_state;
+mod file_picker;
 mod fullscreen;
 mod geolocation;
 mod incident_log;

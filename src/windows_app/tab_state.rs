@@ -89,6 +89,7 @@ pub(super) struct BrowserTab {
     pub(super) layout_dirty: bool,
     pub(super) render_dpi: u32,
     pub(super) transient_activation: Option<(DocumentId, Instant)>,
+    pub(super) primary_pointer_down_activation: Option<DocumentId>,
 }
 
 impl BrowserTab {
@@ -154,6 +155,7 @@ impl BrowserTab {
             layout_dirty: true,
             render_dpi: DEFAULT_DPI,
             transient_activation: None,
+            primary_pointer_down_activation: None,
         }
     }
 

@@ -72,6 +72,7 @@ impl EventSender {
                 | RendererEvent::MediaCaptureRequest(_)
                 | RendererEvent::SensorRequest(_)
                 | RendererEvent::ClipboardRequest(_)
+                | RendererEvent::FilePickerRequest(_)
         ) {
             self.send_lossless(event)
         } else {
@@ -252,6 +253,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::MediaCaptureRequest(request) => Some(request.document),
         RendererEvent::SensorRequest(request) => Some(request.document),
         RendererEvent::ClipboardRequest(request) => Some(request.document),
+        RendererEvent::FilePickerRequest(request) => Some(request.document),
         RendererEvent::FullscreenRequested(request) => Some(request.document),
         RendererEvent::PointerLockRequested(request) => Some(request.document),
         RendererEvent::WakeLockRequested(request) => Some(request.document),

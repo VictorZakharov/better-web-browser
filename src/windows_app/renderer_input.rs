@@ -1,5 +1,7 @@
 //! Browser-to-renderer native input translation and document-scoped sequencing.
 
+#[cfg(test)]
+mod activation_tests;
 mod keyboard;
 mod pointer;
 mod queue;
@@ -117,9 +119,15 @@ impl BrowserState {
             modifiers: pointer_modifiers(wparam),
             target: None,
         }));
+        // HTML activation starts on a trusted mouse pointerdown. Do not mint a
+        // second activation on its matching pointerup after an API consumes it.
         if accepted
-            && matches!(phase, PointerPhase::Up | PointerPhase::Activate)
-            && button == PointerButton::Primary
+            && pointer_starts_activation(
+                phase,
+                button,
+                document,
+                &mut self.primary_pointer_down_activation,
+            )
         {
             self.transient_activation = Some((document, Instant::now()));
         }
@@ -379,6 +387,26 @@ impl BrowserState {
 
 pub(super) fn wire_node(node: NodeId) -> Option<DocumentNodeId> {
     DocumentNodeId::new(node.to_wire()).ok()
+}
+
+fn pointer_starts_activation(
+    phase: PointerPhase,
+    button: PointerButton,
+    document: better_web_browser::renderer_protocol::DocumentId,
+    down_document: &mut Option<better_web_browser::renderer_protocol::DocumentId>,
+) -> bool {
+    if button != PointerButton::Primary {
+        return false;
+    }
+    match phase {
+        PointerPhase::Down => {
+            *down_document = Some(document);
+            true
+        }
+        PointerPhase::Up => down_document.take() != Some(document),
+        PointerPhase::Activate => true,
+        _ => false,
+    }
 }
 
 pub(super) unsafe fn pointer_modifiers(wparam: Wparam) -> InputModifiers {

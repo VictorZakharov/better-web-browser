@@ -281,6 +281,7 @@ impl DocumentRuntime {
             .append(&mut outcome.clipboard_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
+        self.start_file_picker_requests(outcome, connection)?;
         connection.send_network_state_updates(self.id, outcome)?;
         self.start_pending_survivable_fetches(connection)?;
         self.start_pending_speech_requests(connection)?;

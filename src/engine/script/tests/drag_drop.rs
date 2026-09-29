@@ -201,24 +201,29 @@ fn trusted_pointer_drag_moves_data_only_into_accepted_drop() {
 fn trusted_drag_protects_file_and_string_payloads_until_drop() {
     let dom = dom::parse_with_scripting(
         r#"<div id=source draggable=true>drag</div><div id=target>drop</div>
+           <form><input id=upload type=file name=upload required></form>
            <output>no</output><script>
             const source = document.getElementById('source');
             const target = document.getElementById('target');
+            const upload = document.getElementById('upload');
             const checks = [];
-            let shared;
+            let shared, startFiles, dropFiles;
             source.ondragstart = event => {
                 shared = event.dataTransfer;
                 shared.effectAllowed = 'copy';
                 shared.setData('text/plain', 'private');
                 shared.items.add(new File(['secret'], 'private.txt', {type:'text/plain'}));
-                checks.push(shared.files.length === 1, shared.getData('text/plain') === 'private');
+                startFiles = shared.files;
+                checks.push(startFiles === shared.files, startFiles.length === 1,
+                    shared.getData('text/plain') === 'private');
             };
             target.ondragenter = event => event.preventDefault();
             target.ondragover = event => {
                 const data = event.dataTransfer;
                 checks.push(data !== shared, shared.items.length === 0, data.items.length === 2,
                     data.types.join(',') === 'text/plain,Files',
-                    data.files.length === 0, data.getData('text/plain') === '',
+                    data.files === data.files, data.files.length === 0,
+                    data.getData('text/plain') === '',
                     data.items[0].kind === 'string', data.items[1].getAsFile() === null);
                 data.setData('text/plain', 'tamper');
                 data.items.add('tamper', 'text/html');
@@ -227,13 +232,22 @@ fn trusted_drag_protects_file_and_string_payloads_until_drop() {
             };
             target.ondrop = event => {
                 const data = event.dataTransfer;
+                dropFiles = data.files;
                 checks.push(data !== shared, data.getData('text/plain') === 'private',
-                    data.files.length === 1, data.files.item(0).name === 'private.txt');
+                    dropFiles === data.files, dropFiles.length === 1,
+                    dropFiles.item(0).name === 'private.txt');
+                upload.files = dropFiles;
+                checks.push(upload.files !== dropFiles, upload.files[0] === dropFiles[0]);
                 event.preventDefault();
             };
             source.ondragend = () => {
                 checks.push(shared.getData('text/plain') === '', shared.items.length === 0,
-                    shared.files.length === 0);
+                    shared.files === startFiles, startFiles.length === 0,
+                    dropFiles.length === 0, upload.files.length === 1,
+                    upload.files[0].name === 'private.txt',
+                    upload.value === 'C:\\fakepath\\private.txt',
+                    !upload.validity.valueMissing,
+                    new FormData(upload.form).get('upload') === upload.files[0]);
                 document.querySelector('output').textContent = checks.every(Boolean) ? 'yes' : checks.join(',');
             };
         </script>"#,

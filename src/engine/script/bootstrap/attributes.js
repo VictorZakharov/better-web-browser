@@ -134,7 +134,7 @@
         if (record.namespace === null && record.localName === 'type'
             && element.localName === 'input'
             && String(oldValue || '').toLowerCase() !== String(newValue || '').toLowerCase())
-            inputFileSelections.delete(element);
+            invalidateInputFileSelection(element);
         eventHandlerAttributeChanged(element, record, newValue);
         queueMutationRecord(element, 'attributes', {
             attributeName: record.localName,

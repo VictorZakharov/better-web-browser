@@ -273,7 +273,7 @@ impl DocumentRuntime {
         )
     }
 
-    pub(super) fn complete_network_script_outcome(
+    pub(in crate::renderer_process::child::document) fn complete_network_script_outcome(
         &mut self,
         mut outcome: ScriptOutcome,
         terminal: bool,

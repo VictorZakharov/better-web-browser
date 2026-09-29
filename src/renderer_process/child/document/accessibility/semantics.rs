@@ -31,7 +31,9 @@ pub(super) fn role_for(node: &NodeRef, control: Option<&ControlSpec>) -> Option<
             ControlKind::Password => SemanticRole::PasswordInput,
             ControlKind::Search => SemanticRole::SearchInput,
             ControlKind::Select => SemanticRole::ComboBox,
-            ControlKind::Submit | ControlKind::Button | ControlKind::Reset => SemanticRole::Button,
+            ControlKind::Submit | ControlKind::Button | ControlKind::Reset | ControlKind::File => {
+                SemanticRole::Button
+            }
         });
     }
     match node.tag_name()? {

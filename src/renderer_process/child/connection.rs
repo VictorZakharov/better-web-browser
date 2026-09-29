@@ -4,6 +4,7 @@ mod broadcast_channel;
 mod clipboard;
 mod database;
 mod fetch;
+mod file_picker;
 mod geolocation;
 mod media;
 mod media_capture;
@@ -254,6 +255,7 @@ impl ChildConnection {
             BrowserMessage::MediaCaptureFrame(frame) => self.deliver_media_capture_frame(frame),
             BrowserMessage::SensorUpdate(update) => self.deliver_sensor_update(update),
             BrowserMessage::ClipboardUpdate(update) => self.deliver_clipboard_update(update),
+            BrowserMessage::FilePickerUpdate(update) => self.deliver_file_picker_update(update),
             BrowserMessage::BroadcastDelivery(delivery) => self.deliver_broadcast(delivery),
             BrowserMessage::AdvanceTime {
                 document,

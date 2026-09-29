@@ -1,6 +1,11 @@
 (() => {
     'use strict';
     const FormData = globalThis.FormData;
+    // FormData's entry list is an internal slot, not the author-overridable
+    // iterator or a writable property on the instance. Capture its private
+    // accessor before any page script runs (also in the worker bootstrap).
+    const formDataEntrySnapshot = globalThis.__formDataEntrySnapshot;
+    delete globalThis.__formDataEntrySnapshot;
     const urlApi = globalThis.__urlInternals;
     const blobBytes = globalThis.__blobByteAlgorithms;
     delete globalThis.__blobByteAlgorithms;
@@ -261,11 +266,29 @@
         get webkitRelativePath() { return ''; }
     }
 
+    // The picker delivers already owned bytes. Keep the factory private so
+    // author overrides of File and Blob cannot substitute the selected snapshot.
+    if (typeof document !== 'undefined') {
+        globalThis.__installFilePickerFileFactory?.((bytes, name, type, lastModified) => {
+            const file = initializeBlob(Object.create(File.prototype), [bytes], type);
+            fileStates.set(file, { name, lastModified });
+            return file;
+        });
+        delete globalThis.__installFilePickerFileFactory;
+    }
 
-    const multipartBody = form => {
+
+    const multipartBody = (form, maximumBytes = Infinity) => {
         const boundary = '----BreezeFormBoundary' + Math.floor(Math.random() * 0x1fffffffffffff).toString(16);
         const chunks = [];
-        for (const [name, value] of form) {
+        let total = 0;
+        const add = chunk => {
+            if (chunk.length > maximumBytes - total)
+                throw new RangeError('Form body exceeds the browser limit');
+            total += chunk.length;
+            chunks.push(chunk);
+        };
+        for (const [name, value] of formDataEntrySnapshot(form)) {
             const normalize = input => String(input).replace(/\r\n|\r|\n/g, '\r\n');
             const escape = input => normalize(input).replace(/[\r\n"]/g, character => encodeURIComponent(character));
             let heading = '--' + boundary + '\r\nContent-Disposition: form-data; name="' + escape(name) + '"';
@@ -273,31 +296,58 @@
                 const file = fileStates.get(value), blob = blobState(value);
                 heading += '; filename="' + escape(file.name) + '"\r\n';
                 heading += 'Content-Type: ' + (blob.type || 'application/octet-stream') + '\r\n\r\n';
-                chunks.push(encoder.encode(heading), new Uint8Array(materializeBlob(value)),
-                    encoder.encode('\r\n'));
-            } else chunks.push(encoder.encode(heading + '\r\n\r\n' + normalize(value) + '\r\n'));
+                add(encoder.encode(heading));
+                if (blob.size > maximumBytes - total)
+                    throw new RangeError('Form body exceeds the browser limit');
+                add(new Uint8Array(materializeBlob(value)));
+                add(encoder.encode('\r\n'));
+            } else add(encoder.encode(heading + '\r\n\r\n' + normalize(value) + '\r\n'));
         }
-        chunks.push(encoder.encode('--' + boundary + '--\r\n'));
+        add(encoder.encode('--' + boundary + '--\r\n'));
         return { bytes: concatBytes(chunks), stream: null, type: 'multipart/form-data; boundary=' + boundary };
     };
-    const extractBody = body => {
+    const extractBody = (body, maximumBytes = Infinity) => {
+        if (!(maximumBytes >= 0)) throw new RangeError('Invalid body size limit');
+        const bounded = result => {
+            if (result.bytes && result.bytes.length > maximumBytes)
+                throw new RangeError('Body exceeds the browser limit');
+            return result;
+        };
         if (body == null) return { bytes: null, stream: null, type: '' };
         if (body instanceof ReadableStream) return { bytes: null, stream: body, type: '' };
         if (blobStates.has(body)) {
-            return { bytes: new Uint8Array(materializeBlob(body)), stream: null,
-                type: blobState(body).type };
+            const state = blobState(body);
+            if (state.size > maximumBytes) throw new RangeError('Body exceeds the browser limit');
+            return { bytes: new Uint8Array(materializeBlob(body)), stream: null, type: state.type };
         }
-        // FormData is not yet installed in the dedicated-worker bootstrap.
-        // Other BodyInit variants must remain usable in that realm.
-        if (FormData && body instanceof FormData) return multipartBody(body);
+        // Window and dedicated workers share the same private FormData entry
+        // list; author iterator overrides must not change serialized bytes.
+        if (FormData && body instanceof FormData) return multipartBody(body, maximumBytes);
         if (urlApi.isParams(body))
-            return { bytes: encoder.encode(urlApi.serializeParams(body)), stream: null, type: 'application/x-www-form-urlencoded;charset=UTF-8' };
+            return bounded({ bytes: encoder.encode(urlApi.serializeParams(body)), stream: null,
+                type: 'application/x-www-form-urlencoded;charset=UTF-8' });
         const bytes = copyBytes(body);
-        if (bytes) return { bytes, stream: null, type: '' };
-        return { bytes: encoder.encode(String(body)), stream: null, type: 'text/plain;charset=UTF-8' };
+        if (bytes) return bounded({ bytes, stream: null, type: '' });
+        return bounded({ bytes: encoder.encode(String(body)), stream: null, type: 'text/plain;charset=UTF-8' });
     };
 
     Object.assign(globalThis, { Headers, Blob, File });
+    // FormData's Blob overload creates a File entry without consulting
+    // author-overridable Blob.type/File.name getters or constructors. Install
+    // the factory after publishing both constructors to this realm.
+    globalThis.__installFormDataFileFactory?.((source, name) => {
+        const blob = blobState(source);
+        const originalFile = fileStates.get(source);
+        const file = initializeBlob(Object.create(File.prototype), blob.chunks.slice(), blob.type);
+        fileStates.set(file, { name: String(name).replace(/\//g, ':'),
+            lastModified: originalFile?.lastModified ?? Date.now() });
+        return file;
+    });
+    delete globalThis.__installFormDataFileFactory;
+    // The form-submission bootstrap runs later in Window only and captures
+    // this once; workers must not expose an internal entry-list accessor.
+    if (typeof document !== 'undefined')
+        globalThis.__internalFormDataEntries = formDataEntrySnapshot;
     // FileReader consumes a private immutable snapshot, not author-overridden
     // Blob methods or properties. The next bootstrap extension removes this hook.
     globalThis.__fileReaderSnapshot = [value => {
@@ -324,6 +374,7 @@
     ];
     Object.defineProperty(globalThis, '__networkData', {
         configurable: true,
-        value: Object.freeze({ concatBytes, bytesToBase64, extractBody, encoder, decoder })
+        value: Object.freeze({ concatBytes, bytesToBase64, extractBody, encoder, decoder,
+            fileName: value => fileStates.get(value)?.name })
     });
 })();

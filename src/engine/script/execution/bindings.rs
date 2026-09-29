@@ -43,6 +43,9 @@ pub(super) fn initialize(context: &mut Context) -> Result<(), String> {
         .capture_hook("__receiveClipboardUpdate")
         .map_err(|error| format!("capture Clipboard completion hook: {error}"))?;
     context
+        .capture_hook("__receiveFilePickerUpdate")
+        .map_err(|error| format!("capture file picker completion hook: {error}"))?;
+    context
         .capture_hook("__receivePermissionUpdate")
         .map_err(|error| format!("capture permission update dispatcher: {error}"))?;
     context

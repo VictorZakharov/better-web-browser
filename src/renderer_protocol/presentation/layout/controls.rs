@@ -154,6 +154,7 @@ fn control_kind_tag(kind: ControlKind) -> u8 {
         ControlKind::Submit => 6,
         ControlKind::Button => 7,
         ControlKind::Reset => 8,
+        ControlKind::File => 9,
     }
 }
 
@@ -167,6 +168,23 @@ fn decode_control_kind(tag: u8) -> Result<ControlKind, ProtocolError> {
         6 => Ok(ControlKind::Submit),
         7 => Ok(ControlKind::Button),
         8 => Ok(ControlKind::Reset),
+        9 => Ok(ControlKind::File),
         _ => Err(ProtocolError::InvalidPayload("control kind")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_control_kind_round_trips_without_changing_existing_tags() {
+        assert_eq!(control_kind_tag(ControlKind::File), 9);
+        assert_eq!(decode_control_kind(9).unwrap(), ControlKind::File);
+        for tag in 1..=9 {
+            let kind = decode_control_kind(tag).unwrap();
+            assert_eq!(control_kind_tag(kind), tag);
+        }
+        assert!(decode_control_kind(10).is_err());
     }
 }

@@ -105,6 +105,13 @@
             keyCode: Number(input.keyCode) || 0, ...nativeModifiers(input)
         }
         )));
+        if (allowed && input.phase === 'down' && !input.repeat &&
+            (input.key === 'Enter' || input.key === ' ') &&
+            target instanceof HTMLInputElement && target.type === 'file') {
+            target.dispatchEvent(markTrusted(new MouseEvent('click', {
+                bubbles: true, cancelable: true, composed: true, button: 0
+            })));
+        }
         if (allowed && input.phase === 'down' && input.key === 'Enter') implicitSubmission(target);
         return allowed;
     };

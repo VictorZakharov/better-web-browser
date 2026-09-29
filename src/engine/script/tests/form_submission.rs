@@ -102,6 +102,85 @@ b</textarea><button name=go value=yes>Go</button></form><script>
 }
 
 #[test]
+fn multipart_navigation_carries_binary_file_above_the_old_body_limit() {
+    let outcome = submit(
+        r#"<form action='/upload' method=post enctype='multipart/form-data'></form>
+        <script>
+        const form = document.querySelector('form');
+        form.addEventListener('formdata', event => {
+            const bytes = new Uint8Array(192 * 1024).fill(90);
+            event.formData.append('upload', new File([bytes], 'sample.bin',
+                {type:'application/octet-stream'}));
+        });
+        form.submit();
+        </script>"#,
+    );
+    let post = outcome.navigation_options.post.unwrap();
+    assert!(
+        post.content_type
+            .starts_with("multipart/form-data; boundary=")
+    );
+    assert!(post.body.len() > 128 * 1024);
+    assert!(post.body.len() < crate::navigation::request::MAX_FORM_BODY_BYTES);
+    assert!(
+        post.body
+            .windows(b"filename=\"sample.bin\"".len())
+            .any(|part| { part == b"filename=\"sample.bin\"" })
+    );
+    assert_eq!(
+        post.body.iter().filter(|byte| **byte == b'Z').count(),
+        192 * 1024
+    );
+}
+
+#[test]
+fn oversized_multipart_entry_rejects_before_planning_navigation() {
+    let outcome = submit(
+        r#"<form action='/upload' method=post enctype='multipart/form-data'></form>
+        <script>
+        const form = document.querySelector('form');
+        form.addEventListener('formdata', event => {
+            const bytes = new Uint8Array(5 * 1024 * 1024 + 1);
+            event.formData.append('upload', new File([bytes], 'too-big.bin'));
+        });
+        let rejected = false;
+        try { form.submit(); } catch (error) { rejected = error instanceof RangeError; }
+        if (!rejected) throw new Error('oversized upload was accepted');
+        </script>"#,
+    );
+    assert!(outcome.navigation_url.is_none());
+    assert!(outcome.navigation_options.post.is_none());
+}
+
+#[test]
+fn multipart_navigation_uses_private_formdata_entries_not_author_properties() {
+    let outcome = submit(
+        r#"<form action='/upload' method=post enctype='multipart/form-data'>
+        <input name=honest value=present></form><script>
+        const form = document.querySelector('form');
+        form.addEventListener('formdata', event => {
+            event.formData.append('file', new File([new Uint8Array([0, 255, 42])],
+                'safe.bin', {type:'application/octet-stream'}));
+            event.formData.__entries = [['forged', 'wrong']];
+            event.formData[Symbol.iterator] = function* () { yield ['forged', 'wrong']; };
+        });
+        form.submit();
+        </script>"#,
+    );
+    let body = outcome.navigation_options.post.unwrap().body;
+    assert!(
+        body.windows(b"name=\"honest\"".len())
+            .any(|part| part == b"name=\"honest\"")
+    );
+    assert!(
+        body.windows(b"filename=\"safe.bin\"".len())
+            .any(|part| part == b"filename=\"safe.bin\"")
+    );
+    assert!(body.windows(3).any(|part| part == [0, 255, 42]));
+    assert!(!body.windows(b"forged".len()).any(|part| part == b"forged"));
+}
+
+#[test]
 fn invalid_submitters_and_disconnected_forms_do_not_navigate() {
     let outcome = submit(
         r#"<form id=f><button type=button id=wrong>Wrong</button><button id=b>Go</button></form><form id=other></form><script>

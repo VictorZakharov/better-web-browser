@@ -48,9 +48,9 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 pub use stream::{
-    ClipboardUpdateSink, DatabaseEventSink, FetchResponseSink, GeolocationUpdateSink,
-    MediaDeviceUpdateSink, NotificationUpdateSink, PermissionUpdateSink, SensorUpdateSink,
-    SpeechUpdateSink, WebSocketEventSink,
+    ClipboardUpdateSink, DatabaseEventSink, FetchResponseSink, FilePickerUpdateSink,
+    GeolocationUpdateSink, MediaDeviceUpdateSink, NotificationUpdateSink, PermissionUpdateSink,
+    SensorUpdateSink, SpeechUpdateSink, WebSocketEventSink,
 };
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RendererState {
@@ -128,6 +128,7 @@ pub enum RendererEvent {
     MediaCaptureRequest(crate::renderer_protocol::MediaCaptureRequest),
     SensorRequest(crate::renderer_protocol::SensorRequest),
     ClipboardRequest(crate::renderer_protocol::ClipboardRequest),
+    FilePickerRequest(crate::renderer_protocol::FilePickerRequest),
     Unresponsive,
     Exited(RendererExit),
 }
@@ -159,6 +160,8 @@ pub struct RendererSession {
     sensor_overflow: Arc<std::sync::atomic::AtomicBool>,
     clipboard_updates: mpsc::SyncSender<crate::renderer_protocol::ClipboardUpdate>,
     clipboard_overflow: Arc<std::sync::atomic::AtomicBool>,
+    file_picker_updates: mpsc::SyncSender<crate::renderer_protocol::FilePickerUpdate>,
+    file_picker_overflow: Arc<std::sync::atomic::AtomicBool>,
     fetch_flow: Arc<flow::FetchFlow>,
     events: events::EventReceiver,
     incoming_depth: QueueDepth,
@@ -289,6 +292,10 @@ impl RendererSession {
         let sensor_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (clipboard_updates_tx, clipboard_updates_rx) = mpsc::sync_channel(256);
         let clipboard_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // Eight partial files can need 71 chunks at the 4 MiB/64 KiB limits,
+        // plus Start and End. Keep one whole selection bounded in this lane.
+        let (file_picker_updates_tx, file_picker_updates_rx) = mpsc::sync_channel(80);
+        let file_picker_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let fetch_flow = Arc::new(flow::FetchFlow::default());
         let worker_fetch_flow = Arc::clone(&fetch_flow);
         let (events_tx, events_rx) = events::bounded();
@@ -305,6 +312,7 @@ impl RendererSession {
         let worker_media_capture_frames = Arc::clone(&media_capture_frames);
         let worker_sensor_overflow = Arc::clone(&sensor_overflow);
         let worker_clipboard_overflow = Arc::clone(&clipboard_overflow);
+        let worker_file_picker_overflow = Arc::clone(&file_picker_overflow);
         let worker_database_overflow = Arc::clone(&database_overflow);
         let worker_database_queued_bytes = Arc::clone(&database_queued_bytes);
         let handle = std::thread::Builder::new()
@@ -345,6 +353,8 @@ impl RendererSession {
                     sensor_overflow: worker_sensor_overflow,
                     clipboard_updates: clipboard_updates_rx,
                     clipboard_overflow: worker_clipboard_overflow,
+                    file_picker_updates: file_picker_updates_rx,
+                    file_picker_overflow: worker_file_picker_overflow,
                     fetch_flow: worker_fetch_flow,
                     events: events_tx,
                     wake: worker_wake,
@@ -380,6 +390,8 @@ impl RendererSession {
             sensor_overflow,
             clipboard_updates: clipboard_updates_tx,
             clipboard_overflow,
+            file_picker_updates: file_picker_updates_tx,
+            file_picker_overflow,
             fetch_flow,
             events: events_rx,
             incoming_depth,

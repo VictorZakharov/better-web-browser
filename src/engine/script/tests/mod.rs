@@ -74,6 +74,7 @@ mod file_api;
 mod file_input;
 mod focus_selectors;
 mod font_loading;
+mod form_data_lifecycle;
 mod form_review_regressions;
 mod form_selectors;
 mod form_state;

@@ -16,13 +16,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let select = (kind == ControlKind::Select).then(|| select_data(node));
         let is_button = matches!(
             kind,
-            ControlKind::Submit | ControlKind::Button | ControlKind::Reset
+            ControlKind::Submit | ControlKind::Button | ControlKind::Reset | ControlKind::File
         );
         let default_width = if let Some(select) = &select {
             select.preferred_width(style.font_size)
         } else if is_button {
-            let label = node.attr("value").unwrap_or_else(|| "Submit".into());
-            (label.chars().count() as f32 * style.font_size * 0.58 + 22.0).max(70.0)
+            let label = input_control_label(node, kind, &value);
+            (label.chars().count().min(50) as f32 * style.font_size * 0.58 + 22.0).max(
+                if kind == ControlKind::File {
+                    180.0
+                } else {
+                    70.0
+                },
+            )
         } else if is_textarea {
             node.attr("cols")
                 .and_then(|columns| columns.parse::<f32>().ok())

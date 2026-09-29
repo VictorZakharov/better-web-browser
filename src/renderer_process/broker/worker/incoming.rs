@@ -109,6 +109,7 @@ impl Broker {
                     | RendererMessage::MediaCaptureRequest(_)
                     | RendererMessage::SensorRequest(_)
                     | RendererMessage::ClipboardRequest(_)
+                    | RendererMessage::FilePickerRequest(_)
                     | RendererMessage::StateSnapshotApplied(_)),
                 ) => {
                     if let Err(error) = self.process_document_message(message) {

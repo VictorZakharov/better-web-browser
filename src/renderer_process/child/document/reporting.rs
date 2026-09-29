@@ -68,6 +68,9 @@ pub(super) fn merge_outcome(
         .clipboard_actions
         .append(&mut source.clipboard_actions);
     target
+        .file_picker_actions
+        .append(&mut source.file_picker_actions);
+    target
         .broadcast_actions
         .append(&mut source.broadcast_actions);
     target.worker_actions.append(&mut source.worker_actions);

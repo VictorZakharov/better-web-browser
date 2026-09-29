@@ -5,6 +5,7 @@ mod diagnostics;
 mod document_streams;
 mod dynamic_scripts;
 mod fetch;
+mod file_picker;
 mod font_actions;
 mod frames_paint;
 mod fullscreen;
@@ -88,6 +89,7 @@ pub(super) struct DocumentRuntime {
     pending_media_device_requests: Vec<crate::engine::ScriptMediaDeviceAction>,
     pending_sensor_requests: Vec<crate::engine::ScriptSensorAction>,
     pending_clipboard_requests: Vec<crate::engine::ScriptClipboardAction>,
+    file_pickers: HashMap<u64, crate::renderer_protocol::FileSelectionAssembler>,
     active_script_fetches: HashMap<u64, u32>,
     pending_worker_actions: Vec<ScriptWorkerAction>,
     deferred_network_load: PageLoadReport,

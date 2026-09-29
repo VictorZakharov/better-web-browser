@@ -12,10 +12,12 @@ use std::sync::mpsc;
 
 mod control_updates;
 mod database;
+mod file_picker;
 mod sensor;
 pub use control_updates::{
     ClipboardUpdateSink, GeolocationUpdateSink, MediaDeviceUpdateSink, PermissionUpdateSink,
 };
+pub use file_picker::FilePickerUpdateSink;
 pub(crate) use sensor::QueuedSensorUpdate;
 pub use sensor::{SensorDeliveryGate, SensorSinkError, SensorUpdateSink};
 
