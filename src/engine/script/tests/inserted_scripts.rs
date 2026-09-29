@@ -28,6 +28,29 @@ fn inserted_scripts_run_before_return_and_restore_the_outer_script() {
 }
 
 #[test]
+fn inserted_script_identity_ignores_author_replaced_node_metadata() {
+    assert_eq!(
+        result(
+            r#"<!doctype html><body><script>
+      const script = document.createElement('script');
+      script.text = 'document.body.dataset.executed = "yes"';
+      script.__nodeType = 8;
+      script.__localName = 'div';
+      script.__namespaceURI = 'urn:author';
+      Object.defineProperties(script, {
+        nodeType: { value: 8 },
+        localName: { value: 'div' },
+        namespaceURI: { value: 'urn:author' }
+      });
+      document.body.appendChild(script);
+      document.body.dataset.result = document.body.dataset.executed || 'no';
+    </script>"#
+        ),
+        "yes"
+    );
+}
+
+#[test]
 fn post_connection_steps_see_the_complete_atomic_insertion() {
     assert_eq!(
         result(

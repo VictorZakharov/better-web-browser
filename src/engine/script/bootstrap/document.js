@@ -352,6 +352,11 @@
         else if (type === 7) node = new ProcessingInstruction(id, type, metadata[1], null, null);
         else if (type === 8) node = new Comment(id, type, metadata[1], null, null);
         else node = new Text(id, type, metadata[1], null, null);
+        // Only this native-metadata-backed factory may populate the private
+        // cache. Public Node construction arguments are not a trusted source.
+        nativeNodeMetadata.set(node, {
+            type, localName: metadata[2] || null, namespaceURI: metadata[3] || null
+        });
         cache.set(id, node);
         if (type === 1) registerShadowRootForTraversal(node, Number(metadata[6]));
         if (metadata[5] === 'handlers') initializeEventHandlerAttributes(node);

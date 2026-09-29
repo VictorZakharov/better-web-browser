@@ -69,6 +69,32 @@ fn document_and_constructor_creation_preserve_custom_identity() {
 }
 
 #[test]
+fn custom_element_upgrade_uses_native_metadata_after_author_overrides() {
+    let (dom, outcome) = execute_html(
+        r#"<body><script>
+            const candidate = document.createElement('x-native-metadata');
+            candidate.__nodeType = 8;
+            candidate.__localName = 'div';
+            candidate.__namespaceURI = 'urn:author';
+            Object.defineProperties(candidate, {
+                nodeType: { value: 8 },
+                localName: { value: 'div' },
+                namespaceURI: { value: 'urn:author' }
+            });
+            class NativeMetadataElement extends HTMLElement {
+                constructor() { super(); this.upgraded = true; }
+            }
+            customElements.define('x-native-metadata', NativeMetadataElement);
+            document.body.appendChild(candidate);
+            document.body.dataset.result = candidate.upgraded &&
+                candidate instanceof NativeMetadataElement ? 'pass' : 'fail';
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom).as_deref(), Some("pass"));
+}
+
+#[test]
 fn importing_template_content_upgrades_for_the_destination_document() {
     let (dom, outcome) = execute_html(
         r#"<body><script>

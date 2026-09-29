@@ -22,6 +22,13 @@
     }
     const cache = new Map();
     const nodeHandles = new WeakMap();
+    // Internal algorithms must not read author-replaceable DOM accessors or the
+    // legacy __metadata fields. The native identity and immutable node metadata
+    // are recorded when a validated wrapper is constructed.
+    const nativeNodeMetadata = new WeakMap();
+    const nativeNodeType = node => nativeNodeMetadata.get(node)?.type ?? host('nodeType', nodeId(node));
+    const nativeNodeLocalName = node => nativeNodeMetadata.get(node)?.localName ?? host('localName', nodeId(node));
+    const nativeNodeNamespace = node => nativeNodeMetadata.get(node)?.namespaceURI ?? host('namespaceUri', nodeId(node));
     const nodeId = node => {
         if (node == null) return 0;
         let id = nodeHandles.get(node);

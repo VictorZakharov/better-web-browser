@@ -51,11 +51,11 @@
     }
 
     const rootsByHost = new WeakMap();
-    shadowRootForTraversal = node => host('nodeType', nodeId(node)) === 1
+    shadowRootForTraversal = node => nativeNodeType(node) === 1
         ? rootsByHost.get(node) || null : null;
     const parserFallbackInitialized = new WeakSet();
     const registerShadowRootForTraversal = (element, rootId, parserCreated = false) => {
-        if (!rootId || host('nodeType', nodeId(element)) !== 1) return;
+        if (!rootId || nativeNodeType(element) !== 1) return;
         const root = wrap(rootId);
         if (!root) return;
         rootsByHost.set(element, root);

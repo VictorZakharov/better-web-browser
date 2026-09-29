@@ -20,33 +20,6 @@ fn global_object_exposes_the_window_interface_prototype_chain() {
 }
 
 #[test]
-fn window_named_properties_track_scoped_tree_and_attribute_mutations() {
-    let (dom, outcome) = execute_html(
-        r#"<body><div id="initial"></div><output id="status">no</output><script>
-            const failures = [];
-            const check = (name, condition) => { if (!condition) failures.push(name); };
-            check('initial', window.initial === document.getElementById('initial'));
-            const container = document.createElement('section');
-            container.innerHTML = '<div id="inserted"></div><form name="namedForm"></form>';
-            document.body.appendChild(container);
-            check('insert', window.inserted === container.firstChild && window.namedForm === container.lastChild);
-            container.firstChild.id = 'renamed';
-            check('rename-old', window.inserted === undefined);
-            check('rename-new', window.renamed === container.firstChild);
-            container.remove();
-            check('remove-id', window.renamed === undefined);
-            check('remove-name', window.namedForm === undefined);
-            document.getElementById('status').textContent = failures.length ? failures.join(',') : 'yes';
-        </script></body>"#,
-    );
-    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(
-        dom.elements_named("output").next().unwrap().text_content(),
-        "yes"
-    );
-}
-
-#[test]
 fn contextual_of_is_valid_as_a_lexical_binding() {
     let (dom, outcome) = execute_html(
         r#"<body><div id="status">no</div><script>

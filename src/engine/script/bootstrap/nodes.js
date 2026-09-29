@@ -173,7 +173,7 @@
                     records.map(record => record.oldParent));
             }
             if (inserted) queueInsertionMutationRecords(this, child, records);
-            if (inserted && this.isConnected) refreshWindowNamedProperties(nodes);
+            if (inserted && this.isConnected) refreshWindowNamedProperties(nodes, true);
             if (inserted) finishInsertion(this, records);
             return inserted ? child : null;
         }
@@ -205,7 +205,7 @@
                     records.map(record => record.oldParent));
             }
             if (inserted) queueInsertionMutationRecords(this, child, records);
-            if (inserted && this.isConnected) refreshWindowNamedProperties(nodes);
+            if (inserted && this.isConnected) refreshWindowNamedProperties(nodes, true);
             if (inserted) finishInsertion(this, records);
             return inserted ? child : null;
         }

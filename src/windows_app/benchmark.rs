@@ -106,6 +106,15 @@ impl BrowserState {
         {
             return;
         }
+        // A completion marker describes the page's actual finished state. The
+        // initial presentation can precede timer-driven result construction.
+        if self.benchmark.as_ref().is_some_and(|benchmark| {
+            benchmark.completion_marker.is_some()
+                && !benchmark.completion_observed
+                && benchmark.error.is_none()
+        }) {
+            return;
+        }
         let traces_early_scroll = self
             .benchmark
             .as_ref()

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <title>DOM results pending</title>
+  <style>
+    body { margin: 24px; font: 16px Arial, sans-serif; color: #17304a; background: #f4f6f9; }
+    main { max-width: 900px; margin: auto; }
+    #score { padding: 18px; background: #d9eef7; font-size: 36px; font-weight: bold; }
+    section { margin-top: 16px; padding: 12px; background: white; }
+    ol { margin-bottom: 0; }
+    .result-row { padding: 4px 0; border-bottom: 1px solid #ddd; }
+    .result-row span { display: inline-block; margin-right: 16px; }
+    .passed { color: #147632; }
+    .missing { color: #a03425; }
+  </style>
+</head>
+<body>
+<main id="main">
+  <h1>Capability result construction</h1>
+  <div id="score">Measuring…</div>
+  <p id="status">Building result rows</p>
+  <div id="results"></div>
+</main>
+<script>
+  // Build after load so page readiness alone cannot complete the benchmark.
+  addEventListener('load', () => setTimeout(() => {
+    try {
+      const groupCount = 12;
+      const checksPerGroup = 20;
+      const results = document.getElementById('results');
+      let passed = 0;
+      for (let group = 0; group < groupCount; group++) {
+        const section = document.createElement('section');
+        const heading = document.createElement('h2');
+        heading.textContent = 'Category ' + (group + 1);
+        section.appendChild(heading);
+        const list = document.createElement('ol');
+        for (let check = 0; check < checksPerGroup; check++) {
+          const number = group * checksPerGroup + check + 1;
+          const supported = number % 4 !== 0;
+          if (supported) passed++;
+          const row = document.createElement('li');
+          row.id = 'result-' + number;
+          row.className = 'result-row';
+          const label = document.createElement('span');
+          label.textContent = 'Check ' + number;
+          const status = document.createElement('span');
+          status.className = supported ? 'passed' : 'missing';
+          status.textContent = supported ? 'Supported' : 'Missing';
+          const points = document.createElement('span');
+          points.textContent = supported ? '1 point' : '0 points';
+          row.appendChild(label);
+          row.appendChild(status);
+          row.appendChild(points);
+          list.appendChild(row);
+        }
+        section.appendChild(list);
+        results.appendChild(section);
+      }
+      const rowCount = groupCount * checksPerGroup;
+      const score = passed + ' / ' + rowCount;
+      document.getElementById('score').textContent = score;
+      const last = document.getElementById('result-' + rowCount);
+      const ready = results.querySelectorAll('section').length === groupCount &&
+        results.querySelectorAll('.result-row').length === rowCount &&
+        last.firstElementChild.textContent === 'Check ' + rowCount &&
+        document.getElementById('score').textContent === score;
+      document.getElementById('status').textContent = ready ? 'Results complete' : 'Results incomplete';
+      document.title = ready ? 'DOM results complete' : 'DOM results incomplete';
+      document.documentElement.dataset.fixtureReady = String(ready);
+      console.log('DOM_RESULTS_COMPLETE:' + JSON.stringify({
+        ready, groups: groupCount, rows: rowCount, passed, score,
+        last: last.firstElementChild.textContent
+      }));
+    } catch (error) {
+      document.getElementById('status').textContent = 'Results failed: ' + error.message;
+      document.documentElement.dataset.fixtureReady = 'false';
+      console.log('DOM_RESULTS_COMPLETE:' + JSON.stringify({ready: false, error: String(error)}));
+    }
+  }, 0));
+</script>
+</body>
+</html>

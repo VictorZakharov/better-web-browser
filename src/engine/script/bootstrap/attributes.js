@@ -117,8 +117,16 @@
             record.namespace === namespace && record.localName === localName) || null;
     };
     const maybeRefreshNamedProperties = (element, namespace, localName, oldValue, newValue) => {
-        if (namespace === null && (localName === 'id' || localName === 'name') && element.isConnected)
-            refreshWindowNamedPropertyValues([oldValue, newValue]);
+        if (namespace !== null || (localName !== 'id' && localName !== 'name')) return;
+        // Only names on the document tree participate in Window named access.
+        // Newly added names are known to exist, while the old name must still
+        // be checked for another matching element after a rename or removal.
+        if (host('rootNode', nodeId(element), false) !== nodeId(document)) return;
+        if (nativeNodeNamespace(element) !== htmlNamespace ||
+            (localName === 'name' && !['embed', 'form', 'iframe', 'img', 'object']
+                .includes(nativeNodeLocalName(element)))) return;
+        if (oldValue && oldValue !== newValue) refreshWindowNamedPropertyValues([oldValue]);
+        if (newValue) refreshWindowNamedPropertyValues([newValue], true);
     };
     const queueAttributeMutation = (element, record, oldValue, newValue) => {
         if (record.namespace === null && record.localName === 'type'
@@ -147,8 +155,10 @@
             (current.localName === 'src' || current.localName === 'srcset')) {
             resetImageElementState(element);
         }
-        queueAttributeMutation(element, current, oldValue, value);
         maybeRefreshNamedProperties(element, current.namespace, current.localName, oldValue, value);
+        // Named access is live before CE reactions: a callback may immediately
+        // mutate the attribute again, and its nested refresh must win.
+        queueAttributeMutation(element, current, oldValue, value);
         maybeRefreshPatternVerdict(element, current.localName);
     };
     const detachAttribute = (element, record, attribute) => {
@@ -169,11 +179,11 @@
         const oldValue = attribute.value;
         host('attrSetNs', nodeId(element), attribute.namespaceURI || '', attribute.prefix || '', attribute.localName, value);
         attributeStates.get(attribute).value = value;
+        maybeRefreshNamedProperties(element, attribute.namespaceURI, attribute.localName,
+            oldValue, attribute.value);
         queueAttributeMutation(element, {
             namespace: attribute.namespaceURI, localName: attribute.localName
         }, oldValue, value);
-        maybeRefreshNamedProperties(element, attribute.namespaceURI, attribute.localName,
-            oldValue, attribute.value);
     };
 
     class NamedNodeMap {
@@ -292,11 +302,11 @@
         }, oldAttribute);
         attachAttribute(attribute, element);
         cacheForAttributes(element).attributes.set(attributeKey(attribute.namespaceURI, attribute.localName), attribute);
+        maybeRefreshNamedProperties(element, attribute.namespaceURI, attribute.localName,
+            oldValue, attribute.value);
         queueAttributeMutation(element, {
             namespace: attribute.namespaceURI, localName: attribute.localName
         }, oldValue, attribute.value);
-        maybeRefreshNamedProperties(element, attribute.namespaceURI, attribute.localName,
-            oldValue, attribute.value);
         return oldAttribute;
     };
     const removeAttributeNodeFor = (element, attribute) => {
@@ -312,7 +322,7 @@
         };
         host('attrRemoveNs', nodeId(element), record.namespace || '', record.localName);
         detachAttribute(element, record, attribute);
-        queueAttributeMutation(element, record, record.value, null);
         maybeRefreshNamedProperties(element, record.namespace, record.localName, record.value, null);
+        queueAttributeMutation(element, record, record.value, null);
         return attribute;
     };
