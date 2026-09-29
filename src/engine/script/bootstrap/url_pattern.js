@@ -10,6 +10,9 @@
     const slots = new WeakMap();
     const MAX_PATTERN_LENGTH = 4096, MAX_COMPONENT_LENGTH = 8192;
     const specialPorts = { http: '80', https: '443', ws: '80', wss: '443', ftp: '21' };
+    const specialSchemes = /^(?:ftp|file|http|https|ws|wss)$/i;
+    const opaqueProtocol = protocol => /^[A-Za-z][A-Za-z0-9+.-]*$/.test(protocol) &&
+        !specialSchemes.test(protocol);
     const escapePattern = value => value.replace(/[\\*:?{}()+]/g, '\\$&');
     const isRecord = value => value !== null && (typeof value === 'object' || typeof value === 'function');
     const isStringInput = value => value !== null && value !== undefined && !isRecord(value);
@@ -65,10 +68,12 @@
         }
         return value;
     };
-    const normalizeUrlComponent = (name, value) => {
+    const normalizeUrlComponent = (name, value, protocol) => {
         if (!value) return value;
         if (name === 'pathname') {
             const safe = value.replace(/\?/g, '%3F').replace(/#/g, '%23');
+            if (opaqueProtocol(protocol))
+                return absoluteParts('breeze-urlpattern:x' + safe + 'x').pathname.slice(1, -1);
             const prefix = safe.startsWith('/') ? '' : '/-/';
             const path = absoluteParts('https://urlpattern.invalid' + prefix + safe).pathname;
             return prefix ? path.slice(prefix.length) : path;
@@ -109,6 +114,15 @@
         if (prefix) path = path.slice(prefix.length);
         return protectedValue.restore(path);
     };
+    const normalizeOpaquePathPattern = value => {
+        if (value === '*') return value;
+        const protectedValue = protectPatternSyntax(value);
+        // A non-special scheme has an opaque path: URL parsing must not remove
+        // dot segments or insert a slash as hierarchical path parsing does.
+        const path = absoluteParts('breeze-urlpattern:x' + protectedValue.masked + 'x')
+            .pathname.slice(1, -1);
+        return protectedValue.restore(path);
+    };
     const normalizeSuffixPattern = (name, value) => {
         const protectedValue = protectPatternSyntax(value);
         const delimiter = name === 'search' ? '?' : '#';
@@ -146,12 +160,13 @@
                 result.pathname = url.pathname;
             }
         }
-        if (mode === 'pattern') result.pathname = normalizePathPattern(result.pathname);
+        if (mode === 'pattern') result.pathname = opaqueProtocol(result.protocol) ?
+            normalizeOpaquePathPattern(result.pathname) : normalizePathPattern(result.pathname);
         for (const name of names) {
             result[name] = normalize(name, result[name], result.protocol, mode);
             if (mode === 'pattern' && (name === 'search' || name === 'hash') &&
                 result[name] !== '*') result[name] = normalizeSuffixPattern(name, result[name]);
-            if (mode === 'url') result[name] = normalizeUrlComponent(name, result[name]);
+            if (mode === 'url') result[name] = normalizeUrlComponent(name, result[name], result.protocol);
         }
         return result;
     };
@@ -206,7 +221,8 @@
     const shorthand = (input, baseURL) => {
         const base = baseURL === undefined ? null : absoluteParts(baseURL);
         const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(input);
-        let init, suffix;
+        const schemePrefix = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(input);
+        let init, suffix, opaque = false;
         if (scheme || input.startsWith('//')) {
             const protocol = scheme ? scheme[1] : base && component(base, 'protocol');
             if (!protocol) throw new TypeError('A base URL is required for a relative URLPattern');
@@ -215,15 +231,22 @@
             if (authority.username !== undefined) init.username = authority.username;
             if (authority.password !== undefined) init.password = authority.password;
             suffix = authority.suffix;
+        } else if (schemePrefix) {
+            const protocol = schemePrefix[1];
+            if (specialSchemes.test(protocol))
+                throw new TypeError('Special-scheme shorthand requires an authority');
+            // The constructor-string parser goes directly from a non-special
+            // protocol to pathname; the missing authority is empty, not a wildcard.
+            init = { protocol, hostname: '', port: '' };
+            suffix = input.slice(schemePrefix[0].length);
+            opaque = true;
         } else {
             if (!base) throw new TypeError('A base URL is required for a relative URLPattern');
-            if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(input))
-                throw new TypeError('Opaque-scheme constructor strings are not supported');
             init = { baseURL };
             suffix = input;
         }
         const pieces = splitSuffix(suffix);
-        if (pieces.pathname) init.pathname = pieces.pathname;
+        if (opaque || pieces.pathname) init.pathname = pieces.pathname;
         else if (pieces.search !== undefined || pieces.hash !== undefined) {
             if (init.baseURL === undefined) init.pathname = '/';
         }

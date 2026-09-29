@@ -12,10 +12,13 @@ Supported behavior:
   `password`, `hostname`, `port`, `pathname`, `search`, `hash`, and `baseURL`.
   Missing components wildcard; a base URL supplies only less-specific omitted
   components. Pattern credentials do not inherit from the base.
-- Absolute `scheme://authority/path?search#hash` constructor strings and
-  relative pathname strings with an explicit base URL. An origin-only string
-  matches any pathname, query, and fragment on that origin. An omitted port in
-  an authority string matches the default port, not every port.
+- Absolute `scheme://authority/path?search#hash` and non-special
+  `scheme:opaque-path?search#hash` constructor strings, plus relative pathname
+  strings with an explicit base URL. An origin-only string matches any
+  pathname, query, and fragment on that origin. An omitted port in an
+  authority string matches the default port, not every port. A non-special
+  opaque shorthand has an empty authority, and its path retains dot segments
+  and literal spaces under the URL Standard's opaque-path rules.
 - Literal component matching, escaped punctuation, full wildcards, named
   `:part` captures, optional `:part?` segments, and `:part+`/`:part*` repetition.
   A pathname capture preceded by `/` repeats complete slash-prefixed segments;
@@ -40,8 +43,8 @@ or hostname segments is not supported, nor is repetition in other components.
 Each component allows at most one full `*` wildcard; pathname `*` must be
 terminal. `hasRegExpGroups` remains `false` for successfully constructed patterns.
 Only Window exposure is included in this slice; Worker exposure remains separate
-work. Constructor-string parsing does not yet cover opaque-scheme strings or the
-complete token grammar; use a component dictionary
+work. Constructor-string parsing does not yet cover special schemes without an
+explicit authority or the complete token grammar; use a component dictionary
 for supported patterns that cannot be expressed in a shorthand string. Dynamic
 hostname patterns with non-ASCII literal text are rejected until their IDNA
 labels can be canonicalized independently of captures.
