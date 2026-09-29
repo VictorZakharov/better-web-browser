@@ -5,6 +5,7 @@ use std::io::Cursor;
 mod broadcast_channel;
 mod geolocation;
 mod input;
+mod media_capture;
 mod media_devices;
 mod permission;
 mod state;

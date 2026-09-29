@@ -74,6 +74,10 @@ unsafe fn dispatch_window_message(
             state.tick_media_devices();
             0
         }
+        capture::WM_APP_CAPTURE => {
+            state.tick_capture();
+            0
+        }
         WM_CREATE => {
             if state.create_controls().is_err() {
                 return -1;
@@ -94,7 +98,12 @@ unsafe fn dispatch_window_message(
                 // not changed by the time this message is dispatched.
                 state.clear_visible_sensor_tab(state.tabs.active_id());
                 state.exit_pointer_lock();
-                state.retire_capture_for_window();
+                // An owned permission dialog deactivates its browser window without
+                // leaving the application. Actual external focus loss revokes capture.
+                let activating = lparam as Hwnd;
+                if activating.is_null() || GetAncestor(activating, GA_ROOTOWNER) != window {
+                    state.retire_capture_for_window();
+                }
             }
             DefWindowProcW(window, message, wparam, lparam)
         }
@@ -124,6 +133,7 @@ unsafe fn dispatch_window_message(
             0
         }
         WM_SHOWWINDOW if wparam == 0 => {
+            state.retire_capture_for_window();
             state.retire_wake_locks_for_window();
             DefWindowProcW(window, message, wparam, lparam)
         }
@@ -214,6 +224,7 @@ unsafe fn dispatch_window_message(
             state.poll_renderers();
             state.tick_geolocation();
             state.tick_media_devices();
+            state.tick_capture();
             0
         }
         WM_TIMER if wparam == ID_PERFORMANCE_MONITOR_TIMER => {

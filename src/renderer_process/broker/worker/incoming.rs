@@ -106,6 +106,7 @@ impl Broker {
                     | RendererMessage::PermissionRequest(_)
                     | RendererMessage::GeolocationRequest(_)
                     | RendererMessage::MediaDeviceRequest(_)
+                    | RendererMessage::MediaCaptureRequest(_)
                     | RendererMessage::SensorRequest(_)
                     | RendererMessage::ClipboardRequest(_)
                     | RendererMessage::StateSnapshotApplied(_)),

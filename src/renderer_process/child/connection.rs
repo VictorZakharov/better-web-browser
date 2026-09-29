@@ -6,6 +6,7 @@ mod database;
 mod fetch;
 mod geolocation;
 mod media;
+mod media_capture;
 mod media_devices;
 mod mutations;
 mod navigation;
@@ -249,6 +250,8 @@ impl ChildConnection {
             BrowserMessage::PermissionUpdate(update) => self.deliver_permission_update(update),
             BrowserMessage::GeolocationUpdate(update) => self.deliver_geolocation_update(update),
             BrowserMessage::MediaDeviceUpdate(update) => self.deliver_media_device_update(update),
+            BrowserMessage::MediaCaptureUpdate(update) => self.deliver_media_capture_update(update),
+            BrowserMessage::MediaCaptureFrame(frame) => self.deliver_media_capture_frame(frame),
             BrowserMessage::SensorUpdate(update) => self.deliver_sensor_update(update),
             BrowserMessage::ClipboardUpdate(update) => self.deliver_clipboard_update(update),
             BrowserMessage::BroadcastDelivery(delivery) => self.deliver_broadcast(delivery),

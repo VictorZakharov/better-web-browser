@@ -6,6 +6,7 @@ pub(super) mod events;
 mod geolocation;
 mod installation;
 mod lifecycle;
+mod media_capture;
 mod media_devices;
 mod notifications;
 mod permissions;

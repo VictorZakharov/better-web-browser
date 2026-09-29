@@ -142,6 +142,9 @@ impl BrowserState {
                 RendererEvent::MediaDeviceRequest(request) => {
                     self.handle_media_device_request(id, request);
                 }
+                RendererEvent::MediaCaptureRequest(request) => {
+                    self.handle_media_capture_request(id, request);
+                }
                 RendererEvent::SensorRequest(request) => {
                     self.handle_sensor_request(id, request);
                 }

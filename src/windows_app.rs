@@ -7,7 +7,6 @@ mod broadcast_channel;
 mod browser_app;
 mod browser_navigation;
 mod browser_window;
-#[allow(dead_code)] // Private until capture request IPC and a real user-consent UI are connected.
 mod capture;
 mod chrome_controls;
 mod chrome_paint;

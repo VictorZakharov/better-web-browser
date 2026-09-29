@@ -128,6 +128,7 @@ pub(super) const VK_MENU: i32 = 0x12;
 pub(super) const MK_CONTROL: usize = 0x0008;
 pub(super) const MK_SHIFT: usize = 0x0004;
 pub(super) const GA_ROOT: u32 = 2;
+pub(super) const GA_ROOTOWNER: u32 = 3;
 pub(super) const TME_LEAVE: u32 = 0x0000_0002;
 pub(super) const EN_CHANGE: usize = 0x0300;
 pub(super) const CBN_SELCHANGE: usize = 1;

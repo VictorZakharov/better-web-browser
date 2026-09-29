@@ -5,8 +5,8 @@ use crate::windows_app::{app_state::BrowserState, platform::*};
 use windows_sys::Win32::UI::WindowsAndMessaging::IsIconic;
 
 impl BrowserState {
-    /// A future request dispatcher must call this both before prompting and before attaching a
-    /// native session. The renderer cannot provide or override the foreground decision.
+    /// Check both before prompting and before attaching a native session. The renderer cannot
+    /// provide or override the foreground decision.
     pub(in crate::windows_app) fn capture_foreground(&self, tab: TabId) -> bool {
         self.benchmark.is_none()
             && self.tabs.active_id() == tab
@@ -18,6 +18,7 @@ impl BrowserState {
     }
 
     pub(in crate::windows_app) fn retire_capture_for_tab(&mut self, tab: TabId) {
+        self.app.capture_service.borrow_mut().retire_tab(tab);
         self.app.capture.borrow_mut().retire_tab(tab);
     }
 

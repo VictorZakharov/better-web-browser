@@ -17,6 +17,9 @@ pub(super) fn initialize(context: &mut Context) -> Result<(), String> {
         "__setCurrentScript",
         "__dispatchNodeEvent",
         "__queuePolicyViolation",
+        "__receiveMediaCaptureUpdate",
+        "__receiveMediaCaptureFrame",
+        "__receiveMediaCaptureAudioFrame",
     ] {
         context
             .capture_hook(name)

@@ -5,6 +5,7 @@ mod document;
 mod fetch;
 mod geolocation;
 mod input;
+mod media_capture;
 mod media_devices;
 mod notification;
 mod permission;
@@ -54,6 +55,12 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
     }
     if let BrowserMessage::MediaDeviceUpdate(update) = message {
         return media_devices::encode_update(update).map(|bytes| (0x01c1, bytes));
+    }
+    if let BrowserMessage::MediaCaptureUpdate(update) = message {
+        return media_capture::encode_update(update).map(|bytes| (0x0231, bytes));
+    }
+    if let BrowserMessage::MediaCaptureFrame(frame) = message {
+        return media_capture::encode_frame(frame).map(|bytes| (0x0233, bytes));
     }
     if let BrowserMessage::SensorUpdate(update) = message {
         return sensor::encode_update(update).map(|bytes| (0x01d1, bytes));
@@ -123,6 +130,9 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
         BrowserMessage::PermissionUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::GeolocationUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::MediaDeviceUpdate(_) => unreachable!("encoded above"),
+        BrowserMessage::MediaCaptureUpdate(_) | BrowserMessage::MediaCaptureFrame(_) => {
+            unreachable!("encoded above")
+        }
         BrowserMessage::SensorUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::ClipboardUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::BroadcastDelivery(_) => unreachable!("encoded above"),
@@ -202,6 +212,8 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
         0x0221 => permission::decode_update(payload).map(BrowserMessage::PermissionUpdate),
         0x01b1 => geolocation::decode_update(payload).map(BrowserMessage::GeolocationUpdate),
         0x01c1 => media_devices::decode_update(payload).map(BrowserMessage::MediaDeviceUpdate),
+        0x0231 => media_capture::decode_update(payload).map(BrowserMessage::MediaCaptureUpdate),
+        0x0233 => media_capture::decode_frame(payload).map(BrowserMessage::MediaCaptureFrame),
         0x01d1 => sensor::decode_update(payload).map(BrowserMessage::SensorUpdate),
         0x01f1 => clipboard::decode_update(payload).map(BrowserMessage::ClipboardUpdate),
         0x0201 => {
@@ -240,6 +252,9 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
     if let RendererMessage::MediaDeviceRequest(request) = message {
         return media_devices::encode_request(request).map(|bytes| (0x01c0, bytes));
     }
+    if let RendererMessage::MediaCaptureRequest(request) = message {
+        return media_capture::encode_request(request).map(|bytes| (0x0230, bytes));
+    }
     if let RendererMessage::SensorRequest(request) = message {
         return sensor::encode_request(request).map(|bytes| (0x01d0, bytes));
     }
@@ -266,6 +281,7 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
         RendererMessage::PermissionRequest(_) => unreachable!("encoded above"),
         RendererMessage::GeolocationRequest(_) => unreachable!("encoded above"),
         RendererMessage::MediaDeviceRequest(_) => unreachable!("encoded above"),
+        RendererMessage::MediaCaptureRequest(_) => unreachable!("encoded above"),
         RendererMessage::SensorRequest(_) => unreachable!("encoded above"),
         RendererMessage::ClipboardRequest(_) => unreachable!("encoded above"),
         RendererMessage::BroadcastCommand(_) => unreachable!("encoded above"),
@@ -343,6 +359,7 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
         0x0220 => permission::decode_request(payload).map(RendererMessage::PermissionRequest),
         0x01b0 => geolocation::decode_request(payload).map(RendererMessage::GeolocationRequest),
         0x01c0 => media_devices::decode_request(payload).map(RendererMessage::MediaDeviceRequest),
+        0x0230 => media_capture::decode_request(payload).map(RendererMessage::MediaCaptureRequest),
         0x01d0 => sensor::decode_request(payload).map(RendererMessage::SensorRequest),
         0x01f0 => clipboard::decode_request(payload).map(RendererMessage::ClipboardRequest),
         0x0200 => broadcast_channel::decode_command(payload).map(RendererMessage::BroadcastCommand),

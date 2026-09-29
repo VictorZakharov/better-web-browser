@@ -1,7 +1,10 @@
 //! Browser-only capture control and bounded sample collection. Call from a broker thread, never
 //! from the UI thread: a native Source Reader may block until its Job is terminated.
 
-use super::launcher::{self, CaptureLaunchOptions};
+use super::{
+    CaptureStartError,
+    launcher::{self, CaptureLaunchOptions},
+};
 use crate::capture_protocol::{
     BrowserCaptureMessage, CaptureContainmentReport, CaptureDevices, CaptureFrameReader,
     CaptureFrameWriter, CaptureSample, CaptureSampleKind, WorkerCaptureMessage,
@@ -86,16 +89,20 @@ impl CaptureSession {
         // On every error, Drop kills the one-process Job and closes all inherited pipes.
     }
 
-    pub(crate) fn start(&mut self, capture_id: u64) -> Result<(), String> {
+    pub(crate) fn start(&mut self, capture_id: u64) -> Result<(), CaptureStartError> {
         if capture_id == 0 || self.used {
-            return Err("capture grant is one-shot".into());
+            return Err(CaptureStartError::NotReadable(
+                "capture grant is one-shot".into(),
+            ));
         }
         self.used = true;
-        lock(&self.samples).expect(capture_id)?;
+        lock(&self.samples)
+            .expect(capture_id)
+            .map_err(CaptureStartError::NotReadable)?;
         let result = self
             .writer
             .send_browser(&BrowserCaptureMessage::Start { capture_id })
-            .map_err(|error| error.to_string())
+            .map_err(|error| CaptureStartError::NotReadable(error.to_string()))
             .and_then(|()| match self.events.recv_timeout(COMMAND_TIMEOUT) {
                 Ok(Ok(WorkerCaptureMessage::Started {
                     capture_id: started,
@@ -103,12 +110,24 @@ impl CaptureSession {
                 Ok(Ok(WorkerCaptureMessage::Failed {
                     capture_id: failed,
                     reason,
-                })) if failed == capture_id => {
-                    Err(format!("capture source failed to start: {reason:?}"))
-                }
-                Ok(Ok(_)) => Err("capture worker returned a stale start response".into()),
-                Ok(Err(error)) => Err(error),
-                Err(_) => Err("capture source start timed out".into()),
+                })) if failed == capture_id => Err(match reason {
+                    crate::capture_protocol::CaptureFailure::NoDevice => {
+                        CaptureStartError::NoDevice
+                    }
+                    crate::capture_protocol::CaptureFailure::AccessDenied => {
+                        CaptureStartError::AccessDenied
+                    }
+                    _ => CaptureStartError::NotReadable(format!(
+                        "capture source failed to start: {reason:?}"
+                    )),
+                }),
+                Ok(Ok(_)) => Err(CaptureStartError::NotReadable(
+                    "capture worker returned a stale start response".into(),
+                )),
+                Ok(Err(error)) => Err(CaptureStartError::NotReadable(error)),
+                Err(_) => Err(CaptureStartError::NotReadable(
+                    "capture source start timed out".into(),
+                )),
             });
         if result.is_err() {
             lock(&self.samples).retired = true;

@@ -1,6 +1,7 @@
 //! Browser-side renderer session broker and diagnostics.
 
 mod acknowledgements;
+mod capture_stream;
 mod clock;
 mod control;
 mod diagnostics;
@@ -40,6 +41,7 @@ impl RendererExitReason {
         }
     }
 }
+pub use capture_stream::MediaCaptureSink;
 pub use navigation::NavigationBody;
 use queue_depth::QueueDepth;
 use std::sync::{Arc, Mutex, mpsc};
@@ -123,6 +125,7 @@ pub enum RendererEvent {
     PermissionRequest(crate::renderer_protocol::PermissionRequest),
     GeolocationRequest(crate::renderer_protocol::GeolocationRequest),
     MediaDeviceRequest(crate::renderer_protocol::MediaDeviceRequest),
+    MediaCaptureRequest(crate::renderer_protocol::MediaCaptureRequest),
     SensorRequest(crate::renderer_protocol::SensorRequest),
     ClipboardRequest(crate::renderer_protocol::ClipboardRequest),
     Unresponsive,
@@ -149,6 +152,9 @@ pub struct RendererSession {
     geolocation_overflow: Arc<std::sync::atomic::AtomicBool>,
     media_device_updates: mpsc::SyncSender<crate::renderer_protocol::MediaDeviceUpdate>,
     media_device_overflow: Arc<std::sync::atomic::AtomicBool>,
+    media_capture_updates: mpsc::SyncSender<crate::renderer_protocol::MediaCaptureUpdate>,
+    media_capture_overflow: Arc<std::sync::atomic::AtomicBool>,
+    media_capture_frames: Arc<Mutex<capture_stream::FrameMailbox>>,
     sensor_updates: mpsc::SyncSender<stream::QueuedSensorUpdate>,
     sensor_overflow: Arc<std::sync::atomic::AtomicBool>,
     clipboard_updates: mpsc::SyncSender<crate::renderer_protocol::ClipboardUpdate>,
@@ -276,6 +282,9 @@ impl RendererSession {
         let geolocation_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (media_device_updates_tx, media_device_updates_rx) = mpsc::sync_channel(256);
         let media_device_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (media_capture_updates_tx, media_capture_updates_rx) = mpsc::sync_channel(64);
+        let media_capture_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let media_capture_frames = Arc::new(Mutex::new(capture_stream::FrameMailbox::default()));
         let (sensor_updates_tx, sensor_updates_rx) = mpsc::sync_channel(256);
         let sensor_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (clipboard_updates_tx, clipboard_updates_rx) = mpsc::sync_channel(256);
@@ -292,6 +301,8 @@ impl RendererSession {
         let worker_permission_overflow = Arc::clone(&permission_overflow);
         let worker_geolocation_overflow = Arc::clone(&geolocation_overflow);
         let worker_media_device_overflow = Arc::clone(&media_device_overflow);
+        let worker_media_capture_overflow = Arc::clone(&media_capture_overflow);
+        let worker_media_capture_frames = Arc::clone(&media_capture_frames);
         let worker_sensor_overflow = Arc::clone(&sensor_overflow);
         let worker_clipboard_overflow = Arc::clone(&clipboard_overflow);
         let worker_database_overflow = Arc::clone(&database_overflow);
@@ -327,6 +338,9 @@ impl RendererSession {
                     geolocation_overflow: worker_geolocation_overflow,
                     media_device_updates: media_device_updates_rx,
                     media_device_overflow: worker_media_device_overflow,
+                    media_capture_updates: media_capture_updates_rx,
+                    media_capture_overflow: worker_media_capture_overflow,
+                    media_capture_frames: worker_media_capture_frames,
                     sensor_updates: sensor_updates_rx,
                     sensor_overflow: worker_sensor_overflow,
                     clipboard_updates: clipboard_updates_rx,
@@ -359,6 +373,9 @@ impl RendererSession {
             geolocation_overflow,
             media_device_updates: media_device_updates_tx,
             media_device_overflow,
+            media_capture_updates: media_capture_updates_tx,
+            media_capture_overflow,
+            media_capture_frames,
             sensor_updates: sensor_updates_tx,
             sensor_overflow,
             clipboard_updates: clipboard_updates_tx,

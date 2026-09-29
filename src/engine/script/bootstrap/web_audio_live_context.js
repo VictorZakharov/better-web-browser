@@ -83,6 +83,7 @@
         live.closeSubmitted = false;
         if (live.pending) live.pending.submitted = false;
         if (live.finalClose) {
+            clearCaptureAudioForContext(context);
             live.pending = null;
             setAudioContextState(context, 'closed');
             settleLivePromises(live.closePromises);
@@ -148,6 +149,9 @@
             // script task so graph setup can happen before the first quantum.
             audioTask(() => tryStartLive(this));
         }
+        createMediaStreamSource(stream) {
+            return new MediaStreamAudioSourceNode(this, { mediaStream: stream });
+        }
         resume() {
             const state = audioContextState.get(this);
             const live = state.live;
@@ -184,6 +188,7 @@
                 return new AudioPromise((_, reject) => reject(liveError(
                     'InvalidStateError', 'AudioContext has been closed')));
             live.finalClose = true;
+            clearCaptureAudioForContext(this);
             settleLivePromises(live.resumePromises,
                 liveError('AbortError', 'AudioContext was closed before playback started'));
             return new AudioPromise(resolve => {
@@ -242,6 +247,7 @@
         AudioBuffer, AudioParam, AudioNode, AudioScheduledSourceNode,
         AudioDestinationNode, GainNode, OscillatorNode, AudioBufferSourceNode,
         ConstantSourceNode, StereoPannerNode, DelayNode,
+        MediaStreamAudioSourceNode,
         ChannelSplitterNode, ChannelMergerNode, IIRFilterNode, BiquadFilterNode,
         WaveShaperNode, PeriodicWave, AnalyserNode,
         BaseAudioContext, AudioContext, OfflineAudioContext, OfflineAudioCompletionEvent

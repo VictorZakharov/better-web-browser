@@ -1,5 +1,6 @@
-// Partial MediaDevices surface: pre-capture enumeration only. No getUserMedia
-// or devicechange claim until capture and hotplug observation are implemented.
+// MediaDevices enumeration. getUserMedia is added by the separate capture bootstrap
+// after browser-owned permission and contained capture transport are initialized.
+// Device hotplug observation is not implemented.
 // https://www.w3.org/TR/mediacapture-streams/#enumerating-devices
 (() => {
     'use strict';

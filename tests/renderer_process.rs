@@ -12,6 +12,8 @@ mod broadcast_channel;
 mod canvas_frames;
 #[path = "renderer_process/canvas_presentation.rs"]
 mod canvas_presentation;
+#[path = "renderer_process/capture.rs"]
+mod capture;
 #[path = "renderer_process/checkable.rs"]
 mod checkable;
 #[path = "renderer_process/clock_backpressure.rs"]

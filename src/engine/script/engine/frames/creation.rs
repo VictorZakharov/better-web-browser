@@ -162,6 +162,9 @@ pub(super) fn create<'s>(
             "__dispatchNodeEvent",
             "__queuePolicyViolation",
             "__receivePermissionUpdate",
+            "__receiveMediaCaptureUpdate",
+            "__receiveMediaCaptureFrame",
+            "__receiveMediaCaptureAudioFrame",
         ] {
             let key = v8::String::new(scope, name)?;
             let function = context.global(scope).get(scope, key.into())?;
