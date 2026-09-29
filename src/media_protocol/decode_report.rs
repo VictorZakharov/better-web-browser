@@ -152,10 +152,10 @@ impl MediaDecodeReport {
                 ));
             }
         }
-        let maximum_decode_micros = u64::from(limits.probe_timeout_millis) * 1_000;
-        if self.decode_micros > maximum_decode_micros {
-            return Err(MediaProtocolError::InvalidPayload("decode duration"));
-        }
+        // decode_micros is diagnostic wall-clock time, not a resource bound. A
+        // preempted worker can report more than the command deadline even after
+        // a valid decode; the browser enforces that deadline while receiving the
+        // response, independently of this untrusted telemetry field.
         Ok(())
     }
 }

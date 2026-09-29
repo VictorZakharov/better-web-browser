@@ -1,8 +1,46 @@
 use super::*;
+use std::time::{Duration, Instant};
+
+fn execute_decode_html_until_logged(html: &str, expected: &[&str]) -> Vec<String> {
+    let dom = dom::parse_with_scripting(html, true);
+    let scripts = dom
+        .elements_named("script")
+        .map(|node| ScriptInput {
+            source_url: "https://example.com/#inline".into(),
+            code: node.text_content(),
+            node,
+            kind: ScriptKind::Classic,
+            fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+            finish_lifecycle: true,
+        })
+        .collect::<Vec<_>>();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let initial = runtime.execute_initial(&scripts);
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    let mut console = initial.console;
+
+    // The native decoder runs on a worker. The standalone execution helper's
+    // virtual startup horizon cannot guarantee that worker has finished on CI.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while expected
+        .iter()
+        .any(|message| !console.iter().any(|line| line == message))
+    {
+        assert!(
+            Instant::now() < deadline,
+            "audio decode did not settle; console: {console:?}"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+        let next = runtime.advance_time(Duration::from_millis(10), 64);
+        assert!(next.errors.is_empty(), "{:?}", next.errors);
+        console.extend(next.console);
+    }
+    console
+}
 
 #[test]
 fn decode_audio_data_detaches_synchronously_and_returns_resampled_pcm() {
-    let (_, outcome) = execute_html(
+    let console = execute_decode_html_until_logged(
         r#"<body><script>
         const context = new OfflineAudioContext(1, 128, 16000);
         const input = new ArrayBuffer(48), view = new DataView(input);
@@ -35,14 +73,14 @@ fn decode_audio_data_detaches_synchronously_and_returns_resampled_pcm() {
             console.log('WAV decode and detach passed');
         });
     </script>"#,
+        &["log: WAV decode and detach passed"],
     );
-    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(outcome.console, ["log: WAV decode and detach passed"]);
+    assert_eq!(console, ["log: WAV decode and detach passed"]);
 }
 
 #[test]
 fn decode_audio_data_rejects_unsupported_bytes_and_detached_input() {
-    let (_, outcome) = execute_html(
+    let console = execute_decode_html_until_logged(
         r#"<body><script>
         const context = new OfflineAudioContext(1, 128, 8000);
         let wrongType = false;
@@ -76,21 +114,11 @@ fn decode_audio_data_rejects_unsupported_bytes_and_detached_input() {
         if (oversized.byteLength !== 0)
             throw Error('oversized encoded input was not detached');
     </script>"#,
+        &[
+            "log: unsupported audio rejected",
+            "log: detached audio rejected",
+            "log: oversized audio rejected",
+        ],
     );
-    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert!(
-        outcome
-            .console
-            .contains(&"log: unsupported audio rejected".to_owned())
-    );
-    assert!(
-        outcome
-            .console
-            .contains(&"log: detached audio rejected".to_owned())
-    );
-    assert!(
-        outcome
-            .console
-            .contains(&"log: oversized audio rejected".to_owned())
-    );
+    assert_eq!(console.len(), 3, "unexpected decode logs: {console:?}");
 }

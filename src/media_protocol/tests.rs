@@ -158,6 +158,15 @@ fn audio_only_report_requires_real_audio_and_no_video_metadata() {
         decode_micros: 100,
     };
     assert!(report.validate(MediaLimits::default()).is_ok());
+    assert!(
+        MediaDecodeReport {
+            decode_micros: u64::from(MediaLimits::default().probe_timeout_millis) * 1_000 + 1,
+            ..report
+        }
+        .validate(MediaLimits::default())
+        .is_ok(),
+        "elapsed decode telemetry must not invalidate an otherwise valid report"
+    );
     assert_eq!(MediaCodecFamily::Flac.wire_code(), 6);
     assert_eq!(MediaCodecFamily::Vorbis.wire_code(), 7);
     assert_eq!(

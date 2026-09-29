@@ -21,3 +21,16 @@ fn bounded_wait_reports_progress_until_the_worker_replies() {
     assert!(progress >= 2, "wait did not report bounded progress");
     worker.join().expect("join delayed media worker");
 }
+
+#[test]
+fn media_command_wait_still_times_out_without_a_worker_response() {
+    let (_sender, incoming) = mpsc::sync_channel(1);
+    let error = receive_from_with_progress(
+        &incoming,
+        "unanswered decode",
+        Duration::from_millis(20),
+        || Ok(()),
+    )
+    .expect_err("a missing media response must respect the command deadline");
+    assert!(error.contains("timed out"), "unexpected error: {error}");
+}
