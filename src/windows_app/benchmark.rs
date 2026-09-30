@@ -8,6 +8,7 @@ mod renderer_diagnostics;
 mod report;
 mod runtime_timeline;
 mod video;
+mod wheel_timing;
 
 use super::benchmark_capture::ScrollPaintMetrics;
 use super::*;
@@ -28,6 +29,7 @@ pub(super) struct BenchmarkRun {
     pub(super) navigation_started: Option<Instant>,
     pub(super) navigation_targets: Vec<navigation::BenchmarkNavigation>,
     pub(super) navigation_delay: Duration,
+    pub(super) initial_action_delay: Option<Duration>,
     pub(super) navigation_scheduled: bool,
     pub(super) page_ready: Duration,
     pub(super) network_time: Duration,
@@ -86,6 +88,7 @@ pub(super) struct BenchmarkRun {
     pub(super) filmstrip: Option<filmstrip::Filmstrip>,
     pub(super) scroll_samples: usize,
     pub(super) early_scroll: Option<EarlyScrollTrace>,
+    pub(super) wheel_trace: wheel_timing::WheelTrace,
     pub(super) scroll_surface: Option<benchmark_capture::OffscreenSurface>,
     pub(super) activity: BenchmarkActivity,
     pub(super) diagnostic_selectors: Vec<String>,

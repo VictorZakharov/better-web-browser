@@ -21,6 +21,10 @@ pub(super) struct ScrollAnimation {
 }
 
 impl ScrollAnimation {
+    pub(in crate::windows_app) fn has_pending_motion(&self, position: i32) -> bool {
+        self.target.is_some_and(|target| target != position)
+    }
+
     fn consume_css_delta(&mut self, delta: f32, scale: f32) -> i32 {
         let total = delta as f64 * scale as f64 + self.pixel_remainder;
         let pixels = total.round().clamp(i32::MIN as f64, i32::MAX as f64) as i32;
@@ -166,6 +170,15 @@ mod tests {
             .sum();
         assert_eq!(reversed, -5);
         assert_eq!(animation.pixel_remainder, 0.0);
+    }
+
+    #[test]
+    fn pending_motion_excludes_idle_and_already_reached_targets() {
+        let mut animation = ScrollAnimation::default();
+        assert!(!animation.has_pending_motion(20));
+        animation.target = Some(20);
+        assert!(!animation.has_pending_motion(20));
+        assert!(animation.has_pending_motion(10));
     }
 
     #[test]

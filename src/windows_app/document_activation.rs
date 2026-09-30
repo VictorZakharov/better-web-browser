@@ -1,6 +1,7 @@
 //! Commits browser-fetched bytes to the page-owning renderer and installs validated output.
 
 mod metrics;
+mod painting;
 mod submission;
 mod video;
 
@@ -153,6 +154,7 @@ impl BrowserState {
             return;
         }
         let first_presentation = self.renderer_revision == 0;
+        let received = Instant::now();
         if first_presentation {
             // History actions emitted by parser scripts belong to the new document.
             // The shell may still hold the outgoing document's scroll offset here.
@@ -290,12 +292,30 @@ impl BrowserState {
             }
         }
         self.update_active_tab_title(&presentation.title);
+        let visual_changed = first_presentation
+            || layout_changed
+            || images_changed
+            || glyph_epoch_changed
+            || glyphs_changed
+            || glyphs_redefined;
+        if visual_changed {
+            // Cached scroll pixels belong to the previous immutable visual snapshot.
+            // Invalidate before a wheel default action can commit its first frame.
+            self.invalidate_benchmark_scroll_surface();
+        }
         if presentation.runtime.viewport_scroll_y.is_some() {
             self.pending_history_scroll_y = None;
         }
         self.apply_script_viewport_scroll(presentation.runtime.viewport_scroll_y);
         self.try_restore_history_scroll();
+        self.record_benchmark_wheel_decisions(
+            presentation.document,
+            &presentation.runtime,
+            Some(presentation.revision),
+            received,
+        );
         self.queue_css_wheel_scroll(presentation.runtime.viewport_wheel_delta_y);
+        self.finish_benchmark_wheel_viewport(presentation.document);
         if layout_changed {
             self.update_scrollbar();
         }
@@ -324,47 +344,23 @@ impl BrowserState {
             ));
         }
 
-        let visual_changed = first_presentation
-            || layout_changed
-            || images_changed
-            || glyph_epoch_changed
-            || glyphs_changed
-            || glyphs_redefined;
-        if !self.processing_background_tab && visual_changed {
-            self.refresh_accessibility_document(&accessibility_update);
-            let paint_started = Instant::now();
-            if damage.full_repaint
+        self.paint_installed_presentation(
+            &accessibility_update,
+            damage,
+            visual_changed,
+            damage.full_repaint
                 || images_changed
                 || glyph_epoch_changed
                 || glyphs_changed
-                || glyphs_redefined
-            {
-                let mut client: Rect = std::mem::zeroed();
-                GetClientRect(self.window, &mut client);
-                let content = Rect {
-                    left: 0,
-                    top: self.toolbar_height(),
-                    right: client.right,
-                    bottom: (client.bottom - self.status_height()).max(self.toolbar_height()),
-                };
-                InvalidateRect(self.window, &content, 0);
-            } else if let Some(rect) = damage.rect {
-                let dirty = screen_rect(
-                    rect,
-                    self.scroll_y,
-                    self.toolbar_height(),
-                    self.page_scale(),
-                );
-                InvalidateRect(self.window, &dirty, 0);
-            }
-            UpdateWindow(self.window);
-            if first_presentation && let Some(benchmark) = self.benchmark.as_mut() {
-                benchmark.paint_time = paint_started.elapsed();
-            }
-        } else if !self.processing_background_tab {
-            self.refresh_accessibility_document(&accessibility_update);
-        }
+                || glyphs_redefined,
+            first_presentation,
+        );
         let presentation_install_time = presentation_install_started.elapsed();
+        self.paint_benchmark_wheel_presentation(
+            presentation.document,
+            presentation.revision,
+            layout_changed,
+        );
         self.record_presentation_install_incident(first_presentation, presentation_install_time);
         if let Some(benchmark) = self.benchmark.as_mut() {
             benchmark.presentation_install_time += presentation_install_time;

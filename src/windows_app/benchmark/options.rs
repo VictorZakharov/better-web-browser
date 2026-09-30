@@ -48,6 +48,7 @@ impl LaunchOptions {
         let mut diagnostic_selectors = Vec::new();
         let mut navigation_targets = Vec::new();
         let mut navigation_delay_ms = 0_u64;
+        let mut initial_action_delay_ms = None;
         let mut window_width_dip = None;
         let mut window_height_dip = None;
         let mut dpi_override = None;
@@ -160,6 +161,13 @@ impl LaunchOptions {
                     navigation_delay_ms =
                         number::<u64>(&mut arguments, &argument)?.clamp(0, 60_000);
                 }
+                "--initial-action-delay-ms" => {
+                    let delay = number::<u64>(&mut arguments, &argument)?;
+                    if delay > 60_000 {
+                        return Err("--initial-action-delay-ms must be between 0 and 60000".into());
+                    }
+                    initial_action_delay_ms = Some(delay);
+                }
                 "--task-manager" => open_task_manager = true,
                 option if option.starts_with('-') => {
                     return Err(format!("unknown option: {option}"));
@@ -187,6 +195,9 @@ impl LaunchOptions {
             );
             benchmark.navigation_targets = navigation_targets;
             benchmark.navigation_delay = Duration::from_millis(navigation_delay_ms);
+            benchmark.initial_action_delay = initial_action_delay_ms
+                .filter(|delay| *delay > 0)
+                .map(Duration::from_millis);
             benchmark.filmstrip = filmstrip_directory
                 .map(|directory| {
                     super::filmstrip::Filmstrip::new(
@@ -227,7 +238,10 @@ impl LaunchOptions {
             if !diagnostic_selectors.is_empty() {
                 return Err("--diagnostic-selector requires --benchmark".to_string());
             }
-            if !navigation_targets.is_empty() || navigation_delay_ms > 0 {
+            if !navigation_targets.is_empty()
+                || navigation_delay_ms > 0
+                || initial_action_delay_ms.is_some()
+            {
                 return Err("benchmark navigation options require --benchmark".to_string());
             }
             if window_width_dip.is_some() || window_height_dip.is_some() {

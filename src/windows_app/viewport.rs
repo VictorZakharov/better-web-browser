@@ -132,11 +132,17 @@ impl BrowserState {
                 .benchmark
                 .as_ref()
                 .is_some_and(|benchmark| benchmark.early_scroll.is_some())
+                || self.benchmark_wheel_needs_viewport_paint()
             {
                 self.sync_page_control_positions();
+                if sticky_changed {
+                    self.invalidate_benchmark_scroll_surface();
+                }
                 // An invisible window has no paintable update region. Exercise the same retained
                 // display list through a bounded offscreen surface for the hidden trace.
-                if let Err(error) = self.paint_benchmark_frame()
+                if self.benchmark_wheel_needs_viewport_paint() {
+                    self.paint_benchmark_wheel_viewport();
+                } else if let Err(error) = self.paint_benchmark_frame()
                     && let Some(benchmark) = self.benchmark.as_mut()
                 {
                     benchmark

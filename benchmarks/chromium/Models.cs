@@ -42,6 +42,7 @@ internal sealed class BenchmarkResult
     public double PaintCaptureMs { get; set; }
     public ScrollMetrics SteadyScroll { get; set; } = new();
     public ScrollMetrics? EarlyScroll { get; set; }
+    public NativeWheelResult? NativeWheel { get; set; }
     public long WorkingSetBytes { get; set; }
     public long PrivateBytes { get; set; }
     public long PeakWorkingSetBytes { get; set; }

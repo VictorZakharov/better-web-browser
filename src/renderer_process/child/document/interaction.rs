@@ -8,7 +8,9 @@ mod pointer;
 mod rendering;
 mod scrolling;
 mod selection;
+mod state_render;
 mod viewport;
+use state_render::request_state_render;
 
 use super::*;
 use crate::engine::dom::{NodeId, NodeRef};
@@ -60,8 +62,19 @@ impl DocumentRuntime {
         let mut cursor = None;
         let mut history_traversal_ack = None;
         let mut native_text_rejection = None;
+        let mut wheel_acknowledgement = None;
         let (mut outcome, navigation) = match input {
-            DocumentInput::Wheel(input) => (self.wheel_input(input)?, None),
+            DocumentInput::Wheel(input) => {
+                let sequence = input.sequence;
+                let started = Instant::now();
+                let (outcome, decision) = self.wheel_input(input)?;
+                wheel_acknowledgement = Some(crate::renderer_protocol::WheelAcknowledgement {
+                    sequence,
+                    decision,
+                    dispatch_micros: micros(started.elapsed()),
+                });
+                (outcome, None)
+            }
             DocumentInput::Pointer(input) => {
                 let interaction = self.pointer_input(input)?;
                 cursor = interaction.cursor;
@@ -211,8 +224,15 @@ impl DocumentRuntime {
             }
         };
         self.admit_user_input_outcome(&mut outcome, connection)?;
-        let mut presentation =
-            self.presentation_after_user_input(outcome, force_accessibility_update, connection)?;
+        let mut presentation = self.presentation_after_user_input(
+            outcome,
+            force_accessibility_update,
+            wheel_acknowledgement.is_some(),
+            connection,
+        )?;
+        if let Some(acknowledgement) = wheel_acknowledgement {
+            scrolling::attach_acknowledgement(&mut presentation, acknowledgement)?;
+        }
         if let Some(sequence) = history_traversal_ack {
             match presentation.as_mut() {
                 Some(AdvanceResult::Presentation(presentation)) => {
@@ -299,62 +319,6 @@ impl DocumentRuntime {
         self.start_pending_clipboard_requests(connection)?;
         connection.send_state_mutations(self.id, self.last_input_sequence, outcome)
     }
-
-    pub(super) fn presentation_after_user_input(
-        &mut self,
-        mut outcome: ScriptOutcome,
-        force_accessibility_update: bool,
-        connection: &mut ChildConnection,
-    ) -> Result<Option<AdvanceResult>, String> {
-        let needs_present = force_accessibility_update
-            || outcome.render_requested
-            || outcome.executed > 0
-            || !outcome.errors.is_empty()
-            || !outcome.console.is_empty()
-            || !outcome.diagnostics.is_empty()
-            || outcome.navigation_url.is_some()
-            // Quiet input can queue a form-navigation task. Geometry observers already
-            // publish their own wakeup after sampling; do not bypass that checkpoint.
-            || (!self.has_pending_geometry_observers() && self.next_timer_micros().is_some())
-            || outcome.viewport_scroll_y.is_some()
-            || outcome.viewport_wheel_delta_y != 0.0
-            || !outcome.history_actions.is_empty()
-            || !outcome.cookie_updates.is_empty();
-        if !needs_present {
-            return Ok(None);
-        }
-        let style = if outcome.render_requested {
-            self.refresh_input_styles(&mut outcome)
-        } else {
-            StyleRefreshStats::default()
-        };
-        self.start_presentational_preloads(connection)?;
-        let started = Instant::now();
-        if outcome.render_requested {
-            self.rebuild_layout();
-        }
-        let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
-            layout_micros: micros(started.elapsed()),
-            ..PageLoadReport::default()
-        });
-        if !outcome.render_requested && !force_accessibility_update {
-            return Ok(Some(AdvanceResult::Runtime(Box::new(
-                RendererRuntimeUpdate {
-                    document: self.id,
-                    clock_advanced: false,
-                    next_timer_micros: self.next_timer_micros(),
-                    runtime: runtime_report(
-                        outcome,
-                        self.script_runtime.is_some(),
-                        self.media_runtime_report(),
-                    ),
-                    load,
-                },
-            ))));
-        }
-        self.presentation(outcome, style, load, connection)
-            .map(Some)
-    }
 }
 
 struct HitTarget {
@@ -396,48 +360,6 @@ fn lifecycle_name(state: DocumentLifecycle) -> &'static str {
         DocumentLifecycle::Hidden => "hidden",
         DocumentLifecycle::Frozen => "frozen",
     }
-}
-
-/// Requests a targeted state-invalidation render after scriptless control
-/// edits: the control's own subtree root plus form-owner/fieldset aggregation
-/// roots (HTML `:valid` / `:invalid` on `form` / `fieldset`), radio-group
-/// peers, and their aggregates. Never the whole document.
-fn request_state_render(control: &NodeRef, outcome: &mut ScriptOutcome) {
-    use crate::engine::invalidation::validation_aggregation_roots;
-    let mut roots = Vec::new();
-    let mut push_with_aggregates = |node: &NodeRef| {
-        // A changed peer's siblings can match :checked + .label too, even
-        // when that radio lives under a different parent from the target.
-        roots.push(
-            node.shadow_including_parent()
-                .unwrap_or_else(|| node.clone())
-                .id(),
-        );
-        roots.extend(
-            validation_aggregation_roots(node)
-                .iter()
-                .map(|root| root.id()),
-        );
-    };
-    push_with_aggregates(control);
-    if control.is_radio() {
-        for peer in control.radio_group() {
-            if peer.id() != control.id() {
-                push_with_aggregates(&peer);
-            }
-        }
-    }
-    roots.sort_unstable();
-    roots.dedup();
-    outcome.render_requested = true;
-    outcome.invalidation = crate::engine::invalidation::RenderInvalidation {
-        roots,
-        impact: crate::engine::invalidation::MutationKind::State.impact(),
-        mutation_count: 0,
-        rebuild_style_rules: false,
-        removed_nodes: Vec::new(),
-        removals_are_local: false,
-    };
 }
 
 fn key_code(key: &str) -> u32 {

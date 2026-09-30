@@ -52,16 +52,33 @@ internal sealed class Options
     public string? SubmitControlSelector { get; init; }
     public string? SubmitControlValue { get; init; }
     public int NavigationDelayMs { get; init; }
+    public int InitialActionDelayMs { get; init; }
+    public IReadOnlyList<WheelPoint> WheelAfterReady { get; init; } = Array.Empty<WheelPoint>();
     public IReadOnlyList<string> DiagnosticSelectors { get; init; } = Array.Empty<string>();
+    private bool firstAction = true;
+
+    internal int NextActionDelayMs()
+    {
+        var delay = firstAction && InitialActionDelayMs > 0 ? InitialActionDelayMs : NavigationDelayMs;
+        firstAction = false;
+        return delay;
+    }
 
     public static Options Parse(string[] arguments)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         var switches = new HashSet<string>(StringComparer.Ordinal);
         var diagnosticSelectors = new List<string>();
+        var wheels = new List<WheelPoint>();
         for (var index = 0; index < arguments.Length; index++)
         {
             var argument = arguments[index];
+            if (argument == "--wheel-after-ready")
+            {
+                if (++index >= arguments.Length || wheels.Count == 128) throw new ArgumentException("Provide at most 128 --wheel-after-ready values.");
+                wheels.Add(WheelPoint.Parse(arguments[index]));
+                continue;
+            }
             if (argument is "--early-scroll" or "--require-fixture-ready" or "--back-after-ready" or "--enable-cache")
             {
                 switches.Add(argument);
@@ -122,6 +139,16 @@ internal sealed class Options
         var clickAfterReady = values.TryGetValue("--click-after-ready", out var clickValue)
             ? ClickPoint.Parse(clickValue)
             : null;
+        var initialDelay = values.TryGetValue("--initial-action-delay-ms", out var initialValue)
+            ? ParseInitialDelay(initialValue) : 0;
+        if (wheels.Count > 0 && (switches.Contains("--early-scroll") || Integer("--scroll-samples", 0, 0, 120) > 0))
+            throw new ArgumentException("Native wheel traces cannot be combined with direct scrollTo probes.");
+        var otherAction = clickAfterReady is not null || values.ContainsKey("--activate-link-after-ready") ||
+            switches.Contains("--back-after-ready") || values.ContainsKey("--submit-control-selector");
+        if (wheels.Count > 0 && otherAction)
+            throw new ArgumentException("Native wheel traces require a single owned document; do not combine navigation/editing actions.");
+        if (initialDelay > 0 && wheels.Count == 0 && !otherAction)
+            throw new ArgumentException("Initial action delay requires a scheduled input action.");
 
         return new Options
         {
@@ -154,8 +181,9 @@ internal sealed class Options
             BackAfterReady = switches.Contains("--back-after-ready"),
             SubmitControlSelector = values.GetValueOrDefault("--submit-control-selector"),
             SubmitControlValue = values.GetValueOrDefault("--submit-control-value"),
-            NavigationDelayMs = Integer("--navigation-delay-ms", 0, 0, 60_000)
-            ,
+            NavigationDelayMs = Integer("--navigation-delay-ms", 0, 0, 60_000),
+            InitialActionDelayMs = initialDelay,
+            WheelAfterReady = wheels,
             DiagnosticSelectors = diagnosticSelectors
         };
     }
@@ -174,6 +202,13 @@ internal sealed class Options
         });
         return candidates.FirstOrDefault(File.Exists)
             ?? throw new FileNotFoundException("Install Chrome/Edge or pass --chrome.");
+    }
+
+    internal static int ParseInitialDelay(string value)
+    {
+        if (!int.TryParse(value, out var delay) || delay is < 0 or > 60000)
+            throw new ArgumentException("--initial-action-delay-ms must be between 0 and 60000.");
+        return delay;
     }
 }
 

@@ -19,6 +19,7 @@ impl BrowserState {
         if !self.navigation.owns_document(update.document) {
             return;
         }
+        let received = Instant::now();
         self.incidents.runtime_updates = self.incidents.runtime_updates.saturating_add(1);
         if update.runtime.runtime_stopped
             || !update.runtime.errors.is_empty()
@@ -58,7 +59,9 @@ impl BrowserState {
             self.apply_native_text_rejection(update.document, rejection);
         }
         self.apply_script_viewport_scroll(update.runtime.viewport_scroll_y);
+        self.record_benchmark_wheel_decisions(update.document, &update.runtime, None, received);
         self.queue_css_wheel_scroll(update.runtime.viewport_wheel_delta_y);
+        self.finish_benchmark_wheel_viewport(update.document);
         self.schedule_script_runtime_wakeup();
         if benchmark_completed {
             self.finish_benchmark_after_completion();

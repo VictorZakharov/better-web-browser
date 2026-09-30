@@ -44,6 +44,7 @@ pub(in crate::renderer_protocol) fn encode_runtime(
         return Err(ProtocolError::InvalidPayload("viewport wheel delta"));
     }
     writer.f32(report.viewport_wheel_delta_y);
+    super::wheel::encode(writer, &report.wheel_acknowledgements)?;
     if report.history_actions.len() > MAX_RUNTIME_REPORT_ENTRIES {
         return Err(ProtocolError::InvalidPayload("history action count"));
     }
@@ -167,6 +168,7 @@ pub(in crate::renderer_protocol) fn decode_runtime(
     if !viewport_wheel_delta_y.is_finite() {
         return Err(ProtocolError::InvalidPayload("viewport wheel delta"));
     }
+    let wheel_acknowledgements = super::wheel::decode(reader)?;
     let history_action_count = reader.u32()? as usize;
     if history_action_count > MAX_RUNTIME_REPORT_ENTRIES {
         return Err(ProtocolError::InvalidPayload("history action count"));
@@ -244,6 +246,7 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         navigation_options,
         viewport_scroll_y,
         viewport_wheel_delta_y,
+        wheel_acknowledgements,
         history_actions,
         history_traversal_ack,
         native_text_rejection,

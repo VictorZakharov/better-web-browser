@@ -132,6 +132,7 @@ pub(super) fn runtime_report(
         navigation_options: outcome.navigation_options,
         viewport_scroll_y: outcome.viewport_scroll_y,
         viewport_wheel_delta_y: outcome.viewport_wheel_delta_y,
+        wheel_acknowledgements: Vec::new(),
         history_actions: outcome
             .history_actions
             .into_iter()

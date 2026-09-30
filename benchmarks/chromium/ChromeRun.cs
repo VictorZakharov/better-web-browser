@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
 
@@ -24,7 +23,7 @@ internal static class ChromeRun
             var previousPortWrite = File.Exists(activePort)
                 ? File.GetLastWriteTimeUtc(activePort)
                 : DateTime.MinValue;
-            chrome = StartChrome(options, profile);
+            chrome = ChromeLaunch.Start(options, profile);
             var port = await WaitForDevToolsAsync(chrome, profile, previousPortWrite, stopwatch, timeout);
             result.WindowReadyMs = stopwatch.Elapsed.TotalMilliseconds;
             var pageSocket = await FindPageSocketAsync(port, timeout);
@@ -58,6 +57,9 @@ internal static class ChromeRun
             var version = await cdp.CallAsync(nextId++, "Browser.getVersion", null, timeout);
             result.ChromeVersion = version.GetProperty("product").GetString() ?? string.Empty;
             using var filmstrip = await FilmstripCapture.StartAsync(cdp, options, stopwatch, timeout);
+            using var wheelTrace = options.WheelAfterReady.Count > 0 ? new NativeWheelTrace(cdp, stopwatch) : null;
+            result.NativeWheel = wheelTrace?.Result;
+            if (result.NativeWheel is not null) result.NativeWheel.RequestedInputs = options.WheelAfterReady.Count;
 
             const int navigationId = 1000;
             string? navigationError = null;
@@ -103,6 +105,11 @@ internal static class ChromeRun
             }
 
             nextId = await BrowserActions.RunAsync(cdp, options, timeout, nextId);
+            if (wheelTrace is not null)
+            {
+                var wheels = await wheelTrace.RunAsync(options, timeout, nextId, result.PageReadyMs);
+                nextId = wheels.NextId;
+            }
 
             var firstPaint = await EvaluateAsync(cdp, nextId++, BrowserScripts.FirstPaint, timeout);
             result.FirstUsablePaintMs = firstPaint.ValueKind == JsonValueKind.Number
@@ -111,6 +118,7 @@ internal static class ChromeRun
             var beforeSettle = ProcessTree.Sample(chrome.Id);
             await Task.Delay(options.SettleMs);
             await filmstripTask;
+            if (filmstrip is not null && wheelTrace is not null) await filmstrip.StopAsync(timeout);
             var afterSettle = ProcessTree.Sample(chrome.Id);
             result.AverageCpuPercent = CpuPercent(beforeSettle, afterSettle, options.SettleMs);
 
@@ -188,7 +196,7 @@ internal static class ChromeRun
                     BrowserScripts.EarlyScroll,
                     timeout + TimeSpan.FromSeconds(7)));
             }
-            await EvaluateAsync(cdp, nextId++, "window.scrollTo(0, 0); 0", timeout);
+            if (wheelTrace is null) await EvaluateAsync(cdp, nextId++, "window.scrollTo(0, 0); 0", timeout);
 
             var metrics = await cdp.CallAsync(nextId++, "Performance.getMetrics", null, timeout);
             result.JavascriptMs = Metric(metrics, "ScriptDuration") * 1_000;
@@ -240,40 +248,10 @@ internal static class ChromeRun
         Locale = options.Locale,
         FreshProfile = options.ProfileDirectory is null,
         CacheDisabled = options.CacheDisabled,
-        SettleMs = options.SettleMs
+        SettleMs = options.SettleMs,
+        NativeWheel = options.WheelAfterReady.Count > 0 ? new NativeWheelResult { RequestedInputs = options.WheelAfterReady.Count } : null
     };
 
-    private static Process StartChrome(Options options, string profile)
-    {
-        var start = new ProcessStartInfo
-        {
-            FileName = options.ChromePath,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden
-        };
-        foreach (var argument in new[]
-        {
-            "--headless",
-            "--mute-audio",
-            $"--user-data-dir={profile}",
-            "--remote-debugging-port=0",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-background-networking",
-            "--disable-component-update",
-            "--disable-extensions",
-            "--disable-sync",
-            $"--lang={options.Locale}",
-            $"--force-device-scale-factor={options.DeviceScaleFactor.ToString(CultureInfo.InvariantCulture)}",
-            $"--window-size={options.ViewportWidth},{options.ViewportHeight}",
-            "about:blank"
-        })
-        {
-            start.ArgumentList.Add(argument);
-        }
-        return Process.Start(start) ?? throw new InvalidOperationException("Chromium did not start.");
-    }
 
     private static async Task<int> WaitForDevToolsAsync(Process chrome, string profile,
         DateTime previousPortWrite, Stopwatch stopwatch, TimeSpan timeout)

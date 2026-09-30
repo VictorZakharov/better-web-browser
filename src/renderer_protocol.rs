@@ -97,11 +97,12 @@ pub use message::{
     RendererLimits, RendererMessage, RendererSessionId, RestrictionReport, TestCommand,
 };
 pub use presentation::{
-    AttributeDiagnostics, CustomPropertyDiagnostics, HistoryAction, MediaRuntimeReport,
-    NativeTextRejection, NodeDiagnostics, NodeIdentityDiagnostics, PageDiagnostics, PageLoadReport,
-    PresentedGlyphRaster, PresentedImage, PresentedLayout, RendererPresentation,
-    RendererRuntimeUpdate, ResourceDiagnostics, RuntimeReport, SelectorDiagnostics,
-    ShadowRootDiagnostics, StyleDiagnostics, StyleReport,
+    AttributeDiagnostics, CustomPropertyDiagnostics, HistoryAction, MAX_WHEEL_ACKNOWLEDGEMENTS,
+    MediaRuntimeReport, NativeTextRejection, NodeDiagnostics, NodeIdentityDiagnostics,
+    PageDiagnostics, PageLoadReport, PresentedGlyphRaster, PresentedImage, PresentedLayout,
+    RendererPresentation, RendererRuntimeUpdate, ResourceDiagnostics, RuntimeReport,
+    SelectorDiagnostics, ShadowRootDiagnostics, StyleDiagnostics, StyleReport,
+    WheelAcknowledgement, WheelDecision,
 };
 pub use state::{
     CookieMutation, CookieStateSnapshot, DocumentState, PolicyMutation, StateSnapshotApplied,
@@ -111,8 +112,8 @@ pub use state::{
 
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
-pub const PROTOCOL_MAJOR: u16 = 14;
-pub const PROTOCOL_MINOR: u16 = 11;
+pub const PROTOCOL_MAJOR: u16 = 15;
+pub const PROTOCOL_MINOR: u16 = 0;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

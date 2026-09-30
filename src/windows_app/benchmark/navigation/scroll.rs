@@ -17,9 +17,14 @@ impl BrowserState {
             return Err("benchmark wheel has no active renderer document".into());
         };
         let viewport_y = self.scroll_y as f32 / self.page_scale().max(f32::EPSILON);
+        if let Some(benchmark) = self.benchmark.as_mut() {
+            benchmark
+                .wheel_trace
+                .enqueue(document, sequence, delta, Instant::now());
+        }
         // Use the ordinary renderer default action: nested scrollports, cancellation and
         // native wheel animation must all participate, unlike an absolute scroll_to probe.
-        self.submit_renderer_input(DocumentInput::Wheel(WheelInput {
+        let accepted = self.submit_renderer_input(DocumentInput::Wheel(WheelInput {
             document,
             sequence,
             x: x as f32,
@@ -29,9 +34,13 @@ impl BrowserState {
             delta_y: delta as f32,
             modifiers: InputModifiers::default(),
             target: None,
-        }))
-        .then_some(())
-        .ok_or_else(|| "benchmark wheel input was rejected".into())
+        }));
+        if !accepted && let Some(benchmark) = self.benchmark.as_mut() {
+            benchmark.wheel_trace.rejected(document, sequence);
+        }
+        accepted
+            .then_some(())
+            .ok_or_else(|| "benchmark wheel input was rejected".into())
     }
 
     pub(super) unsafe fn scroll_benchmark_page(&mut self, css_y: i32) -> Result<(), String> {

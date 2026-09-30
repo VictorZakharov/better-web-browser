@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8"><title>Owned wheel mutation fixture</title>
+<style>
+html,body{margin:0}main{height:3000px;background:#eee}
+#pane{position:absolute;top:0;left:0;width:200px;height:100px;overflow:auto}
+#row{height:300px;background:red}
+</style><main id="main">Viewport extent</main><div id="pane"><div id="row">Nested content</div></div>
+<script>
+addEventListener('wheel',event=>{
+  if(event.target.id==='main'){
+    document.getElementById('main').style.background='green';
+    console.log('wheel recolored viewport');
+  }
+});
+</script>

@@ -9,7 +9,7 @@ internal static class FormNavigationActions
     {
         if (options.BackAfterReady)
         {
-            await Task.Delay(options.NavigationDelayMs);
+            await Task.Delay(options.NextActionDelayMs());
             var history = await cdp.CallAsync(nextId++, "Page.getNavigationHistory", new { }, timeout);
             var index = history.GetProperty("currentIndex").GetInt32();
             if (index < 1) throw new InvalidOperationException("Chromium Back has no previous entry.");
@@ -20,7 +20,7 @@ internal static class FormNavigationActions
         {
             if (options.SubmitControlValue is not { } text)
                 throw new ArgumentException("--submit-control-selector requires --submit-control-value.");
-            await Task.Delay(options.NavigationDelayMs);
+            await Task.Delay(options.NextActionDelayMs());
             var selected = await BrowserActions.EvaluateAsync(cdp, nextId++, $$"""
                 (() => {
                   const control = document.querySelector({{JsonSerializer.Serialize(selector)}});

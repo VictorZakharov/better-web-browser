@@ -90,6 +90,8 @@ mod stylesheets;
 mod table_scrolling;
 #[path = "live_runtime/websocket.rs"]
 mod websocket;
+#[path = "live_runtime/wheel_timing.rs"]
+mod wheel_timing;
 #[path = "live_runtime/window.rs"]
 mod window;
 #[path = "live_runtime/youtube.rs"]

@@ -9,6 +9,8 @@ mod layout;
 mod layout_sanitize;
 mod reader;
 mod runtime_codec;
+mod wheel;
+pub use wheel::{MAX_WHEEL_ACKNOWLEDGEMENTS, WheelAcknowledgement, WheelDecision};
 
 pub use diagnostics::{
     AttributeDiagnostics, CustomPropertyDiagnostics, NodeDiagnostics, NodeIdentityDiagnostics,
@@ -34,6 +36,7 @@ pub struct RuntimeReport {
     pub navigation_options: crate::navigation::request::NavigationOptions,
     pub viewport_scroll_y: Option<f32>,
     pub viewport_wheel_delta_y: f32,
+    pub wheel_acknowledgements: Vec<WheelAcknowledgement>,
     /// Ordered same-document updates and traversals from one renderer task.
     pub history_actions: Vec<HistoryAction>,
     /// The renderer has applied this browser History input and finished its popstate task.

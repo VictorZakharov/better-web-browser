@@ -12,7 +12,7 @@ internal static class BrowserActions
     {
         if (options.ActivateLinkAfterReady is { } expectedUrl)
         {
-            await Task.Delay(options.NavigationDelayMs);
+            await Task.Delay(options.NextActionDelayMs());
             var serializedUrl = JsonSerializer.Serialize(expectedUrl);
             var point = await EvaluateAsync(cdp, nextId++, $$"""
                 (() => {
@@ -41,7 +41,7 @@ internal static class BrowserActions
         }
         if (options.ClickAfterReady is { } click)
         {
-            await Task.Delay(options.NavigationDelayMs);
+            await Task.Delay(options.NextActionDelayMs());
             nextId = await DispatchClickAsync(cdp, click.X, click.Y, timeout, nextId);
         }
         nextId = await FormNavigationActions.RunAsync(cdp, options, timeout, nextId);

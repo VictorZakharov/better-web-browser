@@ -22,6 +22,8 @@ mod protocol_handlers;
 mod scroll_composition;
 #[path = "input/shadow_focus.rs"]
 mod shadow_focus;
+#[path = "input/wheel_timing.rs"]
+mod wheel_timing;
 use helpers::*;
 
 #[test]
