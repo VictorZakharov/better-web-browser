@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Owned hover and wheel workload</title>
+<style>
+  body { margin: 0; font: 16px Arial, sans-serif; }
+  header { position: fixed; top: 0; right: 0; padding: 8px; background: white; }
+  main { width: 1000px; margin: 80px 120px; }
+  .row { display: flex; height: 32px; border-bottom: 1px solid #ccc; }
+  .label { display: block; width: 500px; padding: 4px 12px; }
+  .status { display: block; width: 180px; padding: 4px 12px; }
+  .label:hover { color: #c00; background-color: #eef; }
+  .status:hover { color: #060; background-color: #efe; }
+</style>
+<header>Owned fixture: no network, author wheel cancellation, or scroll mutation</header>
+<main id="rows"></main>
+<script>
+  // Distinct neighboring hit targets change :hover while the page remains
+  // large enough to reveal whole-document work hidden by wheel-only tests.
+  // Keep listeners observational: rendering effects come from CSS alone.
+  window.inputEvents = [];
+  document.addEventListener('wheel', event => {
+    inputEvents.push(['wheel', event.isTrusted, event.deltaY]);
+  });
+  document.addEventListener('mousemove', event => {
+    inputEvents.push(['move', event.isTrusted, event.clientX, event.clientY]);
+  });
+  const markup = [];
+  for (let row = 0; row < 1200; row++) {
+    markup.push('<div class="row"><span class="label">Feature ' + row +
+      '</span><span class="status">Supported</span></div>');
+  }
+  document.getElementById('rows').innerHTML = markup.join('');
+</script>
+</html>

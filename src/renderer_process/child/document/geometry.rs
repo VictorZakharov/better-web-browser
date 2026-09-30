@@ -255,6 +255,9 @@ impl DocumentRuntime {
             );
         }
         self.compose_media_captions();
+        // Every completed full layout paints current computed colors, including
+        // pending hover colors absorbed by an unrelated resize/resource change.
+        self.color_paint.clear();
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_layout_geometry(&self.layout.node_bounds);
             runtime.set_hit_test_snapshot(&self.layout);

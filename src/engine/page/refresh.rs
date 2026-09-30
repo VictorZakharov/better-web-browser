@@ -6,9 +6,6 @@ use crate::engine::font::discover_font_faces;
 use crate::engine::invalidation::RenderInvalidation;
 use std::collections::HashSet;
 
-const MAX_INLINE_SVG_DIAGNOSTICS: usize = 8;
-const MAX_INLINE_SVG_DIAGNOSTIC_BYTES: usize = 512;
-
 pub(super) fn parse_immediate_refresh_target(content: &str) -> Option<&str> {
     let (delay, directive) = content.split_once(';')?;
     if delay.trim().parse::<f64>().ok()? > 0.0 {
@@ -310,6 +307,7 @@ impl Page {
                         recomputed_styles: count,
                         changed_styles: count,
                         layout_changed: true,
+                        non_deferable_paint_changes: true,
                         full_rebuild: true,
                         ..StyleRefreshStats::default()
                     },
@@ -359,52 +357,6 @@ impl Page {
             };
             if !self.resources.contains(&resource) {
                 self.resources.push(resource);
-            }
-        }
-    }
-
-    fn refresh_inline_svgs(&mut self) {
-        let svgs = Node::shadow_including_descendants(&self.dom.document)
-            .filter(|node| node.tag_name() == Some("svg"))
-            .take(MAX_INLINE_SVGS)
-            .collect::<Vec<_>>();
-        let active_ids = svgs.iter().map(|svg| svg.id()).collect::<HashSet<_>>();
-        let active_keys = svgs.iter().map(inline_svg_key).collect::<HashSet<_>>();
-        self.inline_svg_versions
-            .retain(|node, _| active_ids.contains(node));
-        self.images
-            .retain(|key, _| !key.starts_with("inline-svg:") || active_keys.contains(key));
-
-        for svg in svgs {
-            let key = inline_svg_key(&svg);
-            let styles = self.cached_styles.as_ref().map(|(_, _, styles)| styles);
-            let version = svg::inline_svg_version(&svg, styles);
-            let changed = self.inline_svg_versions.get(&svg.id()).copied() != Some(version);
-            if !changed {
-                continue;
-            }
-            self.inline_svg_versions.insert(svg.id(), version);
-            match decode_inline_svg(&svg, styles) {
-                Ok(image) => {
-                    let _ = self.install_decoded_image(key, image);
-                }
-                Err(error) => {
-                    self.images.remove(&key);
-                    if self
-                        .diagnostics
-                        .iter()
-                        .filter(|message| message.starts_with("inline SVG "))
-                        .count()
-                        < MAX_INLINE_SVG_DIAGNOSTICS
-                    {
-                        let message = format!("inline SVG {:032x}: {error}", svg.id().to_wire());
-                        self.diagnostics.push(
-                            bounded_utf8_prefix(&message, MAX_INLINE_SVG_DIAGNOSTIC_BYTES)
-                                .0
-                                .to_string(),
-                        );
-                    }
-                }
             }
         }
     }

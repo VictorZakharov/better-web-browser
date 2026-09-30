@@ -76,6 +76,7 @@ pub(super) unsafe fn run(app: &BrowserApplication) -> Result<(), String> {
         // for this message may service renderer work, a scroll frame or video.
         renderer_lifecycle::flush_due_for_message(app, message.hwnd);
         scrolling::frame_service::flush_for_message(app, message.hwnd);
+        runtime::flush_due_for_message(app, message.hwnd);
         video_presentation::flush_for_message(app, message.hwnd);
     }
     Ok(())

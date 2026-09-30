@@ -167,6 +167,7 @@ impl DocumentRuntime {
             geometry_observers_pending: false,
             resize_observers_pending: false,
             rendering: Default::default(),
+            color_paint: Default::default(),
         };
         runtime.record_parser_stylesheets(&[]);
 

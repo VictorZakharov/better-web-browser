@@ -2,6 +2,7 @@
 
 mod layout;
 mod paint;
+pub(super) mod scroll_commit;
 mod window;
 
 pub(super) use window::window_proc;
@@ -48,6 +49,7 @@ struct CompletedFrameSequence {
 pub(super) struct TabPerformance {
     frames: VecDeque<TimedDuration>,
     activity: VecDeque<ActivitySample>,
+    scroll_commits: scroll_commit::ScrollCommits,
     frame_sequence_started: Option<Instant>,
     frame_sequence_completed: Option<Instant>,
     last_frame_sequence: Option<CompletedFrameSequence>,
@@ -66,6 +68,7 @@ struct PerformanceSnapshot {
     layout_time: Duration,
     resource_time: Duration,
     frame_history: Vec<Duration>,
+    scroll_commits: scroll_commit::ScrollCommitSnapshot,
 }
 
 impl TabPerformance {
@@ -170,6 +173,7 @@ impl TabPerformance {
             long_frames,
             paint_time,
             frame_history,
+            scroll_commits: self.scroll_commits.snapshot(now),
             ..PerformanceSnapshot::default()
         };
         for sample in self

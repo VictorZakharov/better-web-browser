@@ -20,6 +20,8 @@ mod native_text;
 mod nested_scrolling;
 #[path = "input/protocol_handlers.rs"]
 mod protocol_handlers;
+#[path = "input/publication_diagnostics.rs"]
+mod publication_diagnostics;
 #[path = "input/scroll_composition.rs"]
 mod scroll_composition;
 #[path = "input/shadow_focus.rs"]

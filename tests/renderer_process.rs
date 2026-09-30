@@ -18,6 +18,8 @@ mod capture;
 mod checkable;
 #[path = "renderer_process/clock_backpressure.rs"]
 mod clock_backpressure;
+#[path = "renderer_process/color_paint.rs"]
+mod color_paint;
 #[path = "renderer_process/crypto.rs"]
 mod crypto;
 #[path = "renderer_process/csp_ordering.rs"]

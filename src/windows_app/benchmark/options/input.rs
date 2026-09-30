@@ -44,6 +44,19 @@ pub(super) fn scroll_input(value: &str) -> Result<BenchmarkNavigation, String> {
     Ok(BenchmarkNavigation::ScrollTo { y })
 }
 
+pub(super) fn pause_input(value: &str) -> Result<BenchmarkNavigation, String> {
+    let value = value.trim();
+    let error = "--pause-after-ready requires integer milliseconds from 0 to 60000";
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(error.into());
+    }
+    let milliseconds = value.parse::<u64>().map_err(|_| error.to_string())?;
+    if milliseconds > 60_000 {
+        return Err(error.into());
+    }
+    Ok(BenchmarkNavigation::Pause { milliseconds })
+}
+
 pub(super) fn point_input(value: &str, option: &str) -> Result<BenchmarkNavigation, String> {
     let Some((x, y)) = value.split_once(',') else {
         return Err(format!("{option} requires x,y"));
@@ -211,5 +224,85 @@ mod tests {
                 .is_err()
             );
         }
+    }
+
+    #[test]
+    fn pauses_are_bounded_and_keep_order_with_trusted_pointer_wheel_actions() {
+        for (value, milliseconds) in [("0", 0), (" 500 ", 500), ("60000", 60_000)] {
+            assert_eq!(
+                pause_input(value).unwrap(),
+                BenchmarkNavigation::Pause { milliseconds }
+            );
+        }
+        for value in [
+            "",
+            " ",
+            "-1",
+            "+1",
+            "1.5",
+            "1e3",
+            "60001",
+            "18446744073709551616",
+        ] {
+            assert!(pause_input(value).is_err(), "accepted {value:?}");
+        }
+        for arguments in [
+            vec!["--pause-after-ready", "500"],
+            vec!["--pause-after-ready"],
+        ] {
+            assert!(
+                LaunchOptions::parse_from(
+                    Instant::now(),
+                    arguments.into_iter().map(str::to_string)
+                )
+                .is_err()
+            );
+        }
+        let options = LaunchOptions::parse_from(
+            Instant::now(),
+            [
+                "--benchmark",
+                "about:blank",
+                "--output",
+                "result.json",
+                "--scroll-after-ready",
+                "1000",
+                "--move-after-ready",
+                "500,1300",
+                "--wheel-after-ready",
+                "500,300,126",
+                "--pause-after-ready",
+                "500",
+                "--move-after-ready",
+                "500,1426",
+                "--wheel-after-ready",
+                "500,300,-126",
+                "--pause-after-ready",
+                "0",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .unwrap();
+        assert_eq!(
+            options.benchmark.unwrap().navigation_targets,
+            [
+                BenchmarkNavigation::ScrollTo { y: 1000 },
+                BenchmarkNavigation::MovePoint { x: 500, y: 1300 },
+                BenchmarkNavigation::Wheel {
+                    x: 500,
+                    y: 300,
+                    delta: 126
+                },
+                BenchmarkNavigation::Pause { milliseconds: 500 },
+                BenchmarkNavigation::MovePoint { x: 500, y: 1426 },
+                BenchmarkNavigation::Wheel {
+                    x: 500,
+                    y: 300,
+                    delta: -126
+                },
+                BenchmarkNavigation::Pause { milliseconds: 0 },
+            ]
+        );
     }
 }

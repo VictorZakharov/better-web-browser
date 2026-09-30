@@ -242,7 +242,7 @@ impl BrowserState {
         if is_active {
             self.apply_current_pointer_cursor();
             self.update_active_tab_title(&url);
-            KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
+            self.stop_script_runtime_wakeup();
             self.update_history_buttons();
             if let Some(benchmark) = self.benchmark.as_mut()
                 && benchmark.navigation_started.is_none()

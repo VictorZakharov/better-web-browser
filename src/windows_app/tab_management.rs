@@ -271,7 +271,6 @@ impl BrowserState {
         self.processing_background_tab = true;
         self.background_tab_origin = Some(original);
         process(self);
-        KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
         for control in &self.page_controls {
             ShowWindow(control.window, SW_HIDE);
         }
@@ -284,7 +283,7 @@ impl BrowserState {
         };
         self.metrics.set_retained_draw_items(retained_items);
         self.update_scrollbar();
-        self.resume_script_runtime();
+        self.schedule_script_runtime_wakeup();
         let strip = Rect {
             left: 0,
             top: 0,

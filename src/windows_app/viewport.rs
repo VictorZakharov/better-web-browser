@@ -2,6 +2,7 @@
 
 use super::browser_navigation::HistoryMode;
 use super::paint_index::PaintIndex;
+use super::performance_monitor::scroll_commit::ScrollCommitTimings;
 use super::tab_state::TabFocus;
 use super::*;
 
@@ -119,6 +120,8 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn commit_scroll_position(&mut self, position: i32) {
+        let commit_started = Instant::now();
+        let mut timings = ScrollCommitTimings::default();
         self.note_scroll_activity();
         let previous = self.scroll_y;
         self.scroll_y = position;
@@ -135,7 +138,9 @@ impl BrowserState {
                 .is_some_and(|benchmark| benchmark.early_scroll.is_some())
                 || self.benchmark_wheel_needs_viewport_paint()
             {
+                let controls_started = Instant::now();
                 self.sync_page_control_positions();
+                timings.controls = controls_started.elapsed();
                 if sticky_changed {
                     self.invalidate_benchmark_scroll_surface();
                 }
@@ -179,18 +184,26 @@ impl BrowserState {
                 // Move native form controls after shifting the parent's retained pixels. Moving
                 // them first lets their old/new invalidations participate in the bit scroll and
                 // can leave a stale control-shaped patch behind.
+                let controls_started = Instant::now();
                 self.sync_page_control_positions();
+                timings.controls = controls_started.elapsed();
                 // WM_PAINT is low priority. Commit this invalidated scroll frame before the next
                 // post-load task can occupy the UI thread.
                 // <https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-updatewindow>
+                let paint_started = Instant::now();
                 UpdateWindow(self.window);
+                timings.paint = paint_started.elapsed();
             }
         } else {
             self.sync_page_control_positions();
         }
         self.route_renderer_scroll();
         if !self.processing_background_tab {
-            self.refresh_accessibility_document_bounds();
+            let accessibility_started = Instant::now();
+            let accessibility_active = self.refresh_accessibility_document_bounds();
+            timings.accessibility = accessibility_started.elapsed();
+            timings.total = commit_started.elapsed();
+            self.record_scroll_commit(timings, self.page_controls.len(), accessibility_active);
         }
     }
 

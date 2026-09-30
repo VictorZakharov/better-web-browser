@@ -238,3 +238,61 @@ does not establish a visible result or responsive wheel input.
 See [UI Events wheel behavior](https://www.w3.org/TR/uievents/#events-wheelevents),
 [DOM event-listener cancellation](https://dom.spec.whatwg.org/#observing-event-listeners),
 and [CSSOM View scrolling](https://drafts.csswg.org/cssom-view/#scrolling).
+
+## Hover changes between wheel inputs
+
+A wheel-only capture does not reproduce pointer designation changes as content
+moves under the mouse. Interleave pointer moves and wheels at the user's CSS
+viewport size before concluding that input is responsive. A smooth animation
+trace can coexist with delayed DOM/default-action decisions.
+
+The hidden wrapper accepts bounded ordered actions, without changing its
+fail-closed hidden launch guard:
+
+```powershell
+./scripts/run-hidden-benchmark.ps1 -Url $url -Output "$artifact/hover-wheel.json" `
+  -FreshProfile -WindowWidth 1567 -WindowHeight 830 -DeviceScaleFactor 1.25 `
+  -ActionSequence @('scroll:5000', 'pause:250', 'move:150,5300', `
+    'wheel:500,300,126', 'move:700,5300', 'wheel:500,300,-126') `
+  -InitialActionDelayMs 500 -NavigationDelayMs 10 -SettleMs 1500
+```
+
+Move coordinates are CSS document coordinates; wheel coordinates are CSS
+viewport coordinates. A pause schedules a hidden worker continuation, not a
+sleep on the UI thread. `tests/fixtures/wheel-hover-workload.html` provides a
+large, network-free document with neighboring color-changing targets and
+observational listeners.
+
+Verified color/background/underline input changes update computed styles and
+dispatch author events immediately, but may share one earliest 16 ms visual
+opportunity. Only visual invalidation is retained: wheel acknowledgements,
+navigation, storage, console messages and author scrolls are never held or
+replayed by this gate. Exact style comparison rejects geometry, stacking,
+visibility, hit eligibility, resources, custom properties, missing styles and
+generated-pseudo changes. Inline background-presence changes also fail closed.
+An ordinary full rebuild absorbs pending paint; this is bounded full-paint
+batching, not a retained display-item recoloring implementation.
+The 16 ms value is an admission deadline, not a guaranteed completed-paint
+latency: author script, renderer work and saturated IPC can still delay a frame.
+Anonymous text/Cdata runs retain their directly decorating parent's underline
+without making the element's CSS property inherited; broader ancestor-box
+decoration propagation is not implemented by this slice.
+
+Native runtime wakeups preserve an already promised deadline. Input dispatch
+also services due work because low-priority `WM_TIMER` messages can be starved.
+Temporary background-tab processing must not restart the foreground clock or
+replace its HWND timer. Inline SVG `currentColor` remains a real paint resource,
+not an excuse to skip raster refresh.
+
+F12 and incident reports distinguish cumulative **Paint (2 s total)** from
+moving native scroll-commit p95/maximum and control, accessibility and synchronous
+paint contributors. Input style work is measured even without diagnostic
+selectors; optional publication reasons must not themselves force a report.
+Hidden retained-surface paint timings do not measure ordinary visible-window
+`UpdateWindow` or active accessibility-provider work. A user's visible-window
+freeze therefore remains an acceptance failure even when hidden tests pass.
+
+The visual opportunity follows the [HTML rendering processing model](https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering).
+Underline eligibility uses [CSS Text Decoration's ink-overflow contract](https://www.w3.org/TR/css-text-decor-3/#text-decoration-overflow),
+not an assumption that paint-item topology is unchanged. Timer lifecycle follows
+[Win32 SetTimer replacement and interval bounds](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-settimer).

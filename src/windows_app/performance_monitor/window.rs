@@ -191,11 +191,18 @@ impl BrowserState {
             format_ms(snapshot.frame_maximum)
         );
         let _ = writeln!(report, "Long frames (>33 ms): {}", snapshot.long_frames);
-        let _ = writeln!(report, "Paint: {}", format_ms(snapshot.paint_time));
+        let _ = writeln!(
+            report,
+            "Paint: {} (total across rolling 2 s)",
+            format_ms(snapshot.paint_time)
+        );
         let _ = writeln!(report, "JavaScript: {}", format_ms(snapshot.script_time));
         let _ = writeln!(report, "Style: {}", format_ms(snapshot.style_time));
         let _ = writeln!(report, "Layout: {}", format_ms(snapshot.layout_time));
         let _ = writeln!(report, "Resources: {}", format_ms(snapshot.resource_time));
+        for line in snapshot.scroll_commits.diagnostic_lines() {
+            let _ = writeln!(report, "{line}");
+        }
         let _ = writeln!(
             report,
             "Frame intervals (ms, oldest to newest): {frame_intervals}"

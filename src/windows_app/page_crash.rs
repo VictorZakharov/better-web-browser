@@ -37,8 +37,8 @@ impl BrowserState {
             self.tabs.activate(original);
         }
         self.processing_background_tab = false;
-        KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
         if self.tabs.active_id() == id {
+            self.stop_script_runtime_wakeup();
             self.apply_current_pointer_cursor();
             self.set_status(&status);
         }

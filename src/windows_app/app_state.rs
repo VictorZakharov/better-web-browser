@@ -44,6 +44,7 @@ pub(super) struct BrowserState {
     pub(super) performance_detail_scroll: usize,
     pub(super) renderer_registry: SharedRendererRegistry,
     pub(super) renderer_monitor: RendererMonitor,
+    pub(super) runtime_wakeup: runtime::RuntimeWakeup,
     pub(super) media_viewport_width: f32,
     pub(super) outer_window_width: i32,
     pub(super) fullscreen: FullscreenState,
@@ -108,6 +109,7 @@ impl BrowserState {
             performance_detail_scroll: 0,
             renderer_registry: Arc::clone(&app.renderer_registry),
             renderer_monitor: RendererMonitor::default(),
+            runtime_wakeup: runtime::RuntimeWakeup::default(),
             media_viewport_width: 0.0,
             outer_window_width: 0,
             fullscreen: FullscreenState::default(),
@@ -264,6 +266,7 @@ impl Drop for BrowserState {
         unsafe {
             self.release_pointer_lock(false);
             self.stop_renderer_monitor();
+            self.stop_script_runtime_wakeup();
             KillTimer(self.window, ID_PERFORMANCE_MONITOR_TIMER);
             KillTimer(self.window, ID_SCROLL_ANIMATION_TIMER);
             let ids = self.tabs.iter().map(|tab| tab.id).collect::<Vec<_>>();

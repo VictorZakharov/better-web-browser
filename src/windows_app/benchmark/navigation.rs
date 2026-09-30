@@ -20,6 +20,7 @@ pub(in crate::windows_app) enum BenchmarkNavigation {
     MovePoint { x: i32, y: i32 },
     ScrollTo { y: i32 },
     Wheel { x: i32, y: i32, delta: i32 },
+    Pause { milliseconds: u64 },
     Key { key: String, code: String },
     SetControlValue { selector: String, value: String },
 }
@@ -117,6 +118,16 @@ impl BrowserState {
                     }
                     result
                 }
+                BenchmarkNavigation::Pause { milliseconds } => {
+                    // A pause owns a delayed continuation, not a UI-thread sleep.
+                    // Keep first-presentation callbacks from finishing or advancing
+                    // the sequence while the existing hidden worker waits.
+                    if let Some(benchmark) = self.benchmark.as_mut() {
+                        benchmark.navigation_scheduled = true;
+                    }
+                    post_navigation(self.window, Duration::from_millis(milliseconds));
+                    Ok(())
+                }
             };
             if let Err(error) = result {
                 if let Some(benchmark) = self.benchmark.as_mut() {
@@ -125,6 +136,10 @@ impl BrowserState {
                 }
                 self.schedule_benchmark_finish();
             }
+        } else {
+            // A final Pause deliberately resumes with an empty action queue.
+            // Complete only after that continuation, then retain normal settling.
+            self.schedule_benchmark_finish();
         }
     }
 

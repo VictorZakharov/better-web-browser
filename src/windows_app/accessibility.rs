@@ -94,8 +94,15 @@ impl BrowserState {
         });
     }
 
-    pub(super) unsafe fn refresh_accessibility_document_bounds(&self) {
-        self.submit_accessibility_update(|| tree::document_bounds_update(self));
+    pub(super) unsafe fn refresh_accessibility_document_bounds(&self) -> bool {
+        // Observe the lazy projection without activating accessibility merely
+        // to collect scroll diagnostics. An inactive adapter does no tree work.
+        let projected = std::cell::Cell::new(false);
+        self.submit_accessibility_update(|| {
+            projected.set(true);
+            tree::document_bounds_update(self)
+        });
+        projected.get()
     }
 
     fn submit_accessibility_update(&self, update: impl FnOnce() -> TreeUpdate) {

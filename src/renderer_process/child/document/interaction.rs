@@ -5,6 +5,7 @@ mod history;
 mod hit_testing;
 mod native_text;
 mod pointer;
+mod publication_diagnostics;
 mod rendering;
 mod scrolling;
 mod selection;
@@ -47,6 +48,7 @@ impl DocumentRuntime {
             });
         }
         self.last_input_sequence = input.sequence();
+        let input_kind = publication_diagnostics::input_kind(&input);
         self.media_activation.observe(&input);
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_audio_activation(self.media_activation.allows(1_000));
@@ -232,6 +234,7 @@ impl DocumentRuntime {
         }
         let mut presentation = self.presentation_after_user_input(
             outcome,
+            input_kind,
             force_accessibility_update,
             wheel_acknowledgement,
             connection,
@@ -385,19 +388,4 @@ fn key_code(key: &str) -> u32 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn hit_target_cursor_distinguishes_links_from_ordinary_content() {
-        assert_eq!(cursor_for_link(true), PointerCursor::Pointer);
-        assert_eq!(cursor_for_link(false), PointerCursor::Default);
-    }
-
-    #[test]
-    fn keyboard_compatibility_codes_match_native_windows_input() {
-        assert_eq!(key_code("k"), 75);
-        assert_eq!(key_code("ArrowRight"), 39);
-        assert_eq!(key_code("Escape"), 27);
-    }
-}
+mod tests;

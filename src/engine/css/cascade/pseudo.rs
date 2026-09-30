@@ -2,6 +2,12 @@
 
 use super::*;
 
+#[derive(Default)]
+pub(super) struct PseudoChanges {
+    pub layout_changed: bool,
+    pub paint_changed: bool,
+}
+
 impl StyleSet {
     pub(crate) fn placeholder_color(&self, origin: &NodeRef, backdrop: Color) -> Color {
         let style = self
@@ -38,18 +44,20 @@ impl StyleSet {
         &mut self,
         origin: &NodeRef,
         origin_style: &ComputedStyle,
-    ) -> bool {
+    ) -> PseudoChanges {
         if origin.element().is_none() {
-            return false;
+            return PseudoChanges::default();
         }
-        let mut layout_changed = false;
+        let mut changes = PseudoChanges::default();
         if origin.attr("placeholder").is_some() {
             let key = (origin.id(), PseudoElement::Placeholder);
             let style = self
                 .compute_pseudo_style(origin, PseudoElement::Placeholder, origin_style)
                 .0;
             // A retained control owns the placeholder paint, not a generated child box.
-            layout_changed |= self.pseudo_styles.get(&key) != Some(&style);
+            let changed = self.pseudo_styles.get(&key) != Some(&style);
+            changes.layout_changed |= changed;
+            changes.paint_changed |= changed;
             self.pseudo_styles.insert(key, style);
         }
         for pseudo in [PseudoElement::Before, PseudoElement::After] {
@@ -71,28 +79,37 @@ impl StyleSet {
             }
             // Matching a rule is not a geometry change. Compare materialized boxes as well as
             // their resolved text: attr() content can change without a computed-style change.
-            layout_changed |= match (previous, self.generated_nodes.get(&key)) {
+            match (previous, self.generated_nodes.get(&key)) {
                 (Some((style, text)), Some(node)) => {
-                    !style.layout_equivalent(&self.generated_styles[&node.id()])
-                        || text != node.text_content()
+                    let current = &self.generated_styles[&node.id()];
+                    let text_changed = text != node.text_content();
+                    changes.layout_changed |= !style.layout_equivalent(current) || text_changed;
+                    // Generated paint has no complete retained source ownership yet.
+                    changes.paint_changed |= &style != current || text_changed;
                 }
-                (None, None) => false,
-                _ => true,
-            };
+                (None, None) => {}
+                _ => {
+                    changes.layout_changed = true;
+                    changes.paint_changed = true;
+                }
+            }
         }
-        layout_changed
+        changes
     }
 
-    pub(super) fn remove_generated_pseudos(&mut self, origins: &HashSet<NodeId>) {
+    pub(super) fn remove_generated_pseudos(&mut self, origins: &HashSet<NodeId>) -> bool {
+        let mut removed = false;
         for &origin in origins {
             for pseudo in [
                 PseudoElement::Before,
                 PseudoElement::After,
                 PseudoElement::Placeholder,
             ] {
+                removed |= self.pseudo_styles.contains_key(&(origin, pseudo));
                 self.remove_pseudo(origin, pseudo);
             }
         }
+        removed
     }
 
     fn compute_pseudo_style(

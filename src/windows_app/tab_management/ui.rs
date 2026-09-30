@@ -18,7 +18,7 @@ impl BrowserState {
             better_web_browser::renderer_protocol::DocumentLifecycle::Hidden,
         );
         self.omnibox_text = window_text(self.controls.address);
-        KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
+        self.stop_script_runtime_wakeup();
         let focused = GetFocus();
         self.focus = if focused == self.controls.address {
             TabFocus::Address

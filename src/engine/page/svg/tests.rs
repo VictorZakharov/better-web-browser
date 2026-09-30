@@ -6,6 +6,39 @@ fn pixel(image: &DecodedImage, x: usize) -> &[u8] {
 }
 
 #[test]
+fn admitted_color_only_refresh_updates_svg_current_color_without_resource_discovery() {
+    use crate::engine::invalidation::{InvalidationImpact, RenderInvalidation};
+
+    let mut page = Page::parse(
+        "<style>section{color:red}section:hover{color:blue}</style><section><svg width=10 height=10><rect width=10 height=10 fill=currentColor /></svg></section>",
+        "https://example.test/",
+    );
+    page.refresh_resources_for_viewport(800.0, 600.0);
+    let svg = page.dom.elements_named("svg").next().unwrap();
+    let key = inline_svg_key(&svg);
+    assert_eq!(pixel(&page.images[&key], 5), [0, 0, 255, 255]);
+    let resources = page.resources.clone();
+    let section = page.dom.elements_named("section").next().unwrap();
+    Node::update_hover_path(&mut Vec::new(), Some(section));
+    let style = page.refresh_layout_styles_after_invalidation_for_viewport(
+        800.0,
+        600.0,
+        &RenderInvalidation {
+            roots: vec![page.dom.document.id()],
+            impact: InvalidationImpact::STYLE,
+            ..Default::default()
+        },
+    );
+    assert!(!style.layout_changed && !style.non_deferable_paint_changes);
+    page.refresh_inline_svg_colors();
+    assert_eq!(pixel(&page.images[&key], 5), [255, 0, 0, 255]);
+    assert_eq!(page.resources, resources);
+    let settled = page.images[&key].bgra.clone();
+    page.refresh_inline_svg_colors();
+    assert!(std::sync::Arc::ptr_eq(&settled, &page.images[&key].bgra));
+}
+
+#[test]
 fn svg_current_color_preserves_explicit_fills_and_tracks_ancestor_styles() {
     let mut page = Page::parse(
         r#"<style>section{color:blue}.changed{color:green}#local{color:yellow}</style>

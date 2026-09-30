@@ -220,7 +220,7 @@ unsafe fn dispatch_window_message(
             }
         }
         WM_TIMER if wparam == ID_RENDERER_RUNTIME_TIMER => {
-            state.pump_script_runtime();
+            state.service_due_script_runtime();
             0
         }
         WM_TIMER if wparam == ID_RENDERER_MONITOR_TIMER => {

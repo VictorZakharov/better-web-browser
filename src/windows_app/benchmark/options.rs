@@ -3,7 +3,7 @@
 use super::super::*;
 use super::{BenchmarkRun, diagnostics, navigation::BenchmarkNavigation};
 mod input;
-use input::{control_value_input, key_input, point_input, scroll_input, wheel_input};
+use input::{control_value_input, key_input, pause_input, point_input, scroll_input, wheel_input};
 
 pub(in crate::windows_app) struct LaunchOptions {
     pub(in crate::windows_app) startup_url: Option<String>,
@@ -156,6 +156,9 @@ impl LaunchOptions {
                 }
                 "--wheel-after-ready" => {
                     navigation_targets.push(wheel_input(&required(&mut arguments, &argument)?)?);
+                }
+                "--pause-after-ready" => {
+                    navigation_targets.push(pause_input(&required(&mut arguments, &argument)?)?);
                 }
                 "--navigation-delay-ms" => {
                     navigation_delay_ms =
