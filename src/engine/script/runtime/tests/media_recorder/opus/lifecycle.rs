@@ -67,7 +67,15 @@ fn immediate_opus_stop_and_restart_retires_slots_before_queued_events() {
         "{mimeType: 'audio/ogg'}",
         "for (let index = 0; index < 9; index++) { recorder.start(); recorder.stop(); }",
     );
-    run_queued_events(&mut runtime);
+    // The runtime may yield its bounded task turn before all 27 recorder events
+    // finish. Pump advertised immediate work, not a guessed number of turns.
+    for _ in 0..32 {
+        run_queued_events(&mut runtime);
+        if runtime.next_timer_delay() != Some(Duration::ZERO) {
+            break;
+        }
+    }
+    assert_ne!(runtime.next_timer_delay(), Some(Duration::ZERO));
     assert_eq!(attribute(&dom, "data-state"), "inactive");
     let expected = std::iter::repeat_n("start,data,stop", 9)
         .collect::<Vec<_>>()
