@@ -59,7 +59,7 @@ fn failed_new_container_advances_once_and_retires_its_old_resource() {
         );
         let fallback = page.resources[0].clone();
         assert_eq!(page.advance_media_source(&old), MediaSourceAdvance::Stale);
-        assert_eq!(page.resources, [fallback.clone()]);
+        assert_eq!(page.resources.as_slice(), std::slice::from_ref(&fallback));
         assert_eq!(
             page.advance_media_source(&fallback),
             MediaSourceAdvance::Waiting

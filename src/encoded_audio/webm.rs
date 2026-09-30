@@ -107,15 +107,11 @@ fn walk(
             }
             0x42f7 if parent == HEADER => require_uint(payload, 1, "EBML read version")?,
             0x42f2 if parent == HEADER => require_uint(payload, 4, "EBML maximum ID width")?,
-            0x42f3 if parent == HEADER => {
-                if !(1..=8).contains(&uint(payload)?) {
-                    return Err("EBML maximum size width is unsupported".into());
-                }
+            0x42f3 if parent == HEADER && !(1..=8).contains(&uint(payload)?) => {
+                return Err("EBML maximum size width is unsupported".into());
             }
-            0x4285 if parent == HEADER => {
-                if !(1..=2).contains(&uint(payload)?) {
-                    return Err("WebM read version is unsupported".into());
-                }
+            0x4285 if parent == HEADER && !(1..=2).contains(&uint(payload)?) => {
+                return Err("WebM read version is unsupported".into());
             }
             TRACK => {
                 if parent != TRACKS || policy.tracks != 0 {
