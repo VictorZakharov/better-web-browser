@@ -159,18 +159,20 @@ function Assert-OpusNinja {
     $rules = Read-OpusPolicyFile (Join-Path $BuildDirectory 'CMakeFiles/rules.ninja')
     # Only these two CMake-owned files supply rule/global defaults. An unexamined
     # include could otherwise define an apparently absent optional launcher.
+    # CMake's Ninja EncodePath uses backslashes for MSVC on Windows. Accept either
+    # separator only in these owned paths; never normalize or evaluate commands.
     $includes = [regex]::Matches($ninja, '(?m)^\s*(?:include|subninja)\s+([^\r\n]+)')
-    if ($includes.Count -ne 1 -or $includes[0].Value.Trim() -ne 'include CMakeFiles/rules.ninja' -or
+    if ($includes.Count -ne 1 -or $includes[0].Value.Trim() -cnotmatch '^include CMakeFiles[\\/]rules\.ninja$' -or
         $rules -match '(?m)^\s*(?:include|subninja)\s+') { throw 'Unknown Opus Ninja include/default ownership.' }
     foreach ($optional in [regex]::Matches($ninja + "`n" + $rules, '(?m)^\s*(LAUNCHER|CODE_CHECK)\s*=([^\r\n]*)')) {
         if ($optional.Groups[2].Value.Trim()) { throw "Nonempty or unevaluable Opus Ninja optional command: $($optional.Groups[1].Value)" }
     }
     # CMake emits concrete per-edge DEFINES/FLAGS; do not evaluate Ninja commands or expand arbitrary variables.
-    $blocks = [regex]::Matches($ninja, '(?m)^build CMakeFiles/opus\.dir/[^\r\n]+\.obj:[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*')
+    $blocks = [regex]::Matches($ninja, '(?m)^build CMakeFiles[\\/]opus\.dir[\\/][^\r\n]+\.obj:[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*')
     if ($blocks.Count -lt 3) { throw 'Ninja has no complete Opus C compile edge list.' }
     $sources = @()
     foreach ($block in $blocks) {
-        if ($block.Value -notmatch '^build CMakeFiles/opus\.dir/(.+\.c)\.obj:\s+(C_COMPILER__opus_\w+)\s+[^\r\n]+') { throw 'Unknown Opus Ninja compile edge.' }
+        if ($block.Value -notmatch '^build CMakeFiles[\\/]opus\.dir[\\/](.+\.c)\.obj:\s+(C_COMPILER__opus_\w+)\s+[^\r\n]+') { throw 'Unknown Opus Ninja compile edge.' }
         $source = $Matches[1]; $rule = $Matches[2]; $sources += $source
         $ruleBlocks = [regex]::Matches($rules, '(?m)^rule ' + [regex]::Escape($rule) + '\r?\n(?:[ \t]+[^\r\n]*\r?\n)*')
         if ($ruleBlocks.Count -ne 1 -or $ruleBlocks[0].Value -notmatch '(?m)^\s+command = (.+)$') { throw "Missing exact Opus Ninja rule: $rule" }
@@ -200,7 +202,7 @@ function Assert-OpusNinja {
         Assert-OpusCompilePolicy $definitions $options $source ($options -match '(?i)(?:^|\s)[/-]GS(?:\s|$)')
     }
     foreach ($core in @('opus_decoder.c', 'opus_encoder.c', 'bands.c')) {
-        if (-not @($sources | Where-Object { $_ -match ('(?:^|/)' + [regex]::Escape($core) + '$') }).Count) { throw "Missing Opus core Ninja source: $core" }
+        if (-not @($sources | Where-Object { $_ -match ('(?:^|[\\/])' + [regex]::Escape($core) + '$') }).Count) { throw "Missing Opus core Ninja source: $core" }
     }
     return (Join-Path $BuildDirectory 'opus.lib')
 }

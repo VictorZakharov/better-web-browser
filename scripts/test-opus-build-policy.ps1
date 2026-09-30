@@ -218,6 +218,67 @@ foreach ($unsafeRule in @(
     Expect-Rejection 'Unsafe flags or unknown variables in Ninja rule, not edge' { Assert-OpusBuildPolicy $out }
 }
 
+# CMake's Windows/MSVC EncodePath emits backslash filenames, not backslash flags.
+# Keep this separate realistic shape instead of replacing separators in whole commands.
+$windowsNinja = "# Windows MSVC Ninja policy fixture`nninja_required_version = 1.5`nCONFIGURATION = Release`ninclude CMakeFiles\rules.ninja`n`nbuild cmake_object_order_depends_target_opus: phony`n`n"
+foreach ($source in @('src/opus_decoder.c', 'src/opus_encoder.c', 'celt/bands.c', 'celt/x86/pitch_avx.c')) {
+    $path = $source.Replace('/', '\')
+    $flags = '-nologo -MD -Brepro /O2 /GS'
+    if ($source -match '_avx\.c$') { $flags += ' /arch:AVX2' }
+    $windowsNinja += "build CMakeFiles\opus.dir\$path.obj: C_COMPILER__opus_unscanned_Release " +
+        'G$:\owned\opus\' + "$path || cmake_object_order_depends_target_opus`n  DEFINES = $ninjaDefs`n  FLAGS = $flags`n" +
+        "  INCLUDES = -IG:\owned\opus\include`n  OBJECT_DIR = CMakeFiles\opus.dir`n  TARGET_COMPILE_PDB = CMakeFiles\opus.dir\opus.pdb`n`n"
+}
+$windowsRules = @'
+rule C_COMPILER__opus_unscanned_Release
+  deps = msvc
+  command = ${LAUNCHER}${CODE_CHECK}"C:\Program Files\VC\cl.exe" /nologo $DEFINES $INCLUDES $FLAGS /showIncludes /Fo$out /Fd$TARGET_COMPILE_PDB /FS -c $in
+  description = Building C object $out
+
+'@
+function Reset-WindowsNinjaFixture {
+    Reset-NinjaFixture
+    Write-Fixture (Join-Path $build 'build.ninja') $windowsNinja
+    Write-Fixture (Join-Path $build 'CMakeFiles/rules.ninja') $windowsRules
+}
+Reset-WindowsNinjaFixture
+Expect-Acceptance { Assert-OpusBuildPolicy $out }
+Write-Fixture (Join-Path $build 'build.ninja') $windowsNinja.Replace('include CMakeFiles\rules.ninja', 'include CMakeFiles/rules.ninja')
+Expect-Acceptance { Assert-OpusBuildPolicy $out }
+Write-Fixture (Join-Path $build 'build.ninja') $windowsNinja.Replace("`r`n", "`n").Replace("`n", "`r`n")
+Write-Fixture (Join-Path $build 'CMakeFiles/rules.ninja') $windowsRules.Replace("`r`n", "`n").Replace("`n", "`r`n")
+Expect-Acceptance { Assert-OpusBuildPolicy $out }
+foreach ($unsafeWindowsNinja in @(
+    $windowsNinja.Replace(' -DENABLE_HARDENING', ''),
+    $windowsNinja.Replace(' -DUSE_ALLOCA', ''),
+    $windowsNinja.Replace(' -DOPUS_HAVE_RTCD', ''),
+    $windowsNinja.Replace('-DOPUS_BUILD', '-DOPUS_BUILD -DNONTHREADSAFE_PSEUDOSTACK'),
+    $windowsNinja.Replace('-DOPUS_BUILD', '-DOPUS_BUILD -DOPUS_X86_PRESUME_AVX2'),
+    $windowsNinja.Replace('-DOPUS_BUILD', '-DOPUS_BUILD -DOPUS_X86_PRESUME_SSE4_1'),
+    $windowsNinja.Replace(' /GS', ' /GS-'),
+    $windowsNinja.Replace(' /GS', ''),
+    $windowsNinja.Replace('/O2', '/O2 /UENABLE_HARDENING'),
+    $windowsNinja.Replace('/O2', '/O2 /arch:AVX2'),
+    $windowsNinja.Replace('FLAGS = -nologo', 'FLAGS = ${UnsafeFlags} -nologo'),
+    $windowsNinja.Replace('src\opus_decoder.c', 'src\unrelated.c'),
+    $windowsNinja.Replace('include CMakeFiles\rules.ninja', 'include CMakeFiles\unknown.ninja'),
+    $windowsNinja.Replace('include CMakeFiles\rules.ninja', 'include CMakeFiles\..\CMakeFiles\rules.ninja'),
+    $windowsNinja.Replace('include CMakeFiles\rules.ninja', 'include ${OwnedRules}'),
+    ($windowsNinja + "include CMakeFiles\rules.ninja`n"),
+    ($windowsNinja + "include CMakeFiles/rules.ninja`n"),
+    $windowsNinja.Replace('include CMakeFiles\rules.ninja', 'subninja CMakeFiles\rules.ninja'),
+    $windowsNinja.Replace('include CMakeFiles\rules.ninja', '')
+)) {
+    Reset-WindowsNinjaFixture
+    Write-Fixture (Join-Path $build 'build.ninja') $unsafeWindowsNinja
+    Expect-Rejection 'Unsafe flags, incomplete sources, or unknown include in Windows Ninja' { Assert-OpusBuildPolicy $out }
+}
+foreach ($nestedWindowsDirective in @('include CMakeFiles\rules.ninja', 'include CMakeFiles\unknown.ninja', 'subninja CMakeFiles\rules.ninja')) {
+    Reset-WindowsNinjaFixture
+    Write-Fixture (Join-Path $build 'CMakeFiles/rules.ninja') ($windowsRules + "`n$nestedWindowsDirective`n")
+    Expect-Rejection 'Nested Windows Ninja include/default ownership' { Assert-OpusBuildPolicy $out }
+}
+
 $package = 'registry+https://github.com/rust-lang/crates.io-index#opusic-sys@0.7.5'
 $scriptMessage = @{ reason = 'build-script-executed'; package_id = $package; out_dir = $out; linked_libs = @('static=opus'); linked_paths = @('native=' + (Join-Path $out 'lib')) }
 $artifact = @{ reason = 'compiler-artifact'; package_id = $package; target = @{ name = 'opusic_sys'; kind = @('lib') }; features = @('bundled'); profile = @{ test = $false; debug_assertions = $true }; fresh = $true }
