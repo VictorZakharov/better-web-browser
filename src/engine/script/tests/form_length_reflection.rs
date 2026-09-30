@@ -119,3 +119,92 @@ fn reflected_lengths_bypass_author_methods_and_deliver_mutations() {
         "passed"
     );
 }
+
+#[test]
+fn reflected_lengths_preserve_script_values_and_utf16_selection_snapshots() {
+    let (dom, outcome) = execute_html(
+        r#"<body><input><textarea></textarea><output></output><script>
+            const assert = (condition, message) => { if (!condition) throw new Error(message); };
+            for (const element of [document.querySelector('input'), document.querySelector('textarea')]) {
+                element.setAttribute('maxlength', '3tail');
+                assert(element.maxLength === 3, 'integer-prefix reflection');
+                element.value = 'A💡BC';
+                element.setRangeText('XYZ', 1, 3, 'select');
+                assert(element.value === 'AXYZBC', 'maxlength must not restrict script writes');
+                assert(element.selectionStart === 1 && element.selectionEnd === 4,
+                    'replacement retains UTF-16 selection');
+                element.maxLength = 2;
+                assert(element.value === 'AXYZBC' && element.selectionStart === 1 && element.selectionEnd === 4,
+                    'length reflection must not change value or selection');
+                element.setAttribute = () => { throw Error('author attribute method'); };
+                element.minLength = 9;
+                assert(element.minLength === 9 && element.value === 'AXYZBC', 'internal reflection');
+            }
+            document.querySelector('output').textContent = 'passed';
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "passed"
+    );
+    assert_eq!(outcome.selection_actions.len(), 2);
+    for tag in ["input", "textarea"] {
+        let node = dom.elements_named(tag).next().unwrap();
+        let action = outcome
+            .selection_actions
+            .iter()
+            .find(|action| action.node == node.id())
+            .expect("the script's value and range must still mirror to the native control");
+        assert_eq!(action.value, "AXYZBC");
+        assert_eq!((action.selection_start, action.selection_end), (1, 4));
+    }
+}
+
+#[test]
+fn numeric_length_validity_and_native_selection_share_the_committed_edit() {
+    use super::form_user_edits::{native_edit_at, run};
+    use crate::renderer_protocol::TextSelectionDirection;
+
+    let (dom, mut runtime) = run(
+        r#"<input maxlength='3tail' value='A💡B'><output></output><script>
+            const field = document.querySelector('input');
+            field.addEventListener('beforeinput', () => {
+                if (field.maxLength !== 3 || field.selectionStart !== 4)
+                    throw Error('numeric reflection and pre-edit selection');
+                field.setSelectionRange(4, 4);
+            });
+            field.addEventListener('input', () => {
+                if (field.value !== 'A💡BX' || !field.validity.tooLong)
+                    throw Error('native length validation must use the new UTF-16 value');
+                field.setSelectionRange(1, 3, 'backward');
+                document.querySelector('output').textContent = 'passed';
+            });
+        </script>"#,
+    );
+    let field = dom.elements_named("input").next().unwrap();
+    let result = native_edit_at(
+        &mut runtime,
+        field.clone(),
+        "A💡BX",
+        "insertText",
+        Some((4, 4)),
+        (5, 5),
+    );
+    assert!(result.default_allowed);
+    assert!(result.rejected_text.is_none());
+    assert_eq!(field.input_value(), "A💡BX");
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "passed"
+    );
+    assert_eq!(result.outcome.selection_actions.len(), 1);
+    let selection = &result.outcome.selection_actions[0];
+    assert_eq!(selection.node, field.id());
+    assert_eq!(
+        selection.value, "A💡BX",
+        "the old beforeinput snapshot must be retired"
+    );
+    assert_eq!((selection.selection_start, selection.selection_end), (1, 3));
+    assert_eq!(selection.direction, TextSelectionDirection::Backward);
+}
