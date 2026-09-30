@@ -1,5 +1,8 @@
 use super::*;
-use better_web_browser::renderer_protocol::{NativeTextInput, NativeTextRejection, TextEditIntent};
+use better_web_browser::renderer_protocol::{
+    NativeTextInput, NativeTextRejection, TextEditIntent, TextSelectionDirection,
+    TextSelectionUpdate,
+};
 
 fn native(
     document: better_web_browser::renderer_protocol::DocumentId,
@@ -117,20 +120,24 @@ fn beforeinput_sees_caret_movement_and_selected_range_before_native_commit() {
 fn wait_for_rejection(
     session: &RendererSession,
     document: better_web_browser::renderer_protocol::DocumentId,
-) -> NativeTextRejection {
+) -> (NativeTextRejection, Vec<TextSelectionUpdate>) {
+    let mut selections = Vec::new();
     loop {
         match session.wait_for_event(Duration::from_secs(3)).unwrap() {
             RendererEvent::Presentation(presentation) if presentation.document == document => {
                 if let Some(rejection) = presentation.runtime.native_text_rejection {
-                    return rejection;
+                    return (rejection, selections);
                 }
             }
             RendererEvent::RuntimeUpdate(update) if update.document == document => {
                 if let Some(rejection) = update.runtime.native_text_rejection {
-                    return rejection;
+                    return (rejection, selections);
                 }
             }
             RendererEvent::Diagnostic { .. } => {}
+            RendererEvent::TextSelectionUpdate(selection) if selection.document == document => {
+                selections.push(selection);
+            }
             event => panic!("unexpected native text event: {event:?}"),
         }
     }
@@ -180,7 +187,11 @@ fn canceled_beforeinput_returns_rollback_and_fences_older_queued_edits() {
     session
         .send_input(native(initial.document, target, 1, 0, "ab"))
         .unwrap();
-    let rejected = wait_for_rejection(&session, initial.document);
+    let (rejected, selections) = wait_for_rejection(&session, initial.document);
+    assert!(
+        selections.is_empty(),
+        "canceled native ingress must not echo"
+    );
     assert_eq!(
         (rejected.sequence, rejected.generation, rejected.target),
         (1, 0, target)
@@ -292,10 +303,23 @@ fn canceled_beforeinput_rollback_uses_post_job_value_and_generation() {
     session
         .send_input(native(initial.document, target, 1, 0, "ab"))
         .unwrap();
-    let rejected = wait_for_rejection(&session, initial.document);
+    let (rejected, selections) = wait_for_rejection(&session, initial.document);
     assert_eq!((rejected.sequence, rejected.generation), (1, 0));
     assert_eq!(rejected.value, "micro");
-    assert_eq!((rejected.selection_start, rejected.selection_end), (5, 5));
+    // Web IDL unsigned-long conversion maps Infinity to zero; an end below
+    // start collapses both offsets to that end. The authored microtask emits
+    // a matching value/range mirror, not an echo of the rejected native text.
+    assert_eq!((rejected.selection_start, rejected.selection_end), (0, 0));
+    assert_eq!(selections.len(), 1);
+    let selection = &selections[0];
+    assert_eq!(
+        (selection.document, selection.target),
+        (initial.document, target)
+    );
+    assert_eq!(selection.value, "micro");
+    assert_eq!((selection.selection_start, selection.selection_end), (0, 0));
+    assert_eq!(selection.direction, TextSelectionDirection::None);
+    assert_eq!(selection.observed_input_sequence, 1);
 
     session
         .send_input(native(initial.document, target, 2, 0, "stale"))
