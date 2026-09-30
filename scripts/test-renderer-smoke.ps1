@@ -13,6 +13,8 @@ $contracts = @(
     'startup::startup_faults_fail_closed_within_the_deadline',
     'input::native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary',
     'input::hit_testing::native_hit_target_index_preserves_trusted_cancelled_wheels_on_a_long_plain_document',
+    'input::publication_diagnostics::scoped_effect_hover_preserves_immediate_style_stats_and_timing_without_diagnostics',
+    'input::publication_diagnostics::scoped_effect_hover_waits_for_tail_script_after_an_early_streamed_paint',
     'state::typed_state_snapshots_and_mutations_cross_the_renderer_boundary',
     'async_scripts::rendering::initial_stylesheets_block_paint_not_async_scripts_or_heartbeats',
     'backpressure::navigation_discards_a_queued_fetch_batch_from_the_replaced_document',
