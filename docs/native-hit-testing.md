@@ -163,6 +163,36 @@ These are independently labeled endpoints, not evidence of Breeze/Chrome speed
 parity or a ratio: Chrome frame receipt includes compositor capture and delivery,
 while Breeze reports hidden retained paint. No display scanout is measured.
 
+## Interrupting native wheel animation
+
+An allowed wheel default action in the opposite direction cancels unfinished
+native viewport travel and its fractional input residues. The new target starts
+at the currently painted position, not the previous animation's future target.
+Cancellation happens before pixel/notch quantization, so even a subpixel reverse
+gesture stops old travel; subsequent fractional input still accumulates normally.
+Same-direction input continues to accumulate, zero deltas remain no-ops, and
+document boundaries still clamp motion.
+
+Renderer output compaction preserves opposite nonzero wheel directions as
+separate ordered reports rather than netting their distances. This interrupts
+animation, not DOM event delivery: trusted listeners, `preventDefault()`, nested
+scrolling and authoritative absolute scroll requests retain their normal rules.
+Unit tests cover both directions, long backlogs, alternating gestures, fractional
+input, edge clamping, and the production first-frame response curve. Benchmark
+traces retain actual admission/first-paint viewport positions; missing evidence
+is null, never inferred from an acknowledgement or requested delta.
+
+Eight fresh hidden release runs used 1280×720 at 125% scale, `en-US`, an initial
+2,000 CSS-pixel scroll, eight 126 CSS-pixel wheel inputs in one direction, then
+one opposite input. Both directions and 15/30 ms spacing were tested on an owned
+long page and live HTML5test. All 72 inputs retained their verdicts, without
+omissions, unmatched acknowledgements, JavaScript errors or renderer exits.
+Every reverse input's first owning paint moved 30.4 CSS pixels in the new
+direction: 0.843–1.135 ms enqueue-to-paint on the owned page, and
+4.036–24.681 ms on HTML5test. These are small diagnostic samples of hidden
+retained paint, not monitor scanout or a Chrome speed comparison. The earlier
+hit-index before/after timings above were measured before this reversal follow-up.
+
 ## References
 
 - [DOM event dispatch](https://dom.spec.whatwg.org/#dispatching-events)

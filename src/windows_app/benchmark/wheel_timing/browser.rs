@@ -44,13 +44,15 @@ impl BrowserState {
         &mut self,
         new_motion: bool,
     ) {
-        if self.processing_background_tab || new_motion {
+        if self.processing_background_tab {
             return;
         }
+        let y = viewport_css_position(self.scroll_y, self.page_scale());
         if let Some(document) = self.navigation.active_document()
             && let Some(benchmark) = self.benchmark.as_mut()
         {
-            benchmark.wheel_trace.viewport_request(document, false);
+            benchmark.wheel_trace.viewport_position(document, y, false);
+            benchmark.wheel_trace.viewport_request(document, new_motion);
         }
     }
 
@@ -86,10 +88,14 @@ impl BrowserState {
 
     unsafe fn paint_benchmark_wheel(&mut self, document: DocumentId, revision: Option<u64>) {
         let result = self.paint_benchmark_frame_with_path();
+        let y = viewport_css_position(self.scroll_y, self.page_scale());
         let now = Instant::now();
         if let Some(benchmark) = self.benchmark.as_mut() {
             match result {
                 Ok((_, full_repaint)) => {
+                    if revision.is_none() {
+                        benchmark.wheel_trace.viewport_position(document, y, true);
+                    }
                     benchmark
                         .wheel_trace
                         .painted(document, revision, now, full_repaint)

@@ -1,5 +1,60 @@
 use super::*;
 
+#[test]
+fn viewport_direction_endpoints_are_observed_once_for_the_owning_pending_input() {
+    let now = Instant::now();
+    let mut trace = WheelTrace::default();
+    trace.enqueue(document(1), 1, -126, now);
+    trace.viewport_position(document(1), 10.0, false);
+    assert!(trace.samples[0].viewport_y_before.is_none());
+    trace.acknowledge(
+        document(1),
+        &[WheelAcknowledgement {
+            sequence: 1,
+            decision: WheelDecision::Viewport,
+            dispatch_micros: 10,
+        }],
+        None,
+        now,
+    );
+    trace.viewport_position(document(2), 100.0, false);
+    trace.viewport_position(document(1), f64::NAN, false);
+    assert!(trace.samples[0].viewport_y_before.is_none());
+    trace.viewport_position(document(1), 500.0, false);
+    trace.viewport_position(document(1), 501.0, false);
+    trace.viewport_position(document(1), 470.0, true);
+    trace.viewport_position(document(1), 460.0, true);
+    trace.painted(document(1), None, now, false);
+    trace.viewport_position(document(1), 400.0, false);
+    assert_eq!(trace.samples[0].viewport_y_before, Some(500.0));
+    assert_eq!(trace.samples[0].viewport_y_painted, Some(470.0));
+    assert!(
+        trace
+            .to_json()
+            .contains("\"viewport_y_before_request_css_px\":500.000")
+    );
+    assert!(
+        trace
+            .to_json()
+            .contains("\"viewport_y_at_first_paint_css_px\":470.000")
+    );
+}
+
+#[test]
+fn single_pixel_reverse_motion_remains_visible_at_large_document_offsets() {
+    let now = Instant::now();
+    let mut trace = WheelTrace::default();
+    trace.enqueue(document(1), 1, -1, now);
+    trace.acknowledge(document(1), &[ack(1, WheelDecision::Viewport)], None, now);
+    trace.viewport_position(document(1), viewport_css_position(20_000_000, 1.25), false);
+    trace.viewport_position(document(1), viewport_css_position(19_999_999, 1.25), true);
+    trace.painted(document(1), None, now, false);
+    let json: serde_json::Value = serde_json::from_str(&trace.to_json()).unwrap();
+    let sample = &json["samples"][0];
+    assert_eq!(sample["viewport_y_before_request_css_px"], 16_000_000.0);
+    assert_eq!(sample["viewport_y_at_first_paint_css_px"], 15_999_999.2);
+}
+
 fn document(id: u64) -> DocumentId {
     DocumentId::new(id).unwrap()
 }

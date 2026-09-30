@@ -45,7 +45,7 @@ fn all_default_action_verdicts_round_trip_in_input_order() {
 }
 
 #[test]
-fn coalescing_keeps_reversed_verdicts_and_refuses_overflow_without_losing_reports() {
+fn coalescing_delivers_reversed_verdicts_separately_without_cancelling_their_distance() {
     let mut first = sample();
     first.runtime.viewport_wheel_delta_y = 126.0;
     first
@@ -58,18 +58,22 @@ fn coalescing_keeps_reversed_verdicts_and_refuses_overflow_without_losing_report
     next.runtime
         .wheel_acknowledgements
         .push(ack(2, WheelDecision::Viewport));
-    let (merged, remainder) = first.coalesce(next).unwrap();
-    assert!(remainder.is_none());
-    assert_eq!(merged.runtime.viewport_wheel_delta_y, 0.0);
+    let (first, remainder) = first.coalesce(next).unwrap();
+    let next = remainder.expect("opposite wheel must not be netted against the old target");
+    assert_eq!(first.runtime.viewport_wheel_delta_y, 126.0);
+    assert_eq!(next.runtime.viewport_wheel_delta_y, -126.0);
     assert_eq!(
-        merged
-            .runtime
-            .wheel_acknowledgements
-            .iter()
-            .map(|value| value.sequence)
-            .collect::<Vec<_>>(),
-        [1, 2]
+        first.runtime.wheel_acknowledgements,
+        [ack(1, WheelDecision::Viewport)]
     );
+    assert_eq!(
+        next.runtime.wheel_acknowledgements,
+        [ack(2, WheelDecision::Viewport)]
+    );
+}
+
+#[test]
+fn coalescing_refuses_verdict_overflow_without_losing_reports() {
     let mut first = sample();
     first.runtime.wheel_acknowledgements = (1..=MAX_WHEEL_ACKNOWLEDGEMENTS as u64)
         .map(|sequence| ack(sequence, WheelDecision::Cancelled))

@@ -19,7 +19,8 @@ impl WheelTrace {
                     concat!(
                         "{{\"document\":{},\"sequence\":{},\"delta_y_css_px\":{},",
                         "\"decision\":{},\"status\":{},\"enqueue_to_decision_received_ms\":{},",
-                    "\"renderer_dispatch_ms\":{},\"enqueue_to_first_paint_ms\":{},\"first_paint_path\":{}}}"
+                    "\"renderer_dispatch_ms\":{},\"enqueue_to_first_paint_ms\":{},\"first_paint_path\":{},",
+                    "\"viewport_y_before_request_css_px\":{},\"viewport_y_at_first_paint_css_px\":{}}}"
                     ),
                     sample.document.get(),
                     sample.sequence,
@@ -29,7 +30,9 @@ impl WheelTrace {
                     millis(sample.decision_received),
                     millis(sample.dispatch),
                 millis(sample.first_paint),
-                sample.paint_path.map(json_string).unwrap_or_else(|| "null".into())
+                sample.paint_path.map(json_string).unwrap_or_else(|| "null".into()),
+                position(sample.viewport_y_before),
+                position(sample.viewport_y_painted)
                 )
             })
             .collect::<Vec<_>>()
@@ -42,6 +45,12 @@ impl WheelTrace {
             MAX_SAMPLES, self.omitted_inputs, self.unmatched_acknowledgements, samples
         )
     }
+}
+
+fn position(value: Option<f64>) -> String {
+    value
+        .map(|value| format!("{value:.3}"))
+        .unwrap_or_else(|| "null".into())
 }
 
 fn millis(value: Option<Duration>) -> String {

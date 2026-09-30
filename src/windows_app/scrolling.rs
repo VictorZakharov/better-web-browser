@@ -26,8 +26,22 @@ struct ScrollRequest {
 }
 
 impl ScrollAnimation {
+    fn reverses_pending(&self, position: i32, direction: i32) -> bool {
+        let remaining = self.target.unwrap_or(position).saturating_sub(position);
+        direction != 0 && remaining != 0 && direction.signum() != remaining.signum()
+    }
+
+    fn discard_input_remainders(&mut self) {
+        self.wheel_delta_remainder = 0;
+        self.pixel_remainder = 0.0;
+    }
+
     fn plan_distance(&self, position: i32, distance: i32, maximum: i32) -> ScrollRequest {
-        let base = self.target.unwrap_or(position);
+        let pending = self.target.unwrap_or(position);
+        // A reversing gesture cancels unpainted travel: the new direction must
+        // start at the actual position, not repay an accumulated future target.
+        let reversing = self.reverses_pending(position, distance);
+        let base = if reversing { position } else { pending };
         let target = base.saturating_add(distance).clamp(0, maximum);
         ScrollRequest {
             target,
@@ -51,6 +65,20 @@ impl ScrollAnimation {
     }
 }
 
+fn next_scroll_position(position: i32, target: i32, elapsed: Duration) -> i32 {
+    let remaining = target - position;
+    let progress = 1.0 - (-elapsed.as_secs_f64() / RESPONSE_TIME.as_secs_f64()).exp();
+    let mut step = (remaining as f64 * progress).round() as i32;
+    if step == 0 {
+        step = remaining.signum();
+    }
+    if step.abs() >= remaining.abs() {
+        target
+    } else {
+        position + step
+    }
+}
+
 impl BrowserState {
     pub(super) unsafe fn apply_script_viewport_scroll(&mut self, css_y: Option<f32>) {
         if let Some(y) = css_y.filter(|y| y.is_finite() && *y >= 0.0) {
@@ -62,6 +90,7 @@ impl BrowserState {
         if delta == 0 {
             return;
         }
+        self.cancel_pending_scroll_on_reversal(-delta.signum());
         self.pending_history_scroll_y = None;
         self.note_scroll_activity();
         let notches = self.scroll_animation.consume_wheel_delta(delta);
@@ -76,6 +105,7 @@ impl BrowserState {
             self.resolve_benchmark_wheel_viewport_request(false);
             return;
         }
+        self.cancel_pending_scroll_on_reversal(if delta > 0.0 { 1 } else { -1 });
         self.pending_history_scroll_y = None;
         let scale = self.page_scale();
         let distance = self.scroll_animation.consume_css_delta(delta, scale);
@@ -84,6 +114,18 @@ impl BrowserState {
             self.queue_scroll_distance(distance);
         } else {
             self.resolve_benchmark_wheel_viewport_request(false);
+        }
+    }
+
+    unsafe fn cancel_pending_scroll_on_reversal(&mut self, direction: i32) {
+        if self
+            .scroll_animation
+            .reverses_pending(self.scroll_y, direction)
+        {
+            // Detect the physical gesture before quantization: even a subpixel
+            // reversal must stop old travel. Its old residues are unpainted too.
+            self.cancel_scroll_animation();
+            self.scroll_animation.discard_input_remainders();
         }
     }
 
@@ -135,21 +177,11 @@ impl BrowserState {
                 |previous| now.saturating_duration_since(previous),
             )
             .min(MAX_FRAME_ELAPSED);
-        let remaining = target - self.scroll_y;
-        if remaining == 0 {
+        if target == self.scroll_y {
             self.cancel_scroll_animation();
             return;
         }
-        let progress = 1.0 - (-elapsed.as_secs_f64() / RESPONSE_TIME.as_secs_f64()).exp();
-        let mut step = (remaining as f64 * progress).round() as i32;
-        if step == 0 {
-            step = remaining.signum();
-        }
-        let next = if step.abs() >= remaining.abs() {
-            target
-        } else {
-            self.scroll_y + step
-        };
+        let next = next_scroll_position(self.scroll_y, target, elapsed);
         self.commit_scroll_position(next);
         if self.scroll_y == target {
             self.cancel_scroll_animation();
@@ -170,68 +202,4 @@ impl BrowserState {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fractional_css_wheel_distance_is_retained_across_inputs() {
-        let mut animation = ScrollAnimation::default();
-        let pixels: i32 = (0..16)
-            .map(|_| animation.consume_css_delta(0.25, 1.25))
-            .sum();
-        assert_eq!(pixels, 5);
-        let reversed: i32 = (0..16)
-            .map(|_| animation.consume_css_delta(-0.25, 1.25))
-            .sum();
-        assert_eq!(reversed, -5);
-        assert_eq!(animation.pixel_remainder, 0.0);
-    }
-
-    #[test]
-    fn unchanged_clamped_and_cancelled_targets_do_not_introduce_new_owned_motion() {
-        let mut animation = ScrollAnimation {
-            target: Some(100),
-            ..ScrollAnimation::default()
-        };
-        for distance in [0, 100, -80] {
-            assert!(!animation.plan_distance(20, distance, 100).introduces_motion);
-        }
-        let reversed = animation.plan_distance(20, -90, 100);
-        assert!(reversed.introduces_motion);
-        assert_eq!(reversed.target, 10);
-        animation.target = None;
-        assert!(!animation.plan_distance(100, 50, 100).introduces_motion);
-    }
-
-    #[test]
-    fn fractional_distance_keeps_its_remainder_without_owning_an_old_animation_tick() {
-        let mut animation = ScrollAnimation {
-            target: Some(100),
-            ..ScrollAnimation::default()
-        };
-        let distance = animation.consume_css_delta(0.25, 1.25);
-        assert_eq!(distance, 0);
-        assert!(!animation.plan_distance(20, distance, 100).introduces_motion);
-        assert_eq!(animation.consume_css_delta(0.25, 1.25), 1);
-        assert!(animation.plan_distance(20, 1, 200).introduces_motion);
-    }
-
-    #[test]
-    fn response_curve_advances_without_overshooting() {
-        let progress =
-            1.0 - (-(FRAME_TIMER_INTERVAL_MS as f64 / 1_000.0) / RESPONSE_TIME.as_secs_f64()).exp();
-        let step = (126.0 * progress).round() as i32;
-        assert!((29..=31).contains(&step));
-        assert!(step < 126);
-    }
-
-    #[test]
-    fn high_resolution_wheel_deltas_accumulate_to_one_notch() {
-        let mut animation = ScrollAnimation::default();
-        assert_eq!(animation.consume_wheel_delta(30), 0);
-        assert_eq!(animation.consume_wheel_delta(30), 0);
-        assert_eq!(animation.consume_wheel_delta(30), 0);
-        assert_eq!(animation.consume_wheel_delta(30), 1);
-        assert_eq!(animation.wheel_delta_remainder, 0);
-    }
-}
+mod tests;

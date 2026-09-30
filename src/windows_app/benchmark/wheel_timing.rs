@@ -9,6 +9,11 @@ use std::time::{Duration, Instant};
 
 const MAX_SAMPLES: usize = 128;
 
+fn viewport_css_position(physical_y: i32, scale: f32) -> f64 {
+    // f32 loses single-pixel movement at large document offsets.
+    f64::from(physical_y) / f64::from(scale.max(f32::EPSILON))
+}
+
 #[derive(Default)]
 pub(in crate::windows_app) struct WheelTrace {
     samples: Vec<Sample>,
@@ -26,6 +31,8 @@ struct Sample {
     decision: Option<WheelDecision>,
     nested_revision: Option<u64>,
     first_paint: Option<Duration>,
+    viewport_y_before: Option<f64>,
+    viewport_y_painted: Option<f64>,
     paint_path: Option<&'static str>,
     status: &'static str,
 }
@@ -53,6 +60,8 @@ impl WheelTrace {
             decision: None,
             nested_revision: None,
             first_paint: None,
+            viewport_y_before: None,
+            viewport_y_painted: None,
             paint_path: None,
             status: "unacknowledged",
         });
@@ -128,6 +137,23 @@ impl WheelTrace {
     pub(super) fn viewport_request(&mut self, document: DocumentId, new_motion: bool) {
         if !new_motion {
             self.no_motion(document, None);
+        }
+    }
+
+    // Positions are observed at default-action admission and successful retained
+    // paint, not inferred from delta or acknowledgement. Missing endpoints stay null.
+    pub(super) fn viewport_position(&mut self, document: DocumentId, y: f64, painted: bool) {
+        if !y.is_finite() {
+            return;
+        }
+        for sample in &mut self.samples {
+            if sample.document == document && sample.status == "awaiting_viewport_paint" {
+                if painted {
+                    sample.viewport_y_painted.get_or_insert(y);
+                } else {
+                    sample.viewport_y_before.get_or_insert(y);
+                }
+            }
         }
     }
 

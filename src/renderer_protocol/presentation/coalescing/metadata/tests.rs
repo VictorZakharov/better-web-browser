@@ -1,4 +1,5 @@
 use super::*;
+mod wheel_reversal;
 use crate::navigation::request::{FormPost, NavigationOptions};
 use crate::renderer_protocol::presentation::runtime_codec::encode_runtime;
 use crate::renderer_protocol::presentation::tests::sample;
