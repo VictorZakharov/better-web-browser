@@ -598,6 +598,15 @@ multipart byte delivery, or native selection synchronization. Focused tests
 and hidden integrations cover these bounded implementations. The batch adds
 no dependency or copied third-party code.
 
+The 2026-09-29 [form numeric-reflection](docs/form-numeric-reflection.md)
+batch rendered **487 / 588** in three identical hidden fresh-profile release
+captures, unchanged from the recorded preceding result. All three used the
+default Breeze identity, 1280×720 at 125% scale, `en-US`, and a 10-second settle;
+each returned HTTP 200, executed seven scripts, and had no JavaScript errors
+or renderer exits. Focused tests establish the corrected meter/progress bounds,
+numeric conversions, and text-length reflection; the score is not a conformance
+claim and no additional points are attributed to these changes.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -606,8 +615,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-29-upload-after-run1.json `
-  -Screenshot target/html5test/2026-09-29-upload-after-run1.png
+  -Output target/html5test/2026-09-29-numeric-after-run1.json `
+  -Screenshot target/html5test/2026-09-29-numeric-after-run1.png
 ```
 
 New releases must refresh or explicitly date these observations using the
