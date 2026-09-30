@@ -2,18 +2,18 @@
 
 mod event_batch;
 mod events;
+mod monitor;
 pub(super) mod notifications;
 
-use super::tabs::{IdentifiedTab, TabId};
+pub(super) use monitor::RendererMonitor;
+
+use super::tabs::TabId;
 use super::*;
 use better_web_browser::renderer_process::{
     RendererExit, RendererLaunchOptions, RendererSession, RendererSnapshot,
 };
 use better_web_browser::renderer_protocol::BrowsingContextId;
 use std::sync::{Arc, Mutex, mpsc};
-
-const RENDERER_MONITOR_INTERVAL_MS: u32 = 250;
-const ACTIVE_RENDERER_MONITOR_INTERVAL_MS: u32 = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RendererLifecyclePhase {
@@ -91,23 +91,6 @@ impl RendererTaskRegistry {
 pub(super) type SharedRendererRegistry = Arc<Mutex<RendererTaskRegistry>>;
 
 impl BrowserState {
-    pub(super) unsafe fn ensure_renderer_monitoring(&mut self) {
-        let needs_monitor = self
-            .tabs
-            .iter()
-            .any(|tab| tab.renderer_session.is_some() || tab.renderer_launch_receiver.is_some());
-        if needs_monitor {
-            SetTimer(
-                self.window,
-                ID_RENDERER_MONITOR_TIMER,
-                self.renderer_monitor_interval(),
-                null(),
-            );
-        } else {
-            KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
-        }
-    }
-
     pub(super) unsafe fn start_renderer(&mut self) {
         self.start_renderer_for(self.tabs.active_id());
     }
@@ -249,47 +232,14 @@ impl BrowserState {
             status.snapshot = Some(snapshot);
             status.launch_error = None;
         });
-        if SetTimer(
-            self.window,
-            ID_RENDERER_MONITOR_TIMER,
-            self.renderer_monitor_interval(),
-            null(),
-        ) == 0
-        {
+        if let Err(error) = self.update_renderer_monitor() {
             if let Some(tab) = self.tabs.get_mut(id) {
                 tab.renderer_session.take();
             }
-            self.record_renderer_launch_failure(id, last_error("start renderer monitor"));
+            self.record_renderer_launch_failure(id, error);
             return;
         }
         self.submit_pending_renderer_document_for(id);
-    }
-
-    pub(super) unsafe fn poll_renderers(&mut self) {
-        self.sync_sensor_visibility();
-        let ids = self
-            .tabs
-            .iter()
-            .map(IdentifiedTab::tab_id)
-            .collect::<Vec<_>>();
-        for id in ids {
-            self.poll_renderer(id);
-            self.enforce_first_presentation_deadline(id);
-        }
-        let has_live_or_pending = self
-            .tabs
-            .iter()
-            .any(|tab| tab.renderer_session.is_some() || tab.renderer_launch_receiver.is_some());
-        if !has_live_or_pending {
-            KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
-        } else {
-            SetTimer(
-                self.window,
-                ID_RENDERER_MONITOR_TIMER,
-                self.renderer_monitor_interval(),
-                null(),
-            );
-        }
     }
 
     pub(super) unsafe fn terminate_renderer_for(&mut self, id: TabId) {
@@ -319,36 +269,6 @@ impl BrowserState {
                 }
                 self.set_status(&format!("Could not terminate renderer: {error}"));
             }
-        }
-    }
-
-    fn renderer_monitor_interval(&self) -> u32 {
-        let now = Instant::now();
-        if self.tabs.iter().any(|tab| {
-            tab.navigation.is_loading()
-                || tab.video_presentation.polling_active(now)
-                || tab.renderer_work_pending
-                || tab.renderer_input_poll_budget > 0
-                || !tab.pending_renderer_inputs.is_empty()
-                || !tab.deferred_renderer_events.is_empty()
-                || tab
-                    .storage_subscription
-                    .as_ref()
-                    .is_some_and(|(_, subscription)| subscription.has_pending())
-                || self
-                    .app
-                    .broadcast_channels
-                    .borrow()
-                    .has_pending(tab.id.get())
-                || tab.renderer_next_timer.is_some()
-                || tab
-                    .renderer_session
-                    .as_ref()
-                    .is_some_and(|s| s.pending_events() > 0)
-        }) {
-            ACTIVE_RENDERER_MONITOR_INTERVAL_MS
-        } else {
-            RENDERER_MONITOR_INTERVAL_MS
         }
     }
 

@@ -1,5 +1,7 @@
 //! Hidden WheelTarget coverage uses ordinary event dispatch and native default scrolling.
 use super::*;
+#[path = "wheel_timing/continuous.rs"]
+mod continuous;
 
 const HTML: &str = include_str!("../fixtures/wheel-timing.html");
 

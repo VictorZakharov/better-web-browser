@@ -4,7 +4,7 @@ use super::browser_app::BrowserApplication;
 use super::browser_navigation::HistoryMode;
 use super::fullscreen::FullscreenState;
 use super::pointer_lock::PointerLockState;
-use super::renderer_lifecycle::SharedRendererRegistry;
+use super::renderer_lifecycle::{RendererMonitor, SharedRendererRegistry};
 use super::tab_drag::TabDragGesture;
 use super::tab_state::BrowserTab;
 use super::tabs::{TabCollection, TabId};
@@ -43,6 +43,7 @@ pub(super) struct BrowserState {
     pub(super) performance_panel_visible: bool,
     pub(super) performance_detail_scroll: usize,
     pub(super) renderer_registry: SharedRendererRegistry,
+    pub(super) renderer_monitor: RendererMonitor,
     pub(super) media_viewport_width: f32,
     pub(super) outer_window_width: i32,
     pub(super) fullscreen: FullscreenState,
@@ -106,6 +107,7 @@ impl BrowserState {
             performance_panel_visible: false,
             performance_detail_scroll: 0,
             renderer_registry: Arc::clone(&app.renderer_registry),
+            renderer_monitor: RendererMonitor::default(),
             media_viewport_width: 0.0,
             outer_window_width: 0,
             fullscreen: FullscreenState::default(),
@@ -261,7 +263,7 @@ impl Drop for BrowserState {
     fn drop(&mut self) {
         unsafe {
             self.release_pointer_lock(false);
-            KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
+            self.stop_renderer_monitor();
             KillTimer(self.window, ID_PERFORMANCE_MONITOR_TIMER);
             KillTimer(self.window, ID_SCROLL_ANIMATION_TIMER);
             let ids = self.tabs.iter().map(|tab| tab.id).collect::<Vec<_>>();

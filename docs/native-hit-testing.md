@@ -232,6 +232,18 @@ ownership. Eight further reversal runs on this head retained all 72 inputs:
 reverse first owning paints moved 30.4 CSS pixels in the new direction, taking
 0.781–1.113 ms on the owned page and 3.697–28.624 ms on HTML5test.
 
+A later final-head repetition caught a separate delivery pause: the renderer
+dispatched wheels in roughly 0.25–0.47 ms each, but 31 results were consumed
+together at about 335 ms, after the first target had finished. Repeated input
+had also reset the 16 ms renderer-monitor continuation timer. An arrival during
+a consumer's existing event turn can deliberately rely on that low-priority
+continuation, so resetting it on every input starved delivery until input
+stopped. Monitor ownership now retains the successfully installed interval;
+only an idle/active rate change, start or stop touches the native timer. Bounded
+FIFO turns and the coalesced notifier remain unchanged. Unit tests cover
+deadline preservation and failed installation, and an isolated hidden burst
+test requires continuous native commits and exact distance in both directions.
+
 ## References
 
 - [DOM event dispatch](https://dom.spec.whatwg.org/#dispatching-events)
