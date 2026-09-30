@@ -13,6 +13,10 @@ matrix after stricter one-track MIME/dictionary validation and output limits.
 | MP3, ordinary AAC/M4A, WAV, native FLAC, Ogg/Vorbis | Existing paths preserved | Existing paths preserved | Only the existing supported ISO-BMFF segment paths |
 | WebM / Opus or video | No | No | No |
 
+ADTS playback previously used the Windows Media Foundation fallback. This batch
+adds the bundled, bounded AAC-LC path to both consumers and brings ADTS to Web
+Audio; it does not describe ADTS playback itself as previously unavailable.
+
 WebM is admitted only as an audio-only, single Vorbis track. Ogg/FLAC must be a
 complete supported logical stream. AAC admission is restricted to the supported
 ADTS AAC-LC configuration. An unsupported or corrupt recognized source fails
