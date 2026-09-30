@@ -5,7 +5,9 @@ use super::*;
 mod changes;
 mod placeholder;
 mod rounded_clip;
+pub(in crate::windows_app) mod selection;
 pub(super) use changes::native_controls_changed;
+pub(super) use selection::WM_APP_PAGE_CONTROL_SELECTION;
 
 fn single_line_edit_geometry(content_height: i32, font_size: f32, scale: f32) -> (i32, i32) {
     // Win32 single-line EDIT places glyphs at the top of a tall client rect.
@@ -23,6 +25,12 @@ pub(super) struct PageControlWindow {
     pub(super) brush: Hbrush,
     /// Browser-owned validation bubble for interactively reported errors.
     pub(super) bubble: Hwnd,
+    pub(super) last_text: String,
+    pub(super) last_selection: (u32, u32),
+    pub(super) last_native_selection: (u32, u32),
+    pub(super) last_direction: better_web_browser::renderer_protocol::TextSelectionDirection,
+    pub(super) last_native_input_sequence: u64,
+    pub(super) last_renderer_selection_sequence: u64,
 }
 
 impl Drop for PageControlWindow {
@@ -46,29 +54,38 @@ impl BrowserState {
         self.page_controls.clear();
     }
 
-    pub(super) unsafe fn recreate_page_controls(&mut self) {
-        let focused = GetFocus();
+    pub(super) unsafe fn recreate_page_controls(&mut self, retain_current_document: bool) {
+        let focused = if retain_current_document {
+            GetFocus()
+        } else {
+            null_mut()
+        };
         let focused_node = self
             .page_controls
             .iter()
             .find(|control| control.window == focused)
             .map(|control| control.spec.node_id);
-        let focused_selection = self
+        let retained_edits = self
             .page_controls
             .iter()
-            .find(|control| control.window == focused)
-            .filter(|control| control.spec.kind != ControlKind::Select)
+            .filter(|control| retain_current_document && selection::is_text_edit(control.spec.kind))
             .map(|control| {
-                let mut start = 0_u32;
-                let mut end = 0_u32;
-                SendMessageW(
-                    control.window,
-                    EM_GETSEL,
-                    (&mut start as *mut u32) as usize,
-                    (&mut end as *mut u32) as isize,
-                );
-                (start, end)
-            });
+                let (value, start, end) =
+                    selection::edit_text_and_selection(control.window, control.spec.kind);
+                (
+                    control.spec.node_id,
+                    (
+                        control.spec.kind,
+                        control.spec.value.clone(),
+                        value,
+                        (start, end),
+                        control.last_direction,
+                        control.last_native_input_sequence,
+                        control.last_renderer_selection_sequence,
+                    ),
+                )
+            })
+            .collect::<HashMap<_, _>>();
         self.suppress_page_control_focus = true;
         self.destroy_page_controls();
         if self.surface != Surface::Page {
@@ -87,10 +104,16 @@ impl BrowserState {
         let dpi = self.dpi;
         for (index, spec) in specs.into_iter().enumerate() {
             let id = ID_PAGE_CONTROL_BASE + index;
+            let prior_edit = retained_edits
+                .get(&spec.node_id)
+                .filter(|old| old.0 == spec.kind);
+            let retained = prior_edit.filter(|old| old.1 == spec.value || old.2 == spec.value);
+            let edit_value = retained.map(|old| old.2.as_str()).unwrap_or(&spec.value);
             let (class, style, text) = match spec.kind {
-                ControlKind::Submit | ControlKind::Button | ControlKind::Reset => {
-                    ("BUTTON", BS_OWNERDRAW | WS_TABSTOP, spec.label.clone())
-                }
+                ControlKind::Submit
+                | ControlKind::Button
+                | ControlKind::Reset
+                | ControlKind::File => ("BUTTON", BS_OWNERDRAW | WS_TABSTOP, spec.label.clone()),
                 ControlKind::Select => (
                     "COMBOBOX",
                     CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL,
@@ -99,14 +122,14 @@ impl BrowserState {
                 ControlKind::Password => (
                     "EDIT",
                     WS_TABSTOP | ES_AUTOHSCROLL | ES_PASSWORD,
-                    spec.value.clone(),
+                    edit_value.to_string(),
                 ),
                 ControlKind::TextArea => (
                     "EDIT",
                     WS_TABSTOP | ES_MULTILINE | ES_AUTOVSCROLL,
-                    spec.value.clone(),
+                    selection::native_edit_text(edit_value),
                 ),
-                _ => ("EDIT", WS_TABSTOP | ES_AUTOHSCROLL, spec.value.clone()),
+                _ => ("EDIT", WS_TABSTOP | ES_AUTOHSCROLL, edit_value.to_string()),
             };
             let window = self.create_control(class, &text, style, id);
             if window.is_null() {
@@ -138,6 +161,46 @@ impl BrowserState {
             {
                 placeholder::install(window, &spec);
             }
+            let (
+                last_text,
+                last_selection,
+                last_direction,
+                last_native_input_sequence,
+                last_renderer_selection_sequence,
+            ) = if selection::is_text_edit(spec.kind) {
+                let (value, start, end) = if let Some(old) = retained {
+                    selection::apply_html_selection(
+                            window,
+                            spec.kind,
+                            old.3.0,
+                            old.3.1,
+                            old.4 == better_web_browser::renderer_protocol::TextSelectionDirection::Backward,
+                        );
+                    selection::edit_text_and_selection(window, spec.kind)
+                } else {
+                    selection::edit_text_and_selection(window, spec.kind)
+                };
+                (
+                    value,
+                    (start, end),
+                    retained.map_or(
+                        better_web_browser::renderer_protocol::TextSelectionDirection::None,
+                        |old| old.4,
+                    ),
+                    // A script value change can replace the native text, but it must not
+                    // make an older renderer selection update look fresh after relayout.
+                    prior_edit.map_or(0, |old| old.5),
+                    prior_edit.map_or(0, |old| old.6),
+                )
+            } else {
+                (
+                    String::new(),
+                    (0, 0),
+                    better_web_browser::renderer_protocol::TextSelectionDirection::None,
+                    0,
+                    0,
+                )
+            };
             let brush = CreateSolidBrush(spec.background_color.to_colorref());
             // A reported invalid control gets a browser-owned message bubble.
             // It is a plain STATIC window: no DOM node, no author styling.
@@ -155,24 +218,33 @@ impl BrowserState {
             } else {
                 null_mut()
             };
+            let last_native_selection = if selection::is_text_edit(spec.kind) {
+                selection::read_edit_selection(window)
+            } else {
+                (0, 0)
+            };
             self.page_controls.push(PageControlWindow {
                 window,
                 spec,
                 brush,
                 bubble,
+                last_text,
+                last_selection,
+                last_native_selection,
+                last_direction,
+                last_native_input_sequence,
+                last_renderer_selection_sequence,
             });
         }
         self.sync_page_control_positions();
         self.clip_transparent_page_controls();
+        self.apply_pending_text_selections();
         if let Some(node) = focused_node
             && let Some(control) = self
                 .page_controls
                 .iter()
                 .find(|control| control.spec.node_id == node)
         {
-            if let Some((start, end)) = focused_selection {
-                SendMessageW(control.window, EM_SETSEL, start as usize, end as isize);
-            }
             SetFocus(control.window);
             self.focus = TabFocus::PageControl(node);
         }
@@ -202,7 +274,10 @@ impl BrowserState {
             if visible {
                 let is_button = matches!(
                     control.spec.kind,
-                    ControlKind::Submit | ControlKind::Button | ControlKind::Reset
+                    ControlKind::Submit
+                        | ControlKind::Button
+                        | ControlKind::Reset
+                        | ControlKind::File
                 );
                 let [border_top, border_right, border_bottom, border_left] =
                     control.spec.border_width;
@@ -307,7 +382,7 @@ impl BrowserState {
             ControlKind::Select if notification == CBN_SELCHANGE => {
                 self.route_page_control_text(index)
             }
-            ControlKind::Submit | ControlKind::Button | ControlKind::Reset
+            ControlKind::Submit | ControlKind::Button | ControlKind::Reset | ControlKind::File
                 if notification == BN_CLICKED =>
             {
                 self.route_page_control_activation(index)

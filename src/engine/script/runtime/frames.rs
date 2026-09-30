@@ -291,6 +291,12 @@ impl ScriptRuntime {
             .clipboard_actions
             .append(&mut self.host.borrow_mut().pending_clipboard_actions);
         outcome
+            .file_picker_actions
+            .append(&mut self.host.borrow_mut().pending_file_picker_actions);
+        outcome
+            .selection_actions
+            .append(&mut self.host.borrow_mut().pending_selection_actions);
+        outcome
             .worker_actions
             .append(&mut self.host.borrow_mut().pending_worker_actions);
         outcome
@@ -317,6 +323,8 @@ impl ScriptRuntime {
         outcome.media_actions.clear();
         outcome.fullscreen_actions.clear();
         outcome.pointer_lock_actions.clear();
+        // Native page controls are projected only for the top-level document.
+        outcome.selection_actions.clear();
         if outcome.navigation_options.post.is_some()
             || !matches!(outcome.navigation_options.target.as_str(), "" | "_self")
         {

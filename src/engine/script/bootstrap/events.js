@@ -348,6 +348,7 @@
             }
             finishCheckableActivation(activation, event);
             activateLabel(target, event);
+            activateFileInput(target, event);
             activateNavigation(target, event);
             activatePopoverTarget(target, event);
             popoverPointerEvent(target, event);

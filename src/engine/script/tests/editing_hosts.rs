@@ -102,6 +102,29 @@ fn editing_commands_respect_cancelable_beforeinput_and_text_control_caret() {
 }
 
 #[test]
+fn legacy_editing_command_does_not_partially_edit_email_input() {
+    let (dom, outcome) = execute_html(
+        r#"<input type=email value="a@example.test"><output></output><script>
+            const input = document.querySelector('input');
+            input.focus();
+            const events = [];
+            input.addEventListener('beforeinput', () => events.push('beforeinput'));
+            input.addEventListener('input', () => events.push('input'));
+            input.addEventListener('change', () => events.push('change'));
+            document.querySelector('output').textContent = JSON.stringify([
+                document.queryCommandEnabled('insertText'),
+                document.execCommand('insertText', false, 'X'),
+                document.execCommand('delete'), input.value, events]);
+        </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        r#"[false,false,false,"a@example.test",[]]"#
+    );
+}
+
+#[test]
 fn contenteditable_reflects_enumerated_state_and_inherits_editability() {
     let (dom, outcome) = execute_html(
         r#"<div id=outer contenteditable><span id=child>text</span>

@@ -39,6 +39,7 @@ pub enum ControlKind {
     TextArea,
     Password,
     Search,
+    File,
     Select,
     Submit,
     Button,

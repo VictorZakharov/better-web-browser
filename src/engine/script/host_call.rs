@@ -8,6 +8,7 @@ mod canvas_presentation;
 pub(in crate::engine::script) mod clipboard;
 pub(super) mod compression_host;
 mod dom_queries;
+pub(in crate::engine::script) mod file_picker;
 mod font_host;
 pub(in crate::engine::script) mod geolocation;
 mod graph_audio;
@@ -24,6 +25,7 @@ pub(in crate::engine::script) mod sensor;
 pub(in crate::engine::script) mod speech;
 mod storage;
 mod task_scheduling;
+mod text_selection;
 mod user_capabilities;
 pub(super) fn dispatch_host_call(
     operation: &str,
@@ -68,6 +70,12 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     if let Some(value) = clipboard::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = file_picker::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = text_selection::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = super::wake_lock_host::dispatch(operation, args, state)? {

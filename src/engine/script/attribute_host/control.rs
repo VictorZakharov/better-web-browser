@@ -49,6 +49,14 @@ pub(super) fn dispatch(
         return Ok(Some(JsValue::undefined()));
     };
     let version = node.document_mutation_version();
+    if matches!(operation, "inputUserEdit" | "textareaUserEdit") {
+        // A beforeinput listener may have mirrored the pre-edit selection.
+        // Committing native text retires that old-value snapshot before input
+        // listeners can enqueue a selection against the newly committed value.
+        state
+            .pending_selection_actions
+            .retain(|action| action.node != node.id());
+    }
     let value = match operation {
         "inputValue" => js_string(node.input_value()),
         "inputSetValue" => {

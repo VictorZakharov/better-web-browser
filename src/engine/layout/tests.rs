@@ -5,6 +5,7 @@ use super::*;
 mod anonymous_blocks;
 mod controls;
 mod edge_cases;
+mod file_input;
 mod flex_sizing;
 mod general;
 mod pseudo;

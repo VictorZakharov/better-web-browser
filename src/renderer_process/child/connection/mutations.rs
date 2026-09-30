@@ -26,6 +26,7 @@ impl ChildConnection {
     pub(in crate::renderer_process::child) fn send_state_mutations(
         &mut self,
         document: DocumentId,
+        observed_input_sequence: u64,
         outcome: &mut crate::engine::ScriptOutcome,
     ) -> Result<(), String> {
         self.send_policy_updates(document, outcome)?;
@@ -99,6 +100,23 @@ impl ChildConnection {
                     source_url: write.source_url,
                     mutation: write.mutation,
                 }))
+                .map_err(|error| error.to_string())?;
+        }
+        for action in outcome.selection_actions.drain(..) {
+            let target = crate::renderer_protocol::DocumentNodeId::new(action.node.to_wire())
+                .map_err(|error| error.to_string())?;
+            self.writer
+                .send_renderer(&RendererMessage::TextSelectionUpdate(
+                    crate::renderer_protocol::TextSelectionUpdate {
+                        document,
+                        target,
+                        value: action.value,
+                        selection_start: action.selection_start,
+                        selection_end: action.selection_end,
+                        direction: action.direction,
+                        observed_input_sequence,
+                    },
+                ))
                 .map_err(|error| error.to_string())?;
         }
         Ok(())

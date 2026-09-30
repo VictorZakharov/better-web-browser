@@ -382,6 +382,7 @@ impl BrowserState {
                                         ControlKind::Submit
                                             | ControlKind::Button
                                             | ControlKind::Reset
+                                            | ControlKind::File
                                     );
                                     if !is_button {
                                         let [border_top, border_right, border_bottom, border_left] =

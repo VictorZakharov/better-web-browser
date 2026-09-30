@@ -2,6 +2,7 @@ mod capture;
 mod commands;
 mod deadlines;
 mod document;
+mod file_picker;
 mod incoming;
 mod navigation;
 mod stream;
@@ -95,6 +96,8 @@ pub(super) struct BrokerResources {
     pub(super) sensor_overflow: Arc<std::sync::atomic::AtomicBool>,
     pub(super) clipboard_updates: mpsc::Receiver<crate::renderer_protocol::ClipboardUpdate>,
     pub(super) clipboard_overflow: Arc<std::sync::atomic::AtomicBool>,
+    pub(super) file_picker_updates: mpsc::Receiver<crate::renderer_protocol::FilePickerUpdate>,
+    pub(super) file_picker_overflow: Arc<std::sync::atomic::AtomicBool>,
     pub(super) fetch_flow: Arc<super::flow::FetchFlow>,
     pub(super) events: super::events::EventSender,
     pub(super) wake: super::wake::BrokerWake,
@@ -178,6 +181,7 @@ impl Broker {
             self.process_media_capture_frames();
             self.process_sensor_updates();
             self.process_clipboard_updates();
+            self.process_file_picker_updates();
             self.process_navigation();
             if self.process_has_exited() {
                 self.finish_exit();

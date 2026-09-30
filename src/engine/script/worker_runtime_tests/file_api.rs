@@ -102,3 +102,25 @@ fn worker_file_reader_sync_parses_quoted_mime_parameters_before_charset() {
     let result: String = serde_json::from_str(&outcome.messages[0]).unwrap();
     assert_eq!(result, "é|é|é");
 }
+
+#[test]
+fn worker_formdata_has_private_entries_without_window_formdata_event() {
+    let (_, outcome) = run(r#"const data = new FormData();
+            data.append('field', 'value');
+            data.append('attachment', new File(['worker bytes'], 'worker.txt',
+                {type:'text/plain', lastModified:123}));
+            data.__entries = [['forged', 'not a real entry']];
+            postMessage([
+                typeof FormData, typeof FormDataEvent,
+                data.get('field'), data.get('attachment').name,
+                [...data.keys()].join(','), data.has('forged'),
+                typeof __formDataEntrySnapshot,
+                typeof __installFormDataFileFactory
+            ].join('|'));"#);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let result: String = serde_json::from_str(&outcome.messages[0]).unwrap();
+    assert_eq!(
+        result,
+        "function|undefined|value|worker.txt|field,attachment|false|undefined|undefined"
+    );
+}

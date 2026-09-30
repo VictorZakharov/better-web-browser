@@ -129,6 +129,8 @@ pub struct ScriptOutcome {
     pub notification_actions: Vec<ScriptNotificationAction>,
     pub protocol_handler_actions: Vec<ScriptProtocolHandlerAction>,
     pub clipboard_actions: Vec<ScriptClipboardAction>,
+    pub file_picker_actions: Vec<ScriptFilePickerAction>,
+    pub selection_actions: Vec<ScriptSelectionAction>,
     pub permission_actions: Vec<crate::renderer_protocol::PermissionRequest>,
     pub geolocation_actions: Vec<ScriptGeolocationAction>,
     pub media_device_actions: Vec<ScriptMediaDeviceAction>,
@@ -178,6 +180,24 @@ pub struct ScriptClipboardAction {
     pub request_id: u64,
     pub client: crate::fetch::RequestClient,
     pub action: crate::renderer_protocol::ClipboardAction,
+}
+
+#[derive(Clone, Debug)]
+pub struct ScriptFilePickerAction {
+    pub request_id: u64,
+    pub node: crate::engine::dom::NodeId,
+    pub client: crate::fetch::RequestClient,
+    pub multiple: bool,
+    pub accept: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScriptSelectionAction {
+    pub node: crate::engine::dom::NodeId,
+    pub value: String,
+    pub selection_start: u32,
+    pub selection_end: u32,
+    pub direction: crate::renderer_protocol::TextSelectionDirection,
 }
 
 #[derive(Clone, Debug)]
@@ -382,6 +402,12 @@ pub enum UserInputEvent {
         selection_end: u32,
         input_type: &'static str,
         pre_selection: Option<(u32, u32)>,
+    },
+    Selection {
+        target: NodeRef,
+        selection_start: u32,
+        selection_end: u32,
+        direction: crate::renderer_protocol::TextSelectionDirection,
     },
     Focus {
         target: Option<NodeRef>,

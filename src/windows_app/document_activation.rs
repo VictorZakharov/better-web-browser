@@ -300,7 +300,9 @@ impl BrowserState {
             self.update_scrollbar();
         }
         if controls_changed {
-            self.recreate_page_controls();
+            // Node IDs can be reused by the next document. Never carry an old EDIT value,
+            // selection, or native-input sequence into its first presentation.
+            self.recreate_page_controls(!first_presentation);
         }
         if let Some(rejection) = &presentation.runtime.native_text_rejection {
             self.apply_native_text_rejection(presentation.document, rejection);

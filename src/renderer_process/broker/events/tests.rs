@@ -183,6 +183,67 @@ fn cursor_results_coalesce_to_the_newest_sequence_per_document() {
 }
 
 #[test]
+fn selection_updates_keep_latest_node_state_without_crossing_documents() {
+    use crate::renderer_protocol::{DocumentNodeId, TextSelectionDirection, TextSelectionUpdate};
+    let (sender, receiver) = bounded();
+    let document = DocumentId::new(1).unwrap();
+    let other = DocumentId::new(2).unwrap();
+    let first_node = DocumentNodeId::new((7_u128 << 64) | 1).unwrap();
+    let second_node = DocumentNodeId::new((7_u128 << 64) | 2).unwrap();
+    let selection = |document, target, observed_input_sequence, selection_end| {
+        RendererEvent::TextSelectionUpdate(TextSelectionUpdate {
+            document,
+            target,
+            value: "abcdef".into(),
+            selection_start: 0,
+            selection_end,
+            direction: TextSelectionDirection::Backward,
+            observed_input_sequence,
+        })
+    };
+    sender
+        .try_send(selection(document, first_node, 3, 2))
+        .unwrap();
+    sender.try_send(selection(other, first_node, 1, 1)).unwrap();
+    sender
+        .try_send(selection(document, second_node, 1, 1))
+        .unwrap();
+    sender
+        .try_send(selection(document, first_node, 2, 1))
+        .unwrap();
+    sender
+        .try_send(selection(document, first_node, 4, 4))
+        .unwrap();
+    let RendererEvent::TextSelectionUpdate(other_update) = receiver.try_recv().unwrap() else {
+        panic!("expected separate-document selection");
+    };
+    assert_eq!(other_update.document, other);
+    let RendererEvent::TextSelectionUpdate(second_update) = receiver.try_recv().unwrap() else {
+        panic!("expected separate-node selection");
+    };
+    assert_eq!(second_update.target, second_node);
+    let RendererEvent::TextSelectionUpdate(latest) = receiver.try_recv().unwrap() else {
+        panic!("expected latest selection");
+    };
+    assert_eq!(latest.observed_input_sequence, 4);
+    assert_eq!(latest.selection_end, 4);
+    assert!(receiver.try_recv().is_err());
+
+    sender
+        .try_send(selection(document, first_node, 5, 5))
+        .unwrap();
+    sender
+        .try_send(selection(other, second_node, 2, 2))
+        .unwrap();
+    sender.discard_document(document);
+    assert!(matches!(
+        receiver.try_recv().unwrap(),
+        RendererEvent::TextSelectionUpdate(update) if update.document == other
+    ));
+    assert!(receiver.try_recv().is_err());
+}
+
+#[test]
 fn consecutive_fetch_batches_wait_for_browser_drain_without_failing() {
     let (sender, receiver) = bounded();
     let document = DocumentId::new(1).unwrap();
@@ -282,4 +343,32 @@ fn cancelled_transactional_fetch_batches_are_discarded_and_reusable() {
         RendererEvent::FetchBatch { document, requests }
             if document == replacement && requests.is_empty()
     ));
+}
+
+#[test]
+fn stale_file_picker_intent_is_discarded_on_navigation() {
+    let (sender, receiver) = bounded();
+    let stale = DocumentId::new(41).unwrap();
+    let current = DocumentId::new(42).unwrap();
+    let request = |document| {
+        RendererEvent::FilePickerRequest(crate::renderer_protocol::FilePickerRequest {
+            document,
+            request_id: 7,
+            node: DocumentNodeId::new((1u128 << 64) | 2).unwrap(),
+            client: crate::fetch::RequestClient {
+                id: 0,
+                opaque: false,
+            },
+            multiple: false,
+            accept: String::new(),
+        })
+    };
+    sender.try_send(request(stale)).unwrap();
+    sender.discard_document(stale);
+    sender.try_send(request(current)).unwrap();
+    assert!(matches!(
+        receiver.try_recv().unwrap(),
+        RendererEvent::FilePickerRequest(value) if value.document == current
+    ));
+    assert!(receiver.try_recv().is_err());
 }

@@ -178,3 +178,38 @@ fn multipart_form_data_serializes_empty_lists_and_rejects_missing_payloads() {
         "true|true|0|TypeError"
     );
 }
+
+#[test]
+fn multipart_body_uses_private_entries_and_file_metadata_after_author_tampering() {
+    let (dom, outcome) = execute_html(
+        r#"<body><div>pending</div><script>
+            (async () => {
+                const file = new File([new Uint8Array([0, 255, 42])], 'safe.bin',
+                    {type:'application/octet-stream'});
+                const form = new FormData();
+                form.append('upload', file);
+                form.append('token', 'present');
+                form.__entries = [['forged', 'wrong']];
+                form[Symbol.iterator] = function* () { yield ['forged', 'wrong']; };
+                Object.defineProperty(file, 'name', {
+                    get() { throw new Error('author file name getter'); }
+                });
+                const response = new Response(form);
+                const bytes = new Uint8Array(await response.arrayBuffer());
+                const text = new TextDecoder().decode(bytes);
+                document.querySelector('div').textContent = [
+                    text.includes('name="upload"; filename="safe.bin"'),
+                    text.includes('name="token"'),
+                    !text.includes('forged'),
+                    bytes.some((byte, index) => byte === 0 &&
+                        bytes[index + 1] === 255 && bytes[index + 2] === 42)
+                ].join('|');
+            })();
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "true|true|true|true"
+    );
+}

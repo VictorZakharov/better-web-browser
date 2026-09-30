@@ -61,8 +61,11 @@
             // The reset event is trusted even when reset() is script-called.
             if (!this.dispatchEvent(markTrusted(new Event('reset', { bubbles: true, cancelable: true })))) return;
             host('formResetControls', nodeId(this));
-            for (const control of this.getRootNode().querySelectorAll('input')) {
-                if (control.type === 'file' && control.form === this) inputFileSelections.delete(control);
+            for (const control of this.getRootNode().querySelectorAll('input,textarea')) {
+                if (control.form !== this) continue;
+                if (control instanceof HTMLInputElement && control.type === 'file')
+                    invalidateInputFileSelection(control);
+                else reconcileTextSelectionValue(control);
             }
             // Reset restores live values without value setters, so pattern
             // verdicts cached from pre-reset values would go stale by their

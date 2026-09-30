@@ -72,6 +72,7 @@ impl EventSender {
                 | RendererEvent::MediaCaptureRequest(_)
                 | RendererEvent::SensorRequest(_)
                 | RendererEvent::ClipboardRequest(_)
+                | RendererEvent::FilePickerRequest(_)
         ) {
             self.send_lossless(event)
         } else {
@@ -124,6 +125,20 @@ impl EventSender {
                     !matches!(queued, RendererEvent::PointerCursor(previous) if previous.document == next.document)
                 });
                 RendererEvent::PointerCursor(next)
+            }
+            RendererEvent::TextSelectionUpdate(next) => {
+                if state.events.iter().any(|queued| {
+                    matches!(queued, RendererEvent::TextSelectionUpdate(previous)
+                        if previous.document == next.document && previous.target == next.target
+                            && previous.observed_input_sequence > next.observed_input_sequence)
+                }) {
+                    return Ok(());
+                }
+                state.events.retain(|queued| {
+                    !matches!(queued, RendererEvent::TextSelectionUpdate(previous)
+                        if previous.document == next.document && previous.target == next.target)
+                });
+                RendererEvent::TextSelectionUpdate(next)
             }
             event => event,
         };
@@ -233,6 +248,10 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
             document,
             ..
         })
+        | RendererEvent::TextSelectionUpdate(crate::renderer_protocol::TextSelectionUpdate {
+            document,
+            ..
+        })
         | RendererEvent::NavigationRequested { document, .. } => Some(*document),
         RendererEvent::Presentation(presentation) => Some(presentation.document),
         RendererEvent::VideoFrame(update) => Some(update.identity.document),
@@ -252,6 +271,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::MediaCaptureRequest(request) => Some(request.document),
         RendererEvent::SensorRequest(request) => Some(request.document),
         RendererEvent::ClipboardRequest(request) => Some(request.document),
+        RendererEvent::FilePickerRequest(request) => Some(request.document),
         RendererEvent::FullscreenRequested(request) => Some(request.document),
         RendererEvent::PointerLockRequested(request) => Some(request.document),
         RendererEvent::WakeLockRequested(request) => Some(request.document),

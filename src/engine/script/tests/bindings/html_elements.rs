@@ -117,7 +117,9 @@ fn exposes_dataset_and_core_html_form_interfaces() {
             input.type = 'email';
             input.required = true;
             input.value = 'not-an-email';
-            input.selectionDirection = 'backward';
+            let emailSelectionRejected = false;
+            try { input.selectionDirection = 'backward'; }
+            catch (error) { emailSelectionRejected = error.name === 'InvalidStateError'; }
             input.formAction = '/submit';
             input.formMethod = 'post';
             input.formNoValidate = true;
@@ -144,6 +146,8 @@ fn exposes_dataset_and_core_html_form_interfaces() {
             textarea.minLength = 2;
             textarea.maxLength = 20;
             textarea.wrap = 'hard';
+            textarea.value = 'abcd';
+            textarea.setSelectionRange(1, 3, 'backward');
             const select = document.createElement('select');
             select.required = true;
             const fieldset = document.createElement('fieldset');
@@ -163,13 +167,14 @@ fn exposes_dataset_and_core_html_form_interfaces() {
                 data.dataset instanceof DOMStringMap && sameDataset && data.dataset.userId === '42' &&
                 data.getAttribute('data-user-id') === '42' && !data.hasAttribute('data-display-name') &&
                 datasetKeys === 'displayName,userId' && input instanceof HTMLInputElement &&
-                input.selectionDirection === 'backward' && !input.validity.valid &&
+                input.selectionDirection === null && emailSelectionRejected && !input.validity.valid &&
                 input.form === form && input.labels[0] === label && form.elements[0] === input &&
                 input.formAction === 'https://example.com/submit' && input.formMethod === 'post' &&
                 input.formNoValidate && datalist instanceof HTMLDataListElement &&
                 input.list === datalist && datalist.options.length === 1 &&
                 textarea instanceof HTMLTextAreaElement && textarea.minLength === 2 &&
                 textarea.maxLength === 20 && textarea.wrap === 'hard' &&
+                textarea.selectionDirection === 'backward' &&
                 select instanceof HTMLSelectElement && select.required &&
                 fieldset instanceof HTMLFieldSetElement && fieldset.disabled &&
                 output instanceof HTMLOutputElement && output.value === 'ready' &&

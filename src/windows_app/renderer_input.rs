@@ -1,8 +1,12 @@
 //! Browser-to-renderer native input translation and document-scoped sequencing.
 
+#[cfg(test)]
+mod activation_tests;
 mod keyboard;
+mod native_text;
 mod pointer;
 mod queue;
+mod selection;
 mod wheel;
 
 pub(super) use pointer::current_buttons;
@@ -117,9 +121,15 @@ impl BrowserState {
             modifiers: pointer_modifiers(wparam),
             target: None,
         }));
+        // HTML activation starts on a trusted mouse pointerdown. Do not mint a
+        // second activation on its matching pointerup after an API consumes it.
         if accepted
-            && matches!(phase, PointerPhase::Up | PointerPhase::Activate)
-            && button == PointerButton::Primary
+            && pointer_starts_activation(
+                phase,
+                button,
+                document,
+                &mut self.primary_pointer_down_activation,
+            )
         {
             self.transient_activation = Some((document, Instant::now()));
         }
@@ -162,26 +172,27 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn route_page_control_text(&mut self, index: usize) {
+        // Until the new document's first presentation, the old page's HWNDs can still be
+        // visible. Never address their node IDs to the replacement renderer.
+        if self.renderer_revision == 0 || self.suppress_page_control_focus {
+            return;
+        }
         let Some(control) = self.page_controls.get(index) else {
             return;
         };
         let window = control.window;
         let spec = control.spec.clone();
-        let value = if spec.kind == ControlKind::Select {
+        let (value, selection_start, selection_end) = if spec.kind == ControlKind::Select {
             let selected = SendMessageW(window, CB_GETCURSEL, 0, 0);
-            (selected >= 0)
+            let value = (selected >= 0)
                 .then_some(selected as usize)
                 .and_then(|selected| spec.options.get(selected))
                 .map(|option| option.value.clone())
-                .unwrap_or_default()
-        } else {
-            window_text(window)
-        };
-        let (selection_start, selection_end) = if spec.kind == ControlKind::Select {
+                .unwrap_or_default();
             let end = value.encode_utf16().count().min(u32::MAX as usize) as u32;
-            (end, end)
+            (value, end, end)
         } else {
-            edit_selection(window)
+            page_controls::selection::edit_text_and_selection(window, spec.kind)
         };
         let Some(target) = wire_node(spec.node_id) else {
             return;
@@ -193,7 +204,7 @@ impl BrowserState {
             document,
             sequence,
             target,
-            value,
+            value: value.clone(),
             selection_start,
             selection_end,
         };
@@ -210,51 +221,24 @@ impl BrowserState {
         } else {
             DocumentInput::Text(text)
         };
-        let _ = self.submit_renderer_input(input);
-    }
-
-    pub(super) unsafe fn apply_native_text_rejection(
-        &mut self,
-        document: better_web_browser::renderer_protocol::DocumentId,
-        rejection: &better_web_browser::renderer_protocol::NativeTextRejection,
-    ) {
-        if !self.navigation.owns_document(document)
-            || rejection.generation != self.native_text_generation
-            || rejection.sequence == 0
-            || rejection.sequence > self.renderer_input_sequence
+        let accepted = self.submit_renderer_input(input);
+        if accepted
+            && spec.kind != ControlKind::Select
+            && let Some(control) = self.page_controls.get_mut(index)
         {
-            return;
-        }
-        let Some(next_generation) = self.native_text_generation.checked_add(1) else {
-            self.contain_page_engine_failure(self.id, "native text generation overflow".into());
-            return;
-        };
-        self.pending_renderer_inputs
-            .discard_native_text_generation(document, rejection.generation);
-        self.native_text_generation = next_generation;
-        let window = self
-            .page_controls
-            .iter()
-            .find(|control| wire_node(control.spec.node_id) == Some(rejection.target))
-            .map(|control| control.window);
-        if let Some(window) = window {
-            // Win32 EN_CHANGE is synchronous even for programmatic SetWindowText.
-            // Suppress that echo; the renderer's DOM remains the authority.
-            self.suppress_page_control_edit = true;
-            if window_text(window) != rejection.value {
-                set_window_text(window, &rejection.value);
-            }
-            SendMessageW(
-                window,
-                EM_SETSEL,
-                rejection.selection_start as usize,
-                rejection.selection_end as isize,
-            );
-            self.suppress_page_control_edit = false;
+            control.last_text = value;
+            control.last_selection = (selection_start, selection_end);
+            control.last_native_selection = page_controls::selection::read_edit_selection(window);
+            control.last_direction =
+                better_web_browser::renderer_protocol::TextSelectionDirection::None;
+            control.last_native_input_sequence = sequence;
         }
     }
 
     pub(super) unsafe fn route_page_control_focus(&mut self, id: usize, focused: bool) {
+        if self.renderer_revision == 0 {
+            return;
+        }
         let Some(index) = id.checked_sub(ID_PAGE_CONTROL_BASE) else {
             return;
         };
@@ -379,6 +363,26 @@ impl BrowserState {
 
 pub(super) fn wire_node(node: NodeId) -> Option<DocumentNodeId> {
     DocumentNodeId::new(node.to_wire()).ok()
+}
+
+fn pointer_starts_activation(
+    phase: PointerPhase,
+    button: PointerButton,
+    document: better_web_browser::renderer_protocol::DocumentId,
+    down_document: &mut Option<better_web_browser::renderer_protocol::DocumentId>,
+) -> bool {
+    if button != PointerButton::Primary {
+        return false;
+    }
+    match phase {
+        PointerPhase::Down => {
+            *down_document = Some(document);
+            true
+        }
+        PointerPhase::Up => down_document.take() != Some(document),
+        PointerPhase::Activate => true,
+        _ => false,
+    }
 }
 
 pub(super) unsafe fn pointer_modifiers(wparam: Wparam) -> InputModifiers {

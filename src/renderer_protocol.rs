@@ -10,6 +10,7 @@ mod codec;
 mod database;
 mod document;
 mod fetch;
+mod file_picker;
 mod geolocation;
 mod input;
 mod media_capture;
@@ -74,13 +75,20 @@ pub use fetch::{
     FetchResponseAbort, FetchResponseEnd, FetchResponseHead, FetchResponseResult,
     FetchResponseType, RendererFetchRequest, RendererFetchResponse, ResourceDestination,
 };
+pub use file_picker::{
+    FilePickerRequest, FilePickerSelection, FilePickerUpdate, FileSelectionAssembler,
+    MAX_FILE_PICKER_ACCEPT_BYTES, MAX_FILE_PICKER_BYTES, MAX_FILE_PICKER_CHUNK_BYTES,
+    MAX_FILE_PICKER_FILES, MAX_FILE_PICKER_MIME_BYTES, MAX_FILE_PICKER_NAME_BYTES, SelectedFile,
+    SelectedFileMetadata,
+};
 pub use input::{
     DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, FullscreenAction,
     FullscreenDisposition, FullscreenRequest, FullscreenResponse, HistoryTraversalInput,
-    InputModifiers, KeyPhase, KeyboardInput, LifecycleInput, NativeTextInput, NavigationCause,
-    NavigationDisposition, PointerButton, PointerCursor, PointerCursorResult, PointerInput,
-    PointerLockDisposition, PointerLockRequest, PointerLockResponse, PointerPhase,
-    PresentationAcknowledgement, ScrollInput, TextEditIntent, TextInput, WheelInput,
+    InputModifiers, KeyPhase, KeyboardInput, LifecycleInput, MAX_PENDING_TEXT_SELECTIONS,
+    NativeTextInput, NavigationCause, NavigationDisposition, PointerButton, PointerCursor,
+    PointerCursorResult, PointerInput, PointerLockDisposition, PointerLockRequest,
+    PointerLockResponse, PointerPhase, PresentationAcknowledgement, ScrollInput, TextEditIntent,
+    TextInput, TextSelectionDirection, TextSelectionInput, TextSelectionUpdate, WheelInput,
 };
 pub use message::{
     BrowserMessage, BrowsingContextId, ContainmentReport, Nonce,
@@ -104,7 +112,7 @@ pub use state::{
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
 pub const PROTOCOL_MAJOR: u16 = 14;
-pub const PROTOCOL_MINOR: u16 = 9;
+pub const PROTOCOL_MINOR: u16 = 11;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

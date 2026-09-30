@@ -198,6 +198,15 @@ impl RendererSession {
         )
     }
 
+    pub fn file_picker_update_sink(&self, document: DocumentId) -> super::FilePickerUpdateSink {
+        super::FilePickerUpdateSink::new(
+            document,
+            self.file_picker_updates.clone(),
+            Arc::clone(&self.file_picker_overflow),
+            self.wake.clone(),
+        )
+    }
+
     pub fn load_streaming_document(
         &self,
         start: DocumentStart,

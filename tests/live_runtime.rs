@@ -26,6 +26,8 @@ mod dynamic_modules;
 mod dynamic_scripts;
 #[path = "live_runtime/event_source.rs"]
 mod event_source;
+#[path = "live_runtime/file_upload.rs"]
+mod file_upload;
 #[path = "live_runtime/flex_axes.rs"]
 mod flex_axes;
 #[path = "live_runtime/fullscreen.rs"]

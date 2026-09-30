@@ -1,4 +1,4 @@
-use crate::limits::{MAX_HISTORY_STATE_BYTES, MAX_URL_BYTES};
+use crate::limits::{MAX_HISTORY_STATE_BYTES, MAX_RENDERER_TEXT_INPUT_BYTES, MAX_URL_BYTES};
 use crate::renderer_protocol::input::*;
 use crate::renderer_protocol::wire::{WireReader, WireWriter};
 use crate::renderer_protocol::{BrowserMessage, DocumentId, ProtocolError, RendererMessage};
@@ -58,6 +58,13 @@ pub(super) fn encode_browser_input(
                         writer.u32(end);
                     }
                     0x0157
+                }
+                DocumentInput::Selection(input) => {
+                    writer.u128(input.target.get());
+                    writer.u32(input.selection_start);
+                    writer.u32(input.selection_end);
+                    writer.u8(selection_direction_tag(input.direction));
+                    0x0159
                 }
                 DocumentInput::Focus(input) => {
                     writer.bool(input.focused);
@@ -206,6 +213,14 @@ pub(super) fn decode_browser_input(
                     None
                 },
             }),
+            0x0159 => DocumentInput::Selection(TextSelectionInput {
+                document,
+                sequence,
+                target: DocumentNodeId::new(reader.u128()?)?,
+                selection_start: reader.u32()?,
+                selection_end: reader.u32()?,
+                direction: decode_selection_direction(reader.u8()?)?,
+            }),
             0x0147 => DocumentInput::Focus(FocusInput {
                 document,
                 sequence,
@@ -269,6 +284,17 @@ pub(super) fn encode_renderer_input(
             encode_target(&mut writer, request.target);
             0x0152
         }
+        RendererMessage::TextSelectionUpdate(update) => {
+            update.validate()?;
+            writer.u64(update.document.get());
+            writer.u128(update.target.get());
+            writer.u32(update.selection_start);
+            writer.u32(update.selection_end);
+            writer.u8(selection_direction_tag(update.direction));
+            writer.u64(update.observed_input_sequence);
+            writer.string(&update.value)?;
+            0x0156
+        }
         _ => return Err(ProtocolError::InvalidPayload("renderer input message")),
     };
     Ok((kind, writer.finish()))
@@ -280,12 +306,11 @@ pub(super) fn decode_renderer_input(
 ) -> Result<RendererMessage, ProtocolError> {
     let mut reader = WireReader::new(payload);
     let document = DocumentId::new(reader.u64()?)?;
-    let request_id = reader.u64()?;
     let message = match kind {
         0x0150 => RendererMessage::FullscreenRequest(
             FullscreenRequest {
                 document,
-                request_id,
+                request_id: reader.u64()?,
                 action: match reader.u8()? {
                     1 => FullscreenAction::Enter,
                     2 => FullscreenAction::Exit,
@@ -297,16 +322,50 @@ pub(super) fn decode_renderer_input(
         0x0152 => RendererMessage::PointerLockRequest(
             PointerLockRequest {
                 document,
-                request_id,
+                request_id: reader.u64()?,
                 target: decode_target(&mut reader)?,
             }
             .validate()?,
         ),
+        0x0156 => {
+            let update = TextSelectionUpdate {
+                document,
+                target: DocumentNodeId::new(reader.u128()?)?,
+                selection_start: reader.u32()?,
+                selection_end: reader.u32()?,
+                direction: decode_selection_direction(reader.u8()?)?,
+                observed_input_sequence: reader.u64()?,
+                value: reader.string(MAX_RENDERER_TEXT_INPUT_BYTES)?,
+            };
+            update.validate()?;
+            RendererMessage::TextSelectionUpdate(update)
+        }
         _ => return Err(ProtocolError::UnexpectedMessage(kind)),
     };
     reader.finish()?;
     Ok(message)
 }
+
+fn selection_direction_tag(direction: TextSelectionDirection) -> u8 {
+    match direction {
+        TextSelectionDirection::None => 1,
+        TextSelectionDirection::Forward => 2,
+        TextSelectionDirection::Backward => 3,
+    }
+}
+
+fn decode_selection_direction(tag: u8) -> Result<TextSelectionDirection, ProtocolError> {
+    match tag {
+        1 => Ok(TextSelectionDirection::None),
+        2 => Ok(TextSelectionDirection::Forward),
+        3 => Ok(TextSelectionDirection::Backward),
+        _ => Err(ProtocolError::InvalidPayload("text selection direction")),
+    }
+}
+
+#[cfg(test)]
+#[path = "input/selection_tests.rs"]
+mod selection_tests;
 
 fn fullscreen_disposition_tag(disposition: FullscreenDisposition) -> u8 {
     match disposition {

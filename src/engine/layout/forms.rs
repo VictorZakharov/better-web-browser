@@ -25,16 +25,14 @@ pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)
         .attr("type")
         .unwrap_or_else(|| "text".into())
         .to_ascii_lowercase();
-    if matches!(
-        input_type.as_str(),
-        "hidden" | "checkbox" | "radio" | "file"
-    ) {
+    if matches!(input_type.as_str(), "hidden" | "checkbox" | "radio") {
         return None;
     }
     if input_type == "image" && node.attr("src").is_some_and(|src| !src.trim().is_empty()) {
         return None;
     }
     let kind = match input_type.as_str() {
+        "file" => ControlKind::File,
         "password" => ControlKind::Password,
         "search" => ControlKind::Search,
         "submit" | "image" => ControlKind::Submit,
@@ -44,7 +42,14 @@ pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)
     };
     // Live control state owns the painted value; pristine controls mirror
     // their default through the same accessor scripted getters use.
-    let value = if input_type == "image" {
+    let value = if input_type == "file" {
+        let names = node.control_state_snapshot().file_names;
+        match names.as_slice() {
+            [] => String::new(),
+            [name] => name.clone(),
+            [first, rest @ ..] => format!("{first} (+{})", rest.len()),
+        }
+    } else if input_type == "image" {
         node.attr("alt").unwrap_or_default()
     } else {
         node.input_display_value()
@@ -70,6 +75,18 @@ pub(super) fn control_feedback(node: &NodeRef) -> (bool, String) {
 }
 
 pub(super) fn input_control_label(node: &NodeRef, kind: ControlKind, value: &str) -> String {
+    if kind == ControlKind::File {
+        let choose = if node.attr("multiple").is_some() {
+            "Choose Files"
+        } else {
+            "Choose File"
+        };
+        return if value.is_empty() {
+            choose.to_string()
+        } else {
+            format!("{choose}  {value}")
+        };
+    }
     if !matches!(
         kind,
         ControlKind::Submit | ControlKind::Button | ControlKind::Reset
@@ -96,7 +113,7 @@ pub(super) fn default_control_content_height(
 ) -> f32 {
     match kind {
         ControlKind::Select => style.line_height + 10.0,
-        ControlKind::Submit | ControlKind::Button | ControlKind::Reset => 30.0,
+        ControlKind::Submit | ControlKind::Button | ControlKind::Reset | ControlKind::File => 30.0,
         ControlKind::TextArea => {
             node.attr("rows")
                 .and_then(|rows| rows.parse::<f32>().ok())

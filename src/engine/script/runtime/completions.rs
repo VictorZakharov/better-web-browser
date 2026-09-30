@@ -1,5 +1,6 @@
 //! Asynchronous Fetch and worker event delivery into the retained realm.
 mod clipboard;
+mod file_picker;
 
 use super::*;
 use crate::renderer_protocol::{

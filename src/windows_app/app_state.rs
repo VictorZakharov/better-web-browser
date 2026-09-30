@@ -47,6 +47,8 @@ pub(super) struct BrowserState {
     pub(super) outer_window_width: i32,
     pub(super) fullscreen: FullscreenState,
     pub(super) pointer_lock: PointerLockState,
+    pub(super) file_picker_backend: Box<dyn super::file_picker::FilePickerBackend>,
+    pub(super) file_picker_open: Option<super::file_picker::PickerIdentity>,
 }
 
 impl BrowserState {
@@ -108,6 +110,8 @@ impl BrowserState {
             outer_window_width: 0,
             fullscreen: FullscreenState::default(),
             pointer_lock: PointerLockState::default(),
+            file_picker_backend: Box::new(super::file_picker::NativeFilePicker),
+            file_picker_open: None,
             app,
         }
     }

@@ -273,7 +273,7 @@ impl DocumentRuntime {
         )
     }
 
-    pub(super) fn complete_network_script_outcome(
+    pub(in crate::renderer_process::child::document) fn complete_network_script_outcome(
         &mut self,
         mut outcome: ScriptOutcome,
         terminal: bool,
@@ -314,7 +314,7 @@ impl DocumentRuntime {
         // task. Install its decoded face before deciding whether this callback needs layout.
         self.apply_font_actions(&mut outcome);
         self.apply_graph_audio_actions(&mut outcome, connection)?;
-        connection.send_state_mutations(self.id, &mut outcome)?;
+        connection.send_state_mutations(self.id, self.last_input_sequence, &mut outcome)?;
 
         let script_time = started.elapsed();
         let needs_present = outcome.render_requested;

@@ -11,7 +11,7 @@
         'mouseenter mouseleave mousemove mouseout mouseover mouseup pointerover pointerenter pointerdown ' +
         'pointermove pointerup pointercancel pointerout pointerleave gotpointercapture lostpointercapture ' +
         'paste pause play playing progress ratechange ' +
-        'readystatechange reset resize resume scroll scrollend securitypolicyviolation seeked seeking select slotchange stalled submit ' +
+        'readystatechange reset resize resume scroll scrollend securitypolicyviolation seeked seeking select selectionchange slotchange stalled submit ' +
         'suspend timeupdate toggle transitioncancel transitionend transitionrun transitionstart unload visibilitychange volumechange waiting wheel message ' +
         'webkitanimationend webkitanimationiteration webkitanimationstart webkittransitionend'
     ).split(/\s+/);

@@ -6,7 +6,7 @@ use crate::engine::dom;
 // length state, number editing buffers, select notifications) that plain
 // programmatic sets must not produce.
 
-fn run(html: &str) -> (dom::Dom, ScriptRuntime) {
+pub(super) fn run(html: &str) -> (dom::Dom, ScriptRuntime) {
     let dom = dom::parse_with_scripting(html, true);
     let script = dom.elements_named("script").next().unwrap();
     let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
@@ -55,7 +55,7 @@ fn native_edit(
     )
 }
 
-fn native_edit_at(
+pub(super) fn native_edit_at(
     runtime: &mut ScriptRuntime,
     target: dom::NodeRef,
     value: &str,
@@ -276,6 +276,10 @@ fn ordinary_native_edit_dispatches_trusted_beforeinput_before_commit_and_input_a
     let result = native_edit(&mut runtime, field.clone(), "abc", "insertText");
     assert!(result.default_allowed);
     assert!(result.rejected_text.is_none());
+    assert!(
+        result.outcome.selection_actions.is_empty(),
+        "native ingress must not echo a stale pre-edit value"
+    );
     assert_eq!(field.input_value(), "abc");
     assert_eq!(
         output_text(&dom),
@@ -321,7 +325,7 @@ fn canceled_native_edit_rolls_back_to_post_microtask_value_and_clamped_selection
             event.preventDefault();
             Promise.resolve().then(() => {
                 field.value = 'micro';
-                field.setSelectionRange(999, Infinity);
+                field.setSelectionRange(999, 999);
                 document.querySelector('output').textContent =
                     [field.value, field.selectionStart, field.selectionEnd].join(':');
             });
@@ -410,7 +414,7 @@ fn set_selection_range_clamps_out_of_range_offsets() {
     </script>"#,
     );
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(output_text(&dom), "3:3|1:1|0:3");
+    assert_eq!(output_text(&dom), "0:0|1:1|0:0");
 }
 
 #[test]

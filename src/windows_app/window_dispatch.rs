@@ -260,6 +260,10 @@ unsafe fn dispatch_window_message(
             }
             0
         }
+        page_controls::WM_APP_PAGE_CONTROL_SELECTION => {
+            state.route_page_control_selection(wparam, lparam as Hwnd);
+            0
+        }
         message if completions::is_tab_completion(message) => {
             completions::dispatch(state, message, wparam, lparam)
         }

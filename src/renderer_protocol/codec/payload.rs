@@ -3,6 +3,7 @@ mod clipboard;
 mod database;
 mod document;
 mod fetch;
+mod file_picker;
 mod geolocation;
 mod input;
 mod media_capture;
@@ -14,6 +15,7 @@ mod sensor;
 mod speech;
 mod state;
 mod storage_sync;
+mod test_command;
 mod wake_lock;
 mod websocket;
 
@@ -67,6 +69,9 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
     }
     if let BrowserMessage::ClipboardUpdate(update) = message {
         return clipboard::encode_update(update).map(|bytes| (0x01f1, bytes));
+    }
+    if let BrowserMessage::FilePickerUpdate(update) = message {
+        return file_picker::encode_update(update).map(|bytes| (0x0241, bytes));
     }
     if let BrowserMessage::WakeLockUpdate(update) = message {
         return wake_lock::encode_update(update).map(|bytes| (0x0211, bytes));
@@ -135,6 +140,7 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
         }
         BrowserMessage::SensorUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::ClipboardUpdate(_) => unreachable!("encoded above"),
+        BrowserMessage::FilePickerUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::BroadcastDelivery(_) => unreachable!("encoded above"),
         BrowserMessage::WakeLockUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::Test(command) => {
@@ -216,13 +222,14 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
         0x0233 => media_capture::decode_frame(payload).map(BrowserMessage::MediaCaptureFrame),
         0x01d1 => sensor::decode_update(payload).map(BrowserMessage::SensorUpdate),
         0x01f1 => clipboard::decode_update(payload).map(BrowserMessage::ClipboardUpdate),
+        0x0241 => file_picker::decode_update(payload).map(BrowserMessage::FilePickerUpdate),
         0x0201 => {
             broadcast_channel::decode_delivery(payload).map(BrowserMessage::BroadcastDelivery)
         }
         0x0211 => wake_lock::decode_update(payload).map(BrowserMessage::WakeLockUpdate),
         0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d | 0x014f | 0x0151 | 0x0153
-        | 0x0155 | 0x0157 => decode_browser_input(kind, payload),
-        0x8001 => decode_test_command(payload).map(BrowserMessage::Test),
+        | 0x0155 | 0x0157 | 0x0159 => decode_browser_input(kind, payload),
+        0x8001 => test_command::decode(payload).map(BrowserMessage::Test),
         _ => Err(ProtocolError::UnexpectedMessage(kind)),
     }
 }
@@ -261,6 +268,9 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
     if let RendererMessage::ClipboardRequest(request) = message {
         return clipboard::encode_request(request).map(|bytes| (0x01f0, bytes));
     }
+    if let RendererMessage::FilePickerRequest(request) = message {
+        return file_picker::encode_request(request).map(|bytes| (0x0240, bytes));
+    }
     if let RendererMessage::WakeLockRequest(request) = message {
         return wake_lock::encode_request(request).map(|bytes| (0x0210, bytes));
     }
@@ -284,6 +294,7 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
         RendererMessage::MediaCaptureRequest(_) => unreachable!("encoded above"),
         RendererMessage::SensorRequest(_) => unreachable!("encoded above"),
         RendererMessage::ClipboardRequest(_) => unreachable!("encoded above"),
+        RendererMessage::FilePickerRequest(_) => unreachable!("encoded above"),
         RendererMessage::BroadcastCommand(_) => unreachable!("encoded above"),
         RendererMessage::WakeLockRequest(_) => unreachable!("encoded above"),
         RendererMessage::Ready {
@@ -321,7 +332,9 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
         | RendererMessage::DocumentFailed { .. }
         | RendererMessage::NavigationRequested { .. }
         | RendererMessage::PointerCursor(_) => return encode_renderer_document(message),
-        RendererMessage::FullscreenRequest(_) | RendererMessage::PointerLockRequest(_) => {
+        RendererMessage::FullscreenRequest(_)
+        | RendererMessage::PointerLockRequest(_)
+        | RendererMessage::TextSelectionUpdate(_) => {
             return encode_renderer_input(message);
         }
         RendererMessage::CookieMutation(_)
@@ -362,6 +375,7 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
         0x0230 => media_capture::decode_request(payload).map(RendererMessage::MediaCaptureRequest),
         0x01d0 => sensor::decode_request(payload).map(RendererMessage::SensorRequest),
         0x01f0 => clipboard::decode_request(payload).map(RendererMessage::ClipboardRequest),
+        0x0240 => file_picker::decode_request(payload).map(RendererMessage::FilePickerRequest),
         0x0200 => broadcast_channel::decode_command(payload).map(RendererMessage::BroadcastCommand),
         0x0210 => wake_lock::decode_request(payload).map(RendererMessage::WakeLockRequest),
         0x0170 => websocket::decode_command(payload).map(RendererMessage::WebSocketCommand),
@@ -396,7 +410,7 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
         0x0102 | 0x0104 | 0x0106 | 0x0108 | 0x010a | 0x010c | 0x0112 | 0x0114 | 0x0116 | 0x0118
         | 0x011a | 0x011e | 0x0120 => decode_renderer_document(kind, payload),
         0x0132 | 0x0134 | 0x0136 | 0x013a => decode_renderer_state(kind, payload),
-        0x0150 | 0x0152 => decode_renderer_input(kind, payload),
+        0x0150 | 0x0152 | 0x0156 => decode_renderer_input(kind, payload),
         0x8002 => {
             require_length(payload, 16)?;
             if payload[3] != 0 {
@@ -412,34 +426,6 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
             }))
         }
         _ => Err(ProtocolError::UnexpectedMessage(kind)),
-    }
-}
-
-fn decode_test_command(payload: &[u8]) -> Result<TestCommand, ProtocolError> {
-    match payload {
-        [10] => Ok(TestCommand::InternalError),
-        [11] => Ok(TestCommand::DocumentError),
-        [1] => Ok(TestCommand::Crash),
-        [2] => Ok(TestCommand::Hang),
-        [3] => Ok(TestCommand::WriteMalformedFrame),
-        [4, low, high] => Ok(TestCommand::ProbeRestrictions {
-            loopback_port: u16::from_le_bytes([*low, *high]),
-        }),
-        [5] => Ok(TestCommand::AccessViolation),
-        [6] => Ok(TestCommand::OutOfMemory),
-        [7] => Ok(TestCommand::StackOverflow),
-        [8, low, high] => Ok(TestCommand::DelayCommandRead {
-            millis: u16::from_le_bytes([*low, *high]),
-        }),
-        [9, low, high, padding @ ..]
-            if padding.len() == usize::from(u16::from_le_bytes([*low, *high]))
-                && padding.iter().all(|byte| *byte == 0) =>
-        {
-            Ok(TestCommand::Padding {
-                bytes: u16::from_le_bytes([*low, *high]),
-            })
-        }
-        _ => Err(ProtocolError::InvalidPayload("test command")),
     }
 }
 

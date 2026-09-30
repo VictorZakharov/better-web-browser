@@ -119,6 +119,7 @@ impl DocumentRuntime {
             pending_media_device_requests: Vec::new(),
             pending_sensor_requests: Vec::new(),
             pending_clipboard_requests: Vec::new(),
+            file_pickers: HashMap::new(),
             active_script_fetches: HashMap::new(),
             pending_worker_actions: Vec::new(),
             deferred_network_load: PageLoadReport::default(),
@@ -220,7 +221,11 @@ impl DocumentRuntime {
             outcome = initial;
             runtime.advance_parser(connection, &mut outcome)?;
             if runtime.encoding_restart_pending() {
-                connection.send_state_mutations(document, &mut outcome)?;
+                connection.send_state_mutations(
+                    document,
+                    runtime.last_input_sequence,
+                    &mut outcome,
+                )?;
                 return runtime.restart_encoding(connection);
             }
         }
@@ -250,7 +255,7 @@ impl DocumentRuntime {
         runtime.pending_worker_actions = std::mem::take(&mut outcome.worker_actions);
         connection.send_network_state_updates(document, &mut outcome)?;
         runtime.start_pending_survivable_fetches(connection)?;
-        connection.send_state_mutations(document, &mut outcome)?;
+        connection.send_state_mutations(document, runtime.last_input_sequence, &mut outcome)?;
         let script_time = script_started.elapsed();
 
         let style_started = Instant::now();

@@ -2,6 +2,7 @@ use super::ProtocolError;
 use super::input::{
     DocumentInput, FullscreenRequest, FullscreenResponse, NavigationCause, NavigationDisposition,
     PointerCursorResult, PointerLockRequest, PointerLockResponse, PresentationAcknowledgement,
+    TextSelectionUpdate,
 };
 use super::state::{
     CookieMutation, CookieStateSnapshot, PolicyMutation, StateSnapshotApplied,
@@ -158,6 +159,7 @@ pub enum BrowserMessage {
     SpeechUpdate(SpeechUpdate),
     NotificationUpdate(super::NotificationUpdate),
     ClipboardUpdate(super::ClipboardUpdate),
+    FilePickerUpdate(super::FilePickerUpdate),
     PermissionUpdate(super::PermissionUpdate),
     GeolocationUpdate(super::GeolocationUpdate),
     MediaDeviceUpdate(super::MediaDeviceUpdate),
@@ -206,6 +208,7 @@ pub enum RendererMessage {
     NotificationRequest(super::NotificationRequest),
     ProtocolHandlerRequest(super::ProtocolHandlerRequest),
     ClipboardRequest(super::ClipboardRequest),
+    FilePickerRequest(super::FilePickerRequest),
     PermissionRequest(super::PermissionRequest),
     GeolocationRequest(super::GeolocationRequest),
     MediaDeviceRequest(super::MediaDeviceRequest),
@@ -266,6 +269,7 @@ pub enum RendererMessage {
         cause: NavigationCause,
     },
     PointerCursor(PointerCursorResult),
+    TextSelectionUpdate(TextSelectionUpdate),
     FullscreenRequest(FullscreenRequest),
     PointerLockRequest(PointerLockRequest),
     CookieMutation(CookieMutation),

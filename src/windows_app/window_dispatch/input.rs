@@ -187,6 +187,7 @@ pub(in crate::windows_app) unsafe extern "system" fn page_control_proc(
     if message == WM_IME_STARTCOMPOSITION {
         PAGE_IME_ACTIVE.with(|active| active.set(true));
     }
+    let selection_may_change = page_controls::selection::selection_may_change(message, wparam);
     if matches!(message, WM_SETFOCUS | WM_KILLFOCUS) {
         let parent = GetParent(window);
         let next = wparam as Hwnd;
@@ -234,6 +235,17 @@ pub(in crate::windows_app) unsafe extern "system" fn page_control_proc(
     PAGE_EDIT_INTENT.with(|current| current.set(previous));
     if message == WM_IME_ENDCOMPOSITION {
         PAGE_IME_ACTIVE.with(|active| active.set(false));
+    }
+    if selection_may_change {
+        let parent = GetParent(window);
+        if !parent.is_null() {
+            SendMessageW(
+                parent,
+                page_controls::WM_APP_PAGE_CONTROL_SELECTION,
+                control_id,
+                window as isize,
+            );
+        }
     }
     result
 }

@@ -3,6 +3,7 @@
     const dragTransfers = new WeakMap();
     const dragLists = new WeakMap();
     const dragItems = new WeakMap();
+    const fileLists = new WeakMap();
     const eventTransferToken = Symbol('event DataTransfer');
     const dataTransferItemToken = Symbol('DataTransferItem');
     const dataTransferItemListToken = Symbol('DataTransferItemList');
@@ -50,14 +51,52 @@
             Object.defineProperty(list, index, { configurable: true, enumerable: true,
                 get: () => store.items[index] ? dragItem(list, store.items[index]) : undefined });
     };
+    const fileListContents = list => {
+        const state = fileLists.get(list);
+        if (!state) throw new TypeError('Invalid FileList receiver');
+        if (!state.owner) return state.files;
+        const store = dragStore(state.owner);
+        return !store || store.mode === 'protected' ? [] :
+            store.items.filter(item => item.kind === 'file').map(item => item.data);
+    };
+    const synchronizeFileList = list => {
+        const state = fileLists.get(list);
+        for (let index = 0; index < state.indexedLength; index++) delete list[index];
+        const length = fileListContents(list).length;
+        for (let index = 0; index < length; index++)
+            Object.defineProperty(list, index, { configurable: true, enumerable: true,
+                get: () => fileListContents(list)[index] });
+        state.indexedLength = length;
+        for (const observer of Array.from(state.observers)) observer();
+    };
+    const observeFileList = (list, observer) => {
+        const observers = fileLists.get(list).observers;
+        observers.add(observer);
+        return () => observers.delete(observer);
+    };
+    const fileListForInputAssignment = list => {
+        const owner = fileLists.get(list).owner;
+        // An event drag data store expires after dispatch. Selected files must
+        // outlive the drop event even though its DataTransfer.files goes empty.
+        return owner && dragTransfer(owner).eventScoped ?
+            new FileList(fileListToken, fileListContents(list).slice()) : list;
+    };
+    Object.defineProperty(globalThis, '__fileListContents', {
+        configurable: true, value: fileListContents
+    });
+    const synchronizeTransferFiles = transfer => {
+        const list = dragTransfer(transfer).files;
+        if (list) synchronizeFileList(list);
+    };
     class FileList {
-        constructor(token, files) {
+        constructor(token, files, owner = null) {
             if (token !== fileListToken) throw new TypeError('Illegal constructor');
-            for (let index = 0; index < files.length; index++)
-                Object.defineProperty(this, index, { enumerable: true, value: files[index] });
-            Object.defineProperty(this, 'length', { enumerable: true, value: files.length });
+            fileLists.set(this, { files, owner, indexedLength: 0, observers: new Set() });
+            Object.defineProperty(this, 'length', { enumerable: true,
+                get: () => fileListContents(this).length });
+            synchronizeFileList(this);
         }
-        item(index) { return this[Number(index)] ?? null; }
+        item(index) { return fileListContents(this)[Number(index)] ?? null; }
         [Symbol.iterator]() { return Array.prototype[Symbol.iterator].call(this); }
     }
     class DataTransferItem {
@@ -96,7 +135,8 @@
         }
         item(index) { return this[Number(index)] ?? null; }
         add(data, type) {
-            const store = dragStore(dragList(this).owner);
+            const owner = dragList(this).owner;
+            const store = dragStore(owner);
             if (!store || store.mode !== 'readwrite') return null;
             const file = typeof File === 'function' && data instanceof File;
             if (!file && arguments.length < 2) throw new TypeError('String data requires a type');
@@ -107,21 +147,27 @@
                 data: file ? data : String(data) };
             store.items.push(entry);
             synchronizeIndexedItems(this);
+            if (file) synchronizeTransferFiles(owner);
             return dragItem(this, entry);
         }
         remove(index) {
-            const store = dragStore(dragList(this).owner);
+            const owner = dragList(this).owner;
+            const store = dragStore(owner);
             if (!store || store.mode !== 'readwrite')
                 throw new DOMException('Drag data is not writable', 'InvalidStateError');
             index = Number(index) >>> 0;
-            if (index < store.items.length) store.items.splice(index, 1);
+            const removed = index < store.items.length ? store.items.splice(index, 1)[0] : null;
             synchronizeIndexedItems(this);
+            if (removed?.kind === 'file') synchronizeTransferFiles(owner);
         }
         clear() {
-            const store = dragStore(dragList(this).owner);
+            const owner = dragList(this).owner;
+            const store = dragStore(owner);
             if (!store || store.mode !== 'readwrite') return;
+            const hadFiles = store.items.some(item => item.kind === 'file');
             store.items.length = 0;
             synchronizeIndexedItems(this);
+            if (hadFiles) synchronizeTransferFiles(owner);
         }
         [Symbol.iterator]() { return Array.from({length: this.length}, (_, index) => this[index])[Symbol.iterator](); }
     }
@@ -129,7 +175,9 @@
         constructor(token, eventStore) {
             const store = token === eventTransferToken ? eventStore :
                 { mode: 'readwrite', items: [], effectAllowed: 'none', image: null };
-            const state = { store, dropEffect: 'none', effectAllowed: store.effectAllowed, list: null };
+            const state = { store, eventScoped: token === eventTransferToken,
+                dropEffect: 'none', effectAllowed: store.effectAllowed,
+                list: null, files: null };
             dragTransfers.set(this, state);
             state.list = new DataTransferItemList(dataTransferItemListToken, this);
         }
@@ -152,10 +200,8 @@
             return Object.freeze(types);
         }
         get files() {
-            const store = dragStore(this);
-            const files = !store || store.mode === 'protected' ? [] :
-                store.items.filter(item => item.kind === 'file').map(item => item.data);
-            return new FileList(fileListToken, files);
+            const state = dragTransfer(this);
+            return state.files ||= new FileList(fileListToken, null, this);
         }
         setData(format, data) {
             const store = dragStore(this);
@@ -200,6 +246,7 @@
         const state = dragTransfer(transfer);
         state.store = null;
         synchronizeIndexedItems(state.list);
+        if (state.files) synchronizeFileList(state.files);
     };
     const appendDefaultDragData = (store, format, data) => {
         store.items.push({ kind: 'string', type: format, data });

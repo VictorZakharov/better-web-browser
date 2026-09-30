@@ -1,6 +1,8 @@
 //! Navigation effects and cancellable HTML form-navigation tasks.
 use super::*;
-use crate::navigation::request::NavigationOptions;
+use crate::navigation::request::{
+    MAX_FORM_NAVIGATION_JSON_BYTES, MAX_PENDING_FORM_BODY_BYTES, NavigationOptions,
+};
 
 #[derive(Default)]
 pub(in crate::engine::script) struct FormPlans {
@@ -35,6 +37,11 @@ pub(super) fn dispatch(
         "navigateRequest" | "planFormNavigation" => {
             let value = argument_string(args, 1)?;
             let serialized = argument_string(args, 2)?;
+            if serialized.len() > MAX_FORM_NAVIGATION_JSON_BYTES {
+                return Err(JsNativeError::range()
+                    .with_message("form navigation request exceeds the 7 MiB JSON limit")
+                    .into());
+            }
             let mut options: NavigationOptions =
                 serde_json::from_str(&serialized).map_err(|error| {
                     JsNativeError::typ().with_message(format!("invalid navigation: {error}"))
@@ -73,6 +80,19 @@ pub(super) fn dispatch(
                 if state.form_plans.plans.len() >= 32 && !state.form_plans.plans.contains_key(&id) {
                     return Err(JsNativeError::range()
                         .with_message("too many pending form navigations")
+                        .into());
+                }
+                let retained_bytes = state
+                    .form_plans
+                    .plans
+                    .iter()
+                    .filter(|(owner, _)| **owner != id)
+                    .map(|(_, plan)| plan.options.post.as_ref().map_or(0, |post| post.body.len()))
+                    .sum::<usize>();
+                let new_bytes = options.post.as_ref().map_or(0, |post| post.body.len());
+                if retained_bytes.saturating_add(new_bytes) > MAX_PENDING_FORM_BODY_BYTES {
+                    return Err(JsNativeError::range()
+                        .with_message("pending form submission bodies exceed the 10 MiB limit")
                         .into());
                 }
                 state.form_plans.next = state.form_plans.next.checked_add(1).ok_or_else(|| {

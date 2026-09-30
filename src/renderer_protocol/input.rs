@@ -7,7 +7,11 @@ use super::{DocumentId, ProtocolError, ScrollRestorationMode};
 use crate::limits::{MAX_HISTORY_STATE_BYTES, MAX_SESSION_HISTORY_ENTRIES, MAX_URL_BYTES};
 
 mod pointer_lock;
+mod selection;
 pub use pointer_lock::{PointerLockDisposition, PointerLockRequest, PointerLockResponse};
+pub use selection::{
+    MAX_PENDING_TEXT_SELECTIONS, TextSelectionDirection, TextSelectionInput, TextSelectionUpdate,
+};
 
 const MAX_INPUT_COORDINATE: f32 = 16_777_216.0;
 const MAX_KEY_NAME_BYTES: usize = 64;
@@ -189,6 +193,7 @@ pub enum DocumentInput {
     Keyboard(KeyboardInput),
     Text(TextInput),
     NativeText(NativeTextInput),
+    Selection(TextSelectionInput),
     Focus(FocusInput),
     Scroll(ScrollInput),
     Lifecycle(LifecycleInput),
@@ -203,6 +208,7 @@ impl DocumentInput {
             Self::Keyboard(input) => input.document,
             Self::Text(input) => input.document,
             Self::NativeText(input) => input.text.document,
+            Self::Selection(input) => input.document,
             Self::Focus(input) => input.document,
             Self::Scroll(input) => input.document,
             Self::Lifecycle(input) => input.document,
@@ -217,6 +223,7 @@ impl DocumentInput {
             Self::Keyboard(input) => input.sequence,
             Self::Text(input) => input.sequence,
             Self::NativeText(input) => input.text.sequence,
+            Self::Selection(input) => input.sequence,
             Self::Focus(input) => input.sequence,
             Self::Scroll(input) => input.sequence,
             Self::Lifecycle(input) => input.sequence,
@@ -283,6 +290,9 @@ impl DocumentInput {
             }
             Self::Text(input) => input.validate(),
             Self::NativeText(input) => input.validate(),
+            Self::Selection(input) => {
+                selection::validate_selection(input.selection_start, input.selection_end)
+            }
             Self::Focus(_) | Self::Lifecycle(_) => Ok(()),
             Self::Scroll(input) => validate_coordinates(input.x, input.y),
             Self::History(input) => {
