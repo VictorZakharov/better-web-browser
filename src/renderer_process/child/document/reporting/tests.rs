@@ -83,6 +83,22 @@ fn runtime_reporting_leaves_small_diagnostics_unchanged() {
 }
 
 #[test]
+fn quiet_and_cancelled_wheel_reports_include_actual_metadata_before_encoding() {
+    use crate::renderer_protocol::{WheelAcknowledgement, WheelDecision};
+    for decision in [WheelDecision::Cancelled, WheelDecision::NoMotion] {
+        let acknowledgement = WheelAcknowledgement {
+            sequence: 1,
+            decision,
+            dispatch_micros: 25,
+        };
+        let report =
+            runtime_report_with_wheel(ScriptOutcome::default(), true, None, Some(acknowledgement));
+        assert_eq!(report.wheel_acknowledgements, [acknowledgement]);
+        round_trip(report);
+    }
+}
+
+#[test]
 fn combining_script_tasks_keeps_native_value_snapshots_within_the_shared_budget() {
     use crate::engine::dom::NodeId;
     use crate::engine::script::ScriptSelectionAction;

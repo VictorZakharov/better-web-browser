@@ -22,6 +22,26 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn paint_benchmark_frame(&mut self) -> Result<Duration, String> {
+        self.paint_benchmark_frame_with_path()
+            .map(|(elapsed, _)| elapsed)
+    }
+
+    pub(super) fn invalidate_benchmark_scroll_surface(&mut self) {
+        if self.processing_background_tab {
+            return;
+        }
+        if let Some(surface) = self
+            .benchmark
+            .as_mut()
+            .and_then(|benchmark| benchmark.scroll_surface.as_mut())
+        {
+            surface.scroll_y = None;
+        }
+    }
+
+    pub(super) unsafe fn paint_benchmark_frame_with_path(
+        &mut self,
+    ) -> Result<(Duration, bool), String> {
         let started = Instant::now();
         let mut surface = self
             .benchmark
@@ -57,7 +77,7 @@ impl BrowserState {
         }
         let elapsed = started.elapsed();
         self.record_benchmark_paint(elapsed);
-        Ok(elapsed)
+        Ok((elapsed, dirty.is_none()))
     }
 
     pub(super) unsafe fn measure_scroll_paints(

@@ -3,6 +3,7 @@ mod borders;
 mod native_text;
 mod navigation;
 mod sticky;
+mod wheel;
 use crate::document::Document;
 use crate::engine::{FontSpec, PositionedGlyph, RectF};
 use crate::renderer_protocol::{DocumentNodeId, SemanticActions, SemanticNode, SemanticRole};

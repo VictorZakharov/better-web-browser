@@ -1,6 +1,9 @@
 use super::*;
 use crate::engine::Page;
 
+#[path = "media_sources_tests/containers.rs"]
+mod containers;
+
 #[test]
 fn audio_source_skips_unsupported_codec_and_media_query() {
     let page = Page::parse(
@@ -48,9 +51,9 @@ fn m4a_alias_selects_aac_source_but_not_video_only_codec() {
 }
 
 #[test]
-fn native_flac_source_is_selected_without_claiming_ogg_flac() {
+fn native_flac_source_still_skips_unknown_ogg_codec() {
     let page = Page::parse(
-        r#"<audio><source src="skip.ogg" type='audio/ogg; codecs="flac"'>
+        r#"<audio><source src="skip.ogg" type='audio/ogg; codecs="opus"'>
                  <source src="skip.flac" type='audio/flac; codecs="flac"'>
                  <source src="song.flac" type="audio/flac">
                  <source src="fallback.mp3" type="audio/mpeg"></audio>"#,

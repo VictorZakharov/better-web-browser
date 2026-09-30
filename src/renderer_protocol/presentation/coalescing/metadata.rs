@@ -16,6 +16,16 @@ pub(super) fn presentation_merge_is_bounded(
     if previous.runtime.native_text_rejection.is_some() {
         return false;
     }
+    // The benchmark's nested-motion paint must install the verdict's own revision,
+    // never a later resource/script snapshot that may already replace that scroll.
+    if previous
+        .runtime
+        .wheel_acknowledgements
+        .iter()
+        .any(|value| value.decision == crate::renderer_protocol::WheelDecision::NestedScroll)
+    {
+        return false;
+    }
     resources::merged_bytes(previous, next)
         .zip(merged_runtime_bytes(&previous.runtime, &next.runtime))
         .is_some_and(|(resources, runtime)| {
@@ -45,6 +55,14 @@ pub(super) fn runtime_bytes(value: &RuntimeReport) -> usize {
 }
 
 fn merged_runtime_bytes(previous: &RuntimeReport, next: &RuntimeReport) -> Option<usize> {
+    if previous
+        .wheel_acknowledgements
+        .len()
+        .saturating_add(next.wheel_acknowledgements.len())
+        > super::super::MAX_WHEEL_ACKNOWLEDGEMENTS
+    {
+        return None;
+    }
     if previous.native_text_rejection.is_some() && next.native_text_rejection.is_some() {
         return None;
     }
@@ -80,9 +98,10 @@ fn edge_bytes(value: &RuntimeReport) -> usize {
     ]
     .into_iter()
     .flatten()
-    .fold(0_usize, |bytes, text| {
-        bytes.saturating_add(4).saturating_add(text.len())
-    });
+    .fold(
+        value.wheel_acknowledgements.len().saturating_mul(17),
+        |bytes, text| bytes.saturating_add(4).saturating_add(text.len()),
+    );
     value
         .history_actions
         .iter()
@@ -102,7 +121,7 @@ fn edge_bytes(value: &RuntimeReport) -> usize {
 
 fn snapshot_bytes(previous: &RuntimeReport, next: &RuntimeReport) -> usize {
     // Fixed fields and vector prefixes in encode_runtime, excluding optional bodies.
-    let mut bytes = 48_usize;
+    let mut bytes = 52_usize;
     if let Some(rejection) = next
         .native_text_rejection
         .as_ref()

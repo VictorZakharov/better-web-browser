@@ -48,10 +48,72 @@ pub(crate) fn preflight(bytes: &[u8], max_channels: u16) -> Result<(u32, u16), S
     format.ok_or_else(|| "Ogg/Vorbis identification is missing".into())
 }
 
+/// Matroska stores the same three Vorbis headers in a Xiph-laced CodecPrivate.
+/// Check the established allocation policy before either decoder sees setup.
+pub(crate) fn preflight_xiph_laced(bytes: &[u8], max_channels: u16) -> Result<(u32, u16), String> {
+    if bytes.len() > MAX_HEADER_PACKET_BYTES || bytes.first() != Some(&2) {
+        return Err("WebM Vorbis CodecPrivate is invalid or too large".into());
+    }
+    let mut offset = 1_usize;
+    let mut lengths = [0_usize; 2];
+    for length in &mut lengths {
+        loop {
+            let byte = *bytes
+                .get(offset)
+                .ok_or("Vorbis header lacing is truncated")?;
+            offset += 1;
+            *length = length
+                .checked_add(usize::from(byte))
+                .ok_or("Vorbis header length overflow")?;
+            if byte != 255 {
+                break;
+            }
+        }
+    }
+    let ident_end = offset
+        .checked_add(lengths[0])
+        .filter(|end| *end <= bytes.len())
+        .ok_or("Vorbis identification length exceeds CodecPrivate")?;
+    let comment_end = ident_end
+        .checked_add(lengths[1])
+        .filter(|end| *end <= bytes.len())
+        .ok_or("Vorbis comment length exceeds CodecPrivate")?;
+    let ident = &bytes[offset..ident_end];
+    let comment = &bytes[ident_end..comment_end];
+    let setup = &bytes[comment_end..];
+    for (packet, kind) in [(ident, 1), (comment, 3), (setup, 5)] {
+        if packet.get(..7) != Some(&[kind, b'v', b'o', b'r', b'b', b'i', b's']) {
+            return Err("Vorbis CodecPrivate header signature is invalid".into());
+        }
+    }
+    let header = lewton::header::read_header_ident(ident)
+        .map_err(|error| format!("read Vorbis identification: {error}"))?;
+    let channels = u16::from(header.audio_channels);
+    if !(1..=max_channels).contains(&channels)
+        || !(MIN_SAMPLE_RATE..=MAX_SAMPLE_RATE).contains(&header.audio_sample_rate)
+    {
+        return Err("WebM/Vorbis format exceeds supported PCM output".into());
+    }
+    validate_comments(comment)?;
+    setup_guard::inspect(setup)?;
+    Ok((header.audio_sample_rate, channels))
+}
+
 fn validate_comments(packet: &[u8]) -> Result<(), String> {
     // Lewton allocates from the vendor/comment lengths before it checks EOF.
     // Reject impossible sizes first, using the actual bounded packet length.
-    let mut offset = 7;
+    let end = preflight_comment_fields(&packet[7..], |_| Ok(()))? + 7;
+    if packet.get(end) != Some(&1) {
+        return Err("Ogg/Vorbis comment framing is invalid".into());
+    }
+    Ok(())
+}
+
+pub(crate) fn preflight_comment_fields(
+    packet: &[u8],
+    mut inspect: impl FnMut(&[u8]) -> Result<(), String>,
+) -> Result<usize, String> {
+    let mut offset = 0;
     let vendor = take_length(packet, &mut offset)?;
     offset = offset
         .checked_add(vendor)
@@ -63,15 +125,14 @@ fn validate_comments(packet: &[u8]) -> Result<(), String> {
     }
     for _ in 0..count {
         let length = take_length(packet, &mut offset)?;
-        offset = offset
+        let end = offset
             .checked_add(length)
             .filter(|end| *end <= packet.len())
             .ok_or_else(|| "Ogg/Vorbis comment length exceeds header".to_string())?;
+        inspect(&packet[offset..end])?;
+        offset = end;
     }
-    if packet.get(offset) != Some(&1) {
-        return Err("Ogg/Vorbis comment framing is invalid".into());
-    }
-    Ok(())
+    Ok(offset)
 }
 
 fn take_length(packet: &[u8], offset: &mut usize) -> Result<usize, String> {

@@ -1,0 +1,16 @@
+<!doctype html><meta charset="utf-8"><title>Owned asynchronous wheel reset fixture</title>
+<style>
+html,body{margin:0}main{height:3000px}
+#pane{position:absolute;top:0;left:0;width:200px;height:100px;overflow:auto}
+#row{height:300px;background:red}
+</style>
+<main>Viewport extent</main><div id="pane"><div id="row">Nested content</div></div>
+<script>
+const pane=document.getElementById('pane');
+pane.addEventListener('scroll',()=>{
+  console.log('offset before reset:'+pane.scrollTop);
+  pane.scrollTop=0;
+  document.getElementById('row').style.background='blue';
+  console.log('offset after reset:'+pane.scrollTop);
+});
+</script>

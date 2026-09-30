@@ -8,6 +8,54 @@ pub(super) fn media_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if operation == "mediaCapabilitiesContentType" {
+        let string = |index| match args.get(index) {
+            Some(JsValue::String(value)) => value.as_str(),
+            _ => "",
+        };
+        return Ok(Some(JsValue::from(
+            crate::media_type::capability_content_type(string(1), string(2), string(3)).to_string(),
+        )));
+    }
+    if operation == "mediaCapabilitiesAudioSupported" {
+        let input = match args.get(1) {
+            Some(JsValue::String(value)) => value.as_str(),
+            _ => "",
+        };
+        let channels = match args.get(2) {
+            Some(JsValue::String(value)) => Some(value.as_str()),
+            _ => None,
+        };
+        let rate = args.get(3).and_then(JsValue::as_number);
+        let spatial = args.get(4).and_then(JsValue::as_boolean).unwrap_or(false);
+        let mode = match args.get(5) {
+            Some(JsValue::String(value)) => value.as_str(),
+            _ => "",
+        };
+        return Ok(Some(JsValue::from(
+            crate::media_type::audio_parameters_supported(input, mode, channels, rate, spatial),
+        )));
+    }
+    if operation == "mediaCanPlayType" {
+        let input = match args.get(1) {
+            Some(JsValue::String(value)) => value.as_str(),
+            _ => "",
+        };
+        return Ok(Some(JsValue::from(
+            crate::media_type::can_play_type(input).to_string(),
+        )));
+    }
+    if operation == "mediaSourceTypeSupported" || operation == "mediaSourceTrackKind" {
+        let input = match args.get(1) {
+            Some(JsValue::String(value)) => value.as_str(),
+            _ => "",
+        };
+        return Ok(Some(if operation == "mediaSourceTypeSupported" {
+            JsValue::from(crate::media_type::media_source_supported(input))
+        } else {
+            JsValue::from(crate::media_type::media_source_track_kind(input).to_string())
+        }));
+    }
     if operation == "mediaPlaybackSupported" {
         return Ok(Some(JsValue::from(!state.embedded)));
     }

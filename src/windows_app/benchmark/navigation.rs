@@ -1,5 +1,6 @@
 //! Hidden in-process navigation sequences for lifecycle regression coverage.
 
+mod delay;
 mod scroll;
 mod text;
 
@@ -37,7 +38,11 @@ impl BrowserState {
             return false;
         }
         benchmark.navigation_scheduled = true;
-        post_navigation(self.window, benchmark.navigation_delay);
+        let delay = delay::next_action_delay(
+            &mut benchmark.initial_action_delay,
+            benchmark.navigation_delay,
+        );
+        post_navigation(self.window, delay);
         true
     }
 

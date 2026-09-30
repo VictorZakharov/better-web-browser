@@ -130,6 +130,11 @@ impl BrowserState {
         let mut schedule_filmstrip = false;
         if is_active {
             self.cancel_scroll_animation();
+            if let Some(document) = self.navigation.active_document()
+                && let Some(benchmark) = self.benchmark.as_mut()
+            {
+                benchmark.wheel_trace.retire_document(document);
+            }
         }
         // Audio belongs to the document being replaced, not the next generation.
         self.retire_database_for_tab(id);

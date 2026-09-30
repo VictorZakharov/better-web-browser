@@ -36,6 +36,11 @@ fn detailed_report() -> RuntimeReport {
             HistoryAction::Traverse { delta: -1 },
         ],
         history_traversal_ack: Some(7),
+        wheel_acknowledgements: vec![crate::renderer_protocol::WheelAcknowledgement {
+            sequence: 1,
+            decision: crate::renderer_protocol::WheelDecision::Viewport,
+            dispatch_micros: 250,
+        }],
         cookie_updates: vec!["name=value".into()],
         navigation_url: Some("https://example.test/post".into()),
         navigation_options: NavigationOptions {
@@ -65,7 +70,10 @@ fn read_only_sizing_matches_wire_encoding_including_optional_fields() {
     for value in [RuntimeReport::default(), report.clone()] {
         assert_eq!(runtime_bytes(&value), encoded_runtime_len(&value));
     }
-    for next in [RuntimeReport::default(), report.clone()] {
+    for mut next in [RuntimeReport::default(), report.clone()] {
+        for value in &mut next.wheel_acknowledgements {
+            value.sequence += 1;
+        }
         let expected = merged_runtime_bytes(&report, &next).unwrap();
         let merged = report.clone().coalesce(next).unwrap();
         assert_eq!(expected, encoded_runtime_len(&merged));

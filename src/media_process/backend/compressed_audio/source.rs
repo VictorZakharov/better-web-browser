@@ -7,10 +7,8 @@ use std::io::Cursor;
 use std::sync::Arc;
 use symphonia::core::codecs::audio::AudioDecoder as SymphoniaAudioDecoder;
 use symphonia::core::codecs::audio::AudioDecoderOptions;
-use symphonia::core::codecs::audio::well_known::{CODEC_ID_AAC, CODEC_ID_MP3};
 use symphonia::core::common::Limit;
 use symphonia::core::formats::probe::Hint;
-use symphonia::core::formats::well_known::{FORMAT_ID_ISOMP4, FORMAT_ID_MP3};
 use symphonia::core::formats::{FormatOptions, FormatReader};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
@@ -42,6 +40,9 @@ pub(super) struct Stream {
 
 impl Stream {
     pub(super) fn open(source: Arc<[u8]>, kind: Kind) -> Result<Self, String> {
+        if !matches!(kind, Kind::Mp3 | Kind::AacM4a) {
+            crate::encoded_audio::validate(&source, kind)?;
+        }
         let edit = if kind == Kind::AacM4a {
             ordinary_audio_edit(&source)?
         } else {
@@ -57,11 +58,7 @@ impl Stream {
         let format = symphonia::default::get_probe()
             .probe(&hint, media, FormatOptions::default(), metadata)
             .map_err(|error| format!("open {} audio: {error}", kind.extension()))?;
-        let (expected_format, expected_codec) = match kind {
-            Kind::Mp3 => (FORMAT_ID_MP3, CODEC_ID_MP3),
-            Kind::AacM4a => (FORMAT_ID_ISOMP4, CODEC_ID_AAC),
-        };
-        if format.format_info().format != expected_format || format.tracks().len() != 1 {
+        if format.format_info().format != kind.expected_format() || format.tracks().len() != 1 {
             return Err("compressed audio container is not a single-track audio source".into());
         }
         let track = &format.tracks()[0];
@@ -70,7 +67,7 @@ impl Stream {
             .as_ref()
             .and_then(|params| params.audio())
             .ok_or("compressed audio source has no audio track")?;
-        if params.codec != expected_codec {
+        if params.codec != kind.expected_codec() {
             return Err("compressed audio track codec is unsupported".into());
         }
         let edit_rate = if edit.is_some() {
@@ -96,10 +93,13 @@ impl Stream {
                     .verify(true),
             )
             .map_err(|error| format!("initialize {} decoder: {error}", kind.extension()))?;
-        let declared_frames = if kind == Kind::Mp3 && !mp3_has_declared_frames(&source) {
-            None
-        } else {
-            track.num_frames
+        let declared_frames = match kind {
+            Kind::Mp3 if !mp3_has_declared_frames(&source) => None,
+            // ADTS/WebM timestamps may estimate duration without declaring a
+            // decoded-frame count. Complete framing is checked before probing.
+            Kind::AacAdts | Kind::VorbisWebm => None,
+            Kind::FlacOgg => track.num_frames.filter(|frames| *frames != 0),
+            _ => track.num_frames,
         };
         let track_id = track.id;
         Ok(Self {
@@ -242,6 +242,13 @@ impl Stream {
             self.raw_frames < window.end || self.frames != window.end - window.start
         }) {
             return Err("compressed audio source ended before its edited presentation".into());
+        }
+        if self.kind == Kind::FlacOgg
+            && self
+                .declared_frames
+                .is_some_and(|declared| self.frames != declared)
+        {
+            return Err("Ogg/FLAC source disagreed with its declared frame count".into());
         }
         if self
             .declared_frames

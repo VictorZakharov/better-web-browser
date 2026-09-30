@@ -19,17 +19,24 @@ waits for loading to finish instead of being rejected simply because no
 decoder is ready yet.
 
 The tested complete-resource formats are PCM WAV, MP3, AAC in M4A, ADTS
-AAC, Ogg/Vorbis, and native FLAC. FLAC uses a contained pure-Rust decoder
+AAC-LC, Ogg/Vorbis, native FLAC, audio-only WebM/Vorbis, and Ogg/FLAC.
+FLAC uses a contained pure-Rust decoder
 without requiring a host Media Foundation FLAC codec.
 The media worker decodes audio to PCM, drives the XAudio2 output path,
 and supports play, pause, volume, and seek without fabricating a video frame.
 `HTMLMediaElement.canPlayType()` makes the conservative `maybe` claim for
-`audio/flac` and its deprecated `audio/x-flac` alias, without claiming Ogg
-FLAC. `audio/ogg; codecs="vorbis"` reports `probably`, while codec-less Ogg
-reports `maybe`; Ogg FLAC and Opus remain unsupported. Media Capabilities
-distinguishes complete-file FLAC from unsupported
-Media Source FLAC, but derives `decodingInfo()` support from MIME/type policy,
-not a per-host native decoder query. `audio/m4a` and `audio/x-m4a` share the proven
+`audio/flac` and its deprecated `audio/x-flac` alias.
+`audio/ogg; codecs="vorbis"`, `audio/ogg; codecs="flac"`, and
+`audio/webm; codecs="vorbis"` report `probably`, while codec-less Ogg and
+audio WebM report `maybe`; Opus and WebM video remain unsupported.
+Source selection and script queries share the same MIME parsing/support matrix,
+including quoted parameter handling and first-valid duplicate parameters.
+Media Capabilities distinguishes complete-file FLAC from unsupported Media Source
+FLAC. `decodingInfo()` validates one-track MIME and Web IDL dictionaries, then
+applies conservative channel, sample-rate and video-output limits; it is not a
+per-host decoder or performance measurement. `smooth` and `powerEfficient`
+remain false. See the [configuration limits](encoded-audio-containers.md).
+`audio/m4a` and `audio/x-m4a` share the proven
 AAC-in-MP4 decoder path with `audio/mp4`; a codec hint for a video-only M4A
 still returns unsupported. A complete H.264-only fragmented MP4 uses a
 worker-owned monotonic playback clock rather than requiring a fabricated audio
@@ -44,7 +51,8 @@ same-origin because the current decoder path receives opaque encoded bytes in
 the renderer. Sending cross-origin cookies with those bytes would make an
 untrusted renderer able to read cookie-protected cross-origin responses.
 
-Remaining media boundaries are important: other Ogg codecs, WebM audio, DRM, and
+The [complete-file container limits](encoded-audio-containers.md) are important:
+other Ogg codecs, Opus, WebM video/multiple tracks, DRM, and
 detached `new Audio(src)` resource discovery are not implemented here. The
 latter needs script-originated resource discovery and detached-node lifetime
 through the renderer host, not merely an `Audio` constructor property.

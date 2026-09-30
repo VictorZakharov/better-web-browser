@@ -3,6 +3,9 @@
 use super::{MediaCodecFamily, MediaSession, SERIAL, decode_base64, decode_options, sha256};
 use std::time::Duration;
 
+#[path = "audio_only/containers.rs"]
+mod containers;
+
 fn verify_playback(bytes: &[u8], codec: MediaCodecFamily) {
     let _serial = SERIAL
         .lock()
@@ -172,7 +175,7 @@ fn mp3_audio_only_play_pause_seek_without_media_foundation_codec() {
 #[test]
 fn adts_aac_audio_only_play_pause_seek() {
     let bytes = decode_base64(include_str!("../fixtures/media/test-1s-audio.aac.base64"));
-    verify_playback(&bytes, MediaCodecFamily::Aac);
+    verify_playback(&bytes, MediaCodecFamily::AacLc);
 }
 
 #[test]

@@ -40,7 +40,9 @@ param(
     [string[]] $ScrollTarget = @(),
     [string[]] $WheelTarget = @(),
     [ValidateRange(0, 60000)]
-    [int] $NavigationDelayMs = 0
+    [int] $NavigationDelayMs = 0,
+    [ValidateRange(0, 60000)]
+    [int] $InitialActionDelayMs = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -120,6 +122,10 @@ if ($PSBoundParameters.ContainsKey('DeviceScaleFactor')) {
 }
 $arguments.Add('--output')
 $arguments.Add($outputPath)
+if ($InitialActionDelayMs -gt 0) {
+    $arguments.Add('--initial-action-delay-ms')
+    $arguments.Add($InitialActionDelayMs.ToString([Globalization.CultureInfo]::InvariantCulture))
+}
 $arguments.Add('--settle-ms')
 $arguments.Add($SettleMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
 $arguments.Add('--window-width')
@@ -218,8 +224,8 @@ if ($BackAfterReady -or $NavigationTarget.Count -gt 0 -or $LinkActivationTarget.
     $ClickTarget.Count -gt 0 -or $ControlValue.Count -gt 0 -or $KeyTarget.Count -gt 0 -or $ScrollTarget.Count -gt 0 -or $WheelTarget.Count -gt 0) {
     $arguments.Add('--navigation-delay-ms')
     $arguments.Add($NavigationDelayMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
-} elseif ($NavigationDelayMs -ne 0) {
-    throw '-NavigationDelayMs requires at least one navigation, link, selector, pointer, key, or scroll target.'
+} elseif ($NavigationDelayMs -ne 0 -or $InitialActionDelayMs -ne 0) {
+    throw 'Action delays require at least one navigation, link, selector, pointer, key, scroll, or wheel target.'
 }
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()

@@ -8,6 +8,8 @@ internal static class Program
 
     private static async Task<int> Main(string[] arguments)
     {
+        NativeWheelTests.Run();
+        if (arguments.SequenceEqual(new[] { "--wheel-timing-only" })) return 0;
         ProcessTreeTests.Run();
         ChromiumProfileTests.Run();
         if (arguments.SequenceEqual(new[] { "--process-tree-only" })) return 0;

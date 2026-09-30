@@ -1,5 +1,10 @@
 # Viewport scrolling compatibility
 
+This document includes dated implementation history. Current ordinary-wheel
+diagnostics and hidden paint ownership are documented in
+[wheel-input measurement](wheel-input-measurement.md); the historical direct
+scroll traces below do not include renderer wheel-input queueing.
+
 The document's normal-flow height is not its scrollable overflow. Absolutely positioned
 application roots can extend thousands of pixels below a short body without increasing
 the body's normal-flow height. Limiting native scrolling to that height makes these
@@ -93,7 +98,7 @@ missing media standard. Startup-to-audio latency and sustained playback must sti
 measured and fixed independently; passing scrolling tests does not complete issue #121.
 
 The corrected live watch-page scroll trace reached nonzero offsets (up to 362 native
-pixels in that response), with 7.5 ms p95 input-to-paint latency during its six-second
+pixels in that response), with 7.5 ms p95 direct-scroll-to-offscreen-paint latency during its six-second
 sampling window. The owned fixture independently tests native wheel-message delivery;
 the live trace exercises the shared scroll-position/presentation path directly.
 

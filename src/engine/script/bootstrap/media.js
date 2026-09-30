@@ -92,6 +92,7 @@
         constructor(id, ...metadata) {
             if (id === undefined) throw new TypeError('Illegal constructor');
             super(id, ...metadata);
+            mediaElementBrands.add(this);
             mediaStateFor(this);
         }
         get error() { return mediaStateFor(this).error; }
@@ -251,7 +252,11 @@
             mediaCommand(this, 0, 'playback', false, effectiveVolumeMillis(state));
         }
         fastSeek(time) { this.currentTime = time; }
-        canPlayType(type) { return supportedMediaType(type); }
+        canPlayType(type) {
+            if (!mediaElementBrands.has(this)) throw new TypeError('Invalid HTMLMediaElement receiver');
+            if (!arguments.length) throw new TypeError('canPlayType requires a media type');
+            return supportedMediaType(type);
+        }
         getStartDate() { return new Date(NaN); }
     }
     installEventHandlerAttributes(HTMLMediaElement.prototype);

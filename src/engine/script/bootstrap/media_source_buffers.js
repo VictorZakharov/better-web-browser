@@ -119,11 +119,13 @@
             });
         }
         changeType(type) {
+            if (!arguments.length) throw new TypeError('changeType requires a media type');
+            type = mediaTypeString(type);
             this.__requireOpen();
             if (this.updating) throw new DOMException('The SourceBuffer is updating', 'InvalidStateError');
             if (!mediaSourceTypeSupported(type))
                 throw new DOMException('The media type is not supported', 'NotSupportedError');
-            this.__type = String(type);
+            this.__type = type;
         }
         __beginUpdate(apply, append = false) {
             this.updating = true;

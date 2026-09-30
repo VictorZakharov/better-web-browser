@@ -20,7 +20,23 @@ pub(super) struct ScrollAnimation {
     pixel_remainder: f64,
 }
 
+struct ScrollRequest {
+    target: i32,
+    introduces_motion: bool,
+}
+
 impl ScrollAnimation {
+    fn plan_distance(&self, position: i32, distance: i32, maximum: i32) -> ScrollRequest {
+        let base = self.target.unwrap_or(position);
+        let target = base.saturating_add(distance).clamp(0, maximum);
+        ScrollRequest {
+            target,
+            // Keeping an old target, or cancelling back to the current position,
+            // introduces no pixels owned by this new request.
+            introduces_motion: target != base && target != position,
+        }
+    }
+
     fn consume_css_delta(&mut self, delta: f32, scale: f32) -> i32 {
         let total = delta as f64 * scale as f64 + self.pixel_remainder;
         let pixels = total.round().clamp(i32::MIN as f64, i32::MAX as f64) as i32;
@@ -57,6 +73,7 @@ impl BrowserState {
 
     pub(super) unsafe fn queue_css_wheel_scroll(&mut self, delta: f32) {
         if !delta.is_finite() || delta == 0.0 {
+            self.resolve_benchmark_wheel_viewport_request(false);
             return;
         }
         self.pending_history_scroll_y = None;
@@ -65,18 +82,20 @@ impl BrowserState {
         if distance != 0 {
             self.note_scroll_activity();
             self.queue_scroll_distance(distance);
+        } else {
+            self.resolve_benchmark_wheel_viewport_request(false);
         }
     }
 
     unsafe fn queue_scroll_distance(&mut self, distance: i32) {
         let maximum = (self.content_height - self.viewport_height()).max(0);
-        let base = self
-            .tabs
-            .active()
+        let request = self
             .scroll_animation
-            .target
-            .unwrap_or(self.scroll_y);
-        let target = base.saturating_add(distance).clamp(0, maximum);
+            .plan_distance(self.scroll_y, distance, maximum);
+        // This must precede tick_scroll_animation: it can synchronously paint an
+        // unchanged old target, and later timer ticks continue that same animation.
+        self.resolve_benchmark_wheel_viewport_request(request.introduces_motion);
+        let target = request.target;
         if target == self.scroll_y && self.scroll_animation.target.is_none() {
             return;
         }
@@ -166,6 +185,35 @@ mod tests {
             .sum();
         assert_eq!(reversed, -5);
         assert_eq!(animation.pixel_remainder, 0.0);
+    }
+
+    #[test]
+    fn unchanged_clamped_and_cancelled_targets_do_not_introduce_new_owned_motion() {
+        let mut animation = ScrollAnimation {
+            target: Some(100),
+            ..ScrollAnimation::default()
+        };
+        for distance in [0, 100, -80] {
+            assert!(!animation.plan_distance(20, distance, 100).introduces_motion);
+        }
+        let reversed = animation.plan_distance(20, -90, 100);
+        assert!(reversed.introduces_motion);
+        assert_eq!(reversed.target, 10);
+        animation.target = None;
+        assert!(!animation.plan_distance(100, 50, 100).introduces_motion);
+    }
+
+    #[test]
+    fn fractional_distance_keeps_its_remainder_without_owning_an_old_animation_tick() {
+        let mut animation = ScrollAnimation {
+            target: Some(100),
+            ..ScrollAnimation::default()
+        };
+        let distance = animation.consume_css_delta(0.25, 1.25);
+        assert_eq!(distance, 0);
+        assert!(!animation.plan_distance(20, distance, 100).introduces_motion);
+        assert_eq!(animation.consume_css_delta(0.25, 1.25), 1);
+        assert!(animation.plan_distance(20, 1, 200).introduces_motion);
     }
 
     #[test]

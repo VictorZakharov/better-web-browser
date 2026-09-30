@@ -321,7 +321,7 @@ impl DocumentRuntime {
             ..PageLoadReport::default()
         });
         if needs_present {
-            self.presentation_after_observers(outcome, style, load)
+            self.presentation_after_observers(outcome, style, load, None)
                 .map(|mut presentation| {
                     match &mut presentation {
                         AdvanceResult::Presentation(value) => value.clock_advanced = true,

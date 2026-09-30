@@ -40,7 +40,7 @@ internal sealed class FilmstripCapture : IDisposable
     public static async Task<FilmstripCapture?> StartAsync(CdpConnection cdp, Options options,
         Stopwatch stopwatch, TimeSpan timeout)
     {
-        if (options.FilmstripDirectory is null) return null;
+        if (options.FilmstripDirectory is null && options.WheelAfterReady.Count == 0) return null;
         var initial = await cdp.CallAsync(50_000, "Page.captureScreenshot", new { format = "png" }, timeout);
         var capture = new FilmstripCapture(cdp, options, stopwatch, initial.GetProperty("data").GetString()!);
         try
@@ -59,6 +59,7 @@ internal sealed class FilmstripCapture : IDisposable
 
     public async Task RunAsync(TimeSpan navigationStarted, TimeSpan timeout)
     {
+        if (options.FilmstripDirectory is null) return;
         var directory = options.FilmstripDirectory!;
         Directory.CreateDirectory(directory);
         var frames = new List<object>();
@@ -84,10 +85,18 @@ internal sealed class FilmstripCapture : IDisposable
         }
         finally
         {
-            await cdp.CallAsync(50_002, "Page.stopScreencast", null, timeout);
-            Dispose();
-            await acknowledgements;
+            // Preserve the existing filmstrip-only lifetime. Native wheels share this
+            // one stream and may intentionally run after the file-sampling window.
+            if (options.WheelAfterReady.Count == 0) await StopAsync(timeout);
+            else await acknowledgements;
         }
+    }
+
+    public async Task StopAsync(TimeSpan timeout)
+    {
+        await cdp.CallAsync(50_002, "Page.stopScreencast", null, timeout);
+        Dispose();
+        await acknowledgements;
     }
 
     public void Dispose() => subscription.Dispose();

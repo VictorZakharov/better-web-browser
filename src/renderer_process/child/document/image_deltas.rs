@@ -7,6 +7,9 @@ use crate::limits::{
 };
 use crate::renderer_protocol::{PresentedImage, RendererPresentation};
 
+#[cfg(test)]
+mod wheel_budget;
+
 pub(super) struct ImageDelta {
     pub presented: PresentedImage,
     pub canvas_update: bool,

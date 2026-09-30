@@ -135,26 +135,30 @@
         reportValidity() { return true; }
     }
     class HTMLProgressElement extends HTMLElement {
-        get value() { return clampedNumberAttribute(this, 'value', 0, 0, this.max); }
-        set value(value) { this.setAttribute('value', value); }
+        get value() { return progressNumericValues(this).value; }
+        set value(value) { setNumberAttribute(this, 'value', value); }
         get max() { return positiveNumberAttribute(this, 'max', 1); }
-        set max(value) { this.setAttribute('max', value); }
-        get position() { return this.hasAttribute('value') ? this.value / this.max : -1; }
+        set max(value) { setNumberAttribute(this, 'max', value, true); }
+        get position() {
+            if (!host('attrHas', nodeId(this), 'value')) return -1;
+            const { value, maximum } = progressNumericValues(this);
+            return value / maximum;
+        }
         get labels() { return labelsFor(this); }
     }
     class HTMLMeterElement extends HTMLElement {
         get min() { return numberAttribute(this, 'min', 0); }
-        set min(value) { this.setAttribute('min', value); }
-        get max() { return Math.max(this.min, numberAttribute(this, 'max', 1)); }
-        set max(value) { this.setAttribute('max', value); }
-        get value() { return clampedNumberAttribute(this, 'value', 0, this.min, this.max); }
-        set value(value) { this.setAttribute('value', value); }
-        get low() { return clampedNumberAttribute(this, 'low', this.min, this.min, this.max); }
-        set low(value) { this.setAttribute('low', value); }
-        get high() { return clampedNumberAttribute(this, 'high', this.max, this.low, this.max); }
-        set high(value) { this.setAttribute('high', value); }
-        get optimum() { return clampedNumberAttribute(this, 'optimum', (this.min + this.max) / 2, this.min, this.max); }
-        set optimum(value) { this.setAttribute('optimum', value); }
+        set min(value) { setNumberAttribute(this, 'min', value); }
+        get max() { return meterNumericValues(this).maximum; }
+        set max(value) { setNumberAttribute(this, 'max', value); }
+        get value() { return meterNumericValues(this).value; }
+        set value(value) { setNumberAttribute(this, 'value', value); }
+        get low() { return meterNumericValues(this).low; }
+        set low(value) { setNumberAttribute(this, 'low', value); }
+        get high() { return meterNumericValues(this).high; }
+        set high(value) { setNumberAttribute(this, 'high', value); }
+        get optimum() { return meterNumericValues(this).optimum; }
+        set optimum(value) { setNumberAttribute(this, 'optimum', value); }
         get labels() { return labelsFor(this); }
     }
     class HTMLTemplateElement extends HTMLElement {
@@ -210,13 +214,45 @@
             return valid;
         }
     }
-    function reflectedInteger(element, attribute, fallback) {
-        const value = Number(element.getAttribute(attribute));
-        return Number.isFinite(value) ? Math.trunc(value) : fallback;
+    function nonNegativeLongAttribute(element, attribute) {
+        const text = host('attrGet', nodeId(element), attribute);
+        // ReflectNonNegative parses an initial decimal integer, rejects values
+        // outside the signed-long range, and defaults missing/invalid to -1.
+        // https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#reflecting-content-attributes-in-idl-attributes
+        const match = text === null ? null : /^[\t\n\f\r ]*([+-]?[0-9]+)/.exec(text);
+        const value = match ? Number(match[1]) : NaN;
+        return value >= 0 && value <= 2147483647 ? (value === 0 ? 0 : value) : -1;
+    }
+    function setNonNegativeLongAttribute(element, attribute, value) {
+        // Web IDL long first coerces to Number, truncates and wraps to 32 bits.
+        // NaN/infinity become zero; BigInt/Symbol coercion still throws.
+        // https://webidl.spec.whatwg.org/#es-long
+        value = (+value) | 0;
+        if (value < 0) throw new DOMException('The length must not be negative', 'IndexSizeError');
+        setAttributeValueInternal(element, attribute, String(value));
     }
     function numberAttribute(element, attribute, fallback) {
-        const value = Number(element.getAttribute(attribute));
-        return Number.isFinite(value) ? value : fallback;
+        const text = host('attrGet', nodeId(element), attribute);
+        if (text === null) return fallback;
+        // HTML parses a decimal prefix, rather than ECMAScript Number's entire
+        // string: missing/empty values fail, "0x10" is zero and "2e+" is two.
+        // Only ASCII whitespace is skipped. The optional exponent deliberately
+        // requires digits so an incomplete exponent preserves the significand.
+        // https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-floating-point-number-values
+        const match = /^[\t\n\f\r ]*([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)/.exec(text);
+        const value = match ? Number(match[1]) : NaN;
+        return Number.isFinite(value) ? (value === 0 ? 0 : value) : fallback;
+    }
+    function setNumberAttribute(element, attribute, value, positiveOnly = false) {
+        // Web IDL double uses ToNumber and rejects non-finite results. Unary +
+        // also rejects BigInt (including objects returning it) unlike Number().
+        // https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#reflecting-content-attributes-in-idl-attributes
+        value = +value;
+        if (!Number.isFinite(value)) throw new TypeError('The value must be a finite number');
+        // ReflectPositive applies to progress.max: nonpositive IDL assignment
+        // is ignored, while invalid content attributes still use the fallback.
+        if (!positiveOnly || value > 0)
+            setAttributeValueInternal(element, attribute, String(value));
     }
     function positiveNumberAttribute(element, attribute, fallback) {
         const value = numberAttribute(element, attribute, fallback);
@@ -224,6 +260,24 @@
     }
     function clampedNumberAttribute(element, attribute, fallback, minimum, maximum) {
         return Math.min(maximum, Math.max(minimum, numberAttribute(element, attribute, fallback)));
+    }
+    function progressNumericValues(element) {
+        const maximum = positiveNumberAttribute(element, 'max', 1);
+        return { maximum, value: clampedNumberAttribute(element, 'value', 0, 0, maximum) };
+    }
+    function meterNumericValues(element) {
+        // Resolve the six gauge points from content attributes in specification
+        // order; own properties or overridden public getters cannot change them.
+        const minimum = numberAttribute(element, 'min', 0);
+        const maximum = Math.max(minimum, numberAttribute(element, 'max', 1));
+        const value = clampedNumberAttribute(element, 'value', 0, minimum, maximum);
+        const low = clampedNumberAttribute(element, 'low', minimum, minimum, maximum);
+        const high = clampedNumberAttribute(element, 'high', maximum, low, maximum);
+        // Same-sign bounds can subtract safely; opposite signs cannot.
+        const midpoint = minimum < 0 && maximum > 0
+            ? minimum / 2 + maximum / 2 : minimum + (maximum - minimum) / 2;
+        const optimum = clampedNumberAttribute(element, 'optimum', midpoint, minimum, maximum);
+        return { minimum, maximum, value, low, high, optimum };
     }
     function labelsFor(element) {
         return document.querySelectorAll('label').filter(label => label.control === element);

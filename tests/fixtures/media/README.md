@@ -117,3 +117,42 @@ The decoded fixture file is 6,675 bytes with SHA-256
 `1e65839c935c43c481f9e7a7df3888a2ab2ce9e9fb05f5d0b86c846f536e4a7b`.
 FFmpeg is not a runtime, build, or test dependency. The fixture exercises the
 pure-Rust Vorbis decoder and silent playback in the contained media worker.
+
+## Self-authored complete audio-container fixtures
+
+The `test-0.4s-tone.aac.base64`, `.webm.base64`, and `.oga.base64` files encode
+a 0.4-second 440 Hz mono synthetic sine wave at 44,100 Hz. They test ADTS
+AAC-LC, audio-only WebM/Vorbis, and RFC 9639 Ogg/FLAC admission and decoding.
+No third-party recording or codec source is included. The Ogg/FLAC output has
+17,640 PCM frames; its STREAMINFO total is unknown (zero) and its EOS granule
+declares the exact final sample count. ADTS has no ISO BMFF edit list, so AAC
+encoder delay and final packet padding remain in its roughly 0.441-second
+decoded presentation. The WebM container declares roughly 0.403 seconds;
+tests obtain actual PCM through the production decoder rather than treating
+that duration as an exact sample count.
+
+`test-0.4s-opus.webm.base64` encodes the same signal as mono Opus (48,000 Hz).
+`test-0.4s-mixed.webm.base64` combines that Vorbis tone with a self-authored
+16×16 black VP8 video. Both are intentionally unsupported fixtures: an audio
+consumer must reject them without silently decoding just the supported track.
+
+Reproduce all five with the reviewed development-only generator:
+
+```powershell
+./scripts/generate-audio-container-fixtures.ps1 -FixtureDirectory G:/Git/better-web-browser/tests/fixtures/media
+```
+
+The script records exact encoder options, launches local FFmpeg/ffprobe with
+`CreateNoWindow`, keeps binary/scratch output on G:, and writes wrapped Base64.
+The checked-in files were generated with the locally installed FFmpeg
+`N-111280-gd51b0580e4-20230625`. Its GPL-3.0-or-later build is a development
+tool only, not linked, bundled, or required by builds/tests/runtime. These
+self-authored generated signals are distributed under the repository license.
+
+| Decoded file | Bytes | SHA-256 |
+| --- | ---: | --- |
+| ADTS AAC-LC | 5,369 | `76b93e544d01b957964254985a1281fe779a26169e52a903f04fd7755644a2c4` |
+| WebM/Vorbis | 4,545 | `ce4d94bcda536a557366c4d910b2661ab78dbebc624d4d4b953fb051dfc478a7` |
+| Ogg/FLAC | 4,970 | `13fe9b23d28fbcf68361a0987066058715127136e6261efe9f44330b6ce209e3` |
+| WebM/Opus (rejected) | 2,348 | `b879b6246f21074e21b40b41799409b1b58105def5e05aa8304415f33eb6582b` |
+| WebM/VP8+Vorbis (rejected) | 4,810 | `872c2207771fd20478ce17bfd2396c8cc9f0d492048bd546edfb6b2b60f98917` |

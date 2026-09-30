@@ -1,7 +1,7 @@
 //! Wheel default actions target the nearest scrollable ancestor under the pointer.
 use super::*;
 use crate::engine::dom::Node;
-use crate::renderer_protocol::WheelInput;
+use crate::renderer_protocol::{WheelDecision, WheelInput};
 
 impl DocumentRuntime {
     pub(super) fn scroll_key(&mut self, key: &str) -> Result<Option<ScriptOutcome>, String> {
@@ -152,7 +152,10 @@ impl DocumentRuntime {
         Ok(result)
     }
 
-    pub(super) fn wheel_input(&mut self, input: WheelInput) -> Result<ScriptOutcome, String> {
+    pub(super) fn wheel_input(
+        &mut self,
+        input: WheelInput,
+    ) -> Result<(ScriptOutcome, WheelDecision), String> {
         let target = input
             .target
             .and_then(|target| self.resolve_target(target))
@@ -167,7 +170,7 @@ impl DocumentRuntime {
         })?;
         let mut outcome = result.outcome;
         if !result.default_allowed {
-            return Ok(outcome);
+            return Ok((outcome, WheelDecision::Cancelled));
         }
         if outcome.render_requested {
             self.page.refresh_resources_after_invalidation_for_viewport(
@@ -186,19 +189,40 @@ impl DocumentRuntime {
                     scroll.offset_x + if scroll.user_x { input.delta_x } else { 0.0 },
                     scroll.offset_y + if scroll.user_y { input.delta_y } else { 0.0 },
                 );
+                let previous_offset = node.scroll_offset.get();
                 node.scroll_offset.set(offset);
-                let event =
-                    self.dispatch_user_input(UserInputEvent::ElementScroll { target: node })?;
+                let event = self.dispatch_user_input(UserInputEvent::ElementScroll {
+                    target: node.clone(),
+                })?;
+                // CSSOM View scroll notifications are queued, not dispatched inline.
+                // This verdict describes the default-action offset in its owning
+                // snapshot; a later listener reset owns a separate presentation.
+                // https://drafts.csswg.org/cssom-view/#scrolling-events
+                let moved = node.scroll_offset.get() != previous_offset;
                 merge_outcome(&mut outcome, event.outcome, self.page.dom.document.id());
                 outcome.render_requested = true;
                 self.geometry_observers_pending = true;
-                return Ok(outcome);
+                return Ok((
+                    outcome,
+                    if moved {
+                        WheelDecision::NestedScroll
+                    } else {
+                        WheelDecision::NoMotion
+                    },
+                ));
             }
             current = Node::composed_parent(&node);
         }
         // The browser may still be animating earlier wheel inputs. An absolute position based
         // on input.viewport_y loses distance when multiple events were queued at that position.
         outcome.viewport_wheel_delta_y = input.delta_y;
-        Ok(outcome)
+        Ok((
+            outcome,
+            if input.delta_y == 0.0 {
+                WheelDecision::NoMotion
+            } else {
+                WheelDecision::Viewport
+            },
+        ))
     }
 }

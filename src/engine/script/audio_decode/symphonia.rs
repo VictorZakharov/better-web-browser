@@ -1,40 +1,18 @@
-//! Complete MP3 and AAC-in-M4A decoding for Web Audio.
+//! Complete compressed audio files decoded on Web Audio's document-owned worker.
 //! Symphonia probes and decodes inside the existing document-owned worker.
 
 use super::{DecodedAudio, MAX_DECODED_BYTES, MAX_ENCODED_BYTES, resample};
+use crate::encoded_audio::Kind;
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, Ordering};
 use symphonia::core::codecs::audio::AudioDecoderOptions;
-use symphonia::core::codecs::audio::well_known::{CODEC_ID_AAC, CODEC_ID_MP3};
 use symphonia::core::common::Limit;
 use symphonia::core::formats::probe::Hint;
-use symphonia::core::formats::well_known::{FORMAT_ID_ISOMP4, FORMAT_ID_MP3};
 use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
-#[derive(Clone, Copy)]
-pub(super) enum Kind {
-    Mp3,
-    AacM4a,
-}
-
-pub(super) fn sniff(bytes: &[u8]) -> Option<Kind> {
-    if bytes.get(4..8) == Some(b"ftyp") {
-        Some(Kind::AacM4a)
-    } else if bytes.starts_with(b"ID3")
-        || bytes.get(..2).is_some_and(|header| {
-            header[0] == 0xff
-                && header[1] & 0xe0 == 0xe0
-                && header[1] & 0x18 != 0x08
-                && header[1] & 0x06 == 0x02
-        })
-    {
-        Some(Kind::Mp3)
-    } else {
-        None
-    }
-}
+mod parameters;
 
 fn mp3_has_declared_length(bytes: &[u8]) -> bool {
     // Symphonia also estimates a length for untagged MP3s from the first few
@@ -67,16 +45,17 @@ pub(super) fn decode(
     if cancelled.load(Ordering::Relaxed) {
         return Err("audio decoding was cancelled".into());
     }
-    let (extension, expected_format, expected_codec) = match kind {
-        Kind::Mp3 => ("mp3", FORMAT_ID_MP3, CODEC_ID_MP3),
-        Kind::AacM4a => ("m4a", FORMAT_ID_ISOMP4, CODEC_ID_AAC),
-    };
+    if !target_rate.is_finite() || !(8_000.0..=192_000.0).contains(&target_rate) {
+        return Err("the context sample rate is unsupported".into());
+    }
+    crate::encoded_audio::validate_with_cancel(bytes, kind, cancelled)?;
+    let extension = kind.extension();
     // Symphonia currently returns decoded AAC packets rather than applying
     // the track's edit list. Preserve the container's presentation window so
     // encoder priming and final packet padding do not enter the AudioBuffer.
     let presentation_edit = match kind {
-        Kind::Mp3 => None,
         Kind::AacM4a => crate::iso_bmff_audio::ordinary_audio_edit(bytes)?,
+        _ => None,
     };
     let mut hint = Hint::new();
     hint.with_extension(extension);
@@ -87,37 +66,32 @@ pub(super) fn decode(
     let mut format = symphonia::default::get_probe()
         .probe(&hint, media, FormatOptions::default(), metadata)
         .map_err(|error| format!("open {extension} audio: {error}"))?;
-    if format.format_info().format != expected_format {
+    if format.format_info().format != kind.expected_format() {
         return Err("audio container does not match its byte signature".into());
     }
-    // The MP3 demuxer exposes its audio track; the M4A parser above admits
-    // only one track so the edit window cannot be applied to the wrong one.
+    if format.tracks().len() != 1 {
+        return Err("audio decoding requires exactly one audio track".into());
+    }
     let track = format
         .first_track(TrackType::Audio)
         .ok_or("audio file has no audio track")?;
     let track_id = track.id;
     let expected_frames = match kind {
         Kind::Mp3 if !mp3_has_declared_length(bytes) => None,
-        _ => track.num_frames,
+        // ADTS uses a sampled bitrate estimate and WebM timing is not an
+        // authoritative PCM count. Their bounded complete framing is checked
+        // before probing; decode errors and EOF determine the actual length.
+        Kind::AacAdts | Kind::VorbisWebm => None,
+        _ => track.num_frames.filter(|frames| *frames > 0),
     };
     let params = track
         .codec_params
         .as_ref()
         .and_then(|params| params.audio())
         .ok_or("audio track has no decoder parameters")?;
-    if params.codec != expected_codec {
-        return Err("audio track codec is unsupported for this container".into());
-    }
-    if params
-        .sample_rate
-        .is_some_and(|rate| !(8_000..=192_000).contains(&rate))
-        || params
-            .channels
-            .as_ref()
-            .is_some_and(|channels| !(1..=32).contains(&channels.count()))
-    {
-        return Err("audio track exceeds the supported PCM format".into());
-    }
+    parameters::validate(params, kind, expected_frames, target_rate)?;
+    let declared_rate = params.sample_rate;
+    let declared_channels = params.channels.as_ref().map(|channels| channels.count());
     let mut decoder = symphonia::default::get_codecs()
         .make_audio_decoder(params, &AudioDecoderOptions::default().verify(true))
         .map_err(|error| format!("initialize {extension} decoder: {error}"))?;
@@ -136,7 +110,7 @@ pub(super) fn decode(
             break;
         };
         if packet.track_id != track_id {
-            continue;
+            return Err("audio packet belongs to an undeclared track".into());
         }
         // A corrupt packet invalidates the complete AudioBuffer; don't return
         // a plausible but partial decode after Symphonia reports an error.
@@ -147,6 +121,8 @@ pub(super) fn decode(
         let channels = decoded.num_planes();
         if !(8_000..=192_000).contains(&packet_rate)
             || !(1..=32).contains(&channels)
+            || declared_rate.is_some_and(|rate| rate != packet_rate)
+            || declared_channels.is_some_and(|count| count != channels)
             || rate.is_some_and(|previous| previous != packet_rate)
             || (!source.is_empty() && source.len() != channels)
         {
@@ -180,6 +156,20 @@ pub(super) fn decode(
     }
     if decoder.finalize().verify_ok == Some(false) {
         return Err("audio checksum verification failed".into());
+    }
+    if matches!(kind, Kind::FlacOgg) {
+        // Zero STREAMINFO samples means unknown length. The Ogg reader may
+        // discover a nonzero frame count only when it reaches the EOS granule.
+        let final_frames = format
+            .tracks()
+            .iter()
+            .find(|track| track.id == track_id)
+            .and_then(|track| track.num_frames)
+            .filter(|frames| *frames > 0)
+            .or(expected_frames);
+        if final_frames.is_some_and(|expected| expected != frames as u64) {
+            return Err("Ogg/FLAC PCM frame count disagrees with its declared length".into());
+        }
     }
     // MP3 encoder delay and AAC priming can make the presented PCM length
     // differ from the container count by a final packet or two. A large

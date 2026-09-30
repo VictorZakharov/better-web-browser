@@ -1,6 +1,8 @@
 use super::*;
 use std::time::{Duration, Instant};
 
+mod containers;
+
 fn execute_decode_html_until_logged(html: &str, expected: &[&str]) -> Vec<String> {
     let dom = dom::parse_with_scripting(html, true);
     let scripts = dom

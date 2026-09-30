@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Owned wheel latency fixture</title>
+<style>
+html,body{margin:0}
+main{height:3000px;padding-top:120px;background:#eee}
+#pane{position:absolute;left:0;top:0;width:200px;height:100px;overflow:auto}
+#pane div{height:150px;background:red}
+#pane div+div{background:blue}
+#cancel{position:absolute;left:240px;top:0;width:200px;height:100px;background:green}
+</style>
+<main>Viewport scroll extent</main>
+<div id="pane"><div>First pane row</div><div>Second pane row</div></div>
+<div id="cancel">Wheel cancellation area</div>
+<script>
+const pane=document.getElementById('pane');
+document.getElementById('cancel').addEventListener('wheel',event=>{
+  event.preventDefault();
+  console.log('wheel cancelled:'+event.deltaY);
+});
+pane.addEventListener('scroll',()=>console.log('nested offset:'+pane.scrollTop));
+addEventListener('wheel',event=>console.log('wheel observed:'+event.deltaY));
+addEventListener('scroll',()=>console.log('viewport offset:'+scrollY));
+addEventListener('keydown',event=>{
+  if(event.key!=='b')return;
+  console.log('long task begin');
+  const until=Date.now()+300;
+  while(Date.now()<until){}
+  console.log('long task end');
+});
+</script>

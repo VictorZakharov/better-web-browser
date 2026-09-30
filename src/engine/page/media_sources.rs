@@ -276,85 +276,10 @@ fn request_options(element: &NodeRef) -> (RequestMode, CredentialsMode) {
     }
 }
 
-/// A true result means the type is at least `maybe` playable; the worker still
-/// sniffs the bytes and refuses unsupported codecs. Unknown parameters do not
-/// disqualify otherwise supported media, but malformed/unsupported codecs do.
+/// Use precisely the same container/codec contract as HTMLMediaElement.
+/// A nonempty answer only admits a candidate: byte validation still follows.
 fn supported_media_type(kind: &str) -> bool {
-    let mut parts = kind.split(';');
-    let essence = parts.next().unwrap_or("").trim().to_ascii_lowercase();
-    let wave = matches!(
-        essence.as_str(),
-        "audio/wav" | "audio/wave" | "audio/x-wav" | "audio/vnd.wave"
-    );
-    let mpeg = essence == "audio/mpeg";
-    let aac = essence == "audio/aac";
-    let ogg = essence == "audio/ogg";
-    // RFC 9639 applies to native FLAC only and defines no media-type parameters.
-    // Ogg FLAC remains unsupported even though the codec itself can be decoded.
-    let flac = matches!(essence.as_str(), "audio/flac" | "audio/x-flac");
-    if flac {
-        return parts.next().is_none();
-    }
-    let mp4 = matches!(
-        essence.as_str(),
-        "video/mp4" | "audio/mp4" | "audio/m4a" | "audio/x-m4a" | "application/mp4"
-    );
-    if !wave && !mpeg && !aac && !mp4 && !ogg {
-        return false;
-    }
-    let mut codecs = None;
-    for parameter in parts {
-        let parameter = parameter.trim();
-        if parameter.to_ascii_lowercase().starts_with("codecs") {
-            if codecs.is_some() {
-                return false;
-            }
-            let Some((key, value)) = parameter.split_once('=') else {
-                return false;
-            };
-            if !key.trim().eq_ignore_ascii_case("codecs") {
-                return false;
-            }
-            let value = value.trim();
-            let value = value
-                .strip_prefix('"')
-                .and_then(|quoted| quoted.strip_suffix('"'))
-                .or_else(|| {
-                    value
-                        .strip_prefix('\'')
-                        .and_then(|quoted| quoted.strip_suffix('\''))
-                })
-                .unwrap_or(value);
-            codecs = Some(value.to_ascii_lowercase());
-        }
-    }
-    let Some(codecs) = codecs else {
-        return true;
-    };
-    let codecs = codecs.split(',').map(str::trim).collect::<Vec<_>>();
-    if codecs.iter().any(|codec| codec.is_empty()) {
-        return false;
-    }
-    if wave {
-        return codecs.len() == 1 && matches!(codecs[0], "1" | "pcm");
-    }
-    if mpeg {
-        return codecs == ["mp3"];
-    }
-    if aac {
-        return codecs == ["mp4a.40.2"];
-    }
-    if ogg {
-        return codecs == ["vorbis"];
-    }
-    let has_audio = codecs.contains(&"mp4a.40.2");
-    let has_video = codecs.iter().any(|codec| {
-        codec
-            .strip_prefix("avc1.")
-            .is_some_and(|hex| hex.len() == 6 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()))
-    });
-    (has_audio || (!essence.starts_with("audio/") && has_video))
-        && codecs.len() == usize::from(has_audio) + usize::from(has_video)
+    !crate::media_type::can_play_type(kind).is_empty()
 }
 
 #[cfg(test)]

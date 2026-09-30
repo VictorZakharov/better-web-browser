@@ -1,6 +1,8 @@
 use crate::engine::invalidation::RenderInvalidation;
 use crate::engine::{ScriptOutcome, StyleRefreshStats};
-use crate::renderer_protocol::{HistoryAction, MediaRuntimeReport, RuntimeReport, StyleReport};
+use crate::renderer_protocol::{
+    HistoryAction, MediaRuntimeReport, RuntimeReport, StyleReport, WheelAcknowledgement,
+};
 use std::time::Duration;
 mod telemetry;
 
@@ -118,9 +120,18 @@ pub(super) fn merge_outcome(
 }
 
 pub(super) fn runtime_report(
+    outcome: ScriptOutcome,
+    runtime_active: bool,
+    media: Option<MediaRuntimeReport>,
+) -> RuntimeReport {
+    runtime_report_with_wheel(outcome, runtime_active, media, None)
+}
+
+pub(super) fn runtime_report_with_wheel(
     mut outcome: ScriptOutcome,
     runtime_active: bool,
     media: Option<MediaRuntimeReport>,
+    wheel: Option<WheelAcknowledgement>,
 ) -> RuntimeReport {
     RuntimeReport {
         scripts_executed: outcome.executed as u64,
@@ -132,6 +143,7 @@ pub(super) fn runtime_report(
         navigation_options: outcome.navigation_options,
         viewport_scroll_y: outcome.viewport_scroll_y,
         viewport_wheel_delta_y: outcome.viewport_wheel_delta_y,
+        wheel_acknowledgements: wheel.into_iter().collect(),
         history_actions: outcome
             .history_actions
             .into_iter()

@@ -1,4 +1,5 @@
 use super::*;
+mod initial_action_delay;
 
 #[test]
 fn benchmark_scale_is_explicit_and_interactive_scale_stays_native() {

@@ -181,4 +181,5 @@ has its upstream BSD license. Locked transitive build-tool licenses are in
 The adapter requires C++20 and resolves exact-version Cargo registry headers.
 Vendored/custom registries must set `BREEZE_V8_SOURCE_DIR` to that crate directory.
 Ambiguous registries or header/library version mismatches fail the build. Browser
-and renderer must be rebuilt together: this slice uses IPC major version 14.
+and renderer must be rebuilt together. This slice introduced IPC major version 14;
+the current [wheel-reporting extension](wheel-input-measurement.md) uses major 15.
