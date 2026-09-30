@@ -47,6 +47,7 @@ impl MediaDecodeReport {
                         | MediaCodecFamily::Mp3
                         | MediaCodecFamily::Flac
                         | MediaCodecFamily::Vorbis
+                        | MediaCodecFamily::Opus
                 ))
             || (has_video && has_audio && self.audio_codec != MediaCodecFamily::AacLc)
         {
@@ -93,6 +94,13 @@ impl MediaDecodeReport {
             || (!has_audio && (self.audio_sample_rate != 0 || self.audio_channels != 0))
         {
             return Err(MediaProtocolError::InvalidPayload("decoded audio format"));
+        }
+        // The admitted family-0 Ogg/Opus path presents fixed 48 kHz mono/stereo
+        // PCM. Do not accept codec telemetry advertising unimplemented layouts.
+        if self.audio_codec == MediaCodecFamily::Opus
+            && (self.audio_sample_rate != 48_000 || !matches!(self.audio_channels, 1 | 2))
+        {
+            return Err(MediaProtocolError::InvalidPayload("decoded Opus format"));
         }
         if (has_video && self.video_samples == 0)
             || (has_audio && self.audio_samples == 0)

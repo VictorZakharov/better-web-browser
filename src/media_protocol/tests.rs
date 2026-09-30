@@ -1,6 +1,7 @@
 use super::*;
 mod append;
 mod graph_pcm;
+mod opus;
 mod roundtrip;
 use std::io::Cursor;
 

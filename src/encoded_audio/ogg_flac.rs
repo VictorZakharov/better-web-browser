@@ -1,7 +1,7 @@
 //! Complete logical-stream admission for the RFC 9639 FLAC-in-Ogg mapping.
 
 use super::Budget;
-use ogg::reading::{PacketReader, PageParser};
+use ogg::reading::PacketReader;
 use std::io::Cursor;
 
 const MAX_PACKET: usize = 256 * 1024;
@@ -16,7 +16,12 @@ pub(super) fn sniff(bytes: &[u8]) -> bool {
 }
 
 pub(super) fn validate(bytes: &[u8], budget: &mut Budget<'_>) -> Result<(), String> {
-    let (serial, eos_granule) = pages(bytes, budget)?;
+    let envelope = super::ogg_envelope::inspect(bytes, |_| MAX_PACKET, || budget.step())?;
+    let serial = envelope.serial;
+    let eos_granule = envelope.pages.last().unwrap().granule;
+    if envelope.pages[0].completed_packets != 1 || envelope.pages[0].continued {
+        return Err("Ogg FLAC mapping must occupy its own 51-byte BOS packet/page".into());
+    }
     let mut packets = PacketReader::new(Cursor::new(bytes));
     let first = packets
         .read_packet()
@@ -103,80 +108,6 @@ fn stream_info(info: &[u8], eos: u64) -> Result<(), String> {
         );
     }
     Ok(())
-}
-
-fn pages(bytes: &[u8], budget: &mut Budget<'_>) -> Result<(u32, u64), String> {
-    let mut remaining = bytes;
-    let mut serial = None;
-    let mut sequence = 0_u32;
-    let mut continued = false;
-    let mut packet_bytes = 0_usize;
-    let mut ended = false;
-    let mut eos = 0;
-    while !remaining.is_empty() {
-        budget.step()?;
-        let header: [u8; 27] = remaining
-            .get(..27)
-            .and_then(|head| head.try_into().ok())
-            .ok_or("Ogg page header is truncated")?;
-        let current_serial = u32::from_le_bytes(header[14..18].try_into().unwrap());
-        let current_sequence = u32::from_le_bytes(header[18..22].try_into().unwrap());
-        let flags = header[5];
-        if header[..4] != *b"OggS"
-            || flags & !7 != 0
-            || ended
-            || current_sequence != sequence
-            || serial.is_some_and(|value| value != current_serial)
-            || (flags & 1 != 0) != continued
-            || (flags & 2 != 0) != serial.is_none()
-        {
-            return Err(
-                "Ogg FLAC requires consecutive pages of one complete logical stream".into(),
-            );
-        }
-        serial = Some(current_serial);
-        sequence = sequence
-            .checked_add(1)
-            .ok_or("Ogg page sequence overflows admission limit")?;
-        let (mut parser, segments) =
-            PageParser::new(header).map_err(|error| format!("read Ogg page: {error}"))?;
-        let laces = remaining
-            .get(27..27 + segments)
-            .ok_or("Ogg page segment table is truncated")?;
-        if sequence == 1 && laces != [51] {
-            return Err("Ogg FLAC mapping must occupy its own 51-byte BOS packet/page".into());
-        }
-        for lace in laces {
-            packet_bytes += usize::from(*lace);
-            if packet_bytes > MAX_PACKET {
-                return Err("Ogg packet exceeds admission allocation limit".into());
-            }
-            continued = *lace == 255;
-            if !continued {
-                packet_bytes = 0;
-            }
-        }
-        let body_bytes = parser.parse_segments(laces.to_vec());
-        let end = 27 + segments + body_bytes;
-        let body = remaining
-            .get(27 + segments..end)
-            .ok_or("Ogg page body is truncated")?;
-        parser
-            .parse_packet_data(body.to_vec())
-            .map_err(|error| format!("verify Ogg page: {error}"))?;
-        ended = flags & 4 != 0;
-        if ended {
-            if continued {
-                return Err("Ogg EOS leaves an incomplete packet".into());
-            }
-            eos = u64::from_le_bytes(header[6..14].try_into().unwrap());
-        }
-        remaining = &remaining[end..];
-    }
-    if !ended || sequence < 3 {
-        return Err("Ogg FLAC source has no complete EOS audio page".into());
-    }
-    Ok((serial.ok_or("Ogg FLAC source has no pages")?, eos))
 }
 
 #[cfg(test)]

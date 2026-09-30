@@ -125,6 +125,8 @@ fn navigation_retires_compressed_audio_decode_callbacks_with_the_old_document() 
         include_str!("../../fixtures/media/test-0.4s-tone.aac.base64"),
         include_str!("../../fixtures/media/test-0.4s-tone.webm.base64"),
         include_str!("../../fixtures/media/test-0.4s-tone.oga.base64"),
+        include_str!("../../fixtures/media/test-0.4s-opus.ogg.base64"),
+        include_str!("../../fixtures/media/test-0.4s-opus-stereo.ogg.base64"),
     ]
     .into_iter()
     .enumerate()

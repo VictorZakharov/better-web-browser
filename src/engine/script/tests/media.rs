@@ -75,7 +75,7 @@ fn can_play_type_reports_only_decodeable_complete_source_audio_and_video() {
                 [audio, 'audio/mp4; codecs="avc1.42E01E"', ''],
                 [audio, 'audio/m4a; codecs="avc1.42E01E"', ''],
                 [audio, 'audio/mp4; codecs="mp4a.40.5"', ''],
-                [audio, 'audio/ogg; codecs="opus"', ''],
+                [audio, 'audio/ogg; codecs="opus"', 'probably'],
                 [video, 'video/webm; codecs="vp9"', ''],
                 [audio, 'audio/mp4; codecs="mp4a.40.2"; codecs="mp4a.40.2"', 'probably'],
                 [audio, 'audio/mp4; codecs', 'maybe'],
@@ -344,12 +344,12 @@ fn media_capabilities_reports_only_the_owned_decode_path() {
             navigator.mediaCapabilities.decodingInfo({ type: 'file' }).then(
                 () => 'accepted', error => error.name
             )
-        ]).then(([owned, videoOnly, audioOnly, unsupportedAudio, unsupported, encrypted, invalid]) => {
+        ]).then(([owned, videoOnly, audioOnly, opusAudio, unsupported, encrypted, invalid]) => {
             document.getElementById('status').textContent = [
                 owned.supported, owned.smooth, owned.powerEfficient,
                 owned.keySystemAccess === null, owned.configuration.video.width,
                 videoOnly.supported,
-                audioOnly.supported, audioOnly.smooth, unsupportedAudio.supported,
+                audioOnly.supported, audioOnly.smooth, opusAudio.supported,
                 unsupported.supported, unsupported.smooth,
                 encrypted.supported, encrypted.keySystemAccess === null,
                 invalid
@@ -360,7 +360,7 @@ fn media_capabilities_reports_only_the_owned_decode_path() {
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        "true:false:false:true:320:true:true:false:false:false:false:false:true:TypeError"
+        "true:false:false:true:320:true:true:false:true:false:false:false:true:TypeError"
     );
 }
 

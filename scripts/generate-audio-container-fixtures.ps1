@@ -2,6 +2,7 @@
 param(
     [string] $OutputDirectory,
     [string] $FixtureDirectory,
+    [string[]] $FixtureName = @(),
     [string] $Ffmpeg = 'ffmpeg',
     [string] $Ffprobe = 'ffprobe'
 )
@@ -52,20 +53,29 @@ $formats = @(
     @{ Extension = 'webm'; Codec = 'libvorbis'; Container = 'webm'; Options = @('-q:a', '2') },
     @{ Extension = 'oga'; Codec = 'flac'; Container = 'ogg'; Options = @('-sample_fmt', 's16') },
     @{ Extension = 'webm'; Name = 'test-0.4s-opus'; Codec = 'libopus'; Container = 'webm'; Options = @('-b:a', '32k') },
+    @{ Extension = 'ogg'; Name = 'test-0.4s-opus'; Codec = 'libopus'; Container = 'ogg'; Options = @('-b:a', '32k') },
+    @{ Extension = 'ogg'; Name = 'test-0.4s-opus-stereo'; Codec = 'libopus'; Container = 'ogg'; Channels = '2'; Source = 'aevalsrc=0.1*sin(2*PI*440*t)|0.1*sin(2*PI*660*t):s=48000:d=0.4'; Options = @('-b:a', '64k') },
     @{ Extension = 'webm'; Name = 'test-0.4s-mixed'; Codec = 'libvorbis'; Container = 'webm'; Video = $true; Options = @('-q:a', '2', '-c:v', 'libvpx', '-deadline', 'realtime', '-b:v', '20k') }
 )
+foreach ($requested in $FixtureName) {
+    if ($requested -notin @($formats | ForEach-Object {
+        $base = if ($_.Name) { $_.Name } else { 'test-0.4s-tone' }
+        "$base.$($_.Extension)"
+    })) { throw "Unknown owned fixture: $requested" }
+}
 foreach ($format in $formats) {
     $baseName = if ($format.Name) { $format.Name } else { 'test-0.4s-tone' }
     $name = "$baseName.$($format.Extension)"
+    if ($FixtureName.Count -gt 0 -and $name -notin $FixtureName) { continue }
     $binary = Join-Path $taskOutput $name
     $arguments = @(
         '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i',
-        'sine=frequency=440:sample_rate=44100:duration=0.4'
+        $(if ($format.Source) { $format.Source } else { 'sine=frequency=440:sample_rate=44100:duration=0.4' })
     )
     if ($format.Video) {
         $arguments += @('-f', 'lavfi', '-i', 'color=c=black:size=16x16:rate=10:duration=0.4')
     }
-    $arguments += @('-ac', '1',
+    $arguments += @('-ac', $(if ($format.Channels) { $format.Channels } else { '1' }),
         '-map_metadata', '-1', '-fflags', '+bitexact', '-flags:a', '+bitexact',
         '-c:a', $format.Codec
     ) + $format.Options + @('-f', $format.Container, '-y', $binary)

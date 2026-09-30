@@ -75,6 +75,7 @@ foreach ($package in $packages) {
 [void] $markdown.AppendLine()
 [void] $markdown.AppendLine('- `psl2` embeds a compact Mozilla Public Suffix List snapshot. The crate is MIT OR Apache-2.0; the list data is MPL-2.0. The crate and list versions are pinned by `Cargo.lock` and `psl2::psl_version()`.')
 [void] $markdown.AppendLine('- The AccessKit crates are MIT OR Apache-2.0 and contain portions derived from Chromium under a BSD license. The required upstream notice is preserved at `third_party/accesskit/LICENSE.chromium` and copied beside every AccessKit package notice in release archives.')
+[void] $markdown.AppendLine('- `opus` 0.4.0 is the MIT OR Apache-2.0 safe Rust API. `opusic-sys` 0.7.5 statically builds bundled libopus 1.6.1 (BSD-3-Clause), not a downloaded system codec. Its package `LICENSE` is the complete upstream libopus `COPYING` notice; release packaging verifies that equality and retains the notice beside the Rust wrapper licenses. Native decoder code executes only in contained audio jobs. See `docs/ogg-opus.md` for provenance, build policy, and supported formats.')
 [void] $markdown.AppendLine()
 [void] $markdown.AppendLine('The release archive also contains each available package license/notice file under `licenses/<crate>-<version>/`. When a published crate omits a standalone license file, its package notice records the Cargo license expression and upstream repository. SPDX expressions in this document state the choices declared by each package; they do not relicense third-party work.')
 

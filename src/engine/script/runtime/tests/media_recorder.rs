@@ -6,6 +6,7 @@ use base64::Engine;
 use std::io::Cursor;
 
 mod constraints;
+mod opus;
 
 fn deliver_audio_at(
     runtime: &mut ScriptRuntime,

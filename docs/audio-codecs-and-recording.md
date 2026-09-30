@@ -10,7 +10,7 @@ models; FLAC framing follows [RFC 9639](https://www.rfc-editor.org/rfc/rfc9639).
 
 `BaseAudioContext.decodeAudioData` accepts complete, bounded encoded files:
 PCM/IEEE-float RIFF/WAVE, native FLAC, Ogg/Vorbis, MP3, AAC-in-M4A,
-ADTS AAC-LC, audio-only WebM/Vorbis, and Ogg/FLAC. A
+ADTS AAC-LC, audio-only WebM/Vorbis, Ogg/FLAC, and mapping-family-0 Ogg/Opus. A
 document-owned native worker decodes every admitted sample to planar `Float32`
 PCM, linearly resamples to the context sample rate, and resolves an
 `AudioBuffer` through the media task queue. It rejects malformed or unsupported
@@ -24,7 +24,7 @@ before accepting output. Ogg/Vorbis requires a complete single logical stream.
 Container/codec agreement is checked for MP3 and M4A, and a declared duration
 that materially exceeds decoded PCM is rejected as truncation. An MP3 stream
 with no duration header cut exactly at a valid frame boundary is inherently
-indistinguishable from a shorter valid stream. Opus, WebM video or multiple
+indistinguishable from a shorter valid stream. WebM/Opus, WebM video or multiple
 tracks, non-LC ADTS AAC, encrypted media, and arbitrary MP4 tracks are not
 claimed by `decodeAudioData`. The added containers use shared cancellation-aware
 complete-file admission before the upstream demuxer runs; see the
@@ -41,6 +41,8 @@ timeline because no presentation trim is specified by the container.
 
 The decoder implementations use existing RustAudio `lewton`/`ogg`, Apache-2.0
 `claxon`, and MPL-2.0 Symphonia rather than copied codec implementations.
+Ogg/Opus uses vetted bundled libopus; [its shared presentation contract](ogg-opus.md)
+applies pre-skip, header gain, and EOS trimming before resampling or PCM16 output.
 The exact linked packages and licenses are recorded in
 [third-party notices](../THIRD_PARTY_NOTICES.md). Test fixtures are self-authored
 synthetic tones with generation commands and hashes in
@@ -50,7 +52,7 @@ synthetic tones with generation commands and hashes in
 
 The contained media worker pulls bounded PCM16 chunks for ordinary complete
 FLAC, Ogg/Vorbis, MP3, AAC-in-M4A, ADTS AAC-LC, audio-only WebM/Vorbis,
-and Ogg/FLAC resources. Seek restarts a verified
+Ogg/FLAC, and mapping-family-0 Ogg/Opus resources. Seek restarts a verified
 decoder and discards samples until the requested point; it does not present a
 stale pre-seek chunk. Other supported containers, including H.264/AAC video,
 retain their separate media paths. No host-installed FLAC decoder is required.
@@ -65,8 +67,9 @@ misreported as a contained-decoder success.
 
 ## `MediaRecorder`
 
-`MediaRecorder` currently supports one live, browser-granted audio track and
-the `audio/flac` MIME type. It converts captured PCM to signed 16-bit samples
+`MediaRecorder` supports one live, browser-granted audio track and
+`audio/flac` or `audio/ogg;codecs=opus`. The empty/default request retains FLAC;
+an unspecified `audio/ogg` request selects Opus. FLAC converts captured PCM to signed 16-bit samples
 and writes a FLAC STREAMINFO header followed by independently decodable
 variable-block frames. The STREAMINFO total-sample count and MD5 remain
 unknown while recording, as permitted by RFC 9639. A `dataavailable` Blob may
@@ -74,7 +77,7 @@ contain only part of a FLAC stream; concatenating its bytes in event order
 produces the complete stream. `requestData()`, timeslice, pause/resume, stop,
 track-change errors, and event ordering are tested against real capture packets.
 
-The present capture contract is 8–48 kHz, one or two channels, at most 960
+The FLAC capture contract is 8–48 kHz, one or two channels, at most 960
 frames per native callback, eight active recorder sessions, and 16 MiB of
 pending Blob bytes per recorder segment. Video, multiple audio tracks, other
 MIME types, and codecs are explicitly rejected rather than silently recorded
@@ -82,6 +85,16 @@ as FLAC. FLAC is lossless relative to the signed 16-bit captured PCM, not
 relative to a microphone's analog signal. Regression tests concatenate
 browser-emitted Blob chunks and independently decode them with Claxon,
 including terminal frames containing only 1–15 samples.
+
+Ogg/Opus recording uses the real bundled encoder at native 8/12/16/24/48 kHz,
+not a fake codec label or a 44.1 kHz streaming resampler. It preserves exact
+captured duration through queried encoder delay, pre-skip and EOS trimming;
+chunk concatenation produces one complete Ogg stream. Bitrate/mode configure
+the encoder, and encoded-byte/packet limits reserve terminal flushing before
+new PCM is accepted. See [recording boundaries and presentation](ogg-opus.md#incremental-microphone-recording)
+for rate rejection, lifetime, limits and remaining scope. Regression tests
+independently demux and decode actual browser-emitted Opus Blobs, including
+stereo PCM, short tails, pause/disabled capture and navigation retirement.
 
 These tests establish the stated paths and bounds, not full interoperability
 or a score claim from HTML5test. The measured score, if any, is recorded only

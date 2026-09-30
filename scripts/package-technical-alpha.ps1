@@ -98,6 +98,18 @@ license: $($package.license)
 source: $repository
 "@
         $sourceDirectory = Split-Path -Parent $package.manifest_path
+        if ([string] $package.name -eq 'opusic-sys') {
+            # The published root notice covers the bundled native codec. Do not
+            # silently package only Rust metadata after an upstream layout change.
+            $nativeNotice = Join-Path $sourceDirectory 'opus/COPYING'
+            $packageNotice = Join-Path $sourceDirectory 'LICENSE'
+            if (-not (Test-Path -LiteralPath $nativeNotice -PathType Leaf) -or
+                -not (Test-Path -LiteralPath $packageNotice -PathType Leaf) -or
+                (Get-FileHash -LiteralPath $nativeNotice -Algorithm SHA256).Hash -ne
+                (Get-FileHash -LiteralPath $packageNotice -Algorithm SHA256).Hash) {
+                throw 'Bundled libopus notice differs from the packaged opusic-sys license.'
+            }
+        }
         $licenseFiles = @(Get-ChildItem -LiteralPath $sourceDirectory -File | Where-Object {
             $_.Name -match '^(?i)(LICENSE|LICENCE|COPYING|UNLICENSE|NOTICE)(?:[-._].*)?$'
         } | Sort-Object Name)

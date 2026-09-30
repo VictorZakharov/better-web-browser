@@ -136,7 +136,7 @@ that duration as an exact sample count.
 16×16 black VP8 video. Both are intentionally unsupported fixtures: an audio
 consumer must reject them without silently decoding just the supported track.
 
-Reproduce all five with the reviewed development-only generator:
+Reproduce these fixtures with the reviewed development-only generator:
 
 ```powershell
 ./scripts/generate-audio-container-fixtures.ps1 -FixtureDirectory G:/Git/better-web-browser/tests/fixtures/media
@@ -156,3 +156,28 @@ self-authored generated signals are distributed under the repository license.
 | Ogg/FLAC | 4,970 | `13fe9b23d28fbcf68361a0987066058715127136e6261efe9f44330b6ce209e3` |
 | WebM/Opus (rejected) | 2,348 | `b879b6246f21074e21b40b41799409b1b58105def5e05aa8304415f33eb6582b` |
 | WebM/VP8+Vorbis (rejected) | 4,810 | `872c2207771fd20478ce17bfd2396c8cc9f0d492048bd546edfb6b2b60f98917` |
+
+## Self-authored Ogg/Opus presentation fixtures
+
+`test-0.4s-opus.ogg.base64` encodes the synthetic 440 Hz mono tone as Ogg/Opus.
+`test-0.4s-opus-stereo.ogg.base64` encodes independent 440 Hz and 660 Hz sine
+waves in left/right channels. They use the same development-only FFmpeg build
+above, `libopus` at 32 kb/s (mono) and 64 kb/s (stereo), with its default
+20 ms packets and `audio` application.
+No third-party recording or encoder source is copied into the repository.
+
+Both files present exactly 19,200 PCM frames at 48,000 Hz (0.4 seconds).
+Their 312-frame pre-skip and final EOS trim must be applied to predictive
+decoder output. The container's 0.4065-second duration is not the presentation
+length. Tests compare actual PCM, not duration metadata or silence substitutes.
+CRC-valid test remuxes reuse these owned packets to exercise continuation,
+header gain, nonzero granule origins, cross-packet pre-skip, and end trimming.
+
+```powershell
+./scripts/generate-audio-container-fixtures.ps1 -FixtureName test-0.4s-opus.ogg,test-0.4s-opus-stereo.ogg -FixtureDirectory G:/Git/better-web-browser/tests/fixtures/media
+```
+
+| Decoded file | Bytes | SHA-256 |
+| --- | ---: | --- |
+| Ogg/Opus mono | 1,910 | `df62a519e2acb683a77be602efcfd5d9b653d04ed717eb7cb07dac6b80c06cea` |
+| Ogg/Opus stereo | 4,777 | `0cd7811c777d9c23df49620d24092b63e9fa2e18832cd9d8ad4f6848bba0e5e9` |

@@ -1,6 +1,7 @@
 use super::compressed_audio::{self, CompressedDecoder};
 use super::flac::FlacDecoder;
 use super::ogg_vorbis::VorbisDecoder;
+use super::opus::OpusDecoder;
 use super::{
     ComApartment, MediaFoundation, output_type, seek_source_reader, select_stream, source_reader,
     stream::copy_sample, verify_native_type,
@@ -24,6 +25,7 @@ pub(in crate::media_process) enum AudioDecoder {
     Compressed(Box<CompressedDecoder>),
     Flac(Box<FlacDecoder>),
     Vorbis(Box<VorbisDecoder>),
+    Opus(Box<OpusDecoder>),
 }
 
 impl AudioDecoder {
@@ -34,6 +36,18 @@ impl AudioDecoder {
         expected_sample_rate: u32,
         expected_channels: u16,
     ) -> Result<Self, String> {
+        if crate::opus_audio::sniff(bytes) {
+            if codec != MediaCodecFamily::Opus {
+                return Err("Opus codec disagreed with the decode report".into());
+            }
+            return OpusDecoder::open(
+                bytes,
+                expected_samples,
+                expected_sample_rate,
+                expected_channels,
+            )
+            .map(|decoder| Self::Opus(Box::new(decoder)));
+        }
         if let Some(kind) = compressed_audio::classify(bytes) {
             if compressed_audio::codec(kind) != codec {
                 return Err("compressed audio codec disagreed with the decode report".into());
@@ -81,6 +95,7 @@ impl AudioDecoder {
             Self::Compressed(decoder) => decoder.seek(position_100ns),
             Self::Flac(decoder) => decoder.seek(position_100ns),
             Self::Vorbis(decoder) => decoder.seek(position_100ns),
+            Self::Opus(decoder) => decoder.seek(position_100ns),
         }
     }
 
@@ -90,6 +105,7 @@ impl AudioDecoder {
             Self::Compressed(decoder) => decoder.next_sample(),
             Self::Flac(decoder) => decoder.next_sample(),
             Self::Vorbis(decoder) => decoder.next_sample(),
+            Self::Opus(decoder) => decoder.next_sample(),
         }
     }
 }

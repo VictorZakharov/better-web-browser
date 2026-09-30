@@ -50,6 +50,23 @@ try {
             throw "Release archive is missing the Chromium notice for $($directory.Name)."
         }
     }
+    $codecNoticeRoot = Join-Path $packageRoot 'licenses'
+    foreach ($notice in @(
+        'opus-0.4.0/LICENSE-MIT',
+        'opus-0.4.0/LICENSE-APACHE',
+        'opusic-sys-0.7.5/LICENSE'
+    )) {
+        $noticePath = Join-Path $codecNoticeRoot $notice
+        if (-not (Test-Path -LiteralPath $noticePath -PathType Leaf) -or
+            (Get-Item -LiteralPath $noticePath).Length -eq 0) {
+            throw "Release archive is missing the codec notice $notice."
+        }
+    }
+    $opusNotice = [IO.File]::ReadAllText((Join-Path $codecNoticeRoot 'opusic-sys-0.7.5/LICENSE'))
+    foreach ($clause in @('Redistribution and use in source and binary forms',
+        'Neither the name of Internet Society', 'THIS SOFTWARE IS PROVIDED')) {
+        if (-not $opusNotice.Contains($clause)) { throw "Bundled codec notice is incomplete: $clause" }
+    }
 
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     if ($manifest.package_version -ne $Version -or $manifest.commit -ne $Commit.ToLowerInvariant() -or $manifest.target -ne 'x86_64-pc-windows-msvc' -or $manifest.signed) {

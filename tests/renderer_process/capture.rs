@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 
 #[path = "capture/frame_delivery.rs"]
 mod frame_delivery;
+#[path = "capture/opus_recorder.rs"]
+mod opus_recorder;
 
 #[test]
 fn capture_grant_presents_nv12_preview_and_ignores_frame_after_video_track_ended() {

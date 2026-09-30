@@ -13,6 +13,7 @@ use symphonia::core::formats::well_known::{
 };
 
 mod adts;
+pub(crate) mod ogg_envelope;
 mod ogg_flac;
 mod webm;
 
