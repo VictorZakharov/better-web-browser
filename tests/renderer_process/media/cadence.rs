@@ -4,6 +4,9 @@ use better_web_browser::renderer_protocol::{
 };
 use std::time::Instant;
 
+#[path = "cadence/setup.rs"]
+mod setup;
+
 #[test]
 fn synthetic_click_does_not_allow_audible_autoplay() {
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
@@ -68,65 +71,7 @@ fn busy_callback(expect_timeout: bool) {
     let busy_ms = if expect_timeout { 3500 } else { 400 };
     let mut session = RendererSession::launch(launch).unwrap();
     let document = better_web_browser::renderer_protocol::DocumentId::new(193).unwrap();
-    let encoded: String = include_str!("../../fixtures/media/test-1s.mp4.base64")
-        .chars()
-        .filter(|value| !value.is_ascii_whitespace())
-        .collect();
-    let html = format!(
-        r#"<!doctype html><video id="movie" muted></video><script>
-        const source = new MediaSource();
-        source.addEventListener('sourceopen', () => {{
-          const buffer = source.addSourceBuffer('video/mp4; codecs="avc1.42E01E,mp4a.40.2"');
-          buffer.addEventListener('updateend', () => source.endOfStream(), {{once:true}});
-          buffer.appendBuffer(Uint8Array.from(atob('{encoded}'), c => c.charCodeAt(0)));
-        }}, {{once:true}});
-        source.addEventListener('sourceended', () => movie.play());
-        document.addEventListener('keydown', () => {{
-          const start = performance.now();
-          while (performance.now() - start < {busy_ms}) {{}}
-          console.log('__BUSY_CALLBACK_COMPLETED__');
-        }}, {{once:true}});
-        movie.src = URL.createObjectURL(source);
-        </script>"#
-    );
-    let body = html.into_bytes();
-    session
-        .load_document(
-            document_start(document, body.len()),
-            empty_document_state(),
-            body,
-        )
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        assert!(Instant::now() < deadline, "video producer did not start");
-        // Codec startup is setup, not the watchdog assertion below. Honor the
-        // existing overall startup deadline even when no event arrives for 2 s.
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        match session
-            .wait_for_event(remaining)
-            .expect("video startup exceeded its 10 s deadline")
-        {
-            RendererEvent::VideoFrame(_) => break,
-            RendererEvent::Presentation(presentation) => {
-                session
-                    .acknowledge_presentation(PresentationAcknowledgement {
-                        document,
-                        revision: presentation.revision,
-                        presented: true,
-                        controls_applied: true,
-                    })
-                    .unwrap();
-                run_scheduled_renderer_timer(&session, document, Some(20_000));
-            }
-            RendererEvent::RuntimeUpdate(_) => {
-                std::thread::sleep(Duration::from_millis(5));
-                run_scheduled_renderer_timer(&session, document, Some(20_000));
-            }
-            RendererEvent::Diagnostic { .. } => {}
-            event => panic!("unexpected startup event: {event:?}"),
-        }
-    }
+    let mut entry_frame = setup::start_playback(&session, document, busy_ms);
     // Start the deliberate hang only after the video producer is running. Advancing
     // startup timers must not race the first decoded frame against a busy callback.
     session
@@ -143,13 +88,34 @@ fn busy_callback(expect_timeout: bool) {
         .unwrap();
     let started = Instant::now();
     let mut frames_during_callback = 0;
+    let mut input_task_seen = false;
     let mut completed = false;
     while started.elapsed() < Duration::from_secs(2) && !completed {
         match session.wait_for_event(Duration::from_secs(1)).unwrap() {
-            RendererEvent::VideoFrame(_) if started.elapsed() < Duration::from_millis(350) => {
-                frames_during_callback += 1;
+            RendererEvent::VideoFrame(frame) if frame.identity.document == document => {
+                assert!(!frame.pixels.is_empty());
+                let snapshot = session.snapshot();
+                if snapshot.active_task.as_deref().is_some_and(|task| {
+                    task.starts_with("dispatching input and rendering mutations for document 193 ")
+                }) {
+                    // The event queue retains one latest startup frame. Fence it on
+                    // first observing the input task; only later producer identities
+                    // prove pixel delivery while that task owns the document thread.
+                    if !input_task_seen {
+                        input_task_seen = true;
+                        entry_frame = entry_frame.max(frame.identity.frame);
+                    } else if frame.identity.frame > entry_frame
+                        && snapshot
+                            .active_task_elapsed
+                            .is_some_and(|elapsed| elapsed < Duration::from_millis(350))
+                    {
+                        entry_frame = frame.identity.frame;
+                        frames_during_callback += 1;
+                    }
+                }
             }
             RendererEvent::RuntimeUpdate(update) => {
+                setup::assert_runtime_healthy(&update.runtime);
                 completed = update
                     .runtime
                     .console
@@ -157,6 +123,7 @@ fn busy_callback(expect_timeout: bool) {
                     .any(|line| line.contains("__BUSY_CALLBACK_COMPLETED__"));
             }
             RendererEvent::Presentation(presentation) => {
+                setup::assert_runtime_healthy(&presentation.runtime);
                 completed = presentation
                     .runtime
                     .console
@@ -166,10 +133,21 @@ fn busy_callback(expect_timeout: bool) {
             RendererEvent::Diagnostic { .. } | RendererEvent::VideoFrame(_) => {}
             RendererEvent::Unresponsive if expect_timeout => {}
             RendererEvent::Exited(exit) if expect_timeout => {
-                assert!(matches!(exit.reason,
-                    better_web_browser::renderer_process::RendererExitReason::TaskBudgetExceeded(_)),
-                    "unexpected exit: {exit:?}");
-                assert!(frames_during_callback >= 3);
+                let timeout = exit
+                    .reason
+                    .task_timeout()
+                    .expect("document task watchdog exit");
+                assert!(
+                    timeout
+                        .task
+                        .starts_with("dispatching input and rendering mutations for document 193 "),
+                    "unexpected timed-out task: {timeout:?}"
+                );
+                assert!(timeout.elapsed >= Duration::from_millis(650), "{timeout:?}");
+                assert!(
+                    input_task_seen && frames_during_callback >= 3,
+                    "video during input: {frames_during_callback} frames; {timeout:?}"
+                );
                 return;
             }
             event => panic!("unexpected busy-callback event: {event:?}"),
@@ -178,7 +156,7 @@ fn busy_callback(expect_timeout: bool) {
     assert!(completed, "the long JavaScript callback did not execute");
     assert!(!expect_timeout, "video traffic hid the hung document");
     assert!(
-        frames_during_callback >= 3,
+        input_task_seen && frames_during_callback >= 3,
         "video waited for JavaScript: {frames_during_callback} frames"
     );
     session.shutdown().unwrap();
