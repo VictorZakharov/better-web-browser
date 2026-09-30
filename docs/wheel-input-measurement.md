@@ -85,6 +85,8 @@ The `native_wheel` report keeps all admitted samples in input order:
 | `enqueue_to_first_changed_compositor_frame_received_ms` | Host enqueue to receipt of the first direction-consistent viewport scroll-offset frame; includes PNG generation and CDP delivery |
 | `frame_swap_timestamp`, `frame_swap_monotonic_timestamp` | Optional raw screencast source clocks; never subtracted from host timestamps |
 | `scheduled_ms`, `enqueued_ms` | Requested and actual host action times, so a delayed dispatch is visible |
+| `listener_verdict_reason`, `observed_listener_events`, `observed_event_delta_y` | Exact sequence/delta observation or the reason it remains unknown; missing values are not zero |
+| `listener_verdict_deadline_reached` | No admitted final listener verdict arrived within the single observation budget |
 
 The frame source is [`Page.screencastFrame`](https://chromedevtools.github.io/devtools-protocol/tot/Page/#event-screencastFrame)
 metadata, not a DOM scrolling shortcut or monitor scanout. Opposite-direction
@@ -94,7 +96,9 @@ a proof of exclusive compositor attribution to one wheel. Leave enough spacing
 for prior motion to settle and retain the raw per-input records.
 
 A passive listener in a [separate isolated world](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-createIsolatedWorld)
-records the event's cancellation flag after dispatch. It does not install a page
+retains at most 128 event references and snapshots each cancellation flag after
+[listener dispatch](https://dom.spec.whatwg.org/#concept-event-dispatch), without
+depending on a separately scheduled timer. It does not install a page
 main-world global, call `preventDefault()`, or change scrolling. The observer is
 diagnostic overhead, not ordinary platform support. Missing listener verdicts,
 cancelled events and nested-scrollport candidates have null attributed frame
@@ -103,6 +107,15 @@ latency. Main-frame scroll metadata cannot prove which nested pixels were painte
 ranges, zero deltas, or unavailable frame evidence can all produce it. Retired,
 superseded, unacknowledged and failed inputs also remain explicit. Records are
 bounded to 128; requested, unattempted and omitted counts are reported.
+
+The CDP reply and compositor frame may precede the trusted main-thread listener
+event. Verdict acquisition therefore polls asynchronously within one absolute
+deadline beginning at the CDP reply: three quarters of the action spacing,
+clamped to 100–1000 ms. Waiting for the verdict and frame shares that budget;
+neither step resets it. Exact sequence/delta matching is required before the
+deadline, and late verdicts or frames cannot gain ownership. Acquiring a later
+verdict does not replace the original first-frame timestamp. These independent
+endpoints are not evidence that listener dispatch preceded the compositor frame.
 
 One screencast owner acknowledges each frame. File filmstrip sampling may end
 before a settled wheel sequence; native-wheel observation keeps the same stream
@@ -118,6 +131,8 @@ Chromium harness with `dotnet build benchmarks/chromium/ChromiumBaseline.csproj
 -c Release --artifacts-path G:/Git/better-web-browser/target/wheel-measurement/dotnet`.
 The pure `ChromiumBaseline.Tests` self-tests support `--wheel-timing-only`; that
 switch exits before any browser launch.
+`--native-wheel-browser-only` runs six owned trusted-event fixtures through the
+same hidden Chrome launch path, including missing observation and retirement.
 
 The example below assumes the harness DLL, release Breeze executable and artifact
 directory already exist. It uses CSS viewport `1249x548`, scale `1.25`, `en-US`,

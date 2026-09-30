@@ -14,11 +14,14 @@ internal static class Program
         ChromiumProfileTests.Run();
         if (arguments.SequenceEqual(new[] { "--process-tree-only" })) return 0;
         var chrome = Options.FindChrome();
-        await ChromiumProfileTests.RunWarmCaptureAsync(chrome);
+        var nativeWheelOnly = arguments.SequenceEqual(new[] { "--native-wheel-browser-only" });
+        if (!nativeWheelOnly) await ChromiumProfileTests.RunWarmCaptureAsync(chrome);
         var root = Path.Combine(Path.GetTempPath(), $"breeze-chromium-tests-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
         try
         {
+            await NativeWheelIntegrationTests.RunAsync(chrome, root);
+            if (nativeWheelOnly) return 0;
             var light = await CaptureAsync(chrome, root, "light", """
                 <!doctype html><html><head><style>
                   /* Keep producing compositor frames through the CI filmstrip window. */

@@ -12,6 +12,8 @@ use std::time::Duration;
 mod fragment_navigation;
 #[path = "input/helpers.rs"]
 mod helpers;
+#[path = "input/hit_testing.rs"]
+mod hit_testing;
 #[path = "input/native_text.rs"]
 mod native_text;
 #[path = "input/nested_scrolling.rs"]

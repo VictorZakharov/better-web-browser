@@ -25,6 +25,11 @@ internal sealed class NativeWheelSample
     public double? FrameSwapMonotonicTimestamp { get; set; }
     public bool? DefaultPrevented { get; set; }
     public bool? ObservedNestedScrollPort { get; set; }
+    public string? ListenerVerdictReason { get; set; }
+    public int? ObservedListenerEvents { get; set; }
+    public double? ObservedEventDeltaY { get; set; }
+    public bool ListenerVerdictDeadlineReached { get; set; }
+    internal double? ObservationDeadlineMs { get; set; }
     public string Status { get; set; } = "unacknowledged";
 }
 
@@ -63,6 +68,7 @@ internal sealed class NativeWheelSamples
         if (!double.IsFinite(scrollY) || scrollY < 0) return;
         LatestScrollY = scrollY;
         if (pending is not { } sample || !IsPending(sample) || sample.DocumentEpoch != DocumentEpoch || sample.BaselineScrollY is not { } baseline) return;
+        if (sample.ObservationDeadlineMs is { } deadline && now >= deadline) return;
         if ((scrollY - baseline) * Math.Sign(sample.Input.Delta) <= 0.001) return;
         sample.EnqueueToFirstChangedCompositorFrameReceivedMs = Math.Max(0, now - sample.EnqueuedMs);
         sample.FirstChangedFrameScrollY = scrollY;
@@ -76,6 +82,16 @@ internal sealed class NativeWheelSamples
         if (sample.DocumentEpoch != DocumentEpoch || sample.Status == "retired_document") return;
         sample.EnqueueToCdpReplyMs = Math.Max(0, now - sample.EnqueuedMs);
         if (sample.Status == "unacknowledged") sample.Status = "acknowledged_waiting_frame";
+    }
+
+    public void Finish(NativeWheelSample sample, NativeWheelVerdict verdict)
+    {
+        if (sample.DocumentEpoch != DocumentEpoch || sample.Status is "retired_document" or "superseded") return;
+        sample.ListenerVerdictReason = verdict.Reason;
+        sample.ObservedListenerEvents = verdict.ObservedEvents;
+        sample.ObservedEventDeltaY = verdict.ObservedDelta;
+        sample.ListenerVerdictDeadlineReached = verdict.DeadlineReached;
+        Finish(sample, verdict.DefaultPrevented, verdict.Nested);
     }
 
     public void Finish(NativeWheelSample sample, bool? cancelled, bool nested)

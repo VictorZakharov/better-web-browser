@@ -38,7 +38,7 @@ internal sealed class NativeWheelTrace : IDisposable
     {
         samples.Result.RequestedInputs = options.WheelAfterReady.Count;
         // An isolated, passive observer cannot cancel input or turn a compositor-eligible
-        // wheel into a blocking page listener. Its delayed verdict is diagnostic only.
+        // wheel into a blocking page listener. Its post-dispatch verdict is diagnostic only.
         var tree = await cdp.CallAsync(nextId++, "Page.getFrameTree", null, timeout);
         var world = await cdp.CallAsync(nextId++, "Page.createIsolatedWorld", new {
             frameId = tree.GetProperty("frameTree").GetProperty("frame").GetProperty("id").GetString(),
@@ -68,22 +68,24 @@ internal sealed class NativeWheelTrace : IDisposable
                     type = "mouseWheel", x = sample.Input.X, y = sample.Input.Y,
                     deltaX = 0, deltaY = sample.Input.Delta
                 }, timeout);
-                lock (gate) samples.Replied(sample, stopwatch.Elapsed.TotalMilliseconds);
-                await Task.WhenAny(frame, Task.Delay(Math.Clamp(options.NavigationDelayMs * 3 / 4, 100, 1000)));
-                var verdicts = await EvaluateAsync(nextId++, context, "globalThis.__nativeWheelTrace", timeout);
-                bool? cancelled = null;
-                var nested = false;
-                if (verdicts.ValueKind == JsonValueKind.Array && verdicts.GetArrayLength() >= sample.Sequence)
+                var acknowledgedMs = stopwatch.Elapsed.TotalMilliseconds;
+                var observation = new NativeWheelObservation(acknowledgedMs, options.NavigationDelayMs);
+                lock (gate)
                 {
-                    var verdict = verdicts[sample.Sequence - 1];
-                    if (verdict.GetProperty("deltaY").GetDouble() == sample.Input.Delta)
-                    {
-                        var prevented = verdict.GetProperty("defaultPrevented");
-                        cancelled = prevented.ValueKind is JsonValueKind.True or JsonValueKind.False ? prevented.GetBoolean() : null;
-                        nested = verdict.GetProperty("nested").GetBoolean();
-                    }
+                    samples.Replied(sample, acknowledgedMs);
+                    sample.ObservationDeadlineMs = observation.DeadlineMs;
                 }
-                lock (gate) samples.Finish(sample, cancelled, nested);
+                var acquired = await AcquireVerdictAsync(sample, observation, context, timeout, nextId);
+                nextId = acquired.NextId;
+                var verdict = acquired.Verdict;
+                if (Retired(sample)) break;
+                if (verdict.DefaultPrevented == false && !verdict.Nested && !frame.IsCompleted)
+                {
+                    var remaining = observation.RemainingMs(stopwatch.Elapsed.TotalMilliseconds);
+                    if (remaining > 0) await Task.WhenAny(frame, Task.Delay(TimeSpan.FromMilliseconds(remaining)));
+                }
+                lock (gate) samples.Finish(sample, verdict);
+                if (Retired(sample)) break;
             }
             catch
             {
@@ -92,6 +94,35 @@ internal sealed class NativeWheelTrace : IDisposable
             }
         }
         return (samples.Result, nextId);
+    }
+
+    private async Task<(NativeWheelVerdict Verdict, int NextId)> AcquireVerdictAsync(
+        NativeWheelSample sample, NativeWheelObservation observation, int context, TimeSpan timeout, int nextId)
+    {
+        var verdict = NativeWheelVerdict.Parse(default, sample.Sequence, sample.Input.Delta);
+        while (!Retired(sample) && observation.RemainingMs(stopwatch.Elapsed.TotalMilliseconds) > 0)
+        {
+            var remaining = observation.RemainingMs(stopwatch.Elapsed.TotalMilliseconds);
+            if (remaining <= 0) break;
+            try
+            {
+                var snapshot = await EvaluateAsync(nextId++, context, SnapshotScript,
+                    TimeSpan.FromMilliseconds(Math.Min(remaining, timeout.TotalMilliseconds)));
+                verdict = NativeWheelVerdict.Parse(snapshot, sample.Sequence, sample.Input.Delta);
+            }
+            catch (TimeoutException) { break; }
+            catch (InvalidOperationException) when (Retired(sample)) { return (verdict, nextId); }
+            var now = stopwatch.Elapsed.TotalMilliseconds;
+            if (observation.Accepts(verdict, now)) return (verdict, nextId);
+            var delay = observation.PollDelayMs(now);
+            if (delay > 0) await Task.Delay(TimeSpan.FromMilliseconds(delay));
+        }
+        return (observation.Expired(verdict), nextId);
+    }
+
+    private bool Retired(NativeWheelSample sample)
+    {
+        lock (gate) return sample.DocumentEpoch != samples.DocumentEpoch || sample.Status == "retired_document";
     }
 
     private async Task<JsonElement> EvaluateAsync(int id, int context, string expression, TimeSpan timeout)
@@ -113,10 +144,19 @@ internal sealed class NativeWheelTrace : IDisposable
             node !== document.scrollingElement &&
             (node.scrollHeight > node.clientHeight || node.scrollWidth > node.clientWidth) &&
             ['auto','scroll'].includes(getComputedStyle(node).overflowY));
-          const verdict = {deltaY:event.deltaY, defaultPrevented:null, nested};
-          __nativeWheelTrace.push(verdict);
-          setTimeout(() => { verdict.defaultPrevented = event.defaultPrevented; }, 0);
+          __nativeWheelTrace.push({event, nested});
         }, {capture:true, passive:true});
         0
+        """;
+
+    // DOM dispatch resets eventPhase to NONE after listener propagation; its canceled
+    // flag survives dispatch. Read retained events in this isolated context without
+    // depending on a separately scheduled timer: https://dom.spec.whatwg.org/#concept-event-dispatch
+    private const string SnapshotScript = """
+        Array.isArray(globalThis.__nativeWheelTrace) ? globalThis.__nativeWheelTrace.map(({event,nested}) => ({
+          deltaY:event.deltaY,
+          defaultPrevented:event.eventPhase === Event.NONE ? event.defaultPrevented : null,
+          nested
+        })) : null
         """;
 }
