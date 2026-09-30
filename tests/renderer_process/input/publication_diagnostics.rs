@@ -1,6 +1,60 @@
 //! Input publication reasons stay opt-in; phase timing remains available without selectors.
 
 use super::*;
+use better_web_browser::renderer_process::NavigationBody;
+use better_web_browser::renderer_protocol::{DocumentId, RendererPresentation};
+use std::time::Instant;
+
+fn wait_for_scripted_hover(
+    session: &RendererSession,
+    mut presentation: RendererPresentation,
+) -> RendererPresentation {
+    let document = presentation.document;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        assert_eq!(presentation.document, document);
+        assert!(
+            presentation.runtime.errors.is_empty(),
+            "{:?}",
+            presentation.runtime.errors
+        );
+        assert!(!presentation.runtime.runtime_stopped);
+        if presentation.title == "hover-ready" {
+            return presentation;
+        }
+        // First paint may precede the parser's tail script. Acknowledge that
+        // real progress and service only advertised immediate work; never
+        // assume workstation speed, sleep, or fast-forward an author timer.
+        acknowledge(session, &presentation);
+        pump_ready_task(session, document, presentation.next_timer_micros);
+        loop {
+            let remaining = deadline
+                .checked_duration_since(Instant::now())
+                .expect("tail script did not produce hover-ready within five seconds");
+            match session
+                .wait_for_event(remaining.min(Duration::from_secs(3)))
+                .expect("missing scripted hover startup event")
+            {
+                RendererEvent::Presentation(value) => {
+                    presentation = *value;
+                    break;
+                }
+                RendererEvent::RuntimeUpdate(value) => {
+                    assert_eq!(value.document, document);
+                    assert!(
+                        value.runtime.errors.is_empty(),
+                        "{:?}",
+                        value.runtime.errors
+                    );
+                    assert!(!value.runtime.runtime_stopped);
+                    pump_ready_task(session, document, value.next_timer_micros);
+                }
+                RendererEvent::Diagnostic { .. } => {}
+                event => panic!("unexpected scripted hover startup event: {event:?}"),
+            }
+        }
+    }
+}
 
 #[test]
 fn quiet_scroll_with_fixed_content_does_not_publish_a_full_page_for_diagnostics() {
@@ -101,15 +155,46 @@ fn zero_offset_sticky_scroll_reports_its_full_publication_reason_only_when_opted
 
 #[test]
 fn scoped_effect_hover_preserves_immediate_style_stats_and_timing_without_diagnostics() {
+    scoped_effect_hover_contract(false);
+}
+
+#[test]
+fn scoped_effect_hover_waits_for_tail_script_after_an_early_streamed_paint() {
+    scoped_effect_hover_contract(true);
+}
+
+fn scoped_effect_hover_contract(streamed: bool) {
     let _serial = SERIAL
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let session = RendererSession::launch(options()).expect("hidden renderer");
-    let html = format!(
-        "<!doctype html><style>body{{margin:0}}#scope{{position:relative;width:200px;height:100px}}.target{{position:absolute;top:0;width:80px;height:50px}}#left{{left:0}}#right{{left:100px}}.target:hover{{background:red;opacity:.9}}</style><div id=scope><div id=left class=target>left</div><div id=right class=target>right</div></div><section>{}</section><script>document.title='hover-ready';</script>",
+    let prefix = format!(
+        "<!doctype html><style>body{{margin:0}}#scope{{position:relative;width:200px;height:100px}}.target{{position:absolute;top:0;width:80px;height:50px}}#left{{left:0}}#right{{left:100px}}.target:hover{{background:red;opacity:.9}}</style><div id=scope><div id=left class=target>left</div><div id=right class=target>right</div></div><section>{}</section>",
         "<span>unrelated</span>".repeat(1000),
     );
-    let initial = load_html_document(&session, 197, &html);
+    let tail = "<script>document.title='hover-ready';</script>";
+    let initial = if streamed {
+        let document = DocumentId::new(198).unwrap();
+        let body = NavigationBody::default();
+        session
+            .load_streaming_document(
+                document_start(document, 0),
+                empty_document_state(),
+                body.clone(),
+            )
+            .unwrap();
+        body.append(prefix.as_bytes()).unwrap();
+        let prefix_paint = wait_for_presentation(&session, document, "streamed prefix", |_| true);
+        assert_eq!(prefix_paint.title, "Untitled page");
+        // Hold the tail until first paint so the CI startup race is reproducible
+        // even on a fast workstation, without a sleep or renderer test knob.
+        body.append(tail.as_bytes()).unwrap();
+        body.finish(Ok(()));
+        prefix_paint
+    } else {
+        load_html_document(&session, 197, &(prefix + tail))
+    };
+    let initial = wait_for_scripted_hover(&session, initial);
     assert_eq!(
         initial.title, "hover-ready",
         "scripted hover route is ready"
