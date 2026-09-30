@@ -24,6 +24,6 @@ impl DocumentRuntime {
             })?
             .outcome;
         self.admit_user_input_outcome(&mut outcome, connection)?;
-        self.presentation_after_user_input(outcome, false, false, connection)
+        self.presentation_after_user_input(outcome, false, None, connection)
     }
 }

@@ -227,12 +227,9 @@ impl DocumentRuntime {
         let mut presentation = self.presentation_after_user_input(
             outcome,
             force_accessibility_update,
-            wheel_acknowledgement.is_some(),
+            wheel_acknowledgement,
             connection,
         )?;
-        if let Some(acknowledgement) = wheel_acknowledgement {
-            scrolling::attach_acknowledgement(&mut presentation, acknowledgement)?;
-        }
         if let Some(sequence) = history_traversal_ack {
             match presentation.as_mut() {
                 Some(AdvanceResult::Presentation(presentation)) => {

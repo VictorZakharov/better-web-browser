@@ -181,6 +181,25 @@ fn queued_wheel_latency_includes_a_prior_long_renderer_task_without_charging_it_
 }
 
 #[test]
+fn clamped_new_wheel_does_not_credit_the_prior_animation_synchronous_or_later_ticks() {
+    let report = run(&[
+        "--wheel-after-ready",
+        "550,180,10000",
+        "--wheel-after-ready",
+        "550,180,10000",
+        "--navigation-delay-ms",
+        "50",
+    ]);
+    let samples = report["wheel_input_trace"]["samples"].as_array().unwrap();
+    assert_eq!(samples.len(), 2);
+    assert_eq!(samples[0]["status"], "painted", "{samples:?}");
+    assert_eq!(samples[1]["decision"], "viewport");
+    assert_eq!(samples[1]["status"], "no_motion", "{samples:?}");
+    assert!(samples[1]["enqueue_to_first_paint_ms"].is_null());
+    assert!(samples[1]["first_paint_path"].is_null());
+}
+
+#[test]
 fn sticky_motion_invalidates_cached_scroll_pixels_before_its_first_paint() {
     let (report, capture) = run_html_capture(
         include_str!("../fixtures/wheel-timing-sticky.html"),

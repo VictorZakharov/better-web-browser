@@ -128,6 +128,7 @@ impl DocumentRuntime {
         &mut self,
         outcome: ScriptOutcome,
         load: PageLoadReport,
+        wheel: Option<WheelAcknowledgement>,
     ) -> AdvanceResult {
         self.rendering.dirty = true;
         let next_timer_micros = self.next_timer_micros();
@@ -136,10 +137,11 @@ impl DocumentRuntime {
             clock_advanced: false,
             load,
             next_timer_micros,
-            runtime: runtime_report(
+            runtime: runtime_report_with_wheel(
                 outcome,
                 self.script_runtime.is_some(),
                 self.media_runtime_report(),
+                wheel,
             ),
         }))
     }

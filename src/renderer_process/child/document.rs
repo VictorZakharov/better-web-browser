@@ -30,7 +30,9 @@ mod workers;
 
 use self::accessibility::RendererAccessibility;
 use self::dynamic_scripts::{PendingDynamicScriptFetch, advance_dynamic_script_slice};
-use self::reporting::{merge_outcome, micros, runtime_report, style_report};
+use self::reporting::{
+    merge_outcome, micros, runtime_report, runtime_report_with_wheel, style_report,
+};
 use self::resources::{PendingResourceFetch, discard_resource_preloads, start_resource_preloads};
 pub(super) use self::text::RendererTextSystem;
 use self::workers::RendererWorkers;
@@ -44,7 +46,7 @@ use crate::limits::{
 };
 use crate::renderer_protocol::{
     DocumentId, DocumentStart, DocumentState, PageLoadReport, PresentedImage, PresentedLayout,
-    RendererPresentation, RendererRuntimeUpdate,
+    RendererPresentation, RendererRuntimeUpdate, WheelAcknowledgement,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -216,7 +218,7 @@ impl DocumentRuntime {
             layout_micros: micros(started.elapsed()),
             ..PageLoadReport::default()
         });
-        self.presentation(outcome, style, load, connection)
+        self.presentation(outcome, style, load, connection, None)
     }
 
     fn presentation(
@@ -225,12 +227,13 @@ impl DocumentRuntime {
         style: StyleRefreshStats,
         load: PageLoadReport,
         connection: &mut ChildConnection,
+        wheel: Option<WheelAcknowledgement>,
     ) -> Result<AdvanceResult, String> {
         if self.rendering_is_blocked() {
-            return Ok(self.blocked_render_update(outcome, load));
+            return Ok(self.blocked_render_update(outcome, load, wheel));
         }
         self.deliver_geometry_observers(&mut outcome, connection)?;
-        self.presentation_after_observers(outcome, style, load)
+        self.presentation_after_observers(outcome, style, load, wheel)
     }
 
     fn presentation_after_observers(
@@ -238,12 +241,13 @@ impl DocumentRuntime {
         mut outcome: ScriptOutcome,
         style: StyleRefreshStats,
         load: PageLoadReport,
+        wheel: Option<WheelAcknowledgement>,
     ) -> Result<AdvanceResult, String> {
         if let Some(runtime) = self.script_runtime.as_ref() {
             self.focused_node = runtime.focused_node_id();
         }
         if self.rendering_is_blocked() {
-            return Ok(self.blocked_render_update(outcome, load));
+            return Ok(self.blocked_render_update(outcome, load, wheel));
         }
         self.rendering.dirty = false;
         self.page.title = self.page.dom.title();
@@ -346,10 +350,12 @@ impl DocumentRuntime {
             retired_image_keys,
             glyph_epoch,
             glyphs,
-            runtime: runtime_report(
+            // Include edge metadata before image capacity is computed from wire size.
+            runtime: runtime_report_with_wheel(
                 outcome,
                 self.script_runtime.is_some(),
                 self.media_runtime_report(),
+                wheel,
             ),
             style: style_report(style),
             load,

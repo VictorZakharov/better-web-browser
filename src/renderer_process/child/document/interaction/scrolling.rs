@@ -3,22 +3,6 @@ use super::*;
 use crate::engine::dom::Node;
 use crate::renderer_protocol::{WheelDecision, WheelInput};
 
-pub(super) fn attach_acknowledgement(
-    presentation: &mut Option<AdvanceResult>,
-    acknowledgement: crate::renderer_protocol::WheelAcknowledgement,
-) -> Result<(), String> {
-    match presentation.as_mut() {
-        Some(AdvanceResult::Presentation(value)) => {
-            value.runtime.wheel_acknowledgements.push(acknowledgement)
-        }
-        Some(AdvanceResult::Runtime(value)) => {
-            value.runtime.wheel_acknowledgements.push(acknowledgement)
-        }
-        _ => return Err("wheel input produced no renderer report".into()),
-    }
-    Ok(())
-}
-
 impl DocumentRuntime {
     pub(super) fn scroll_key(&mut self, key: &str) -> Result<Option<ScriptOutcome>, String> {
         let Some(id) = self.focused_node else {

@@ -125,6 +125,12 @@ impl WheelTrace {
             .any(|sample| sample.document == document && sample.status == "awaiting_viewport_paint")
     }
 
+    pub(super) fn viewport_request(&mut self, document: DocumentId, new_motion: bool) {
+        if !new_motion {
+            self.no_motion(document, None);
+        }
+    }
+
     pub(super) fn wants_nested_paint(&self, document: DocumentId, revision: u64) -> bool {
         self.samples.iter().any(|sample| {
             sample.document == document

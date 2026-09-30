@@ -131,6 +131,43 @@ fn reversed_coalesced_deltas_keep_both_verdicts_without_inventing_two_paints() {
 }
 
 #[test]
+fn zero_net_fractional_and_clamped_requests_cannot_claim_existing_animation_ticks() {
+    let now = Instant::now();
+    for case in [
+        "zero",
+        "coalesced_opposites",
+        "fractional",
+        "clamped",
+        "cancel_to_current",
+    ] {
+        let mut trace = WheelTrace::default();
+        trace.enqueue(document(1), 1, 600, now);
+        trace.acknowledge(document(1), &[ack(1, WheelDecision::Viewport)], None, now);
+        trace.painted(document(1), None, now + Duration::from_millis(10), false);
+        trace.enqueue(document(1), 2, 600, now + Duration::from_millis(15));
+        trace.acknowledge(
+            document(1),
+            &[ack(2, WheelDecision::Viewport)],
+            None,
+            now + Duration::from_millis(20),
+        );
+        // The native owner resolves this BEFORE its synchronous tick, not after a
+        // returned boolean could already have credited pixels from the old target.
+        trace.viewport_request(document(1), false);
+        trace.painted(document(1), None, now + Duration::from_millis(21), false);
+        trace.painted(document(1), None, now + Duration::from_millis(40), false);
+        assert_eq!(
+            trace.samples[0].first_paint,
+            Some(Duration::from_millis(10)),
+            "{case}"
+        );
+        assert_eq!(trace.samples[1].status, "no_motion", "{case}");
+        assert!(trace.samples[1].first_paint.is_none(), "{case}");
+        assert!(trace.samples[1].paint_path.is_none(), "{case}");
+    }
+}
+
+#[test]
 fn stale_document_and_sequence_cannot_complete_new_inputs_and_capacity_is_visible() {
     let now = Instant::now();
     let mut trace = WheelTrace::default();

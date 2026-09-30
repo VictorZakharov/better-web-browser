@@ -313,7 +313,7 @@ impl DocumentRuntime {
                 layout_micros: micros(layout_time),
                 ..PageLoadReport::default()
             });
-        let presentation = runtime.presentation(outcome, style, report, connection)?;
+        let presentation = runtime.presentation(outcome, style, report, connection, None)?;
         Ok(LoadResult::Ready(Box::new(runtime), presentation))
     }
 }

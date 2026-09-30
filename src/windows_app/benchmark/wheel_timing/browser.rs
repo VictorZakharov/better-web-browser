@@ -40,14 +40,17 @@ impl BrowserState {
         self.paint_benchmark_wheel(document, None);
     }
 
-    pub(in crate::windows_app) fn finish_benchmark_wheel_viewport(&mut self, document: DocumentId) {
-        if self.processing_background_tab {
+    pub(in crate::windows_app) fn resolve_benchmark_wheel_viewport_request(
+        &mut self,
+        new_motion: bool,
+    ) {
+        if self.processing_background_tab || new_motion {
             return;
         }
-        if !self.scroll_animation.has_pending_motion(self.scroll_y)
+        if let Some(document) = self.navigation.active_document()
             && let Some(benchmark) = self.benchmark.as_mut()
         {
-            benchmark.wheel_trace.no_motion(document, None);
+            benchmark.wheel_trace.viewport_request(document, false);
         }
     }
 

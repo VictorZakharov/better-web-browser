@@ -315,7 +315,6 @@ impl BrowserState {
             received,
         );
         self.queue_css_wheel_scroll(presentation.runtime.viewport_wheel_delta_y);
-        self.finish_benchmark_wheel_viewport(presentation.document);
         if layout_changed {
             self.update_scrollbar();
         }

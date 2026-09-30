@@ -7,10 +7,10 @@ impl DocumentRuntime {
         &mut self,
         mut outcome: ScriptOutcome,
         force_accessibility_update: bool,
-        force_runtime_report: bool,
+        wheel: Option<WheelAcknowledgement>,
         connection: &mut ChildConnection,
     ) -> Result<Option<AdvanceResult>, String> {
-        let needs_present = force_runtime_report || force_accessibility_update
+        let needs_present = wheel.is_some() || force_accessibility_update
             || outcome.render_requested
             || outcome.executed > 0
             || !outcome.errors.is_empty()
@@ -47,16 +47,17 @@ impl DocumentRuntime {
                     document: self.id,
                     clock_advanced: false,
                     next_timer_micros: self.next_timer_micros(),
-                    runtime: runtime_report(
+                    runtime: runtime_report_with_wheel(
                         outcome,
                         self.script_runtime.is_some(),
                         self.media_runtime_report(),
+                        wheel,
                     ),
                     load,
                 },
             ))));
         }
-        self.presentation(outcome, style, load, connection)
+        self.presentation(outcome, style, load, connection, wheel)
             .map(Some)
     }
 

@@ -20,6 +20,11 @@ has null motion-paint latency, not zero. Retired documents, superseded inputs,
 unacknowledged inputs, rejected input and paint failures remain explicit outcomes.
 The trace retains at most 128 samples and reports omitted inputs and unmatched
 acknowledgements rather than silently discarding them.
+Native motion ownership is resolved before the queue's synchronous first tick.
+A viewport verdict can finish as `no_motion` when opposite coalesced deltas cancel,
+fractional conversion produces no device-pixel distance, or range clamping keeps
+the previous target. An existing animation alone cannot supply a paint latency
+for that new request; its synchronous and later timer ticks remain unattributed.
 
 ## Ownership and visual parity
 
