@@ -33,6 +33,7 @@ impl StyleSet {
                 self.refresh_subtrees(&dom.document, &roots, &invalidation.removed_nodes);
             stats.removed_styles += removed_styles;
             stats.layout_changed |= removed_styles != 0 || removed_generated;
+            stats.non_deferable_paint_changes |= removed_styles != 0 || removed_generated;
             return stats;
         }
         self.rebuild_rules_for_media_environment(

@@ -173,6 +173,7 @@ pub enum MediaCodecFamily {
     Aac = 5,
     Flac = 6,
     Vorbis = 7,
+    Opus = 8,
 }
 
 impl MediaCodecFamily {
@@ -190,6 +191,7 @@ impl MediaCodecFamily {
             5 => Ok(Self::Aac),
             6 => Ok(Self::Flac),
             7 => Ok(Self::Vorbis),
+            8 => Ok(Self::Opus),
             _ => Err(MediaProtocolError::InvalidPayload("codec family")),
         }
     }

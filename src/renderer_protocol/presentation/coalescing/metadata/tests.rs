@@ -1,4 +1,5 @@
 use super::*;
+mod wheel_reversal;
 use crate::navigation::request::{FormPost, NavigationOptions};
 use crate::renderer_protocol::presentation::runtime_codec::encode_runtime;
 use crate::renderer_protocol::presentation::tests::sample;
@@ -39,6 +40,7 @@ fn detailed_report() -> RuntimeReport {
         wheel_acknowledgements: vec![crate::renderer_protocol::WheelAcknowledgement {
             sequence: 1,
             decision: crate::renderer_protocol::WheelDecision::Viewport,
+            viewport_delta_y: 126.0,
             dispatch_micros: 250,
         }],
         cookie_updates: vec!["name=value".into()],

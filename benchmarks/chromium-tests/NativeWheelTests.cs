@@ -5,6 +5,8 @@ internal static class NativeWheelTests
 {
     public static void Run()
     {
+        NativeWheelVerdictTests.Run();
+        NativeWheelObservationTests.Run();
         var samples = new NativeWheelSamples();
         samples.Navigated();
         samples.Frame(0, 0, 100, 200);

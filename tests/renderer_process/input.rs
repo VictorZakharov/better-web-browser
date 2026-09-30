@@ -12,12 +12,16 @@ use std::time::Duration;
 mod fragment_navigation;
 #[path = "input/helpers.rs"]
 mod helpers;
+#[path = "input/hit_testing.rs"]
+mod hit_testing;
 #[path = "input/native_text.rs"]
 mod native_text;
 #[path = "input/nested_scrolling.rs"]
 mod nested_scrolling;
 #[path = "input/protocol_handlers.rs"]
 mod protocol_handlers;
+#[path = "input/publication_diagnostics.rs"]
+mod publication_diagnostics;
 #[path = "input/scroll_composition.rs"]
 mod scroll_composition;
 #[path = "input/shadow_focus.rs"]

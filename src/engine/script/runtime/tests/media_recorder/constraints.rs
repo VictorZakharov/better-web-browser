@@ -5,7 +5,9 @@ fn recorder_rejects_unsupported_formats_and_changed_track_sets() {
     let dom = dom::parse_with_scripting(
         r#"<body><script>
         const supported = ['', 'audio/flac', 'audio/x-flac', 'audio/ogg',
-            'video/webm', 'audio/flac;codecs=flac'].map(type =>
+            'video/webm', 'audio/flac;codecs=flac', ' ',
+            'audio/webm;codecs=opus', 'audio/ogg;codecs=opus',
+            'audio/ogg;codecs=speex'].map(type =>
             MediaRecorder.isTypeSupported(type));
         document.body.setAttribute('data-supported', supported.join(','));
         try { MediaRecorder.isTypeSupported(); }
@@ -48,7 +50,7 @@ fn recorder_rejects_unsupported_formats_and_changed_track_sets() {
     let body = dom.elements_named("body").next().unwrap();
     assert_eq!(
         body.attr("data-supported").as_deref(),
-        Some("true,true,false,false,false,false")
+        Some("true,true,false,true,false,false,false,false,true,false")
     );
     assert_eq!(
         body.attr("data-mime-error").as_deref(),

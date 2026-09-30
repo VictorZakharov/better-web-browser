@@ -13,6 +13,7 @@ fn acknowledgement() -> WheelAcknowledgement {
     WheelAcknowledgement {
         sequence: 1,
         decision: WheelDecision::NestedScroll,
+        viewport_delta_y: 0.0,
         dispatch_micros: 25,
     }
 }
@@ -70,6 +71,19 @@ fn candidate(url: String, width: u32, height: u32) -> ImageDelta {
 fn actual_wheel_metadata_precedes_image_admission_at_the_exact_wire_boundary() {
     let mut value = presentation();
     let base = value.encode().unwrap().len();
+    let actual_runtime = runtime_report_with_wheel(
+        ScriptOutcome::default(),
+        true,
+        None,
+        Some(acknowledgement()),
+    );
+    let mut metadata = value.clone();
+    metadata.runtime = actual_runtime.clone();
+    let with_wheel = metadata.encode().unwrap().len();
+    let wheel_metadata_bytes = with_wheel - base;
+    // Sequence, decision, retained CSS distance, and dispatch duration. Measure
+    // the real codec as well so this boundary fixture cannot silently drift.
+    assert_eq!(wheel_metadata_bytes, 8 + 1 + 4 + 8);
     let large = candidate("large".into(), 8192, 2047);
     let mut tail_url = String::from("tail");
     // Pixel payloads are multiples of four. URL padding makes this valid pair of
@@ -92,20 +106,14 @@ fn actual_wheel_metadata_precedes_image_admission_at_the_exact_wire_boundary() {
         MAX_RENDERER_PRESENTATION_BYTES
     );
 
-    value.runtime = runtime_report_with_wheel(
-        ScriptOutcome::default(),
-        true,
-        None,
-        Some(acknowledgement()),
-    );
+    value.runtime = actual_runtime;
     assert!(
         matches!(value.encode(), Err(ProtocolError::PayloadTooLarge(bytes))
-        if bytes as usize == MAX_RENDERER_PRESENTATION_BYTES + 17),
+        if bytes as usize == MAX_RENDERER_PRESENTATION_BYTES + wheel_metadata_bytes),
         "attaching after image admission must reproduce the exact old overflow"
     );
     value.images.clear();
-    let with_wheel = value.encode().unwrap().len();
-    assert_eq!(with_wheel, base + 17);
+    assert_eq!(value.encode().unwrap().len(), with_wheel);
     let bounded = select(&candidates, MAX_RENDERER_PRESENTATION_BYTES - with_wheel);
     assert_eq!(bounded.indexes, [0]);
     assert!(bounded.deferred);

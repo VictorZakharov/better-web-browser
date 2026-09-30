@@ -5,6 +5,8 @@ use std::time::Duration;
 
 #[path = "audio_only/containers.rs"]
 mod containers;
+#[path = "audio_only/opus.rs"]
+mod opus;
 
 fn verify_playback(bytes: &[u8], codec: MediaCodecFamily) {
     let _serial = SERIAL

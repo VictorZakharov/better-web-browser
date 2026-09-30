@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Owned delayed wheel acknowledgement fixture</title>
+<style>
+html,body{margin:0}
+main{height:20000px;background:#a9c7df}
+</style>
+<main>Ordinary viewport wheel dispatch with a bounded first-listener task.</main>
+<script>
+let wheelOrdinal=0;
+const activeBacklog=location.search==='?active=1';
+addEventListener('wheel',event=>{
+  const ordinal=++wheelOrdinal;
+  if(ordinal===(activeBacklog?2:1)){
+    console.log('backlog busy begin');
+    const started=performance.now();
+    const duration=activeBacklog?250:100;
+    while(performance.now()-started<duration){}
+    console.log('backlog busy end:'+(performance.now()-started));
+  }
+  // The alternate endpoint tests cancellation without changing event delivery.
+  if(event.clientX<400)event.preventDefault();
+  console.log('backlog wheel:'+ordinal+':'+event.deltaY+':'+event.isTrusted+':'+event.defaultPrevented);
+},{passive:false});
+addEventListener('scroll',()=>console.log('backlog viewport:'+scrollY));
+document.title='Owned delayed wheel acknowledgement fixture ready';
+</script>

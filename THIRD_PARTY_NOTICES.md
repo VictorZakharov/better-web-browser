@@ -3,8 +3,8 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `f7549996bd217bec5a4e8af808f7ba9fa74f180c32d33d74a5cb9b165f94fbcc`
-- Third-party packages: 240
+- Cargo.lock SHA-256: `f79f05f0604c88283bc871d221701bf2ea8ee322529627f0605140945409eea4`
+- Third-party packages: 243
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
@@ -34,6 +34,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `cfg-if` | 1.0.4 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/cfg-if) |
 | `clang-sys` | 1.9.1 | Apache-2.0 | [upstream](https://github.com/KyleMayes/clang-sys) |
 | `claxon` | 0.4.3 | Apache-2.0 | [upstream](https://github.com/ruuda/claxon) |
+| `cmake` | 0.1.58 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/cmake-rs) |
 | `color_quant` | 1.1.0 | MIT | [upstream](https://github.com/image-rs/color_quant.git) |
 | `core_maths` | 0.1.1 | MIT | [upstream](https://github.com/robertbastian/core_maths) |
 | `cpufeatures` | 0.2.17 | MIT OR Apache-2.0 | [upstream](https://github.com/RustCrypto/utils) |
@@ -122,6 +123,8 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-traits) |
 | `ogg` | 0.8.0 | BSD-3-Clause | [upstream](https://github.com/RustAudio/ogg) |
 | `once_cell` | 1.21.4 | MIT OR Apache-2.0 | [upstream](https://github.com/matklad/once_cell) |
+| `opus` | 0.4.0 | MIT/Apache-2.0 | [upstream](https://github.com/SpaceManiac/opus-rs) |
+| `opusic-sys` | 0.7.5 | BSD-3-Clause | [upstream](https://github.com/DoumanAsh/opusic-sys) |
 | `parking_lot` | 0.12.5 | MIT OR Apache-2.0 | [upstream](https://github.com/Amanieu/parking_lot) |
 | `parking_lot_core` | 0.9.12 | MIT OR Apache-2.0 | [upstream](https://github.com/Amanieu/parking_lot) |
 | `parlance` | 0.1.0 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/parley) |
@@ -253,5 +256,6 @@ This file describes the complete third-party Rust graph linked into the Windows 
 
 - `psl2` embeds a compact Mozilla Public Suffix List snapshot. The crate is MIT OR Apache-2.0; the list data is MPL-2.0. The crate and list versions are pinned by `Cargo.lock` and `psl2::psl_version()`.
 - The AccessKit crates are MIT OR Apache-2.0 and contain portions derived from Chromium under a BSD license. The required upstream notice is preserved at `third_party/accesskit/LICENSE.chromium` and copied beside every AccessKit package notice in release archives.
+- `opus` 0.4.0 is the MIT OR Apache-2.0 safe Rust API. `opusic-sys` 0.7.5 statically builds bundled libopus 1.6.1 (BSD-3-Clause), not a downloaded system codec. Its package `LICENSE` is the complete upstream libopus `COPYING` notice; release packaging verifies that equality and retains the notice beside the Rust wrapper licenses. Native decoder code executes only in contained audio jobs. See `docs/ogg-opus.md` for provenance, build policy, and supported formats.
 
 The release archive also contains each available package license/notice file under `licenses/<crate>-<version>/`. When a published crate omits a standalone license file, its package notice records the Cargo license expression and upstream repository. SPDX expressions in this document state the choices declared by each package; they do not relicense third-party work.

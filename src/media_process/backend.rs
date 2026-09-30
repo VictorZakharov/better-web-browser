@@ -32,6 +32,7 @@ mod flac;
 mod fragmented_mp4;
 mod h264;
 mod ogg_vorbis;
+mod opus;
 mod playback;
 mod stream;
 mod video_buffer;
@@ -51,6 +52,9 @@ pub(super) struct DecodedMedia {
 }
 
 pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, String> {
+    if crate::opus_audio::sniff(bytes) {
+        return opus::decode(bytes, limits, Instant::now());
+    }
     if flac::is_flac(bytes) {
         return flac::decode(bytes, limits, Instant::now());
     }

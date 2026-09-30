@@ -3,6 +3,7 @@
 
 mod flac;
 mod ogg_vorbis;
+mod opus;
 mod resample;
 mod symphonia;
 #[cfg(test)]
@@ -91,7 +92,9 @@ impl AudioDecodes {
             .spawn(move || {
                 // Ogg/FLAC shares Ogg's capture pattern with Vorbis. Admit the
                 // more specific codec mapping before the existing Vorbis path.
-                let result = if let Some(kind) = crate::encoded_audio::sniff(&bytes) {
+                let result = if crate::opus_audio::sniff(&bytes) {
+                    opus::decode(&bytes, sample_rate, &worker_cancelled)
+                } else if let Some(kind) = crate::encoded_audio::sniff(&bytes) {
                     symphonia::decode(&bytes, sample_rate, &worker_cancelled, kind)
                 } else if bytes.starts_with(b"OggS") {
                     ogg_vorbis::decode(&bytes, sample_rate, &worker_cancelled)

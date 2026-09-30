@@ -1,6 +1,7 @@
 use super::*;
 use crate::engine::dom;
 mod dom_parser;
+mod opus_capabilities;
 mod serialization;
 mod url_pattern;
 mod url_resolution;

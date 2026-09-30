@@ -4,7 +4,7 @@ use crate::windows_app::paint_primitives::{
     draw_text_in_rect, fill_color_rect, paint_rounded_panel,
 };
 
-const SUMMARY_LINE_COUNT: usize = 5;
+const SUMMARY_LINE_COUNT: usize = 9;
 const MAX_PANEL_INCIDENTS: usize = 64;
 
 pub(super) fn detail_line_count(state: &BrowserState) -> usize {
@@ -137,7 +137,7 @@ impl BrowserState {
             ("Frame interval p95", format_ms(snapshot.frame_p95)),
             ("Slowest interval", format_ms(snapshot.frame_maximum)),
             ("Long frames (>33 ms)", snapshot.long_frames.to_string()),
-            ("Paint", format_ms(snapshot.paint_time)),
+            ("Paint (total, 2 s)", format_ms(snapshot.paint_time)),
             ("JavaScript", format_ms(snapshot.script_time)),
             ("Style", format_ms(snapshot.style_time)),
             ("Layout", format_ms(snapshot.layout_time)),
@@ -237,6 +237,13 @@ impl BrowserState {
             (state_line, true),
             (activity_line, true),
         ];
+        detail_lines.extend(
+            snapshot
+                .scroll_commits
+                .diagnostic_lines()
+                .into_iter()
+                .map(|line| (line, true)),
+        );
         detail_lines.extend(
             tab.incidents
                 .recent_labels(MAX_PANEL_INCIDENTS)

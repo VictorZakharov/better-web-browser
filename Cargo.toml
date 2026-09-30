@@ -21,11 +21,15 @@ image = { version = "0.25.10", default-features = false, features = ["bmp", "gif
 # Pure-Rust Vorbis decoder and Ogg container parser shared by Web Audio and media worker.
 lewton = "=0.10.2"
 ogg = "=0.8.0"
+# MIT/Apache-2.0 safe API over bundled BSD-3-Clause libopus; contained audio jobs only.
+opus = "=0.4.0"
 psl2 = { version = "0.1.12", default-features = false, features = ["fast-lookup"] }
 resvg = { version = "0.48.1", default-features = false }
 sha2 = "0.10.9"
 # MPL-2.0 bounded audio demux/decode; only the admitted container/codec pairs are exposed.
 symphonia = { version = "=0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "mkv", "ogg", "vorbis", "flac"] }
+# Reuse the already-locked, vetted OpusHead parser; no second header parser.
+symphonia-common = "=0.6.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 time = { version = "0.3.55", default-features = false, features = ["std", "parsing"] }

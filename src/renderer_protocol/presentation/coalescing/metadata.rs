@@ -13,7 +13,9 @@ pub(super) fn presentation_merge_is_bounded(
 ) -> bool {
     // A cancellation verdict must be installed against its own control snapshot;
     // a later presentation may already contain script-written or new-generation text.
-    if previous.runtime.native_text_rejection.is_some() {
+    if previous.runtime.native_text_rejection.is_some()
+        || wheel_direction_changed(&previous.runtime, &next.runtime)
+    {
         return false;
     }
     // The benchmark's nested-motion paint must install the verdict's own revision,
@@ -37,12 +39,25 @@ pub(super) fn runtime_merge_is_bounded(
     previous: &RendererRuntimeUpdate,
     next: &RendererRuntimeUpdate,
 ) -> bool {
-    if previous.runtime.native_text_rejection.is_some() {
+    if previous.runtime.native_text_rejection.is_some()
+        || wheel_direction_changed(&previous.runtime, &next.runtime)
+    {
         return false;
     }
     merged_runtime_bytes(&previous.runtime, &next.runtime).is_some_and(|runtime| {
         runtime.saturating_add(runtime_update_overhead(next)) <= MAX_CONTROL_PAYLOAD
     })
+}
+
+fn wheel_direction_changed(previous: &RuntimeReport, next: &RuntimeReport) -> bool {
+    // A new absolute scroll deliberately supersedes old wheel motion. Otherwise
+    // preserve reversals as separate delivery turns: summing them erases the user's
+    // interruption and leaves the shell animating toward the old distant target.
+    next.viewport_scroll_y.is_none()
+        && previous.viewport_wheel_delta_y != 0.0
+        && next.viewport_wheel_delta_y != 0.0
+        && previous.viewport_wheel_delta_y.is_sign_positive()
+            != next.viewport_wheel_delta_y.is_sign_positive()
 }
 
 pub(super) fn runtime_update_overhead(value: &RendererRuntimeUpdate) -> usize {
@@ -99,7 +114,7 @@ fn edge_bytes(value: &RuntimeReport) -> usize {
     .into_iter()
     .flatten()
     .fold(
-        value.wheel_acknowledgements.len().saturating_mul(17),
+        value.wheel_acknowledgements.len().saturating_mul(21),
         |bytes, text| bytes.saturating_add(4).saturating_add(text.len()),
     );
     value

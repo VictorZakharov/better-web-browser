@@ -1,5 +1,6 @@
 //! Renderer-owned element targeting and clipping-aware visual hit testing.
 use super::*;
+mod bounds;
 impl DocumentRuntime {
     pub(super) fn link_for_node(&self, node: &NodeRef) -> Option<String> {
         let base = self
@@ -93,24 +94,10 @@ impl DocumentRuntime {
     }
 
     fn hit_element_bounds(&self, x: f32, y: f32) -> Option<HitTarget> {
-        self.layout
-            .node_paint_order
-            .iter()
-            .rev()
-            .find_map(|id| {
-                let node = self.page.dom.find_node(*id)?;
-                let rect = self.layout.visual_rect(&node)?;
-                (rect.width > 0.0
-                    && rect.height > 0.0
-                    && contains(rect, x, y)
-                    && !self.layout.hit_excluded.contains(&node.id())
-                    && self.layout.point_in_scroll_clips(&node, x, y))
-                .then_some(node)
-            })
-            .map(|node| HitTarget {
-                link: self.link_for_node(&node),
-                node,
-                control: None,
-            })
+        bounds::node_at_point(&self.page.dom, &self.layout, x, y).map(|node| HitTarget {
+            link: self.link_for_node(&node),
+            node,
+            control: None,
+        })
     }
 }

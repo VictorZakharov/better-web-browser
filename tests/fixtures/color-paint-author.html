@@ -1,0 +1,16 @@
+<!doctype html>
+<style>
+  html, body { margin: 0; }
+  #pad { width: 200px; height: 100px; background: red; }
+  #pad:hover { background: rgb(0,128,0); /* EFFECT */ }
+</style>
+<body id=page><div id=pad></div>
+<script>
+  const pad = document.getElementById('pad');
+  let moves = 0;
+  document.addEventListener('mousemove', event => {
+    ++moves;
+    /* AUTHOR */
+    console.log('HIT:' + moves + ':' + event.target.id);
+  });
+</script>

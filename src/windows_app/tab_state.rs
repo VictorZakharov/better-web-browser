@@ -11,7 +11,7 @@ use super::navigation_transaction::NavigationTransaction;
 use super::page_controls::PageControlWindow;
 use super::paint_index::PaintIndex;
 use super::renderer_input_queue::PendingRendererInputs;
-use super::scrolling::ScrollAnimation;
+use super::scrolling::{ScrollAnimation, WheelGesture};
 use super::tabs::{IdentifiedTab, TabId};
 use super::*;
 use better_web_browser::engine::dom::NodeId;
@@ -55,6 +55,7 @@ pub(super) struct BrowserTab {
     pub(super) content_height: i32,
     pub(super) scroll_y: i32,
     pub(super) scroll_animation: ScrollAnimation,
+    pub(super) wheel_gesture: WheelGesture,
     pub(super) history: Vec<HistoryEntry>,
     pub(super) history_index: usize,
     /// Pending CSS-pixel viewport restoration for a refetched history entry.
@@ -125,6 +126,7 @@ impl BrowserTab {
             content_height: 0,
             scroll_y: 0,
             scroll_animation: ScrollAnimation::default(),
+            wheel_gesture: WheelGesture::default(),
             history: vec![HistoryEntry::new(HOME_URL.into())],
             history_index: 0,
             pending_history_scroll_y: None,
@@ -175,6 +177,7 @@ impl BrowserTab {
         self.document_fetch.abort();
         self.renderer_websockets.cancel_all();
         self.renderer_input_sequence = 0;
+        self.wheel_gesture = Default::default();
         self.native_text_generation = 0;
         self.suppress_page_control_edit = false;
         self.pointer_cursor_request = None;

@@ -63,6 +63,8 @@ impl StyleSet {
         // Auto/percentage used sizes can change with the containing viewport even when every
         // computed style remains equal. A stylesheet equality check cannot suppress that layout.
         stats.layout_changed |= viewport_changed || removed_styles != 0 || removed_generated;
+        stats.non_deferable_paint_changes |=
+            viewport_changed || removed_styles != 0 || removed_generated;
         stats.full_rebuild = true;
         stats
     }

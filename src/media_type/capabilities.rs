@@ -112,6 +112,16 @@ pub(crate) fn audio_parameters_supported(
         return false;
     };
     let rate = rate as u64;
+    if kind.essence == "audio/ogg"
+        && kind
+            .codecs
+            .as_deref()
+            .is_some_and(|codec| codec.trim_matches([' ', '\t']).eq_ignore_ascii_case("opus"))
+    {
+        // RFC 7845 granules and the shared complete-file presentation use 48 kHz.
+        // OpusHead's original-input-rate field is metadata, not our PCM rate.
+        return mode == "file" && rate == 48_000;
+    }
     if mode == "media-source" {
         // Fragmented AAC uses Media Foundation, not the complete-file decoder.
         // Its documented output contract is indexed 8–48 kHz.

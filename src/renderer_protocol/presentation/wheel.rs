@@ -12,10 +12,14 @@ pub enum WheelDecision {
     NoMotion,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WheelAcknowledgement {
     pub sequence: u64,
     pub decision: WheelDecision,
+    /// Accepted viewport default-action distance in CSS pixels for this input.
+    /// Compaction clears contributions superseded by a later absolute scroll;
+    /// other decisions never contribute viewport motion. This is not a position.
+    pub viewport_delta_y: f32,
     /// Renderer-local wheel_input span, including its dispatch/default-action work.
     /// Excludes later presentation style/layout, serialization and outbound IPC.
     pub dispatch_micros: u64,
@@ -27,6 +31,10 @@ pub(super) fn validate(values: &[WheelAcknowledgement]) -> Result<(), ProtocolEr
         || values
             .windows(2)
             .any(|pair| pair[0].sequence >= pair[1].sequence)
+        || values.iter().any(|value| {
+            !value.viewport_delta_y.is_finite()
+                || (value.decision != WheelDecision::Viewport && value.viewport_delta_y != 0.0)
+        })
     {
         return Err(ProtocolError::InvalidPayload("wheel acknowledgements"));
     }
@@ -47,6 +55,7 @@ pub(super) fn encode(
             WheelDecision::Viewport => 3,
             WheelDecision::NoMotion => 4,
         });
+        writer.f32(value.viewport_delta_y);
         writer.u64(value.dispatch_micros);
     }
     Ok(())
@@ -70,6 +79,7 @@ pub(super) fn decode(
                 4 => WheelDecision::NoMotion,
                 _ => return Err(ProtocolError::InvalidPayload("wheel decision")),
             },
+            viewport_delta_y: reader.f32()?,
             dispatch_micros: reader.u64()?,
         });
     }

@@ -4,6 +4,7 @@ internal static class ChromiumProfileTests
 {
     public static void Run()
     {
+        RunCleanupPolicyTests();
         var target = ChromiumProfile.RepositoryTarget();
         var root = Path.Combine(target, $"chromium-profile-tests-{Guid.NewGuid():N}");
         var owned = Path.Combine(root, "owned");
@@ -32,6 +33,7 @@ internal static class ChromiumProfileTests
         Assert(warm.ProfileDirectory == Path.GetFullPath(owned) && !warm.CacheDisabled,
             "warm-profile/cache-enabled options were not parsed");
 
+        Exception? failure = null;
         try
         {
             using (var lease = ChromiumProfile.Open(owned))
@@ -48,12 +50,14 @@ internal static class ChromiumProfileTests
             Reject<InvalidOperationException>(() => ChromiumProfile.Open(unowned),
                 "unmarked populated profile was accepted");
         }
+        catch (Exception error)
+        {
+            failure = error;
+            throw;
+        }
         finally
         {
-            // This test owns a unique child under the verified repository target.
-            if (Path.GetDirectoryName(root) != target)
-                throw new InvalidOperationException("Refusing to remove an unexpected test profile directory.");
-            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+            DeleteOwnedTestDirectory(root, target, failure);
         }
         Console.WriteLine("Chromium profile option and ownership tests passed.");
     }
@@ -63,6 +67,7 @@ internal static class ChromiumProfileTests
         var target = ChromiumProfile.RepositoryTarget();
         var root = Path.Combine(target, $"chromium-warm-test-{Guid.NewGuid():N}");
         var profile = Path.Combine(root, "profile");
+        Exception? failure = null;
         try
         {
             for (var run = 1; run <= 2; run++)
@@ -85,13 +90,111 @@ internal static class ChromiumProfileTests
                 Assert(Directory.Exists(profile), "warm profile was removed after capture");
             }
         }
+        catch (Exception error)
+        {
+            failure = error;
+            throw;
+        }
         finally
         {
-            if (Path.GetDirectoryName(root) != target)
-                throw new InvalidOperationException("Refusing to remove an unexpected warm test directory.");
-            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+            DeleteOwnedTestDirectory(root, target, failure);
         }
         Console.WriteLine("Chromium repeated warm-profile captures passed.");
+    }
+
+    private static void DeleteOwnedTestDirectory(string root, string target, Exception? failure = null,
+        Action<string>? remove = null, Action<int>? delay = null)
+    {
+        try
+        {
+            // This test owns only its unique direct child of the repository target.
+            if (!Path.IsPathFullyQualified(root) || !Path.IsPathFullyQualified(target) ||
+                !string.Equals(Path.GetDirectoryName(Path.GetFullPath(root)), Path.GetFullPath(target),
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Refusing to remove an unexpected test profile directory.");
+            var full = Path.GetFullPath(root);
+            remove ??= path => { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); };
+            delay ??= Thread.Sleep;
+            // Match ChromeRun's fresh-profile policy. Awaiting the Chrome root after
+            // Kill(entireProcessTree:true) does not await every descendant's file handles.
+            // https://learn.microsoft.com/dotnet/api/system.diagnostics.process.kill
+            for (var attempt = 0; attempt < 5; attempt++)
+            {
+                try
+                {
+                    remove(full);
+                    return;
+                }
+                catch (Exception error) when (attempt < 4 && error is IOException or UnauthorizedAccessException)
+                {
+                    delay(100);
+                }
+            }
+        }
+        catch (Exception cleanupError) when (failure is not null)
+        {
+            // A finally failure must not replace the capture/assertion that triggered it.
+            throw new AggregateException($"Test failed and owned profile cleanup failed: {root}",
+                failure, cleanupError);
+        }
+    }
+
+    private static void RunCleanupPolicyTests()
+    {
+        var target = ChromiumProfile.RepositoryTarget();
+        var root = Path.Combine(target, $"chromium-cleanup-tests-{Guid.NewGuid():N}");
+        var calls = 0;
+        var waits = new List<int>();
+        DeleteOwnedTestDirectory(root, target, remove: path =>
+        {
+            Assert(path == Path.GetFullPath(root), "cleanup changed its owned directory");
+            calls++;
+            if (calls == 1) throw new IOException("descendant still owns a database");
+            if (calls == 2) throw new UnauthorizedAccessException("profile handle is retiring");
+        }, delay: waits.Add);
+        Assert(calls == 3 && waits.SequenceEqual(new[] { 100, 100 }),
+            "transient profile cleanup did not reuse the bounded retry policy");
+
+        calls = 0;
+        waits.Clear();
+        var persistent = new IOException("profile remains in use");
+        var observed = Capture<IOException>(() => DeleteOwnedTestDirectory(root, target,
+            remove: _ => { calls++; throw persistent; }, delay: waits.Add));
+        Assert(ReferenceEquals(observed, persistent) && calls == 5 &&
+            waits.SequenceEqual(new[] { 100, 100, 100, 100 }),
+            "permanent cleanup failure was suppressed or retried without a bound");
+
+        calls = 0;
+        waits.Clear();
+        var unexpected = new InvalidOperationException("invalid filesystem operation");
+        var unhandled = Capture<InvalidOperationException>(() => DeleteOwnedTestDirectory(root, target,
+            remove: _ => { calls++; throw unexpected; }, delay: waits.Add));
+        Assert(ReferenceEquals(unhandled, unexpected) && calls == 1 && waits.Count == 0,
+            "unexpected cleanup failure was retried");
+
+        var primary = new InvalidOperationException("warm capture failed first");
+        var combined = Capture<AggregateException>(() => DeleteOwnedTestDirectory(root, target, primary,
+            remove: _ => throw persistent, delay: _ => { }));
+        Assert(combined.InnerExceptions.Count == 2 &&
+            ReferenceEquals(combined.InnerExceptions[0], primary) &&
+            ReferenceEquals(combined.InnerExceptions[1], persistent),
+            "cleanup masked the original warm capture failure");
+        calls = 0;
+        DeleteOwnedTestDirectory(root, target, primary, remove: _ => calls++,
+            delay: _ => throw new InvalidOperationException("successful cleanup must not wait"));
+        Assert(calls == 1, "successful cleanup did not complete on its first attempt");
+        calls = 0;
+        Capture<InvalidOperationException>(() => DeleteOwnedTestDirectory(target, target,
+            remove: _ => calls++, delay: _ => { }));
+        Assert(calls == 0, "cleanup attempted to remove the repository target");
+        Console.WriteLine("Chromium bounded owned-profile cleanup policy tests passed without browser execution.");
+    }
+
+    private static TException Capture<TException>(Action action) where TException : Exception
+    {
+        try { action(); }
+        catch (TException error) { return error; }
+        throw new InvalidOperationException($"Expected {typeof(TException).Name} was not raised.");
     }
 
     private static void Reject<TException>(Action action, string message) where TException : Exception

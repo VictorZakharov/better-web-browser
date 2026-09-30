@@ -1,6 +1,6 @@
 use super::*;
 use crate::windows_app::navigation_transaction::PresentationDeadline;
-use better_web_browser::renderer_process::{RendererEvent, RendererExitReason, RendererState};
+use better_web_browser::renderer_process::{RendererEvent, RendererState};
 use better_web_browser::renderer_protocol::{NavigationCause, NavigationDisposition};
 use std::sync::Arc;
 
@@ -75,6 +75,7 @@ impl BrowserState {
         });
 
         let mut events = events.into_iter().peekable();
+        let turn = super::turn_budget::RendererTurnBudget::new(Instant::now());
         while let Some(event) = events.next() {
             match event {
                 RendererEvent::Diagnostic { code, text } => {
@@ -262,12 +263,14 @@ impl BrowserState {
                     });
                     match applied {
                         Ok(false) => {
-                            if let Some(tab) = self.tabs.get_mut(id) {
-                                tab.deferred_renderer_events.extend(
-                                    requests.into_iter().map(RendererEvent::StorageMutation),
-                                );
-                                tab.deferred_renderer_events.extend(events);
-                            }
+                            self.defer_renderer_event_turn(
+                                id,
+                                session_id,
+                                requests
+                                    .into_iter()
+                                    .map(RendererEvent::StorageMutation)
+                                    .chain(events),
+                            );
                             exit = None;
                             break;
                         }
@@ -282,11 +285,12 @@ impl BrowserState {
                     });
                     match applied {
                         Ok(false) => {
-                            if let Some(tab) = self.tabs.get_mut(id) {
-                                tab.deferred_renderer_events
-                                    .push_back(RendererEvent::BroadcastCommand(command));
-                                tab.deferred_renderer_events.extend(events);
-                            }
+                            self.defer_renderer_event_turn(
+                                id,
+                                session_id,
+                                std::iter::once(RendererEvent::BroadcastCommand(command))
+                                    .chain(events),
+                            );
                             exit = None;
                             break;
                         }
@@ -309,132 +313,27 @@ impl BrowserState {
                     exit = Some(renderer_exit);
                 }
             }
+            if turn.should_yield(
+                events.peek().is_some(),
+                Instant::now(),
+                crate::windows_app::message_pump::input_is_waiting,
+            ) {
+                self.defer_renderer_event_turn(id, session_id, events);
+                // A diagnostic terminal snapshot cannot overtake deferred FIFO
+                // output, including its original terminal event.
+                exit = None;
+                break;
+            }
         }
 
-        let Some(session) = self
-            .tabs
-            .get_mut(id)
-            .and_then(|tab| tab.renderer_session.as_ref())
-            .filter(|session| session.snapshot().session_id == session_id)
-        else {
+        let Some(remaining) = self.finish_renderer_event_turn(id, session_id) else {
             // Navigation or error handling may have replaced the session while
             // consuming this batch. Neither re-arm nor apply its exit to the new one.
             return;
         };
-        session.finish_event_drain();
 
-        if let Some(exit) = exit {
-            self.app
-                .broadcast_channels
-                .borrow_mut()
-                .retire_tab(id.get());
-            // Revoke hardware before any recovery path replaces the renderer.
-            self.retire_capture_for_document(id);
-            self.retire_sensors_for_tab(id);
-            self.retire_wake_locks_for_tab(id);
-            self.retire_permissions_for_tab(id);
-            let crash_surface = exit.crash_surface();
-            let task_budget_exceeded =
-                matches!(exit.reason, RendererExitReason::TaskBudgetExceeded(_));
-            self.update_renderer_status(id, &title, |status| {
-                status.phase = RendererLifecyclePhase::Exited;
-                status.last_exit = Some(exit);
-            });
-            if task_budget_exceeded {
-                let recovery_url = self
-                    .tabs
-                    .get_mut(id)
-                    .and_then(|tab| tab.current_url().map(str::to_owned));
-                if let Some(url) = recovery_url
-                    && self
-                        .tabs
-                        .get_mut(id)
-                        .is_some_and(|tab| !tab.navigation.is_loading())
-                {
-                    if self.tabs.active_id() == id {
-                        self.set_status("Renderer stopped responding; reloading once …");
-                    }
-                    self.begin_navigation_for_tab(
-                        id,
-                        url,
-                        browser_navigation::HistoryMode::Recovery,
-                        None,
-                    );
-                    if self
-                        .tabs
-                        .get_mut(id)
-                        .is_some_and(|tab| tab.navigation.is_loading())
-                    {
-                        return;
-                    }
-                }
-            }
-            let recovery = self.tabs.get_mut(id).and_then(|tab| {
-                let recovery = tab.navigation.renderer_exited();
-                if recovery.is_some() {
-                    tab.storage_subscription = None;
-                    tab.deferred_renderer_events.clear();
-                    tab.renderer_session.take();
-                    tab.renderer_clock_pending = false;
-                    tab.renderer_work_pending = false;
-                    tab.pointer_cursor_request = None;
-                    tab.pointer_cursor =
-                        better_web_browser::renderer_protocol::PointerCursor::Default;
-                }
-                recovery
-            });
-            match recovery {
-                Some(PresentationDeadline::Retry) => {
-                    if self.tabs.active_id() == id {
-                        self.apply_current_pointer_cursor();
-                        self.set_status("Renderer exited before first paint; retrying once …");
-                    }
-                    self.start_renderer_for(id);
-                    self.ensure_renderer_monitoring();
-                    return;
-                }
-                Some(PresentationDeadline::Failed) => {
-                    let detail = crash_surface
-                        .as_ref()
-                        .map(|surface| {
-                            format!(
-                                "renderer exited before first paint after a clean retry: {}",
-                                surface.detail
-                            )
-                        })
-                        .unwrap_or_else(|| {
-                            "renderer exited before first paint after a clean retry".into()
-                        });
-                    self.contain_page_engine_failure(id, detail);
-                    return;
-                }
-                None => {}
-            }
-            let status = crash_surface.map(|surface| {
-                format!(
-                    "{}: {}. Reload to restart the renderer.",
-                    surface.title, surface.detail
-                )
-            });
-            self.retire_database_for_tab(id);
-            if let Some(tab) = self.tabs.get_mut(id) {
-                if let Some(status) = status.as_ref() {
-                    tab.mark_crashed(status.clone());
-                } else {
-                    tab.renderer_session.take();
-                }
-                tab.pointer_cursor_request = None;
-                tab.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
-            }
-            if self.tabs.active_id() == id {
-                self.apply_current_pointer_cursor();
-            }
-            if self.tabs.active_id() == id
-                && let Some(status) = status
-            {
-                self.set_status(&status);
-                self.refresh_accessibility_full();
-            }
+        if !remaining && let Some(exit) = exit {
+            self.finish_renderer_exit(id, &title, exit);
         }
     }
 

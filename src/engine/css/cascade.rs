@@ -12,6 +12,8 @@ mod sheets;
 mod sources;
 pub use sources::StylesheetSource;
 #[cfg(test)]
+mod anonymous_text_tests;
+#[cfg(test)]
 mod tests;
 
 use super::media::MediaEnvironment;
@@ -29,6 +31,8 @@ pub struct StyleRefreshStats {
     pub changed_styles: usize,
     pub removed_styles: usize,
     pub layout_changed: bool,
+    /// Changes outside color/background/underline, including unknown or generated paint.
+    pub non_deferable_paint_changes: bool,
     pub full_rebuild: bool,
     pub element_style_time: std::time::Duration,
     pub pseudo_style_time: std::time::Duration,
@@ -221,6 +225,16 @@ impl StyleSet {
 
     fn compute_style(&self, node: &NodeRef, parent: Option<&ComputedStyle>) -> ComputedStyle {
         let mut style = ComputedStyle::inherit_from(parent);
+        // Anonymous text runs receive their direct decorating box's underline,
+        // not an inherited CSS property on descendant elements. display:contents
+        // has no decorating box. General ancestor-box propagation is separate.
+        // https://www.w3.org/TR/css-text-decor-3/#line-decoration
+        if matches!(&node.data, NodeData::Text(_) | NodeData::Cdata(_)) {
+            style.text_decoration_underline = parent.is_some_and(|parent| {
+                !matches!(parent.display, Display::Contents | Display::None)
+                    && parent.text_decoration_underline
+            });
+        }
         style.root_font_size = root_font_size_for(&self.styles, node);
         user_agent::apply_user_agent_defaults(node, &mut style, parent);
         let lower_origin = style.clone();

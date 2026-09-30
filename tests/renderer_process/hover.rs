@@ -53,26 +53,55 @@ fn hover_controls_repaint_on_native_entry_and_exit_with_and_without_script() {
                 }))
                 .unwrap();
             let deadline = Instant::now() + Duration::from_secs(5);
+            let mut serviced_paint = false;
             loop {
                 assert!(Instant::now() < deadline, "no hover repaint for {phase:?}");
-                if let RendererEvent::Presentation(presentation) =
-                    session.wait_for_event(Duration::from_secs(2)).unwrap()
-                {
-                    session
-                        .acknowledge_presentation(PresentationAcknowledgement {
-                            document: presentation.document,
-                            revision: presentation.revision,
-                            presented: true,
-                            controls_applied: true,
-                        })
-                        .unwrap();
-                    if presentation.layout.items.iter().any(|item| {
-                        matches!(item,
-                        DisplayItem::SolidRect {rect,color,..} if rect.width==200.0 &&
-                        (color.red,color.green,color.blue)==expected)
-                    }) {
-                        break;
+                match session.wait_for_event(Duration::from_secs(2)).unwrap() {
+                    RendererEvent::RuntimeUpdate(update) => {
+                        assert_eq!(update.document, initial.document);
+                        assert!(
+                            update.runtime.errors.is_empty(),
+                            "{:?}",
+                            update.runtime.errors
+                        );
+                        assert!(
+                            update.next_timer_micros.is_some(),
+                            "color hover must promise paint"
+                        );
+                        if !serviced_paint {
+                            // This hidden session has no HWND timer. Service the promised
+                            // rendering opportunity after the 16 ms wall deadline expires.
+                            std::thread::sleep(Duration::from_millis(25));
+                            session
+                                .advance_time(initial.document, Duration::ZERO, 64)
+                                .unwrap();
+                            serviced_paint = true;
+                        }
                     }
+                    RendererEvent::Presentation(presentation) => {
+                        assert!(
+                            presentation.runtime.errors.is_empty(),
+                            "{:?}",
+                            presentation.runtime.errors
+                        );
+                        session
+                            .acknowledge_presentation(PresentationAcknowledgement {
+                                document: presentation.document,
+                                revision: presentation.revision,
+                                presented: true,
+                                controls_applied: true,
+                            })
+                            .unwrap();
+                        if presentation.layout.items.iter().any(|item| {
+                            matches!(item,
+                            DisplayItem::SolidRect {rect,color,..} if rect.width==200.0 &&
+                            (color.red,color.green,color.blue)==expected)
+                        }) {
+                            break;
+                        }
+                    }
+                    RendererEvent::Diagnostic { .. } | RendererEvent::PointerCursor(_) => {}
+                    event => panic!("unexpected hover response: {event:?}"),
                 }
             }
         }

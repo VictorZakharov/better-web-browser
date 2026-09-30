@@ -111,6 +111,13 @@ fn default_action_decisions_include_quiet_cancelled_nested_and_reversed_wheels()
             WheelDecision::NoMotion
         ]
     );
+    assert_eq!(
+        values
+            .iter()
+            .map(|value| value.viewport_delta_y)
+            .collect::<Vec<_>>(),
+        [0.0, 0.0, 126.0, -126.0, 0.0]
+    );
     session.shutdown().unwrap();
 }
 
@@ -204,6 +211,10 @@ fn asynchronous_scroll_reset_keeps_the_owning_motion_snapshot_and_verdict_separa
                         WheelDecision::NestedScroll
                     );
                     assert_eq!(value.runtime.viewport_wheel_delta_y, 0.0);
+                    assert_eq!(
+                        value.runtime.wheel_acknowledgements[0].viewport_delta_y,
+                        0.0
+                    );
                     assert!(
                         value
                             .runtime

@@ -39,6 +39,8 @@ param(
     [string[]] $KeyTarget = @(),
     [string[]] $ScrollTarget = @(),
     [string[]] $WheelTarget = @(),
+    # Appended after grouped targets; move uses document coordinates, wheel viewport coordinates.
+    [string[]] $ActionSequence = @(),
     [ValidateRange(0, 60000)]
     [int] $NavigationDelayMs = 0,
     [ValidateRange(0, 60000)]
@@ -48,6 +50,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 . (Join-Path $PSScriptRoot 'hidden-benchmark-diagnostics.ps1')
+. (Join-Path $PSScriptRoot 'hidden-benchmark-actions.ps1')
+# Validate before touching artifacts/profiles or resolving/launching the executable.
+$orderedActionArguments = @(Get-HiddenBenchmarkActionArguments -ActionSequence $ActionSequence)
 if ([string]::IsNullOrWhiteSpace($Browser)) {
     $Browser = Join-Path $repoRoot 'target\release\better-web-browser.exe'
 }
@@ -219,9 +224,10 @@ foreach ($target in $WheelTarget) {
     $arguments.Add('--wheel-after-ready')
     $arguments.Add($target)
 }
+foreach ($argument in $orderedActionArguments) { $arguments.Add($argument) }
 if ($BackAfterReady -or $NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0 -or
     $SelectorActivationTarget.Count -gt 0 -or $PointerMoveTarget.Count -gt 0 -or
-    $ClickTarget.Count -gt 0 -or $ControlValue.Count -gt 0 -or $KeyTarget.Count -gt 0 -or $ScrollTarget.Count -gt 0 -or $WheelTarget.Count -gt 0) {
+    $ClickTarget.Count -gt 0 -or $ControlValue.Count -gt 0 -or $KeyTarget.Count -gt 0 -or $ScrollTarget.Count -gt 0 -or $WheelTarget.Count -gt 0 -or $ActionSequence.Count -gt 0) {
     $arguments.Add('--navigation-delay-ms')
     $arguments.Add($NavigationDelayMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
 } elseif ($NavigationDelayMs -ne 0 -or $InitialActionDelayMs -ne 0) {

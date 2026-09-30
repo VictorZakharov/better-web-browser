@@ -89,6 +89,7 @@ fn quiet_and_cancelled_wheel_reports_include_actual_metadata_before_encoding() {
         let acknowledgement = WheelAcknowledgement {
             sequence: 1,
             decision,
+            viewport_delta_y: 0.0,
             dispatch_micros: 25,
         };
         let report =

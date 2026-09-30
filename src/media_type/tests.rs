@@ -1,4 +1,5 @@
 use super::*;
+mod opus;
 
 #[test]
 fn only_implemented_container_codec_combinations_are_admitted() {
@@ -14,7 +15,7 @@ fn only_implemented_container_codec_combinations_are_admitted() {
         ("video/webm;codecs=vorbis", ""),
         ("audio/ogg;codecs=flac", "probably"),
         ("audio/ogg;codecs=vorbis", "probably"),
-        ("audio/ogg;codecs=opus", ""),
+        ("audio/ogg;codecs=opus", "probably"),
         ("audio/ogg;codecs=vorbis,flac", ""),
         ("audio/ogg;codecs=flac,unknown", ""),
         ("audio/mpeg;codecs=mp3", "probably"),
@@ -95,6 +96,7 @@ fn complete_file_support_does_not_grant_iso_bmff_sourcebuffer_support() {
         "audio/webm;codecs=vorbis",
         "audio/ogg;codecs=flac",
         "audio/ogg;codecs=vorbis",
+        "audio/ogg;codecs=opus",
         "audio/mpeg;codecs=mp3",
         "audio/flac",
         "audio/mp4",

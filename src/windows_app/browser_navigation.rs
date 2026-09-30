@@ -166,6 +166,7 @@ impl BrowserState {
                 _ => tab.navigation.begin(),
             };
             tab.renderer_input_sequence = 0;
+            tab.wheel_gesture = Default::default();
             tab.native_text_generation = 0;
             tab.suppress_page_control_edit = false;
             tab.pointer_cursor_request = None;
@@ -241,7 +242,7 @@ impl BrowserState {
         if is_active {
             self.apply_current_pointer_cursor();
             self.update_active_tab_title(&url);
-            KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
+            self.stop_script_runtime_wakeup();
             self.update_history_buttons();
             if let Some(benchmark) = self.benchmark.as_mut()
                 && benchmark.navigation_started.is_none()

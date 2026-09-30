@@ -5,6 +5,8 @@ use std::time::Instant;
 
 #[path = "audio_only/containers.rs"]
 mod containers;
+#[path = "audio_only/opus.rs"]
+mod opus;
 
 #[test]
 fn contained_renderer_loads_plays_and_seeks_audio_only_mp3() {

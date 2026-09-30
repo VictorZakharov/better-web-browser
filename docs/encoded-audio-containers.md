@@ -10,6 +10,7 @@ matrix after stricter one-track MIME/dictionary validation and output limits.
 | ADTS / AAC-LC | Yes | Yes | No |
 | Audio-only WebM / Vorbis | Yes | Yes | No |
 | Ogg / FLAC | Yes | Yes | No |
+| Ogg / Opus, mapping family 0 mono/stereo | Yes | Yes | No |
 | MP3, ordinary AAC/M4A, WAV, native FLAC, Ogg/Vorbis | Existing paths preserved | Existing paths preserved | Only the existing supported ISO-BMFF segment paths |
 | WebM / Opus or video | No | No | No |
 
@@ -31,6 +32,9 @@ WebM and Ogg demuxing, Vorbis decoding for WebM, and FLAC decoding for Ogg. Its
 newly enabled packages use MPL-2.0. The existing Ogg packet reader validates Ogg
 packet/page integrity. Native FLAC continues to use claxon; Ogg/Vorbis continues
 to use lewton. No codec implementation is copied or rewritten here.
+Ogg/Opus uses the existing Ogg reader and vetted bundled libopus through a safe
+wrapper; its [presentation, provenance, and build policy](ogg-opus.md) are
+shared by Web Audio and contained playback.
 The added packages are official Symphonia 0.6.1 publications from upstream
 commit `ee35874b571a35a9a6e15d3bc9a3aaf8f11fbeee`; their MPL-2.0 license,
 absence of package build scripts, and `forbid(unsafe_code)` were inspected.
@@ -82,8 +86,10 @@ commands are recorded in [the media fixture inventory](../tests/fixtures/media/R
   checksum validation across the two containers.
 - `MediaSource.isTypeSupported()` stays limited to the implemented ISO-BMFF
   segment parser. Complete-file AAC support does not imply raw ADTS append support.
-  These new containers are not recording formats; the existing FLAC recorder is
-  unchanged. Hardware efficiency is not claimed.
+  Recording has separate encoder admission: the default remains FLAC, with
+  [bounded Ogg/Opus microphone recording](ogg-opus.md#incremental-microphone-recording)
+  now supported. Complete-file decoder support does not imply AAC, MP3, Vorbis,
+  or WebM recording. Hardware efficiency is not claimed.
 
 MIME parsing follows the MIME Sniffing algorithm for HTTP whitespace, quoted
 values, escaped characters and the first valid duplicate parameter. A quoted

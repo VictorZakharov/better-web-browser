@@ -49,9 +49,63 @@ before a wheel paint; unchanged scrolling may reuse pixels and repaint only the
 exposed strip. Reporting a cheap strip paint of stale content is not a valid
 performance improvement.
 
-The report's new wire field changes renderer IPC major version to 15. Browser
+Per-verdict retained viewport distance changes renderer IPC major version to 16. Browser
 and renderer must come from the same rebuilt executable; incompatible older
 major versions are rejected before decoding their different report layout.
+
+### Reversal while renderer replies are backlogged
+
+The shell observes vertical direction at native input submission, before IPC
+admission. A reversal cancels the running native animation and its fractional
+residue immediately. A per-tab sequence fence retires older *viewport default
+distance*, not the DOM wheel events themselves. Their cancellation verdicts,
+nested-scroll snapshots, console output and author-written absolute scrolls
+still install normally. A cancelled or rejected reverse still interrupts old
+travel; it cannot authorize a new viewport default. Content input rejection is
+distinct from input outside the content surface and never takes raw-scroll
+fallback. Raw browser/reader scrolling also reserves a fence sequence. Tab
+suspension retires outstanding defaults before returning to that tab.
+
+Each acknowledgement carries its retained accepted CSS distance. Compaction
+clears older contributions when a newer absolute scroll resets the anchor,
+while keeping incoming relative defaults after that anchor. This lets the
+shell discard only pre-reversal contributions, including two rapid reversals,
+without losing valid distance combined in the same report.
+
+An owned fixture exposed the remaining failure in release head `6f562c1`:
+eight forward inputs and a reverse were submitted while the first wheel
+listener ran a real bounded 100 ms task. Reverse submission occurred around
+13 ms and the first verdict around 100 ms. All nine trusted DOM events arrived,
+but old native motion restarted after the reversal in both directions. Even
+the cancelled reverse settled at 3,992/6,008 CSS pixels instead of the unchanged
+5,000-pixel starting position. Those four raw baseline reports were retained;
+this is correctness evidence, not an uncontended latency measurement.
+
+The regression checks the whole native position curve after reversal, ordered
+trusted DOM delivery, cancellation, and the final renderer scroll feedback.
+Checking only the reverse event's first paint would miss this backlog failure.
+The interruption guarantee begins when the UI receives the wheel input; a
+synthetic hidden submission does not measure hardware-to-message-queue delay.
+
+### Native queue fairness and continuous frames
+
+The message pump prefers at most eight actual input-queue messages before an
+ordinary queue read. It does not discard, compact, or reorder the admitted DOM
+wheel sequence. Posted translated characters, including surrogate pairs and
+dead/system characters, retain ordinary queue order before later keys or focus
+changes. Renderer output yields between atomic events after a soft 4 ms
+turn, or when native input is waiting; deferred output retains FIFO order and
+terminal recovery cannot overtake it. One expensive event can exceed that soft
+budget, so it is not a hardware-input latency guarantee.
+
+Win32 timer messages have low queue priority. After a completed dispatch, due
+renderer-monitor work and a due foreground scroll frame can therefore run
+through their existing paths without waiting for a timer message. Both use real
+elapsed time and retain their deadlines across unchanged input; no repeated
+`SetTimer` calls or synthetic per-input frame ticks are introduced. A queued
+timer arriving immediately after serviced work cannot duplicate that work.
+Same-direction inputs extend one animation clock; reversal cancels its old
+target before new renderer authorization is available.
 
 ## Evidence and limits
 
@@ -85,6 +139,8 @@ The `native_wheel` report keeps all admitted samples in input order:
 | `enqueue_to_first_changed_compositor_frame_received_ms` | Host enqueue to receipt of the first direction-consistent viewport scroll-offset frame; includes PNG generation and CDP delivery |
 | `frame_swap_timestamp`, `frame_swap_monotonic_timestamp` | Optional raw screencast source clocks; never subtracted from host timestamps |
 | `scheduled_ms`, `enqueued_ms` | Requested and actual host action times, so a delayed dispatch is visible |
+| `listener_verdict_reason`, `observed_listener_events`, `observed_event_delta_y` | Exact sequence/delta observation or the reason it remains unknown; missing values are not zero |
+| `listener_verdict_deadline_reached` | No admitted final listener verdict arrived within the single observation budget |
 
 The frame source is [`Page.screencastFrame`](https://chromedevtools.github.io/devtools-protocol/tot/Page/#event-screencastFrame)
 metadata, not a DOM scrolling shortcut or monitor scanout. Opposite-direction
@@ -94,7 +150,9 @@ a proof of exclusive compositor attribution to one wheel. Leave enough spacing
 for prior motion to settle and retain the raw per-input records.
 
 A passive listener in a [separate isolated world](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-createIsolatedWorld)
-records the event's cancellation flag after dispatch. It does not install a page
+retains at most 128 event references and snapshots each cancellation flag after
+[listener dispatch](https://dom.spec.whatwg.org/#concept-event-dispatch), without
+depending on a separately scheduled timer. It does not install a page
 main-world global, call `preventDefault()`, or change scrolling. The observer is
 diagnostic overhead, not ordinary platform support. Missing listener verdicts,
 cancelled events and nested-scrollport candidates have null attributed frame
@@ -103,6 +161,15 @@ latency. Main-frame scroll metadata cannot prove which nested pixels were painte
 ranges, zero deltas, or unavailable frame evidence can all produce it. Retired,
 superseded, unacknowledged and failed inputs also remain explicit. Records are
 bounded to 128; requested, unattempted and omitted counts are reported.
+
+The CDP reply and compositor frame may precede the trusted main-thread listener
+event. Verdict acquisition therefore polls asynchronously within one absolute
+deadline beginning at the CDP reply: three quarters of the action spacing,
+clamped to 100–1000 ms. Waiting for the verdict and frame shares that budget;
+neither step resets it. Exact sequence/delta matching is required before the
+deadline, and late verdicts or frames cannot gain ownership. Acquiring a later
+verdict does not replace the original first-frame timestamp. These independent
+endpoints are not evidence that listener dispatch preceded the compositor frame.
 
 One screencast owner acknowledges each frame. File filmstrip sampling may end
 before a settled wheel sequence; native-wheel observation keeps the same stream
@@ -118,6 +185,8 @@ Chromium harness with `dotnet build benchmarks/chromium/ChromiumBaseline.csproj
 -c Release --artifacts-path G:/Git/better-web-browser/target/wheel-measurement/dotnet`.
 The pure `ChromiumBaseline.Tests` self-tests support `--wheel-timing-only`; that
 switch exits before any browser launch.
+`--native-wheel-browser-only` runs six owned trusted-event fixtures through the
+same hidden Chrome launch path, including missing observation and retirement.
 
 The example below assumes the harness DLL, release Breeze executable and artifact
 directory already exist. It uses CSS viewport `1249x548`, scale `1.25`, `en-US`,
@@ -169,3 +238,61 @@ does not establish a visible result or responsive wheel input.
 See [UI Events wheel behavior](https://www.w3.org/TR/uievents/#events-wheelevents),
 [DOM event-listener cancellation](https://dom.spec.whatwg.org/#observing-event-listeners),
 and [CSSOM View scrolling](https://drafts.csswg.org/cssom-view/#scrolling).
+
+## Hover changes between wheel inputs
+
+A wheel-only capture does not reproduce pointer designation changes as content
+moves under the mouse. Interleave pointer moves and wheels at the user's CSS
+viewport size before concluding that input is responsive. A smooth animation
+trace can coexist with delayed DOM/default-action decisions.
+
+The hidden wrapper accepts bounded ordered actions, without changing its
+fail-closed hidden launch guard:
+
+```powershell
+./scripts/run-hidden-benchmark.ps1 -Url $url -Output "$artifact/hover-wheel.json" `
+  -FreshProfile -WindowWidth 1567 -WindowHeight 830 -DeviceScaleFactor 1.25 `
+  -ActionSequence @('scroll:5000', 'pause:250', 'move:150,5300', `
+    'wheel:500,300,126', 'move:700,5300', 'wheel:500,300,-126') `
+  -InitialActionDelayMs 500 -NavigationDelayMs 10 -SettleMs 1500
+```
+
+Move coordinates are CSS document coordinates; wheel coordinates are CSS
+viewport coordinates. A pause schedules a hidden worker continuation, not a
+sleep on the UI thread. `tests/fixtures/wheel-hover-workload.html` provides a
+large, network-free document with neighboring color-changing targets and
+observational listeners.
+
+Verified color/background/underline input changes update computed styles and
+dispatch author events immediately, but may share one earliest 16 ms visual
+opportunity. Only visual invalidation is retained: wheel acknowledgements,
+navigation, storage, console messages and author scrolls are never held or
+replayed by this gate. Exact style comparison rejects geometry, stacking,
+visibility, hit eligibility, resources, custom properties, missing styles and
+generated-pseudo changes. Inline background-presence changes also fail closed.
+An ordinary full rebuild absorbs pending paint; this is bounded full-paint
+batching, not a retained display-item recoloring implementation.
+The 16 ms value is an admission deadline, not a guaranteed completed-paint
+latency: author script, renderer work and saturated IPC can still delay a frame.
+Anonymous text/Cdata runs retain their directly decorating parent's underline
+without making the element's CSS property inherited; broader ancestor-box
+decoration propagation is not implemented by this slice.
+
+Native runtime wakeups preserve an already promised deadline. Input dispatch
+also services due work because low-priority `WM_TIMER` messages can be starved.
+Temporary background-tab processing must not restart the foreground clock or
+replace its HWND timer. Inline SVG `currentColor` remains a real paint resource,
+not an excuse to skip raster refresh.
+
+F12 and incident reports distinguish cumulative **Paint (2 s total)** from
+moving native scroll-commit p95/maximum and control, accessibility and synchronous
+paint contributors. Input style work is measured even without diagnostic
+selectors; optional publication reasons must not themselves force a report.
+Hidden retained-surface paint timings do not measure ordinary visible-window
+`UpdateWindow` or active accessibility-provider work. A user's visible-window
+freeze therefore remains an acceptance failure even when hidden tests pass.
+
+The visual opportunity follows the [HTML rendering processing model](https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering).
+Underline eligibility uses [CSS Text Decoration's ink-overflow contract](https://www.w3.org/TR/css-text-decor-3/#text-decoration-overflow),
+not an assumption that paint-item topology is unchanged. Timer lifecycle follows
+[Win32 SetTimer replacement and interval bounds](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-settimer).

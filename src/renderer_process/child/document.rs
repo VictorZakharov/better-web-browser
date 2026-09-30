@@ -1,6 +1,7 @@
 //! Renderer-owned document, DOM, JavaScript realm, decoded resources, and layout state.
 
 mod accessibility;
+mod color_paint;
 mod diagnostics;
 mod document_streams;
 mod dynamic_scripts;
@@ -137,6 +138,7 @@ pub(super) struct DocumentRuntime {
     geometry_observers_pending: bool,
     resize_observers_pending: bool,
     rendering: rendering::RenderBlocking,
+    color_paint: color_paint::PendingColorPaint,
 }
 
 impl DocumentRuntime {

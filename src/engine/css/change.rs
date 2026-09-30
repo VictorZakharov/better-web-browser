@@ -1,8 +1,27 @@
 //! Comparisons that separate geometry-affecting style changes from paint-only changes.
 
-use super::ComputedStyle;
+use super::{ComputedStyle, Display};
 
 impl ComputedStyle {
+    /// A deferred full repaint may reuse current geometry, but not topology-changing
+    /// inline decoration. Exact equality also rejects future non-color properties.
+    pub(crate) fn deferred_paint_equivalent(&self, other: &Self) -> bool {
+        if matches!(self.display, Display::Inline | Display::Contents)
+            && (self.background_color.alpha == 0) != (other.background_color.alpha == 0)
+        {
+            return false;
+        }
+        // Clone only this changed style, never the document's entire style cache.
+        let mut normalized = other.clone();
+        normalized.color = self.color;
+        normalized.background_color = self.background_color;
+        // Decoration is ink, not scrollable overflow. The eventual full repaint
+        // regenerates its items; no retained paint-item indices are patched here.
+        // https://www.w3.org/TR/css-text-decor-3/#text-decoration-overflow
+        normalized.text_decoration_underline = self.text_decoration_underline;
+        self == &normalized
+    }
+
     pub(crate) fn layout_equivalent(&self, other: &Self) -> bool {
         self.generated_content == other.generated_content
             && self.display == other.display
@@ -80,3 +99,6 @@ impl ComputedStyle {
             && self.grid_row_end == other.grid_row_end
     }
 }
+
+#[cfg(test)]
+mod deferred_paint_tests;

@@ -1,11 +1,14 @@
 //! Nonblocking timer bridge for the active renderer-owned document realm.
 
 use super::*;
+mod wakeup;
+pub(super) use wakeup::RuntimeWakeup;
 
 // Each callback remains a distinct HTML event-loop task with its own microtask checkpoint. Let the
 // renderer execute a small bounded slice per IPC wakeup; its 25 ms wall limit yields back to input
 // without paying one browser/renderer round trip for every tiny async script.
 pub(super) const RUNTIME_TASKS_PER_WAKEUP: u32 = 8;
+const MAX_NATIVE_TIMER_DELAY_MS: u32 = 0x7fff_ffff;
 const _: () = assert!(RUNTIME_TASKS_PER_WAKEUP > 1);
 const _: () = assert!(
     RUNTIME_TASKS_PER_WAKEUP < better_web_browser::limits::MAX_POST_LOAD_TIMER_CALLBACKS as u32
@@ -60,7 +63,7 @@ impl BrowserState {
         }
         self.apply_script_viewport_scroll(update.runtime.viewport_scroll_y);
         self.record_benchmark_wheel_decisions(update.document, &update.runtime, None, received);
-        self.queue_css_wheel_scroll(update.runtime.viewport_wheel_delta_y);
+        self.apply_renderer_wheel_scroll(&update.runtime);
         self.schedule_script_runtime_wakeup();
         if benchmark_completed {
             self.finish_benchmark_after_completion();
@@ -69,14 +72,21 @@ impl BrowserState {
 
     pub(super) unsafe fn resume_script_runtime(&mut self) {
         if self.navigation.active_document().is_some() {
-            self.renderer_runtime_clock = Some(Instant::now());
+            // Hidden tabs retain their document and logical timer deadlines.
+            // Reactivation must not reinterpret an existing delay from zero.
+            self.renderer_runtime_clock.get_or_insert(Instant::now());
             self.schedule_script_runtime_wakeup();
         }
     }
 
     pub(super) unsafe fn schedule_script_runtime_wakeup(&mut self) {
-        KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
+        // A temporary background-tab selection must not touch this HWND's
+        // foreground timer or reset its logical-clock anchor.
+        if self.processing_background_tab {
+            return;
+        }
         if self.renderer_clock_pending {
+            self.stop_script_runtime_wakeup();
             return;
         }
         let Some(next_delay) = self
@@ -84,6 +94,7 @@ impl BrowserState {
             .active_document()
             .and(self.renderer_next_timer)
         else {
+            self.stop_script_runtime_wakeup();
             return;
         };
         // Resource-only presentations do not advance the renderer's logical clock. Preserve wall
@@ -94,19 +105,67 @@ impl BrowserState {
             .map(|started| started.elapsed())
             .unwrap_or_default();
         let next_delay = remaining_renderer_delay(next_delay, elapsed);
-        if SetTimer(
-            self.window,
-            ID_RENDERER_RUNTIME_TIMER,
-            win32_timer_delay_ms(next_delay),
-            null(),
-        ) == 0
-        {
+        let now = Instant::now();
+        let requested = wakeup::Wakeup {
+            owner: (
+                self.tabs.active_id(),
+                self.navigation.active_document().unwrap(),
+            ),
+            deadline: renderer_wakeup_deadline(now, next_delay),
+        };
+        let window = self.window;
+        if !self.runtime_wakeup.update(
+            Some(requested),
+            now,
+            |delay| {
+                SetTimer(
+                    window,
+                    ID_RENDERER_RUNTIME_TIMER,
+                    win32_timer_delay_ms(delay),
+                    null(),
+                ) != 0
+            },
+            || {
+                KillTimer(window, ID_RENDERER_RUNTIME_TIMER);
+            },
+        ) {
             self.set_status("Renderer timer scheduling failed");
         }
     }
 
+    pub(super) unsafe fn stop_script_runtime_wakeup(&mut self) {
+        if self.processing_background_tab {
+            return;
+        }
+        let window = self.window;
+        self.runtime_wakeup.update(
+            None,
+            Instant::now(),
+            |_| unreachable!(),
+            || {
+                KillTimer(window, ID_RENDERER_RUNTIME_TIMER);
+            },
+        );
+    }
+
+    pub(super) unsafe fn service_due_script_runtime(&mut self) {
+        let owner = self
+            .navigation
+            .active_document()
+            .map(|document| (self.tabs.active_id(), document));
+        if !self.processing_background_tab
+            && !self.renderer_clock_pending
+            && self.runtime_wakeup.due(owner, Instant::now())
+        {
+            self.pump_script_runtime();
+        }
+    }
+
     pub(super) unsafe fn pump_script_runtime(&mut self) {
-        KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
+        if self.processing_background_tab {
+            return;
+        }
+        self.stop_script_runtime_wakeup();
         if self.renderer_clock_pending {
             return;
         }
@@ -140,12 +199,28 @@ impl BrowserState {
     }
 }
 
+pub(super) unsafe fn flush_due_for_message(app: &BrowserApplication, message_window: Hwnd) {
+    // WM_TIMER is low priority. Service the preserved deadline after bounded
+    // input dispatch too, so continuous hardware input cannot starve painting.
+    if let Some((_, state)) = app.browser_for_message(message_window) {
+        (*state).service_due_script_runtime();
+    }
+}
+
+fn renderer_wakeup_deadline(now: Instant, delay: Duration) -> Instant {
+    // Bound the native opportunity before arithmetic; preserve the renderer's
+    // logical timer separately so this bridge never executes a future task early.
+    // Match SetTimer's USER_TIMER_MAXIMUM rather than the wider u32 wire type.
+    // https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-settimer
+    now + delay.min(Duration::from_millis(MAX_NATIVE_TIMER_DELAY_MS.into()))
+}
+
 fn win32_timer_delay_ms(delay: Duration) -> u32 {
     delay
         .as_millis()
-        .clamp(10, u128::from(u32::MAX))
+        .clamp(10, u128::from(MAX_NATIVE_TIMER_DELAY_MS))
         .try_into()
-        .unwrap_or(u32::MAX)
+        .unwrap_or(MAX_NATIVE_TIMER_DELAY_MS)
 }
 
 fn remaining_renderer_delay(next: Duration, elapsed: Duration) -> Duration {
@@ -162,6 +237,34 @@ pub(super) fn initial_presentation_clock(clock: &mut Option<Instant>, now: Insta
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wire_timer_maximum_has_a_bounded_native_deadline() {
+        let now = Instant::now();
+        let maximum = Duration::from_millis(MAX_NATIVE_TIMER_DELAY_MS.into());
+        assert_eq!(
+            renderer_wakeup_deadline(now, Duration::from_micros(u64::MAX)),
+            now + maximum
+        );
+        assert_eq!(renderer_wakeup_deadline(now, maximum), now + maximum);
+        assert_eq!(
+            renderer_wakeup_deadline(now, maximum + Duration::from_micros(1)),
+            now + maximum
+        );
+    }
+
+    #[test]
+    fn ordinary_and_zero_native_deadlines_preserve_the_requested_opportunity() {
+        let now = Instant::now();
+        assert_eq!(renderer_wakeup_deadline(now, Duration::ZERO), now);
+        assert_eq!(
+            renderer_wakeup_deadline(now, Duration::from_millis(16)),
+            now + Duration::from_millis(16)
+        );
+        let expired =
+            remaining_renderer_delay(Duration::from_millis(10), Duration::from_millis(20));
+        assert_eq!(renderer_wakeup_deadline(now, expired), now);
+    }
 
     #[test]
     fn first_presentation_preserves_time_spent_in_render_blocked_script_tasks() {
@@ -184,7 +287,10 @@ mod tests {
     fn win32_timer_delay_is_bounded_and_never_busy_loops() {
         assert_eq!(win32_timer_delay_ms(Duration::ZERO), 10);
         assert_eq!(win32_timer_delay_ms(Duration::from_millis(25)), 25);
-        assert_eq!(win32_timer_delay_ms(Duration::MAX), u32::MAX);
+        assert_eq!(
+            win32_timer_delay_ms(Duration::MAX),
+            MAX_NATIVE_TIMER_DELAY_MS
+        );
     }
 
     #[test]

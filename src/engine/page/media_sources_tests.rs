@@ -53,7 +53,7 @@ fn m4a_alias_selects_aac_source_but_not_video_only_codec() {
 #[test]
 fn native_flac_source_still_skips_unknown_ogg_codec() {
     let page = Page::parse(
-        r#"<audio><source src="skip.ogg" type='audio/ogg; codecs="opus"'>
+        r#"<audio><source src="skip.ogg" type='audio/ogg; codecs="speex"'>
                  <source src="skip.flac" type='audio/flac; codecs="flac"'>
                  <source src="song.flac" type="audio/flac">
                  <source src="fallback.mp3" type="audio/mpeg"></audio>"#,
@@ -64,9 +64,9 @@ fn native_flac_source_still_skips_unknown_ogg_codec() {
 }
 
 #[test]
-fn ogg_vorbis_source_is_selected_without_claiming_other_ogg_codecs() {
+fn ogg_vorbis_source_is_selected_without_claiming_unsupported_ogg_codecs() {
     let page = Page::parse(
-        r#"<audio><source src="skip.ogg" type='audio/ogg; codecs="opus"'>
+        r#"<audio><source src="skip.ogg" type='audio/ogg; codecs="speex"'>
                  <source src="song.ogg" type='audio/ogg; codecs="vorbis"'>
                  <source src="fallback.mp3" type="audio/mpeg"></audio>"#,
         "https://example.com/music/",

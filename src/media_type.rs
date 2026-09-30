@@ -5,7 +5,10 @@
 
 mod capabilities;
 mod mime;
+mod recording;
+
 pub(crate) use capabilities::{audio_parameters_supported, capability_content_type};
+pub(crate) use recording::recording_kind;
 #[cfg(test)]
 mod tests;
 
@@ -52,7 +55,7 @@ pub(crate) fn can_play_type(input: &str) -> &'static str {
     } else if aac {
         codecs == ["mp4a.40.2"]
     } else if ogg {
-        codecs.len() == 1 && matches!(codecs[0], "vorbis" | "flac")
+        codecs.len() == 1 && matches!(codecs[0], "vorbis" | "flac" | "opus")
     } else if webm {
         codecs == ["vorbis"]
     } else if flac {

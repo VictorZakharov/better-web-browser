@@ -75,6 +75,9 @@ jobs:
       - name: Test Cargo source volume safety
         shell: pwsh
         run: ./scripts/test-cargo-source-volume.ps1
+      - name: Test bundled codec build policy
+        shell: pwsh
+        run: ./scripts/test-opus-build-policy.ps1
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -121,6 +124,10 @@ jobs:
         if: github.event_name == 'pull_request' && matrix.suite == 'renderer'
         shell: pwsh
         run: ./scripts/test-renderer-smoke.ps1
+      - name: Verify actual bundled Opus compiler settings
+        if: matrix.suite == 'Windows integration'
+        shell: pwsh
+        run: ./scripts/check-opus-build.ps1 -Profile debug
       - name: Test bounded hidden-benchmark timeout diagnostics
         if: matrix.suite == 'Windows integration'
         shell: pwsh

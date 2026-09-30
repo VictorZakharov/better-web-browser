@@ -32,7 +32,7 @@ impl StyleSet {
             for id in &uncomposed {
                 stats.removed_styles += usize::from(self.styles.remove(id).is_some());
             }
-            self.remove_generated_pseudos(&uncomposed);
+            stats.non_deferable_paint_changes |= self.remove_generated_pseudos(&uncomposed);
             let ancestors =
                 std::iter::successors(Some(root.clone()), |node| node.shadow_including_parent())
                     .filter(|node| node.element().is_some())
@@ -47,6 +47,7 @@ impl StyleSet {
             // Hydration installs the root before the subtree comparison; independent
             // roots must conservatively relayout, including mutations after initial entry.
             stats.layout_changed = true;
+            stats.non_deferable_paint_changes = true;
             let parent = Node::composed_parent(root)
                 .and_then(|parent| self.styles.get(&parent.id()).cloned());
             self.recompute_subtree(root, parent.as_ref(), stats);
@@ -55,6 +56,8 @@ impl StyleSet {
         // Leaving an independently rendered top layer also changes geometry even if its
         // hidden slot and every normally traversed computed style remain unchanged.
         stats.layout_changed |= self.deferred_fullscreen_roots != current;
+        stats.non_deferable_paint_changes |=
+            self.deferred_fullscreen_roots != current || stats.removed_styles != 0;
         self.deferred_fullscreen_roots = current;
     }
 

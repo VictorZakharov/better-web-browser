@@ -1,7 +1,10 @@
 //! Coalesced, time-based wheel scrolling for interactive browser windows.
 
 use super::*;
+pub(super) mod frame_service;
+mod gesture;
 mod sticky;
+pub(super) use gesture::WheelGesture;
 
 // A 16 ms SetTimer request repeatedly landed on alternating one/two-tick boundaries in
 // diagnostics, producing the observed ~16/32 ms cadence. The animation remains time-based, so
@@ -25,15 +28,70 @@ struct ScrollRequest {
     introduces_motion: bool,
 }
 
+struct ScrollCancellation {
+    was_active: bool,
+    stop_timer: bool,
+}
+
+fn immediate_scroll_request(position: i32, distance: i32, maximum: i32) -> ScrollRequest {
+    let target = position.saturating_add(distance).clamp(0, maximum);
+    ScrollRequest {
+        target,
+        introduces_motion: target != position,
+    }
+}
+
 impl ScrollAnimation {
+    fn reverses_pending(&self, position: i32, direction: i32) -> bool {
+        let remaining = self.target.unwrap_or(position).saturating_sub(position);
+        direction != 0 && remaining != 0 && direction.signum() != remaining.signum()
+    }
+
+    fn discard_input_remainders(&mut self) {
+        self.wheel_delta_remainder = 0;
+        self.pixel_remainder = 0.0;
+    }
+
     fn plan_distance(&self, position: i32, distance: i32, maximum: i32) -> ScrollRequest {
-        let base = self.target.unwrap_or(position);
+        let pending = self.target.unwrap_or(position);
+        // A reversing gesture cancels unpainted travel: the new direction must
+        // start at the actual position, not repay an accumulated future target.
+        let reversing = self.reverses_pending(position, distance);
+        let base = if reversing { position } else { pending };
         let target = base.saturating_add(distance).clamp(0, maximum);
         ScrollRequest {
             target,
             // Keeping an old target, or cancelling back to the current position,
             // introduces no pixels owned by this new request.
             introduces_motion: target != base && target != position,
+        }
+    }
+
+    /// Returns whether this target needs a new timer and an immediate first frame.
+    fn retarget(&mut self, target: i32) -> bool {
+        let starting = self.target.replace(target).is_none();
+        if starting {
+            self.last_frame = None;
+        }
+        starting
+    }
+
+    fn frame_elapsed(&mut self, now: Instant) -> Duration {
+        self.last_frame
+            .replace(now)
+            .map_or(
+                Duration::from_millis(FRAME_TIMER_INTERVAL_MS.into()),
+                |previous| now.saturating_duration_since(previous),
+            )
+            .min(MAX_FRAME_ELAPSED)
+    }
+
+    fn cancel(&mut self, owns_timer: bool) -> ScrollCancellation {
+        let was_active = self.target.take().is_some();
+        self.last_frame = None;
+        ScrollCancellation {
+            was_active,
+            stop_timer: owns_timer,
         }
     }
 
@@ -51,7 +109,46 @@ impl ScrollAnimation {
     }
 }
 
+fn next_scroll_position(position: i32, target: i32, elapsed: Duration) -> i32 {
+    let remaining = target - position;
+    let progress = 1.0 - (-elapsed.as_secs_f64() / RESPONSE_TIME.as_secs_f64()).exp();
+    let mut step = (remaining as f64 * progress).round() as i32;
+    if step == 0 {
+        step = remaining.signum();
+    }
+    if step.abs() >= remaining.abs() {
+        target
+    } else {
+        position + step
+    }
+}
+
 impl BrowserState {
+    pub(super) unsafe fn observe_native_wheel(&mut self, sequence: u64, delta: f32) {
+        if self.wheel_gesture.observe(sequence, delta) {
+            // Stop at receipt, before IPC/backpressure or DOM cancellation. A
+            // delayed older viewport verdict must never revive this animation.
+            self.record_benchmark_scroll_reversal(if delta > 0.0 { 1 } else { -1 });
+            self.cancel_scroll_animation();
+            self.scroll_animation.discard_input_remainders();
+        }
+    }
+
+    pub(super) unsafe fn apply_renderer_wheel_scroll(
+        &mut self,
+        report: &better_web_browser::renderer_protocol::RuntimeReport,
+    ) {
+        self.queue_css_wheel_scroll(self.wheel_gesture.viewport_delta(report));
+    }
+
+    pub(super) unsafe fn suspend_wheel_gesture(&mut self) {
+        self.record_benchmark_scroll_interruption(None);
+        let next = self.renderer_input_sequence.saturating_add(1);
+        self.wheel_gesture.retire_before(next);
+        self.cancel_scroll_animation();
+        self.scroll_animation.discard_input_remainders();
+    }
+
     pub(super) unsafe fn apply_script_viewport_scroll(&mut self, css_y: Option<f32>) {
         if let Some(y) = css_y.filter(|y| y.is_finite() && *y >= 0.0) {
             self.scroll_to((y * self.page_scale()).round() as i32);
@@ -62,6 +159,12 @@ impl BrowserState {
         if delta == 0 {
             return;
         }
+        if let Some((_, sequence)) = self.next_renderer_input() {
+            // Chrome/reader fallback has no DOM wheel, but can still interrupt
+            // older content defaults. Reserve a sequence for the same fence.
+            self.observe_native_wheel(sequence, -(delta as f32));
+        }
+        self.cancel_pending_scroll_on_reversal(-delta.signum());
         self.pending_history_scroll_y = None;
         self.note_scroll_activity();
         let notches = self.scroll_animation.consume_wheel_delta(delta);
@@ -76,6 +179,7 @@ impl BrowserState {
             self.resolve_benchmark_wheel_viewport_request(false);
             return;
         }
+        self.cancel_pending_scroll_on_reversal(if delta > 0.0 { 1 } else { -1 });
         self.pending_history_scroll_y = None;
         let scale = self.page_scale();
         let distance = self.scroll_animation.consume_css_delta(delta, scale);
@@ -87,23 +191,47 @@ impl BrowserState {
         }
     }
 
+    unsafe fn cancel_pending_scroll_on_reversal(&mut self, direction: i32) {
+        if self
+            .scroll_animation
+            .reverses_pending(self.scroll_y, direction)
+        {
+            // Detect the physical gesture before quantization: even a subpixel
+            // reversal must stop old travel. Its old residues are unpainted too.
+            self.record_benchmark_scroll_reversal(direction);
+            self.cancel_scroll_animation();
+            self.scroll_animation.discard_input_remainders();
+        }
+    }
+
     unsafe fn queue_scroll_distance(&mut self, distance: i32) {
         let maximum = (self.content_height - self.viewport_height()).max(0);
+        if self.processing_background_tab {
+            // A late accepted default action belongs to this tab's document,
+            // while the shared HWND timer belongs to the foreground tab.
+            self.cancel_scroll_animation();
+            let request = immediate_scroll_request(self.scroll_y, distance, maximum);
+            self.resolve_benchmark_wheel_viewport_request(request.introduces_motion);
+            self.commit_scroll_position(request.target);
+            return;
+        }
         let request = self
             .scroll_animation
             .plan_distance(self.scroll_y, distance, maximum);
-        // This must precede tick_scroll_animation: it can synchronously paint an
-        // unchanged old target, and later timer ticks continue that same animation.
+        // Resolve ownership before a new animation can synchronously paint its
+        // first frame; an active animation continues on its existing timer.
         self.resolve_benchmark_wheel_viewport_request(request.introduces_motion);
         let target = request.target;
         if target == self.scroll_y && self.scroll_animation.target.is_none() {
             return;
         }
-        if self.scroll_animation.target.is_none() {
-            self.performance.begin_frame_sequence(Instant::now());
+        if !self.scroll_animation.retarget(target) {
+            // Replacing an existing Win32 timer resets its deadline. Extend the
+            // target without postponing frames or inventing elapsed input time.
+            // https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-settimer
+            return;
         }
-        self.scroll_animation.target = Some(target);
-        self.scroll_animation.last_frame = None;
+        self.performance.begin_frame_sequence(Instant::now());
         if SetTimer(
             self.window,
             ID_SCROLL_ANIMATION_TIMER,
@@ -121,117 +249,45 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn tick_scroll_animation(&mut self) {
+        if self.processing_background_tab {
+            return;
+        }
         let Some(target) = self.scroll_animation.target else {
             KillTimer(self.window, ID_SCROLL_ANIMATION_TIMER);
             return;
         };
         let now = Instant::now();
-        let elapsed = self
-            .scroll_animation
-            .last_frame
-            .replace(now)
-            .map_or(
-                Duration::from_millis(FRAME_TIMER_INTERVAL_MS.into()),
-                |previous| now.saturating_duration_since(previous),
-            )
-            .min(MAX_FRAME_ELAPSED);
-        let remaining = target - self.scroll_y;
-        if remaining == 0 {
+        if !self.scroll_animation.timer_frame_ready(now) {
+            return;
+        }
+        let initial = self.scroll_animation.last_frame.is_none();
+        let elapsed = self.scroll_animation.frame_elapsed(now);
+        if target == self.scroll_y {
             self.cancel_scroll_animation();
             return;
         }
-        let progress = 1.0 - (-elapsed.as_secs_f64() / RESPONSE_TIME.as_secs_f64()).exp();
-        let mut step = (remaining as f64 * progress).round() as i32;
-        if step == 0 {
-            step = remaining.signum();
-        }
-        let next = if step.abs() >= remaining.abs() {
-            target
-        } else {
-            self.scroll_y + step
-        };
+        let next = next_scroll_position(self.scroll_y, target, elapsed);
+        let previous = self.scroll_y;
         self.commit_scroll_position(next);
+        if self.scroll_y != previous {
+            self.record_benchmark_animation_frame(initial);
+        }
         if self.scroll_y == target {
             self.cancel_scroll_animation();
         }
     }
 
     pub(super) unsafe fn cancel_scroll_animation(&mut self) {
-        let was_active = self.scroll_animation.target.is_some();
-        self.scroll_animation.target = None;
-        self.scroll_animation.last_frame = None;
-        if was_active {
+        let owns_timer = !self.processing_background_tab;
+        let cancellation = self.scroll_animation.cancel(owns_timer);
+        if cancellation.was_active {
             self.performance.end_frame_sequence(Instant::now());
         }
-        if !self.window.is_null() {
+        if cancellation.stop_timer && !self.window.is_null() {
             KillTimer(self.window, ID_SCROLL_ANIMATION_TIMER);
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fractional_css_wheel_distance_is_retained_across_inputs() {
-        let mut animation = ScrollAnimation::default();
-        let pixels: i32 = (0..16)
-            .map(|_| animation.consume_css_delta(0.25, 1.25))
-            .sum();
-        assert_eq!(pixels, 5);
-        let reversed: i32 = (0..16)
-            .map(|_| animation.consume_css_delta(-0.25, 1.25))
-            .sum();
-        assert_eq!(reversed, -5);
-        assert_eq!(animation.pixel_remainder, 0.0);
-    }
-
-    #[test]
-    fn unchanged_clamped_and_cancelled_targets_do_not_introduce_new_owned_motion() {
-        let mut animation = ScrollAnimation {
-            target: Some(100),
-            ..ScrollAnimation::default()
-        };
-        for distance in [0, 100, -80] {
-            assert!(!animation.plan_distance(20, distance, 100).introduces_motion);
-        }
-        let reversed = animation.plan_distance(20, -90, 100);
-        assert!(reversed.introduces_motion);
-        assert_eq!(reversed.target, 10);
-        animation.target = None;
-        assert!(!animation.plan_distance(100, 50, 100).introduces_motion);
-    }
-
-    #[test]
-    fn fractional_distance_keeps_its_remainder_without_owning_an_old_animation_tick() {
-        let mut animation = ScrollAnimation {
-            target: Some(100),
-            ..ScrollAnimation::default()
-        };
-        let distance = animation.consume_css_delta(0.25, 1.25);
-        assert_eq!(distance, 0);
-        assert!(!animation.plan_distance(20, distance, 100).introduces_motion);
-        assert_eq!(animation.consume_css_delta(0.25, 1.25), 1);
-        assert!(animation.plan_distance(20, 1, 200).introduces_motion);
-    }
-
-    #[test]
-    fn response_curve_advances_without_overshooting() {
-        let progress =
-            1.0 - (-(FRAME_TIMER_INTERVAL_MS as f64 / 1_000.0) / RESPONSE_TIME.as_secs_f64()).exp();
-        let step = (126.0 * progress).round() as i32;
-        assert!((29..=31).contains(&step));
-        assert!(step < 126);
-    }
-
-    #[test]
-    fn high_resolution_wheel_deltas_accumulate_to_one_notch() {
-        let mut animation = ScrollAnimation::default();
-        assert_eq!(animation.consume_wheel_delta(30), 0);
-        assert_eq!(animation.consume_wheel_delta(30), 0);
-        assert_eq!(animation.consume_wheel_delta(30), 0);
-        assert_eq!(animation.consume_wheel_delta(30), 1);
-        assert_eq!(animation.wheel_delta_remainder, 0);
-    }
-}
+mod tests;

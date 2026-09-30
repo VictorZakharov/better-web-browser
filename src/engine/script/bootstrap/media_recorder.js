@@ -1,5 +1,5 @@
-// MediaStream Recording: one captured audio track, encoded incrementally as FLAC.
-// See https://w3c.github.io/mediacapture-record/ and RFC 9639.
+// MediaStream Recording: one captured audio track, encoded incrementally.
+// See https://w3c.github.io/mediacapture-record/, RFC 9639, and RFC 7845.
 (() => {
     'use strict';
     const native = globalThis.__hostCall;
@@ -8,7 +8,7 @@
     const BlobCtor = globalThis.Blob;
     const makeBlob = BlobCtor.__fromOwnedBytes;
     const CaptureStream = globalThis.MediaStream;
-    const MIME = 'audio/flac';
+    const mimeFor = kind => kind === 'opus' ? 'audio/ogg;codecs=opus' : 'audio/flac';
     const MAX_BLOB_BYTES = 16 * 1024 * 1024;
     const MIN_TIMESLICE = 100;
     const CAPTURE_TICKS_PER_SECOND = 10_000_000;
@@ -21,10 +21,39 @@
         if (!state) throw new TypeError('Invalid MediaRecorder receiver');
         return state;
     };
-    const isTypeSupported = value => {
-        if (typeof value === 'symbol') throw new TypeError('MIME type must be a string');
-        const type = String(value).trim().toLowerCase();
-        return type === '' || type === MIME;
+    const recordingKind = value => native('mediaRecorderType', `${value}`);
+    const isTypeSupported = value => recordingKind(value) !== '';
+    const unsignedLong = value => {
+        const number = +value;
+        if (!Number.isFinite(number) || number === 0) return 0;
+        return ((Math.trunc(number) % 0x100000000) + 0x100000000) % 0x100000000;
+    };
+    const finiteDouble = value => {
+        const number = +value;
+        if (!Number.isFinite(number)) throw new TypeError('Recording duration must be finite');
+        return number;
+    };
+    const optionsDictionary = options => {
+        if (options == null) options = {};
+        else if (typeof options !== 'object' && typeof options !== 'function')
+            throw new TypeError('Recorder options must be a dictionary');
+        // WebIDL reads dictionary members once, converting each in name order.
+        const modeValue = options.audioBitrateMode;
+        const mode = modeValue === undefined ? 'variable' : `${modeValue}`;
+        if (mode !== 'variable' && mode !== 'constant') throw new TypeError('Invalid audio bitrate mode');
+        const audioValue = options.audioBitsPerSecond;
+        const audio = audioValue === undefined ? undefined : unsignedLong(audioValue);
+        const aggregateValue = options.bitsPerSecond;
+        const aggregate = aggregateValue === undefined ? undefined : unsignedLong(aggregateValue);
+        const mimeValue = options.mimeType;
+        const mime = mimeValue === undefined ? '' : `${mimeValue}`;
+        const videoValue = options.videoBitsPerSecond;
+        const video = videoValue === undefined ? 0 : unsignedLong(videoValue);
+        const countValue = options.videoKeyFrameIntervalCount;
+        const count = countValue === undefined ? undefined : unsignedLong(countValue);
+        const durationValue = options.videoKeyFrameIntervalDuration;
+        const duration = durationValue === undefined ? undefined : finiteDouble(durationValue);
+        return {mode, audio, aggregate, mime, video, count, duration};
     };
     const queueEvent = (recorder, event) => queueTask(() =>
         recorder.dispatchEvent(markTrusted(event)), 0);
@@ -37,7 +66,7 @@
         if (sessions?.size === 0) byTrack.delete(session.track);
     };
     const appendOutput = (session, bytes) => {
-        if (!(bytes instanceof Uint8Array)) throw new Error('FLAC encoder returned no bytes');
+        if (!(bytes instanceof Uint8Array)) throw new Error('Audio encoder returned no bytes');
         if (!bytes.byteLength) return;
         if (bytes.byteLength > MAX_BLOB_BYTES - session.size)
             throw new Error('Audio recording data limit exceeded');
@@ -110,7 +139,7 @@
     }
 
     const emitData = (recorder, session) => {
-        const blob = makeBlob(session.chunks, MIME);
+        const blob = makeBlob(session.chunks, session.mimeType);
         session.chunks = [];
         session.size = 0;
         const timecode = session.emitted++ === 0 ? 0 :
@@ -148,7 +177,10 @@
         session.closing = true;
         session.collecting = false;
         const state = recorderState(recorder);
-        if (state.session === session) state.state = 'inactive';
+        if (state.session === session) {
+            state.state = 'inactive';
+            state.mimeType = state.constrainedMimeType;
+        }
         retireNative(session);
         queueTask(() => finish(recorder, session, new DOMException(message, name)), 0);
     };
@@ -158,16 +190,20 @@
             super();
             if (typeof CaptureStream !== 'function' || !(stream instanceof CaptureStream))
                 throw new TypeError('MediaRecorder requires a MediaStream');
-            if (typeof options?.mimeType === 'symbol')
-                throw new TypeError('MIME type must be a string');
-            const mimeType = options?.mimeType === undefined ? '' : String(options.mimeType);
-            if (!isTypeSupported(mimeType))
+            const dictionary = optionsDictionary(options);
+            const mimeType = dictionary.mime;
+            const kind = recordingKind(mimeType);
+            if (!kind)
                 throw new DOMException('Unsupported recording MIME type', 'NotSupportedError');
-            const requestedRate = Number(options?.audioBitsPerSecond ?? options?.bitsPerSecond);
+            const requestedRate = dictionary.aggregate ?? dictionary.audio ?? 128000;
             states.set(this, { stream, constrainedMimeType: mimeType,
-                mimeType, state: 'inactive', session: null,
-                audioBitsPerSecond: Number.isFinite(requestedRate) && requestedRate >= 0
-                    ? Math.min(Math.floor(requestedRate), 0xffffffff) : 128000 });
+                mimeType, kind, state: 'inactive', session: null,
+                // Reflect the converted hint; native encoder bounds do not
+                // change the constructor's WebIDL-visible requested value.
+                audioBitsPerSecond: requestedRate,
+                videoBitsPerSecond: dictionary.aggregate === undefined ? dictionary.video : 0,
+                mode: kind === 'opus' ? dictionary.mode : 'variable',
+                conflictingKeyFrames: dictionary.count !== undefined && dictionary.duration !== undefined });
         }
         static isTypeSupported(type) {
             if (arguments.length === 0)
@@ -177,22 +213,26 @@
         get stream() { return recorderState(this).stream; }
         get mimeType() { return recorderState(this).mimeType; }
         get state() { return recorderState(this).state; }
-        get videoBitsPerSecond() { recorderState(this); return 0; }
+        get videoBitsPerSecond() { return recorderState(this).videoBitsPerSecond; }
         get audioBitsPerSecond() { return recorderState(this).audioBitsPerSecond; }
-        get audioBitrateMode() { recorderState(this); return 'variable'; }
+        get audioBitrateMode() { return recorderState(this).mode; }
         start(timeslice = undefined) {
             const state = recorderState(this);
+            const slice = timeslice === undefined ? null :
+                Math.max(MIN_TIMESLICE, unsignedLong(timeslice));
             if (state.state !== 'inactive')
                 throw new DOMException('Recorder is already active', 'InvalidStateError');
+            if (state.conflictingKeyFrames)
+                throw new DOMException('Only one key-frame interval constraint may be specified', 'NotSupportedError');
             const tracks = state.stream.getTracks();
             if (!state.stream.active || tracks.length !== 1 || tracks[0].kind !== 'audio' ||
                 tracks[0].readyState !== 'live')
                 throw new DOMException('Only one live audio track can be recorded',
                     'NotSupportedError');
-            const slice = timeslice === undefined ? null :
-                Math.max(MIN_TIMESLICE, Math.trunc(Number(timeslice)) >>> 0);
-            const id = Number(native('mediaRecorderOpen'));
+            const id = Number(native('mediaRecorderOpen', state.kind,
+                state.audioBitsPerSecond, state.mode === 'constant'));
             const session = { id, stream: state.stream, track: tracks[0], recorder: this,
+                mimeType: mimeFor(state.kind),
                 chunks: [], size: 0, firstTimestamp: null, lastTimestamp: null,
                 lastPacket: null, chunkTimestamp: null, emitted: 0, slice, sliceElapsed: 0,
                 sliceQueued: false, collecting: true, closing: false,
@@ -210,7 +250,8 @@
             state.state = 'recording';
             queueTask(() => {
                 if (session.finished) return;
-                state.mimeType = MIME;
+                if (state.session === session && state.state !== 'inactive')
+                    state.mimeType = session.mimeType;
                 this.dispatchEvent(markTrusted(new Event('start')));
             }, 0);
         }
@@ -219,6 +260,7 @@
             if (state.state === 'inactive') return;
             const session = state.session;
             state.state = 'inactive';
+            state.mimeType = state.constrainedMimeType;
             session.closing = true;
             session.collecting = false;
             const failure = retireNative(session);
@@ -275,11 +317,17 @@
         for (const session of [...sessions]) {
             if (!session.collecting || session.finished) continue;
             try {
+                // Check the actual encoder before gap synthesis can classify a
+                // changed/unsupported capture rate as an unrelated sequence error.
+                if (!native('mediaRecorderFormat', session.id, sampleRate, channels))
+                    throw new DOMException('Capture format is unsupported or changed during recording',
+                        'NotSupportedError');
                 fillCaptureGap(session, sequence, timestamp, sampleRate, channels);
                 appendCapture(session, timestamp, sampleRate, channels, frames, pcm);
                 session.lastPacket = { sequence, timestamp, frames, sampleRate, channels };
             } catch (error) {
-                fail(session.recorder, session, 'UnknownError',
+                fail(session.recorder, session,
+                    error instanceof DOMException ? error.name : 'UnknownError',
                     String(error?.message || error));
             }
         }

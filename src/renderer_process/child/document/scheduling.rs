@@ -37,6 +37,9 @@ impl DocumentRuntime {
                 || self.pending_graph_audio_close.is_some())
             .then_some(10_000),
             self.rendering_deadline(),
+            (!self.rendering_is_blocked())
+                .then(|| self.color_paint.timer_micros())
+                .flatten(),
         ]
         .into_iter()
         .flatten()
@@ -86,6 +89,7 @@ impl DocumentRuntime {
                 next_timer_micros: None,
             })));
         }
+        self.color_paint.clock_advanced(Instant::now());
         self.resource_event_pending = false;
         self.collect_document_stream_changes();
         self.prepare_document_streams();
@@ -246,6 +250,11 @@ impl DocumentRuntime {
         // Media events execute author script too. Admit their fetch/worker/media
         // commands before publishing the report, which only retains diagnostics.
         self.admit_user_input_outcome(&mut outcome, connection)?;
+
+        if !self.rendering_is_blocked() {
+            self.color_paint
+                .merge_due(&mut outcome, self.page.dom.document.id(), Instant::now());
+        }
 
         // Script execution, console output, storage/cookie traffic, and worker progress are not
         // visual invalidations. Sending a complete display-list snapshot for those tasks made
