@@ -4,6 +4,42 @@ use crate::windows_app::*;
 use better_web_browser::renderer_protocol::RuntimeReport;
 
 impl BrowserState {
+    pub(in crate::windows_app) fn record_benchmark_animation_frame(&mut self, initial: bool) {
+        if self.processing_background_tab {
+            return;
+        }
+        let y = viewport_css_position(self.scroll_y, self.page_scale());
+        if let Some(document) = self.navigation.active_document()
+            && let Some(benchmark) = self.benchmark.as_mut()
+            && !benchmark.wheel_trace.samples.is_empty()
+        {
+            benchmark
+                .wheel_trace
+                .animation
+                .record(document, y, initial, Instant::now());
+        }
+    }
+
+    pub(in crate::windows_app) fn record_benchmark_scroll_reversal(&mut self, direction: i32) {
+        self.record_benchmark_scroll_interruption(Some(direction));
+    }
+
+    pub(in crate::windows_app) fn record_benchmark_scroll_interruption(
+        &mut self,
+        direction: Option<i32>,
+    ) {
+        if self.processing_background_tab {
+            return;
+        }
+        if let Some(document) = self.navigation.active_document()
+            && let Some(benchmark) = self.benchmark.as_mut()
+        {
+            benchmark
+                .wheel_trace
+                .interrupt_viewport(document, direction);
+        }
+    }
+
     pub(in crate::windows_app) fn record_benchmark_wheel_decisions(
         &mut self,
         document: DocumentId,

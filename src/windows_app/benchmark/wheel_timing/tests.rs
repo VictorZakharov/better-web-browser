@@ -58,6 +58,69 @@ fn single_pixel_reverse_motion_remains_visible_at_large_document_offsets() {
 fn document(id: u64) -> DocumentId {
     DocumentId::new(id).unwrap()
 }
+
+#[test]
+fn quiet_observer_reports_do_not_resolve_an_earlier_waiting_animation_paint() {
+    let now = Instant::now();
+    let mut trace = WheelTrace::default();
+    trace.enqueue(document(1), 1, 126, now);
+    trace.acknowledge(document(1), &[ack(1, WheelDecision::Viewport)], None, now);
+    trace.viewport_position(document(1), 100.0, false);
+    trace.viewport_request(document(1), true);
+    trace.acknowledge(document(1), &[], None, now + Duration::from_millis(2));
+    trace.viewport_position(document(1), 110.0, false);
+    trace.viewport_request(document(1), false);
+    assert_eq!(trace.samples[0].status, "awaiting_viewport_paint");
+    assert_eq!(trace.samples[0].viewport_y_before, Some(100.0));
+    trace.viewport_position(document(1), 130.0, true);
+    trace.painted(document(1), None, now + Duration::from_millis(15), false);
+    assert_eq!(trace.samples[0].status, "painted");
+    assert_eq!(trace.samples[0].viewport_y_painted, Some(130.0));
+}
+
+#[test]
+fn reverse_pixels_cannot_complete_superseded_unpainted_forward_inputs() {
+    let now = Instant::now();
+    let mut trace = WheelTrace::default();
+    for (sequence, delta) in [(1, 126), (2, -126)] {
+        trace.enqueue(document(1), sequence, delta, now);
+        trace.acknowledge(
+            document(1),
+            &[ack(sequence, WheelDecision::Viewport)],
+            None,
+            now,
+        );
+        trace.viewport_position(document(1), 100.0, false);
+    }
+    trace.interrupt_viewport(document(2), Some(-1));
+    assert_eq!(trace.samples[0].status, "awaiting_viewport_paint");
+    trace.interrupt_viewport(document(1), Some(-1));
+    trace.viewport_position(document(1), 70.0, true);
+    trace.painted(document(1), None, now, false);
+    assert_eq!(trace.samples[0].status, "superseded");
+    assert!(trace.samples[0].first_paint.is_none());
+    assert!(trace.samples[0].viewport_y_painted.is_none());
+    assert_eq!(trace.samples[1].status, "painted");
+    assert_eq!(trace.samples[1].viewport_y_painted, Some(70.0));
+}
+
+#[test]
+fn absolute_scroll_supersedes_unpainted_wheels_without_rewriting_completed_evidence() {
+    let now = Instant::now();
+    let mut trace = WheelTrace::default();
+    trace.enqueue(document(1), 1, 126, now);
+    trace.acknowledge(document(1), &[ack(1, WheelDecision::Viewport)], None, now);
+    trace.painted(document(1), None, now, false);
+    trace.enqueue(document(1), 2, 126, now);
+    trace.acknowledge(document(1), &[ack(2, WheelDecision::Viewport)], None, now);
+    trace.interrupt_viewport(document(1), None);
+    trace.viewport_position(document(1), 800.0, true);
+    trace.painted(document(1), None, now, true);
+    assert_eq!(trace.samples[0].status, "painted");
+    assert_eq!(trace.samples[1].status, "superseded");
+    assert!(trace.samples[1].first_paint.is_none());
+    assert!(trace.samples[1].viewport_y_painted.is_none());
+}
 fn ack(sequence: u64, decision: WheelDecision) -> WheelAcknowledgement {
     WheelAcknowledgement {
         sequence,

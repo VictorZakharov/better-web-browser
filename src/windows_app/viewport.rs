@@ -113,6 +113,7 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn scroll_to(&mut self, position: i32) {
+        self.record_benchmark_scroll_interruption(None);
         self.cancel_scroll_animation();
         self.commit_scroll_position(position);
     }

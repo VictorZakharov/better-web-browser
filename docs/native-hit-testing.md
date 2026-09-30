@@ -173,6 +173,17 @@ gesture stops old travel; subsequent fractional input still accumulates normally
 Same-direction input continues to accumulate, zero deltas remain no-ops, and
 document boundaries still clamp motion.
 
+Extending an active same-direction target preserves its frame clock and its
+existing Win32 timer. Only an idle animation or a true reversal starts a new
+timer and immediate first response. Replacing an existing `SetTimer` timer
+resets its deadline, so doing that for every wheel input can postpone timer
+frames throughout a rapid input stream. Production-clock tests verify periodic
+frames during input, continued tail motion and exact accumulated distance.
+Quiet renderer observer reports cannot resolve another input's pending first
+paint; an explicit absolute scroll or reversal supersedes unfinished ownership.
+Bounded animation traces record observed native position commits separately
+from retained first-paint evidence and display scanout.
+
 Renderer output compaction preserves opposite nonzero wheel directions as
 separate ordered reports rather than netting their distances. This interrupts
 animation, not DOM event delivery: trusted listeners, `preventDefault()`, nested
@@ -198,3 +209,4 @@ hit-index before/after timings above were measured before this reversal follow-u
 - [DOM event dispatch](https://dom.spec.whatwg.org/#dispatching-events)
 - [UI Events wheel behavior](https://www.w3.org/TR/uievents/#events-wheelevents)
 - [CSSOM View scrolling](https://drafts.csswg.org/cssom-view/#scrolling)
+- [Win32 timer replacement resets its deadline](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-settimer)

@@ -51,6 +51,31 @@ impl ScrollAnimation {
         }
     }
 
+    /// Returns whether this target needs a new timer and an immediate first frame.
+    fn retarget(&mut self, target: i32) -> bool {
+        let starting = self.target.replace(target).is_none();
+        if starting {
+            self.last_frame = None;
+        }
+        starting
+    }
+
+    fn frame_elapsed(&mut self, now: Instant) -> Duration {
+        self.last_frame
+            .replace(now)
+            .map_or(
+                Duration::from_millis(FRAME_TIMER_INTERVAL_MS.into()),
+                |previous| now.saturating_duration_since(previous),
+            )
+            .min(MAX_FRAME_ELAPSED)
+    }
+
+    fn cancel(&mut self) -> bool {
+        let was_active = self.target.take().is_some();
+        self.last_frame = None;
+        was_active
+    }
+
     fn consume_css_delta(&mut self, delta: f32, scale: f32) -> i32 {
         let total = delta as f64 * scale as f64 + self.pixel_remainder;
         let pixels = total.round().clamp(i32::MIN as f64, i32::MAX as f64) as i32;
@@ -124,6 +149,7 @@ impl BrowserState {
         {
             // Detect the physical gesture before quantization: even a subpixel
             // reversal must stop old travel. Its old residues are unpainted too.
+            self.record_benchmark_scroll_reversal(direction);
             self.cancel_scroll_animation();
             self.scroll_animation.discard_input_remainders();
         }
@@ -141,11 +167,13 @@ impl BrowserState {
         if target == self.scroll_y && self.scroll_animation.target.is_none() {
             return;
         }
-        if self.scroll_animation.target.is_none() {
-            self.performance.begin_frame_sequence(Instant::now());
+        if !self.scroll_animation.retarget(target) {
+            // Replacing an existing Win32 timer resets its deadline. Extend the
+            // target without postponing frames or inventing elapsed input time.
+            // https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-settimer
+            return;
         }
-        self.scroll_animation.target = Some(target);
-        self.scroll_animation.last_frame = None;
+        self.performance.begin_frame_sequence(Instant::now());
         if SetTimer(
             self.window,
             ID_SCROLL_ANIMATION_TIMER,
@@ -167,32 +195,25 @@ impl BrowserState {
             KillTimer(self.window, ID_SCROLL_ANIMATION_TIMER);
             return;
         };
-        let now = Instant::now();
-        let elapsed = self
-            .scroll_animation
-            .last_frame
-            .replace(now)
-            .map_or(
-                Duration::from_millis(FRAME_TIMER_INTERVAL_MS.into()),
-                |previous| now.saturating_duration_since(previous),
-            )
-            .min(MAX_FRAME_ELAPSED);
+        let initial = self.scroll_animation.last_frame.is_none();
+        let elapsed = self.scroll_animation.frame_elapsed(Instant::now());
         if target == self.scroll_y {
             self.cancel_scroll_animation();
             return;
         }
         let next = next_scroll_position(self.scroll_y, target, elapsed);
+        let previous = self.scroll_y;
         self.commit_scroll_position(next);
+        if self.scroll_y != previous {
+            self.record_benchmark_animation_frame(initial);
+        }
         if self.scroll_y == target {
             self.cancel_scroll_animation();
         }
     }
 
     pub(super) unsafe fn cancel_scroll_animation(&mut self) {
-        let was_active = self.scroll_animation.target.is_some();
-        self.scroll_animation.target = None;
-        self.scroll_animation.last_frame = None;
-        if was_active {
+        if self.scroll_animation.cancel() {
             self.performance.end_frame_sequence(Instant::now());
         }
         if !self.window.is_null() {

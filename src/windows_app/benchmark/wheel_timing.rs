@@ -1,4 +1,5 @@
 //! Native wheel dispatch latency, distinct from direct retained-scroll probes.
+mod animation;
 mod browser;
 mod json;
 #[cfg(test)]
@@ -19,6 +20,8 @@ pub(in crate::windows_app) struct WheelTrace {
     samples: Vec<Sample>,
     omitted_inputs: u64,
     unmatched_acknowledgements: u64,
+    current_viewport_request: Option<(DocumentId, u64)>,
+    animation: animation::AnimationTrace,
 }
 
 struct Sample {
@@ -46,6 +49,7 @@ impl WheelTrace {
         now: Instant,
     ) {
         self.retire_other_documents(document);
+        self.animation.begin(now);
         if self.samples.len() == MAX_SAMPLES {
             self.omitted_inputs = self.omitted_inputs.saturating_add(1);
             return;
@@ -100,6 +104,9 @@ impl WheelTrace {
         revision: Option<u64>,
         now: Instant,
     ) {
+        // Quiet observer updates have no wheel ownership. They must not resolve
+        // a previous input still waiting for its next animation timer frame.
+        self.current_viewport_request = None;
         for (index, value) in values.iter().enumerate() {
             let Some(sample) = self.samples.iter_mut().find(|sample| {
                 sample.document == document
@@ -125,6 +132,9 @@ impl WheelTrace {
                 WheelDecision::NestedScroll => "missing_nested_presentation",
                 WheelDecision::Viewport => "awaiting_viewport_paint",
             };
+            if sample.status == "awaiting_viewport_paint" {
+                self.current_viewport_request = Some((document, sample.sequence));
+            }
         }
     }
 
@@ -135,8 +145,27 @@ impl WheelTrace {
     }
 
     pub(super) fn viewport_request(&mut self, document: DocumentId, new_motion: bool) {
-        if !new_motion {
-            self.no_motion(document, None);
+        if !new_motion
+            && let Some((owner, sequence)) = self.current_viewport_request
+            && owner == document
+            && let Some(sample) = self.samples.iter_mut().find(|sample| {
+                sample.document == document
+                    && sample.sequence == sequence
+                    && sample.status == "awaiting_viewport_paint"
+            })
+        {
+            sample.status = "no_motion";
+        }
+    }
+
+    pub(super) fn interrupt_viewport(&mut self, document: DocumentId, direction: Option<i32>) {
+        for sample in &mut self.samples {
+            if sample.document == document
+                && sample.status == "awaiting_viewport_paint"
+                && direction.is_none_or(|direction| sample.delta.signum() == -direction)
+            {
+                sample.status = "superseded";
+            }
         }
     }
 
@@ -147,7 +176,10 @@ impl WheelTrace {
             return;
         }
         for sample in &mut self.samples {
-            if sample.document == document && sample.status == "awaiting_viewport_paint" {
+            if sample.document == document
+                && sample.status == "awaiting_viewport_paint"
+                && (painted || self.current_viewport_request == Some((document, sample.sequence)))
+            {
                 if painted {
                     sample.viewport_y_painted.get_or_insert(y);
                 } else {

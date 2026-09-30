@@ -17,7 +17,7 @@ impl WheelTrace {
                 };
                 format!(
                     concat!(
-                        "{{\"document\":{},\"sequence\":{},\"delta_y_css_px\":{},",
+                        "{{\"document\":{},\"sequence\":{},\"delta_y_css_px\":{},\"enqueue_offset_ms\":{},",
                         "\"decision\":{},\"status\":{},\"enqueue_to_decision_received_ms\":{},",
                     "\"renderer_dispatch_ms\":{},\"enqueue_to_first_paint_ms\":{},\"first_paint_path\":{},",
                     "\"viewport_y_before_request_css_px\":{},\"viewport_y_at_first_paint_css_px\":{}}}"
@@ -25,6 +25,7 @@ impl WheelTrace {
                     sample.document.get(),
                     sample.sequence,
                     sample.delta,
+                    millis(self.animation.offset(sample.enqueued)),
                     json_string(decision),
                     json_string(sample.status),
                     millis(sample.decision_received),
@@ -40,9 +41,13 @@ impl WheelTrace {
         format!(
             concat!(
                 "{{\"timing_scope\":\"decision receipt includes outbound IPC; first paint is hidden retained native motion, not display scanout\",",
-                "\"sample_limit\":{},\"omitted_inputs\":{},\"unmatched_acknowledgements\":{},\"samples\":[{}]}}"
+                "\"sample_limit\":{},\"omitted_inputs\":{},\"unmatched_acknowledgements\":{},\"samples\":[{}],\"animation_frames\":{}}}"
             ),
-            MAX_SAMPLES, self.omitted_inputs, self.unmatched_acknowledgements, samples
+            MAX_SAMPLES,
+            self.omitted_inputs,
+            self.unmatched_acknowledgements,
+            samples,
+            self.animation.to_json()
         )
     }
 }

@@ -107,6 +107,100 @@ fn same_direction_accumulates_and_zero_does_not_cancel_pending_motion() {
 }
 
 #[test]
+fn active_target_updates_preserve_the_frame_clock_and_timer() {
+    for direction in [-1, 1] {
+        let started = Instant::now();
+        let mut animation = ScrollAnimation {
+            target: Some(1_000 + direction * WHEEL_STEP_DIP),
+            last_frame: Some(started),
+            ..ScrollAnimation::default()
+        };
+        for distance in [direction * WHEEL_STEP_DIP, direction, 0] {
+            let request = animation.plan_distance(1_000, distance, 2_000);
+            assert!(
+                !animation.retarget(request.target),
+                "extending an active target must not restart its timer"
+            );
+            assert_eq!(animation.last_frame, Some(started));
+        }
+        assert_eq!(
+            animation.frame_elapsed(started + Duration::from_millis(23)),
+            Duration::from_millis(23),
+            "the next frame consumes wall time rather than a synthetic input tick"
+        );
+    }
+}
+
+#[test]
+fn input_bursts_extend_one_animation_with_frames_between_and_after_them() {
+    let started = Instant::now();
+    let mut animation = ScrollAnimation::default();
+    assert!(animation.retarget(WHEEL_STEP_DIP));
+    let initial_elapsed = animation.frame_elapsed(started);
+    let mut position = next_scroll_position(0, WHEEL_STEP_DIP, initial_elapsed);
+    assert!((29..=31).contains(&position));
+
+    for frame in 1..=3 {
+        let previous_frame = animation.last_frame;
+        // Several inputs arrive before the next scheduled frame. Only their
+        // target changes; frame progression stays owned by the existing timer.
+        for _ in 0..3 {
+            let request = animation.plan_distance(position, WHEEL_STEP_DIP, 10_000);
+            assert!(request.introduces_motion);
+            assert!(!animation.retarget(request.target));
+            assert_eq!(animation.last_frame, previous_frame);
+        }
+        let now = started + Duration::from_millis(frame * 15);
+        let elapsed = animation.frame_elapsed(now);
+        assert_eq!(elapsed, Duration::from_millis(15));
+        let next = next_scroll_position(position, animation.target.unwrap(), elapsed);
+        assert!(next > position, "frames must continue between input bursts");
+        assert!(next < animation.target.unwrap());
+        position = next;
+    }
+
+    let target = animation.target.unwrap();
+    assert_eq!(target, WHEEL_STEP_DIP * 10);
+    for frame in 4..=40 {
+        let elapsed = animation.frame_elapsed(started + Duration::from_millis(frame * 15));
+        let next = next_scroll_position(position, target, elapsed);
+        assert!((position..=target).contains(&next));
+        position = next;
+    }
+    assert_eq!(
+        position, target,
+        "timer frames finish all accumulated travel"
+    );
+}
+
+#[test]
+fn idle_and_reversed_gestures_start_with_a_prompt_first_frame() {
+    let started = Instant::now();
+    let mut animation = ScrollAnimation::default();
+    assert!(animation.retarget(9_000));
+    assert_eq!(animation.last_frame, None);
+    let mut position = 5_000;
+    let first_elapsed = animation.frame_elapsed(started);
+    assert_eq!(first_elapsed, Duration::from_millis(15));
+    position = next_scroll_position(position, 9_000, first_elapsed);
+
+    assert!(animation.reverses_pending(position, -1));
+    assert!(animation.cancel());
+    assert_eq!(animation.last_frame, None);
+    let request = animation.plan_distance(position, -WHEEL_STEP_DIP, 10_000);
+    assert_eq!(request.target, position - WHEEL_STEP_DIP);
+    assert!(animation.retarget(request.target));
+    let reverse_elapsed = animation.frame_elapsed(started + Duration::from_millis(1));
+    assert_eq!(reverse_elapsed, Duration::from_millis(15));
+    assert!(next_scroll_position(position, request.target, reverse_elapsed) < position);
+
+    assert!(animation.cancel());
+    assert!(!animation.cancel());
+    assert_eq!(animation.target, None);
+    assert_eq!(animation.last_frame, None);
+}
+
+#[test]
 fn repeated_alternations_never_have_to_repay_the_previous_target() {
     let mut animation = ScrollAnimation {
         target: Some(9_000),
