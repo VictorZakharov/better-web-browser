@@ -28,15 +28,7 @@
         if (ArrayBuffer.isView(bytes) && bytes.buffer.byteLength)
             host('arrayBufferDetach', bytes.buffer);
     };
-    const mediaTrackKind = type => {
-        const source = String(type).toLowerCase();
-        const video = source.includes('avc1.');
-        const audio = source.includes('mp4a.40.2');
-        if (video && audio) return 'muxed';
-        if (video) return 'video';
-        if (audio) return 'audio';
-        return '';
-    };
+    const mediaTrackKind = type => host('mediaSourceTrackKind', mediaTypeString(type));
     const completeMediaSegmentPrefix = bytes => {
         const read32 = offset => ((bytes[offset] << 24) | (bytes[offset + 1] << 16)
             | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
@@ -95,8 +87,7 @@
     };
 
     const mediaSourceTypeSupported = type => {
-        const source = String(type).toLowerCase();
-        return supportedMediaType(source) === 'probably' && mediaTrackKind(source) !== '';
+        return host('mediaSourceTypeSupported', mediaTypeString(type));
     };
     const objectUrlValue = url => objectUrlEntries.get(String(url));
     const createObjectUrl = value => {
@@ -133,7 +124,10 @@
             this.__loadedState = false;
             this.__pendingPlayback = [];
         }
-        static isTypeSupported(type) { return mediaSourceTypeSupported(type); }
+        static isTypeSupported(type) {
+            if (!arguments.length) throw new TypeError('isTypeSupported requires a media type');
+            return mediaSourceTypeSupported(type);
+        }
         get duration() { return this.__duration; }
         set duration(value) {
             value = Number(value);
@@ -159,6 +153,8 @@
             if (changed) queueMediaEvent(this.__element, 'durationchange');
         }
         addSourceBuffer(type) {
+            if (!arguments.length) throw new TypeError('addSourceBuffer requires a media type');
+            type = mediaTypeString(type);
             if (this.readyState !== 'open')
                 throw new DOMException('The MediaSource is not open', 'InvalidStateError');
             if (!mediaSourceTypeSupported(type))
@@ -169,7 +165,7 @@
                 || (kind === 'muxed' && existingKinds.length)
                 || existingKinds.includes('muxed'))
                 throw new DOMException('The SourceBuffer configuration is not supported', 'QuotaExceededError');
-            const buffer = new SourceBuffer(this, String(type));
+            const buffer = new SourceBuffer(this, type);
             const items = [...this.sourceBuffers, buffer];
             this.sourceBuffers.__replace(items);
             this.activeSourceBuffers.__replace(items);

@@ -3,8 +3,8 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `bbc9207a35bbce9f3d3555a73750dad38131c6f40f7ba734dd7f41e0d78580c7`
-- Third-party packages: 236
+- Cargo.lock SHA-256: `f7549996bd217bec5a4e8af808f7ba9fa74f180c32d33d74a5cb9b165f94fbcc`
+- Third-party packages: 240
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
@@ -179,11 +179,15 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `svgtypes` | 0.16.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/svgtypes) |
 | `swash` | 0.2.10 | Apache-2.0 OR MIT | [upstream](https://github.com/dfrg/swash) |
 | `symphonia` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
+| `symphonia-bundle-flac` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
 | `symphonia-bundle-mp3` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
 | `symphonia-codec-aac` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
+| `symphonia-codec-vorbis` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
 | `symphonia-common` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
 | `symphonia-core` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
 | `symphonia-format-isomp4` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
+| `symphonia-format-mkv` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
+| `symphonia-format-ogg` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
 | `symphonia-metadata` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
 | `syn` | 2.0.119 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/syn) |
 | `syn` | 3.0.3 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/syn) |

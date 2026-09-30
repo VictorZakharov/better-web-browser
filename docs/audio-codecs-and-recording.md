@@ -9,7 +9,8 @@ models; FLAC framing follows [RFC 9639](https://www.rfc-editor.org/rfc/rfc9639).
 ## `decodeAudioData`
 
 `BaseAudioContext.decodeAudioData` accepts complete, bounded encoded files:
-PCM/IEEE-float RIFF/WAVE, native FLAC, Ogg/Vorbis, MP3, and AAC-in-M4A. A
+PCM/IEEE-float RIFF/WAVE, native FLAC, Ogg/Vorbis, MP3, AAC-in-M4A,
+ADTS AAC-LC, audio-only WebM/Vorbis, and Ogg/FLAC. A
 document-owned native worker decodes every admitted sample to planar `Float32`
 PCM, linearly resamples to the context sample rate, and resolves an
 `AudioBuffer` through the media task queue. It rejects malformed or unsupported
@@ -23,8 +24,11 @@ before accepting output. Ogg/Vorbis requires a complete single logical stream.
 Container/codec agreement is checked for MP3 and M4A, and a declared duration
 that materially exceeds decoded PCM is rejected as truncation. An MP3 stream
 with no duration header cut exactly at a valid frame boundary is inherently
-indistinguishable from a shorter valid stream. WebM, Opus, ADTS AAC, encrypted
-media, and arbitrary MP4 tracks are not claimed by `decodeAudioData`.
+indistinguishable from a shorter valid stream. Opus, WebM video or multiple
+tracks, non-LC ADTS AAC, encrypted media, and arbitrary MP4 tracks are not
+claimed by `decodeAudioData`. The added containers use shared cancellation-aware
+complete-file admission before the upstream demuxer runs; see the
+[container policy and limits](encoded-audio-containers.md).
 
 For ordinary single-track AAC/M4A with one nonempty unity-rate edit, the
 shared ISO BMFF parser applies the edit's exact sample-frame presentation
@@ -45,12 +49,15 @@ synthetic tones with generation commands and hashes in
 ## Contained playback
 
 The contained media worker pulls bounded PCM16 chunks for ordinary complete
-FLAC, Ogg/Vorbis, MP3, and AAC-in-M4A resources. Seek restarts a verified
+FLAC, Ogg/Vorbis, MP3, AAC-in-M4A, ADTS AAC-LC, audio-only WebM/Vorbis,
+and Ogg/FLAC resources. Seek restarts a verified
 decoder and discards samples until the requested point; it does not present a
 stale pre-seek chunk. Other supported containers, including H.264/AAC video,
 retain their separate media paths. No host-installed FLAC decoder is required.
-Decoder reports and playback use the same admitted sample, channel, and rate
-limits. The format-specific direct tests, silent media-worker tests, and hidden
+Decoder reports and playback share bounded PCM decoding; output-device format
+constraints apply separately. Capability queries stay within the verified
+[playback limits](encoded-audio-containers.md), not the wider IPC metadata ceilings.
+The format-specific direct tests, silent media-worker tests, and hidden
 renderer `<source>` tests use actual PCM and malformed-input cases.
 Ordinary AAC/M4A edit-list timing follows the same sample window as Web Audio;
 unsupported MP4 shapes remain on the existing media path rather than being

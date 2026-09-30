@@ -1,7 +1,9 @@
-//! MP3 and ordinary AAC-in-M4A decoding in the restricted media worker.
+//! Bounded compressed-audio decoding in the restricted media worker.
 //! Video and fragmented MP4 stay on their existing Media Foundation paths.
 
 use super::DecodedMedia;
+use crate::encoded_audio;
+pub(super) use crate::encoded_audio::Kind;
 use crate::limits::{
     MAX_MEDIA_DECODED_SAMPLES, MAX_MEDIA_DURATION_100NS, MAX_MEDIA_ENCODED_QUEUE_BYTES,
     MEDIA_COMMAND_TIMEOUT,
@@ -16,44 +18,43 @@ mod source;
 use source::Stream;
 
 #[cfg(test)]
+mod container_tests;
+#[cfg(test)]
 mod tests;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Kind {
-    Mp3,
-    AacM4a,
-}
-
-impl Kind {
-    pub(super) fn codec(self) -> MediaCodecFamily {
-        match self {
-            Self::Mp3 => MediaCodecFamily::Mp3,
-            Self::AacM4a => MediaCodecFamily::Aac,
-        }
-    }
-
-    fn extension(self) -> &'static str {
-        match self {
-            Self::Mp3 => "mp3",
-            Self::AacM4a => "m4a",
-        }
+pub(super) fn codec(kind: Kind) -> MediaCodecFamily {
+    match kind {
+        Kind::Mp3 => MediaCodecFamily::Mp3,
+        Kind::AacM4a => MediaCodecFamily::Aac,
+        Kind::AacAdts => MediaCodecFamily::AacLc,
+        Kind::VorbisWebm => MediaCodecFamily::Vorbis,
+        Kind::FlacOgg => MediaCodecFamily::Flac,
     }
 }
 
 /// Select only streams Symphonia can prove are the expected audio-only format.
 /// In particular, this must not intercept H.264/AAC or fragmented adaptive MP4.
 pub(super) fn classify(bytes: &[u8]) -> Option<Kind> {
-    if bytes.is_empty() || bytes.len() > MAX_MEDIA_ENCODED_QUEUE_BYTES {
+    if bytes.is_empty() {
         return None;
     }
-    let kind = if has_mp3_header(bytes) {
-        Kind::Mp3
-    } else if crate::iso_bmff_audio::ordinary_audio_edit(bytes).is_ok() {
-        Kind::AacM4a
+    let kind = encoded_audio::sniff(bytes).or_else(|| {
+        // ISO BMFF permits leading free/skip boxes. Keep the existing ordinary
+        // M4A admission policy even when the lightweight signature is absent.
+        crate::iso_bmff_audio::ordinary_audio_edit(bytes)
+            .is_ok()
+            .then_some(Kind::AacM4a)
+    })?;
+    if matches!(kind, Kind::Mp3 | Kind::AacM4a) {
+        if bytes.len() > MAX_MEDIA_ENCODED_QUEUE_BYTES {
+            return None;
+        }
+        Stream::open(Arc::from(bytes), kind).ok().map(|_| kind)
     } else {
-        return None;
-    };
-    Stream::open(Arc::from(bytes), kind).ok().map(|_| kind)
+        // Recognition and validation are separate: a damaged supported
+        // container must fail its decoder, never fall back to a host codec.
+        Some(kind)
+    }
 }
 
 pub(super) fn decode(
@@ -92,7 +93,7 @@ pub(super) fn decode(
         },
         encoded_bytes: bytes.len() as u64,
         video_codec: MediaCodecFamily::None,
-        audio_codec: kind.codec(),
+        audio_codec: codec(kind),
         source_reader_hresult: 0,
         video_decode_hresult: 0,
         audio_decode_hresult: 0,
@@ -125,6 +126,8 @@ pub(in crate::media_process) struct CompressedDecoder {
     stream: Stream,
     kind: Kind,
     expected_samples: u32,
+    sample_rate: u32,
+    channels: u16,
     pending: Option<Vec<u8>>,
 }
 
@@ -157,6 +160,8 @@ impl CompressedDecoder {
             stream,
             kind,
             expected_samples,
+            sample_rate: expected_sample_rate,
+            channels: expected_channels,
             pending: Some(pending),
         })
     }
@@ -164,8 +169,10 @@ impl CompressedDecoder {
     pub(in crate::media_process) fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
         // Symphonia seeks to a packet boundary. Restarting and discarding PCM
         // gives the browser clock an exact sample boundary across both codecs.
-        let rate = self.stream.sample_rate.ok_or("audio format is unknown")?;
-        let channels = self.stream.channels.ok_or("audio channels are unknown")?;
+        // A zero-position seek reopens the stream without decoding a packet.
+        // Keep the verified format independently of that fresh stream's state.
+        let rate = self.sample_rate;
+        let channels = self.channels;
         let target_frame =
             u64::try_from(u128::from(position_100ns) * u128::from(rate) / 10_000_000)
                 .map_err(|_| "compressed audio seek target overflow")?;
@@ -212,16 +219,6 @@ impl CompressedDecoder {
         }
         Ok(pcm)
     }
-}
-
-fn has_mp3_header(bytes: &[u8]) -> bool {
-    bytes.starts_with(b"ID3")
-        || bytes.get(..2).is_some_and(|header| {
-            header[0] == 0xff
-                && header[1] & 0xe0 == 0xe0
-                && header[1] & 0x18 != 0x08
-                && header[1] & 0x06 == 0x02
-        })
 }
 
 fn mp3_has_declared_frames(bytes: &[u8]) -> bool {

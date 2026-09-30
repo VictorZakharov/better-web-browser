@@ -115,6 +115,8 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/cssom_document.js"),
     include_str!("bootstrap/cssom_adoption.js"),
     include_str!("bootstrap/platform.js"),
+    include_str!("bootstrap/media_capabilities_config.js"),
+    include_str!("bootstrap/media_capabilities.js"),
     include_str!("bootstrap/wake_lock.js"),
     include_str!("bootstrap/storage.js"),
     include_str!("bootstrap/storage_event.js"),

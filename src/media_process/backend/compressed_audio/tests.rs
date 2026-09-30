@@ -1,12 +1,17 @@
 use super::*;
 use base64::Engine;
 
-fn fixture(kind: Kind) -> Vec<u8> {
+pub(super) fn fixture(kind: Kind) -> Vec<u8> {
     let encoded = match kind {
         Kind::Mp3 => include_str!("../../../../tests/fixtures/media/test-0.4s-tone.mp3.base64"),
         Kind::AacM4a => {
             include_str!("../../../../tests/fixtures/media/test-0.4s-tone.m4a.base64")
         }
+        Kind::AacAdts => include_str!("../../../../tests/fixtures/media/test-0.4s-tone.aac.base64"),
+        Kind::VorbisWebm => {
+            include_str!("../../../../tests/fixtures/media/test-0.4s-tone.webm.base64")
+        }
+        Kind::FlacOgg => include_str!("../../../../tests/fixtures/media/test-0.4s-tone.oga.base64"),
     };
     base64::engine::general_purpose::STANDARD
         .decode(encoded.lines().collect::<String>())
@@ -21,7 +26,7 @@ fn proves_real_mp3_and_aac_m4a_pcm_and_sample_accurate_seek() {
         let report = decode(&bytes, kind, MediaLimits::default(), Instant::now())
             .unwrap()
             .report;
-        assert_eq!(report.audio_codec, kind.codec());
+        assert_eq!(report.audio_codec, codec(kind));
         assert_eq!(report.video_codec, MediaCodecFamily::None);
         assert_eq!(report.audio_sample_rate, 44_100);
         assert_eq!(report.audio_channels, 1);
@@ -71,7 +76,7 @@ fn metadata_text_resembling_mvex_does_not_hide_an_ordinary_m4a() {
 }
 
 #[test]
-fn does_not_hijack_video_fragmented_mp4_or_adts_aac() {
+fn preserves_video_and_fragmented_mp4_routing_but_accepts_adts_aac() {
     let video = base64::engine::general_purpose::STANDARD
         .decode(
             include_str!("../../../../tests/fixtures/media/test-1s.mp4.base64")
@@ -95,16 +100,17 @@ fn does_not_hijack_video_fragmented_mp4_or_adts_aac() {
         .unwrap();
     assert_eq!(classify(&video), None);
     assert_eq!(classify(&fragmented), None);
-    assert_eq!(classify(&adts), None);
+    assert_eq!(classify(&adts), Some(Kind::AacAdts));
 }
 
 #[test]
 fn rejects_wrong_codec_truncated_source_and_worker_encoded_budget() {
     for kind in [Kind::Mp3, Kind::AacM4a] {
         let bytes = fixture(kind);
-        let wrong_kind = match kind {
-            Kind::Mp3 => Kind::AacM4a,
-            Kind::AacM4a => Kind::Mp3,
+        let wrong_kind = if kind == Kind::Mp3 {
+            Kind::AacM4a
+        } else {
+            Kind::Mp3
         };
         assert!(decode(&bytes, wrong_kind, MediaLimits::default(), Instant::now()).is_err());
         assert!(

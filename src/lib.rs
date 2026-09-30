@@ -2,6 +2,7 @@ pub mod branding;
 pub mod broadcast_channel;
 pub mod cache_storage;
 pub mod document;
+pub(crate) mod encoded_audio;
 pub mod engine;
 pub mod fetch;
 pub mod fuzzing;
@@ -29,6 +30,7 @@ pub(crate) mod media_frame_protocol;
 #[cfg(target_os = "windows")]
 pub mod media_process;
 pub mod media_protocol;
+pub(crate) mod media_type;
 
 pub(crate) mod iso_bmff_audio;
 pub(crate) mod ogg_vorbis_headers;

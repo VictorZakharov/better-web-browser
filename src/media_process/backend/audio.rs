@@ -34,10 +34,10 @@ impl AudioDecoder {
         expected_sample_rate: u32,
         expected_channels: u16,
     ) -> Result<Self, String> {
-        if matches!(codec, MediaCodecFamily::Mp3 | MediaCodecFamily::Aac)
-            && let Some(kind) = compressed_audio::classify(bytes)
-            && kind.codec() == codec
-        {
+        if let Some(kind) = compressed_audio::classify(bytes) {
+            if compressed_audio::codec(kind) != codec {
+                return Err("compressed audio codec disagreed with the decode report".into());
+            }
             return CompressedDecoder::open(
                 bytes,
                 kind,

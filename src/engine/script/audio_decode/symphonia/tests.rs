@@ -1,11 +1,22 @@
 use super::*;
 use base64::Engine;
 
+mod containers;
+
 fn fixture(kind: Kind) -> Vec<u8> {
     let encoded = match kind {
         Kind::Mp3 => include_str!("../../../../../tests/fixtures/media/test-0.4s-tone.mp3.base64"),
         Kind::AacM4a => {
             include_str!("../../../../../tests/fixtures/media/test-0.4s-tone.m4a.base64")
+        }
+        Kind::AacAdts => {
+            include_str!("../../../../../tests/fixtures/media/test-0.4s-tone.aac.base64")
+        }
+        Kind::VorbisWebm => {
+            include_str!("../../../../../tests/fixtures/media/test-0.4s-tone.webm.base64")
+        }
+        Kind::FlacOgg => {
+            include_str!("../../../../../tests/fixtures/media/test-0.4s-tone.oga.base64")
         }
     };
     base64::engine::general_purpose::STANDARD
@@ -17,7 +28,7 @@ fn fixture(kind: Kind) -> Vec<u8> {
 fn decodes_real_mp3_and_m4a_pcm_and_resamples() {
     for kind in [Kind::Mp3, Kind::AacM4a] {
         let bytes = fixture(kind);
-        assert!(sniff(&bytes).is_some());
+        assert_eq!(crate::encoded_audio::sniff(&bytes), Some(kind));
         let source = decode(&bytes, 44_100.0, &AtomicBool::new(false), kind).unwrap();
         assert_eq!(source.sample_rate, 44_100.0);
         assert_eq!(source.channels.len(), 1);
@@ -139,6 +150,7 @@ fn rejects_malformed_wrong_codec_truncated_and_cancelled_sources() {
         let wrong_kind = match kind {
             Kind::Mp3 => Kind::AacM4a,
             Kind::AacM4a => Kind::Mp3,
+            _ => unreachable!(),
         };
         assert!(decode(&bytes, 44_100.0, &cancelled, wrong_kind).is_err());
         assert!(decode(&bytes[..bytes.len() / 2], 44_100.0, &cancelled, kind).is_err());
@@ -148,7 +160,13 @@ fn rejects_malformed_wrong_codec_truncated_and_cancelled_sources() {
 
 #[test]
 fn document_worker_returns_real_compressed_pcm() {
-    for kind in [Kind::Mp3, Kind::AacM4a] {
+    for kind in [
+        Kind::Mp3,
+        Kind::AacM4a,
+        Kind::AacAdts,
+        Kind::VorbisWebm,
+        Kind::FlacOgg,
+    ] {
         let mut jobs = super::super::AudioDecodes::default();
         let id = jobs.start(fixture(kind), 22_050.0).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);

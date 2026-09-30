@@ -111,7 +111,7 @@ fn adts_aac_is_decoded_as_audio_only_and_seekable() {
     let decoded = super::super::decode(&bytes, MediaLimits::default()).unwrap();
     assert!(decoded.playback.is_none());
     assert_eq!(decoded.report.video_codec, MediaCodecFamily::None);
-    assert_eq!(decoded.report.audio_codec, MediaCodecFamily::Aac);
+    assert_eq!(decoded.report.audio_codec, MediaCodecFamily::AacLc);
     assert!(decoded.report.audio_samples > 0);
     let mut playback = AudioDecoder::open(
         &bytes,

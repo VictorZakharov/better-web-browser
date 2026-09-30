@@ -89,12 +89,14 @@ impl AudioDecodes {
         thread::Builder::new()
             .name("breeze-audio-decode".into())
             .spawn(move || {
-                let result = if bytes.starts_with(b"OggS") {
+                // Ogg/FLAC shares Ogg's capture pattern with Vorbis. Admit the
+                // more specific codec mapping before the existing Vorbis path.
+                let result = if let Some(kind) = crate::encoded_audio::sniff(&bytes) {
+                    symphonia::decode(&bytes, sample_rate, &worker_cancelled, kind)
+                } else if bytes.starts_with(b"OggS") {
                     ogg_vorbis::decode(&bytes, sample_rate, &worker_cancelled)
                 } else if bytes.starts_with(b"fLaC") {
                     flac::decode(&bytes, sample_rate, &worker_cancelled)
-                } else if let Some(kind) = symphonia::sniff(&bytes) {
-                    symphonia::decode(&bytes, sample_rate, &worker_cancelled, kind)
                 } else {
                     wav::decode(&bytes, sample_rate, &worker_cancelled)
                 };

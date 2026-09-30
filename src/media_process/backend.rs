@@ -54,11 +54,11 @@ pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, 
     if flac::is_flac(bytes) {
         return flac::decode(bytes, limits, Instant::now());
     }
-    if ogg_vorbis::is_ogg(bytes) {
-        return ogg_vorbis::decode(bytes, limits, Instant::now());
-    }
     if let Some(kind) = compressed_audio::classify(bytes) {
         return compressed_audio::decode(bytes, kind, limits, Instant::now());
+    }
+    if ogg_vorbis::is_ogg(bytes) {
+        return ogg_vorbis::decode(bytes, limits, Instant::now());
     }
     decode_sources(bytes, bytes, bytes.len() as u64, limits)
 }

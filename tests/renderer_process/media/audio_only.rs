@@ -3,6 +3,9 @@
 use super::*;
 use std::time::Instant;
 
+#[path = "audio_only/containers.rs"]
+mod containers;
+
 #[test]
 fn contained_renderer_loads_plays_and_seeks_audio_only_mp3() {
     verify_audio_source_with_seek(
@@ -14,6 +17,7 @@ fn contained_renderer_loads_plays_and_seeks_audio_only_mp3() {
         decode_base64(include_str!(
             "../../fixtures/media/test-1s-audio.mp3.base64"
         )),
+        "0.5",
     );
 }
 
@@ -28,6 +32,7 @@ fn contained_renderer_loads_plays_and_seeks_ogg_vorbis_source() {
         decode_base64(include_str!(
             "../../fixtures/media/test-2s-audio.ogg.base64"
         )),
+        "0.5",
     );
 }
 
@@ -38,6 +43,7 @@ fn verify_audio_source_with_seek(
     content_type: &str,
     codec_name: &str,
     bytes: Vec<u8>,
+    seek_time: &str,
 ) {
     let _serial = SERIAL
         .lock()
@@ -64,6 +70,10 @@ fn verify_audio_source_with_seek(
     let body = html
         .replace("/test.mp3", path)
         .replace("type='audio/mpeg'", &format!("type='{source_type}'"))
+        .replace(
+            "sound.currentTime = 0.5",
+            &format!("sound.currentTime = {seek_time}"),
+        )
         .into_bytes();
     session
         .load_document(
@@ -150,7 +160,7 @@ fn verify_audio_source_with_seek(
                 );
                 saw_seeked |= presentation.layout.items.iter().any(|item| {
                     matches!(item, DisplayItem::Text { text, .. }
-                        if text.contains(&format!("seeked:0.5:https://example.test{path}")))
+                        if text.contains(&format!("seeked:{seek_time}:https://example.test{path}")))
                 });
                 if let Some(media) = presentation.runtime.media.as_ref() {
                     assert_eq!((media.width, media.height), (0, 0));
@@ -181,7 +191,7 @@ fn verify_audio_source_with_seek(
         .expect("shutdown contained renderer and media worker");
 }
 
-fn verify_audio_failure(status: u16, bytes: Vec<u8>, expected_code: u8) {
+fn verify_audio_failure(status: u16, bytes: Vec<u8>, expected_code: u8, content_type: &str) {
     let _serial = SERIAL
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -242,7 +252,7 @@ fn verify_audio_failure(status: u16, bytes: Vec<u8>, expected_code: u8) {
             response_type: FetchResponseType::Basic,
             urls: vec![request.head.url],
             status,
-            headers: vec![("content-type".into(), "audio/mpeg".into())],
+            headers: vec![("content-type".into(), content_type.into())],
         },
     })
     .unwrap();
@@ -293,10 +303,10 @@ fn verify_audio_failure(status: u16, bytes: Vec<u8>, expected_code: u8) {
 
 #[test]
 fn audio_404_reports_source_not_supported_and_rejects_pending_play() {
-    verify_audio_failure(404, Vec::new(), 4);
+    verify_audio_failure(404, Vec::new(), 4, "audio/mpeg");
 }
 
 #[test]
 fn audio_invalid_bytes_report_source_not_supported_and_reject_pending_play() {
-    verify_audio_failure(200, b"not a media stream".to_vec(), 4);
+    verify_audio_failure(200, b"not a media stream".to_vec(), 4, "audio/mpeg");
 }

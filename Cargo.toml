@@ -24,8 +24,8 @@ ogg = "=0.8.0"
 psl2 = { version = "0.1.12", default-features = false, features = ["fast-lookup"] }
 resvg = { version = "0.48.1", default-features = false }
 sha2 = "0.10.9"
-# MPL-2.0 MP3 and AAC-in-MP4 demux/decode for Web Audio and contained playback.
-symphonia = { version = "=0.6.1", default-features = false, features = ["mp3", "aac", "isomp4"] }
+# MPL-2.0 bounded audio demux/decode; only the admitted container/codec pairs are exposed.
+symphonia = { version = "=0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "mkv", "ogg", "vorbis", "flac"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 time = { version = "0.3.55", default-features = false, features = ["std", "parsing"] }

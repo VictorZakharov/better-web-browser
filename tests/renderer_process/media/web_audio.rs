@@ -116,3 +116,121 @@ fn live_audio_context_streams_after_trusted_input_and_closes() {
         .shutdown()
         .expect("shutdown contained renderer and media worker");
 }
+
+#[test]
+fn navigation_retires_compressed_audio_decode_callbacks_with_the_old_document() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut session = RendererSession::launch(options()).expect("launch hidden decode renderer");
+    for (index, fixture) in [
+        include_str!("../../fixtures/media/test-0.4s-tone.aac.base64"),
+        include_str!("../../fixtures/media/test-0.4s-tone.webm.base64"),
+        include_str!("../../fixtures/media/test-0.4s-tone.oga.base64"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let old = DocumentId::new(221 + index as u64 * 2).unwrap();
+        let replacement = DocumentId::new(old.get() + 1).unwrap();
+        let html = r#"<!doctype html><output id="state">decode started</output><script>
+            const context = new OfflineAudioContext(1, 128, 48000);
+            const input = Uint8Array.from(atob('__FIXTURE__'),
+                character => character.charCodeAt(0)).buffer;
+            context.decodeAudioData(input).then(() => {
+                state.textContent = 'old decode completed';
+                console.log('old decode callback');
+            }, error => console.log('old decode rejected:' + error.name));
+            if (input.byteLength !== 0) throw Error('input not detached');
+        </script>"#
+            .replace("__FIXTURE__", &fixture.lines().collect::<String>());
+        let initial = load_html_document(&session, old.get(), &html);
+        assert!(
+            initial.runtime.errors.is_empty(),
+            "{:?}",
+            initial.runtime.errors
+        );
+        // Retire without advancing media completion tasks. A worker may finish
+        // either side of this cancellation; its result still belongs to `old`.
+        session.cancel_document(old).unwrap();
+        let html = "<!doctype html><output>replacement</output><script>\
+            setTimeout(() => console.log('replacement checkpoint'), 30);</script>";
+        session
+            .load_document(
+                document_start(replacement, html.len()),
+                empty_document_state(),
+                html.as_bytes().to_vec(),
+            )
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut checkpoint = false;
+        while !checkpoint {
+            assert!(
+                Instant::now() < deadline,
+                "replacement decode lifecycle did not settle"
+            );
+            match session.wait_for_event(Duration::from_secs(3)).unwrap() {
+                RendererEvent::Presentation(presentation)
+                    if presentation.document == replacement =>
+                {
+                    assert!(
+                        presentation.runtime.errors.is_empty(),
+                        "{:?}",
+                        presentation.runtime.errors
+                    );
+                    assert!(
+                        !presentation
+                            .runtime
+                            .console
+                            .iter()
+                            .any(|line| line.contains("old decode"))
+                    );
+                    checkpoint |= presentation
+                        .runtime
+                        .console
+                        .iter()
+                        .any(|line| line.contains("replacement checkpoint"));
+                    session
+                        .acknowledge_presentation(PresentationAcknowledgement {
+                            document: replacement,
+                            revision: presentation.revision,
+                            presented: true,
+                            controls_applied: true,
+                        })
+                        .unwrap();
+                    run_scheduled_renderer_timer(
+                        &session,
+                        replacement,
+                        presentation.next_timer_micros,
+                    );
+                }
+                RendererEvent::RuntimeUpdate(update) if update.document == replacement => {
+                    assert!(
+                        update.runtime.errors.is_empty(),
+                        "{:?}",
+                        update.runtime.errors
+                    );
+                    assert!(
+                        !update
+                            .runtime
+                            .console
+                            .iter()
+                            .any(|line| line.contains("old decode"))
+                    );
+                    checkpoint |= update
+                        .runtime
+                        .console
+                        .iter()
+                        .any(|line| line.contains("replacement checkpoint"));
+                    run_scheduled_renderer_timer(&session, replacement, update.next_timer_micros);
+                }
+                // Already-enqueued old-document envelopes remain tagged with
+                // their owner and cannot run callbacks in the replacement realm.
+                RendererEvent::Presentation(_)
+                | RendererEvent::RuntimeUpdate(_)
+                | RendererEvent::Diagnostic { .. } => {}
+                event => panic!("unexpected decode retirement event: {event:?}"),
+            }
+        }
+        session.cancel_document(replacement).unwrap();
+    }
+    session.shutdown().expect("shutdown hidden decode renderer");
+}

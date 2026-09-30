@@ -57,7 +57,10 @@ fn can_play_type_reports_only_decodeable_complete_source_audio_and_video() {
                 [audio, 'audio/aac; codecs="mp4a.40.2"', 'probably'],
                 [audio, 'audio/flac', 'maybe'],
                 [audio, 'audio/x-flac', 'maybe'],
-                [audio, 'audio/ogg; codecs="flac"', ''],
+                [audio, 'audio/ogg; codecs="flac"', 'probably'],
+                [audio, 'audio/webm', 'maybe'],
+                [audio, 'audio/webm; codecs="vorbis"', 'probably'],
+                [audio, 'audio/webm; codecs="opus"', ''],
                 [audio, 'audio/ogg', 'maybe'],
                 [audio, 'audio/ogg; codecs="vorbis"', 'probably'],
                 [audio, 'audio/ogg; codecs="vorbis, opus"', ''],
@@ -74,8 +77,8 @@ fn can_play_type_reports_only_decodeable_complete_source_audio_and_video() {
                 [audio, 'audio/mp4; codecs="mp4a.40.5"', ''],
                 [audio, 'audio/ogg; codecs="opus"', ''],
                 [video, 'video/webm; codecs="vp9"', ''],
-                [audio, 'audio/mp4; codecs="mp4a.40.2"; codecs="mp4a.40.2"', ''],
-                [audio, 'audio/mp4; codecs', ''],
+                [audio, 'audio/mp4; codecs="mp4a.40.2"; codecs="mp4a.40.2"', 'probably'],
+                [audio, 'audio/mp4; codecs', 'maybe'],
                 [audio, 'application/octet-stream', '']
             ];
             const failure = cases.find(([element, type, expected]) =>
@@ -321,7 +324,7 @@ fn media_capabilities_reports_only_the_owned_decode_path() {
             navigator.mediaCapabilities.decodingInfo({ type: 'file', video }),
             navigator.mediaCapabilities.decodingInfo({
                 type: 'file', audio: {
-                    contentType: 'audio/mpeg; codecs="mp3"',
+                    contentType: 'audio/mpeg',
                     channels: '2', bitrate: 128000, samplerate: 44100
                 }
             }),
@@ -357,7 +360,7 @@ fn media_capabilities_reports_only_the_owned_decode_path() {
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        "true:true:false:true:320:true:true:true:false:false:false:false:true:TypeError"
+        "true:false:false:true:320:true:true:false:false:false:false:false:true:TypeError"
     );
 }
 
@@ -382,6 +385,6 @@ fn media_capabilities_distinguishes_native_flac_file_from_media_source() {
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        "true:true:false:false"
+        "true:false:false:false"
     );
 }
