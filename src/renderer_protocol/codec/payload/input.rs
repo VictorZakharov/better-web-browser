@@ -1,4 +1,4 @@
-use crate::limits::{MAX_HISTORY_STATE_BYTES, MAX_URL_BYTES};
+use crate::limits::{MAX_HISTORY_STATE_BYTES, MAX_RENDERER_TEXT_INPUT_BYTES, MAX_URL_BYTES};
 use crate::renderer_protocol::input::*;
 use crate::renderer_protocol::wire::{WireReader, WireWriter};
 use crate::renderer_protocol::{BrowserMessage, DocumentId, ProtocolError, RendererMessage};
