@@ -211,3 +211,15 @@ fn actual_opus_and_video_mixed_webm_cannot_decode_a_supported_audio_subset() {
         assert!(super::super::decode(&bytes, MediaLimits::default()).is_err());
     }
 }
+
+#[test]
+fn webm_timestamp_overflow_after_real_audio_is_a_terminal_worker_error() {
+    let good = fixture(Kind::VorbisWebm);
+    assert!(super::super::decode(&good, MediaLimits::default()).is_ok());
+    let source = crate::encoded_audio::webm_with_overflowing_second_cluster(&good);
+    assert_eq!(classify(&source), Some(Kind::VorbisWebm));
+    let error = super::super::decode(&source, MediaLimits::default())
+        .err()
+        .expect("a clean first Cluster must not hide a malformed later Cluster");
+    assert!(error.contains("Timestamp overflows"), "{error}");
+}

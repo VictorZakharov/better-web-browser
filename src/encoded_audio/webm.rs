@@ -2,6 +2,8 @@
 //! interprets timing, block lacing and packets after this allocation preflight.
 
 use super::Budget;
+#[path = "webm_timing.rs"]
+mod timing;
 
 const HEADER: u32 = 0x1a45_dfa3;
 const SEGMENT: u32 = 0x1853_8067;
@@ -24,6 +26,7 @@ pub(super) fn validate(bytes: &[u8], budget: &mut Budget<'_>) -> Result<(), Stri
     {
         return Err("WebM requires one complete document with one Vorbis audio track".into());
     }
+    policy.timing.validate()?;
     Ok(())
 }
 
@@ -34,6 +37,7 @@ struct Policy {
     segments: usize,
     tracks: usize,
     blocks: usize,
+    timing: timing::Timing,
 }
 
 fn walk(
@@ -75,6 +79,7 @@ fn walk(
         if !master(id) && id != 0xec && payload.len() > MAX_LEAF {
             return Err("WebM metadata or packet exceeds admission allocation limit".into());
         }
+        policy.timing.metadata(id, parent, payload)?;
         match id {
             HEADER => {
                 if parent != 0 || policy.headers != 0 || policy.segments != 0 || unknown {
@@ -154,6 +159,7 @@ fn walk(
                 if payload.is_empty() {
                     return Err("WebM block is empty".into());
                 }
+                policy.timing.block(payload)?;
                 policy.blocks += 1;
             }
             _ if parent == 0 && id != HEADER && id != SEGMENT && id != 0xec => {
@@ -297,3 +303,5 @@ fn master(id: u32) -> bool {
 #[cfg(test)]
 #[path = "webm_tests.rs"]
 mod tests;
+#[cfg(test)]
+pub(super) use tests::overflowing_second_cluster;

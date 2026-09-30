@@ -65,6 +65,13 @@ commands are recorded in [the media fixture inventory](../tests/fixtures/media/R
   not the complete-file Symphonia decoder's 8–192 kHz explicit-rate allowance.
 - Single supported audio tracks are required. A supported track does not authorize
   ignoring an unsupported video or another stream in the same source.
+- WebM timing must fit the upstream signed timestamp arithmetic before any PCM
+  is decoded. The guard checks a conservative whole-file extrema envelope, so
+  independently valid but near-64-bit-limit timestamp/relative-offset/duration
+  combinations can be rejected. This bounded policy prevents an upstream timing
+  overflow from masquerading as clean EOF after a partial decode; it is not a
+  claim to admit every Matroska timeline. Empty `TrackTimestampScale` uses its
+  schema default of 1.0, as required by [EBML's empty-element rule](https://www.rfc-editor.org/rfc/rfc8794.html#section-6.1).
 - ADTS complete framing and decoded packets are checked, but the pinned upstream
   parser skips rather than verifies an optional ADTS CRC. Ogg page CRCs are
   verified. This is a documented decoder limitation, not a claim of equivalent

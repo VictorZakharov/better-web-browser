@@ -16,6 +16,11 @@ mod adts;
 mod ogg_flac;
 mod webm;
 
+#[cfg(test)]
+pub(crate) fn webm_with_overflowing_second_cluster(bytes: &[u8]) -> Vec<u8> {
+    webm::overflowing_second_cluster(bytes)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
     Mp3,

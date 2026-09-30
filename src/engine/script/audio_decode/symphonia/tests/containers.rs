@@ -69,6 +69,47 @@ fn new_containers_reject_partial_trailing_mismatched_and_cancelled_inputs() {
 }
 
 #[test]
+fn webm_timestamp_overflow_after_real_audio_rejects_the_entire_audio_buffer() {
+    let good = fixture(Kind::VorbisWebm);
+    assert!(decode(&good, 44_100.0, &AtomicBool::new(false), Kind::VorbisWebm).is_ok());
+    let source = crate::encoded_audio::webm_with_overflowing_second_cluster(&good);
+    // The unchanged SeekHead/first Cluster are genuinely decodable. Pinned
+    // upstream reports clean EOF for the overflowing later Cluster, so only
+    // our complete-file guard prevents returning this plausible PCM prefix.
+    let frames = upstream_webm_frames(&good);
+    assert!(frames > 0);
+    assert_eq!(upstream_webm_frames(&source), frames);
+    let error = decode(&source, 44_100.0, &AtomicBool::new(false), Kind::VorbisWebm)
+        .err()
+        .expect("a clean first Cluster must not hide a malformed later Cluster");
+    assert!(error.contains("Timestamp overflows"), "{error}");
+}
+
+fn upstream_webm_frames(bytes: &[u8]) -> usize {
+    let mut hint = Hint::new();
+    hint.with_extension("webm");
+    let media = MediaSourceStream::new(Box::new(Cursor::new(bytes)), Default::default());
+    let mut format = symphonia::default::get_probe()
+        .probe(
+            &hint,
+            media,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .unwrap();
+    let track = format.first_track(TrackType::Audio).unwrap();
+    let params = track.codec_params.as_ref().unwrap().audio().unwrap();
+    let mut decoder = symphonia::default::get_codecs()
+        .make_audio_decoder(params, &AudioDecoderOptions::default().verify(true))
+        .unwrap();
+    let mut frames = 0;
+    while let Some(packet) = format.next_packet().unwrap() {
+        frames += decoder.decode(&packet).unwrap().frames();
+    }
+    frames
+}
+
+#[test]
 fn cancelling_or_dropping_the_document_retires_each_new_codec_worker() {
     for kind in NEW_KINDS {
         let mut jobs = super::super::super::AudioDecodes::default();
