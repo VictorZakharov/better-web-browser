@@ -2,10 +2,12 @@
 
 mod event_batch;
 mod events;
+mod exit;
 mod monitor;
 pub(super) mod notifications;
+mod turn_budget;
 
-pub(super) use monitor::RendererMonitor;
+pub(super) use monitor::{RendererMonitor, flush_due_for_message};
 
 use super::tabs::TabId;
 use super::*;

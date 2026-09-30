@@ -114,7 +114,7 @@ fn edge_bytes(value: &RuntimeReport) -> usize {
     .into_iter()
     .flatten()
     .fold(
-        value.wheel_acknowledgements.len().saturating_mul(17),
+        value.wheel_acknowledgements.len().saturating_mul(21),
         |bytes, text| bytes.saturating_add(4).saturating_add(text.len()),
     );
     value

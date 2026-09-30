@@ -50,6 +50,7 @@ impl BrowserState {
         if self.processing_background_tab {
             return;
         }
+        let first_live = self.wheel_gesture.first_live_sequence();
         if let Some(benchmark) = self.benchmark.as_mut() {
             benchmark.wheel_trace.retire_other_documents(document);
             benchmark.wheel_trace.acknowledge(
@@ -58,6 +59,9 @@ impl BrowserState {
                 revision,
                 received,
             );
+            benchmark
+                .wheel_trace
+                .supersede_viewport_before(document, first_live);
         }
     }
 

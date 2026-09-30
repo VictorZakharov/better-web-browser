@@ -4,7 +4,10 @@ param()
 $ErrorActionPreference = 'Stop'
 $performanceTests = @(
     'early_scroll_stays_responsive_during_post_load_selector_queries',
-    'wheel_timing::continuous::rapid_wheel_input_keeps_one_continuous_native_animation'
+    'wheel_timing::continuous::rapid_wheel_input_keeps_one_continuous_native_animation',
+    'wheel_timing::backlog::delayed_older_defaults_never_restart_after_a_physical_reverse',
+    'wheel_timing::backlog::a_cancelled_physical_reverse_still_retires_older_viewport_defaults',
+    'wheel_timing::backlog::physical_reverse_stops_active_motion_before_delayed_older_defaults_arrive'
 )
 # Wall-clock input latency cannot be attributed to this browser while unrelated
 # integration tests start other browser/renderer trees on the same runner.

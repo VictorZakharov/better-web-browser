@@ -166,6 +166,7 @@ impl BrowserState {
                 _ => tab.navigation.begin(),
             };
             tab.renderer_input_sequence = 0;
+            tab.wheel_gesture = Default::default();
             tab.native_text_generation = 0;
             tab.suppress_page_control_edit = false;
             tab.pointer_cursor_request = None;

@@ -144,6 +144,17 @@ impl WheelTrace {
             .any(|sample| sample.document == document && sample.status == "awaiting_viewport_paint")
     }
 
+    pub(super) fn supersede_viewport_before(&mut self, document: DocumentId, sequence: u64) {
+        for sample in &mut self.samples {
+            if sample.document == document
+                && sample.sequence < sequence
+                && sample.status == "awaiting_viewport_paint"
+            {
+                sample.status = "superseded";
+            }
+        }
+    }
+
     pub(super) fn viewport_request(&mut self, document: DocumentId, new_motion: bool) {
         if !new_motion
             && let Some((owner, sequence)) = self.current_viewport_request

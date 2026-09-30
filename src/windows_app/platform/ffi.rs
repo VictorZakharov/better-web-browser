@@ -34,6 +34,14 @@ unsafe extern "system" {
         min: u32,
         max: u32,
     ) -> i32;
+    pub(in crate::windows_app) fn PeekMessageW(
+        message: *mut Msg,
+        window: Hwnd,
+        min: u32,
+        max: u32,
+        remove: u32,
+    ) -> i32;
+    pub(in crate::windows_app) fn GetQueueStatus(flags: u32) -> u32;
     pub(in crate::windows_app) fn TranslateMessage(message: *const Msg) -> i32;
     pub(in crate::windows_app) fn DispatchMessageW(message: *const Msg) -> Lresult;
     pub(in crate::windows_app) fn PostQuitMessage(exit_code: i32);

@@ -49,9 +49,63 @@ before a wheel paint; unchanged scrolling may reuse pixels and repaint only the
 exposed strip. Reporting a cheap strip paint of stale content is not a valid
 performance improvement.
 
-The report's new wire field changes renderer IPC major version to 15. Browser
+Per-verdict retained viewport distance changes renderer IPC major version to 16. Browser
 and renderer must come from the same rebuilt executable; incompatible older
 major versions are rejected before decoding their different report layout.
+
+### Reversal while renderer replies are backlogged
+
+The shell observes vertical direction at native input submission, before IPC
+admission. A reversal cancels the running native animation and its fractional
+residue immediately. A per-tab sequence fence retires older *viewport default
+distance*, not the DOM wheel events themselves. Their cancellation verdicts,
+nested-scroll snapshots, console output and author-written absolute scrolls
+still install normally. A cancelled or rejected reverse still interrupts old
+travel; it cannot authorize a new viewport default. Content input rejection is
+distinct from input outside the content surface and never takes raw-scroll
+fallback. Raw browser/reader scrolling also reserves a fence sequence. Tab
+suspension retires outstanding defaults before returning to that tab.
+
+Each acknowledgement carries its retained accepted CSS distance. Compaction
+clears older contributions when a newer absolute scroll resets the anchor,
+while keeping incoming relative defaults after that anchor. This lets the
+shell discard only pre-reversal contributions, including two rapid reversals,
+without losing valid distance combined in the same report.
+
+An owned fixture exposed the remaining failure in release head `6f562c1`:
+eight forward inputs and a reverse were submitted while the first wheel
+listener ran a real bounded 100 ms task. Reverse submission occurred around
+13 ms and the first verdict around 100 ms. All nine trusted DOM events arrived,
+but old native motion restarted after the reversal in both directions. Even
+the cancelled reverse settled at 3,992/6,008 CSS pixels instead of the unchanged
+5,000-pixel starting position. Those four raw baseline reports were retained;
+this is correctness evidence, not an uncontended latency measurement.
+
+The regression checks the whole native position curve after reversal, ordered
+trusted DOM delivery, cancellation, and the final renderer scroll feedback.
+Checking only the reverse event's first paint would miss this backlog failure.
+The interruption guarantee begins when the UI receives the wheel input; a
+synthetic hidden submission does not measure hardware-to-message-queue delay.
+
+### Native queue fairness and continuous frames
+
+The message pump prefers at most eight actual input-queue messages before an
+ordinary queue read. It does not discard, compact, or reorder the admitted DOM
+wheel sequence. Posted translated characters, including surrogate pairs and
+dead/system characters, retain ordinary queue order before later keys or focus
+changes. Renderer output yields between atomic events after a soft 4 ms
+turn, or when native input is waiting; deferred output retains FIFO order and
+terminal recovery cannot overtake it. One expensive event can exceed that soft
+budget, so it is not a hardware-input latency guarantee.
+
+Win32 timer messages have low queue priority. After a completed dispatch, due
+renderer-monitor work and a due foreground scroll frame can therefore run
+through their existing paths without waiting for a timer message. Both use real
+elapsed time and retain their deadlines across unchanged input; no repeated
+`SetTimer` calls or synthetic per-input frame ticks are introduced. A queued
+timer arriving immediately after serviced work cannot duplicate that work.
+Same-direction inputs extend one animation clock; reversal cancels its old
+target before new renderer authorization is available.
 
 ## Evidence and limits
 

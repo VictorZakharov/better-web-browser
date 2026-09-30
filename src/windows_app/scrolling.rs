@@ -1,7 +1,10 @@
 //! Coalesced, time-based wheel scrolling for interactive browser windows.
 
 use super::*;
+pub(super) mod frame_service;
+mod gesture;
 mod sticky;
+pub(super) use gesture::WheelGesture;
 
 // A 16 ms SetTimer request repeatedly landed on alternating one/two-tick boundaries in
 // diagnostics, producing the observed ~16/32 ms cadence. The animation remains time-based, so
@@ -121,8 +124,27 @@ fn next_scroll_position(position: i32, target: i32, elapsed: Duration) -> i32 {
 }
 
 impl BrowserState {
+    pub(super) unsafe fn observe_native_wheel(&mut self, sequence: u64, delta: f32) {
+        if self.wheel_gesture.observe(sequence, delta) {
+            // Stop at receipt, before IPC/backpressure or DOM cancellation. A
+            // delayed older viewport verdict must never revive this animation.
+            self.record_benchmark_scroll_reversal(if delta > 0.0 { 1 } else { -1 });
+            self.cancel_scroll_animation();
+            self.scroll_animation.discard_input_remainders();
+        }
+    }
+
+    pub(super) unsafe fn apply_renderer_wheel_scroll(
+        &mut self,
+        report: &better_web_browser::renderer_protocol::RuntimeReport,
+    ) {
+        self.queue_css_wheel_scroll(self.wheel_gesture.viewport_delta(report));
+    }
+
     pub(super) unsafe fn suspend_wheel_gesture(&mut self) {
         self.record_benchmark_scroll_interruption(None);
+        let next = self.renderer_input_sequence.saturating_add(1);
+        self.wheel_gesture.retire_before(next);
         self.cancel_scroll_animation();
         self.scroll_animation.discard_input_remainders();
     }
@@ -136,6 +158,11 @@ impl BrowserState {
     pub(super) unsafe fn queue_wheel_scroll(&mut self, delta: i32) {
         if delta == 0 {
             return;
+        }
+        if let Some((_, sequence)) = self.next_renderer_input() {
+            // Chrome/reader fallback has no DOM wheel, but can still interrupt
+            // older content defaults. Reserve a sequence for the same fence.
+            self.observe_native_wheel(sequence, -(delta as f32));
         }
         self.cancel_pending_scroll_on_reversal(-delta.signum());
         self.pending_history_scroll_y = None;
@@ -229,8 +256,12 @@ impl BrowserState {
             KillTimer(self.window, ID_SCROLL_ANIMATION_TIMER);
             return;
         };
+        let now = Instant::now();
+        if !self.scroll_animation.timer_frame_ready(now) {
+            return;
+        }
         let initial = self.scroll_animation.last_frame.is_none();
-        let elapsed = self.scroll_animation.frame_elapsed(Instant::now());
+        let elapsed = self.scroll_animation.frame_elapsed(now);
         if target == self.scroll_y {
             self.cancel_scroll_animation();
             return;

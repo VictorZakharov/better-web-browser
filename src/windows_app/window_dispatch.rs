@@ -305,7 +305,10 @@ unsafe fn dispatch_window_message(
         WM_ERASEBKGND => 1,
         WM_MOUSEWHEEL => {
             let delta = ((wparam >> 16) as u16) as i16 as i32;
-            if !state.route_content_wheel(delta, wparam, lparam) {
+            if state
+                .route_content_wheel(delta, wparam, lparam)
+                .allows_viewport_fallback()
+            {
                 state.queue_wheel_scroll(delta);
             }
             0

@@ -40,6 +40,7 @@ fn detailed_report() -> RuntimeReport {
         wheel_acknowledgements: vec![crate::renderer_protocol::WheelAcknowledgement {
             sequence: 1,
             decision: crate::renderer_protocol::WheelDecision::Viewport,
+            viewport_delta_y: 126.0,
             dispatch_micros: 250,
         }],
         cookie_updates: vec!["name=value".into()],

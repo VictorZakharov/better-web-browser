@@ -121,6 +121,7 @@ impl BrowserState {
                 }
                 self.reader_url.clone_from(&metrics.final_url);
                 self.renderer_input_sequence = 0;
+                self.wheel_gesture = Default::default();
                 self.native_text_generation = 0;
                 self.suppress_page_control_edit = false;
                 self.pointer_cursor_request = None;

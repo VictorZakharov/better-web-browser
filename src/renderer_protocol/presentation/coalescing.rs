@@ -45,6 +45,15 @@ impl RendererPresentation {
 
 impl RuntimeReport {
     pub(crate) fn coalesce(mut self, mut next: Self) -> Result<Self, ProtocolError> {
+        super::wheel::validate(&self.wheel_acknowledgements)?;
+        if next.viewport_scroll_y.is_some() {
+            // The same absolute-position barrier resets the aggregate below. Keep
+            // verdicts observable, but do not reapply their superseded defaults.
+            // Incoming contributions follow the new anchor and remain intact.
+            for value in &mut self.wheel_acknowledgements {
+                value.viewport_delta_y = 0.0;
+            }
+        }
         self.wheel_acknowledgements
             .append(&mut next.wheel_acknowledgements);
         super::wheel::validate(&self.wheel_acknowledgements)?;

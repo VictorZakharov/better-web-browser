@@ -4,6 +4,60 @@ use super::*;
 use better_web_browser::limits::MAX_QUEUED_BROWSER_COMMANDS;
 
 impl BrowserState {
+    pub(in crate::windows_app) fn submit_renderer_input(&mut self, input: DocumentInput) -> bool {
+        if let DocumentInput::Wheel(wheel) = &input
+            && self.navigation.owns_document(wheel.document)
+        {
+            unsafe { self.observe_native_wheel(wheel.sequence, wheel.delta_y) };
+        }
+        let result = if self.pending_renderer_inputs.is_empty() {
+            self.renderer_session
+                .as_ref()
+                .ok_or_else(|| "renderer session is unavailable".to_string())
+                .and_then(|session| session.try_send_input_retained(input))
+        } else {
+            input
+                .validate()
+                .map_err(|error| error.to_string())
+                .map(|()| Some(input))
+        };
+        match result {
+            Ok(None) => {
+                self.note_renderer_input_activity();
+                true
+            }
+            Ok(Some(input)) => match self.pending_renderer_inputs.enqueue(input) {
+                QueueResult::Queued | QueueResult::Coalesced => {
+                    self.note_renderer_input_activity();
+                    true
+                }
+                QueueResult::Full => {
+                    self.note_renderer_input_activity();
+                    unsafe {
+                        self.set_status(
+                            "Renderer is busy; this input was not accepted. Try again.",
+                        );
+                    }
+                    false
+                }
+            },
+            Err(error) => {
+                unsafe {
+                    self.contain_page_engine_failure(
+                        self.id,
+                        format!("could not deliver document input: {error}"),
+                    );
+                }
+                false
+            }
+        }
+    }
+
+    fn note_renderer_input_activity(&mut self) {
+        self.renderer_input_poll_budget = RENDERER_INPUT_POLL_BUDGET;
+        unsafe { self.ensure_renderer_monitoring() };
+    }
+
     pub(in crate::windows_app) unsafe fn flush_renderer_inputs_for(&mut self, id: TabId) {
         let mut made_room = false;
         for _ in 0..MAX_QUEUED_BROWSER_COMMANDS {

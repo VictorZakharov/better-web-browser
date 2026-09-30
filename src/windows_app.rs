@@ -20,6 +20,7 @@ mod fullscreen;
 mod geolocation;
 mod incident_log;
 mod media_devices;
+mod message_pump;
 mod navigation_transaction;
 mod notifications;
 mod page_controls;
@@ -147,26 +148,7 @@ pub fn run() -> Result<(), String> {
             .state_pointer(window)
             .ok_or_else(|| "browser window did not retain its state".to_string())?;
         (*state_pointer).complete_startup();
-        let mut message: Msg = std::mem::zeroed();
-        loop {
-            let result = GetMessageW(&mut message, null_mut(), 0, 0);
-            if result == 0 {
-                break;
-            }
-            if result < 0 {
-                return Err(last_error("read window message"));
-            }
-            let handled = app
-                .browser_for_message(message.hwnd)
-                .is_some_and(|(window, state)| {
-                    dispatch_browser_input(&message, window, &mut *state)
-                });
-            if !handled {
-                TranslateMessage(&message);
-                DispatchMessageW(&message);
-            }
-            video_presentation::flush_for_message(&app, message.hwnd);
-        }
+        message_pump::run(&app)?;
         Ok(())
     }
 }

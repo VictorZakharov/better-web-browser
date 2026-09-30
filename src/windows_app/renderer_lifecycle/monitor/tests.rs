@@ -1,13 +1,26 @@
 use super::*;
 use std::cell::RefCell;
 
-#[derive(Default)]
 struct NativeTimer {
+    started: Instant,
     now_ms: u64,
     deadline_ms: Option<u64>,
     install_calls: Vec<(u64, u32)>,
     stop_calls: usize,
     fail_next_install: bool,
+}
+
+impl Default for NativeTimer {
+    fn default() -> Self {
+        Self {
+            started: Instant::now(),
+            now_ms: 0,
+            deadline_ms: None,
+            install_calls: Vec::new(),
+            stop_calls: 0,
+            fail_next_install: false,
+        }
+    }
 }
 
 impl NativeTimer {
@@ -31,8 +44,13 @@ fn request(
     timer: &RefCell<NativeTimer>,
     interval: Option<u32>,
 ) -> bool {
+    let now = {
+        let timer = timer.borrow();
+        timer.started + Duration::from_millis(timer.now_ms)
+    };
     monitor.update(
         interval,
+        now,
         |interval| timer.borrow_mut().install(interval),
         || timer.borrow_mut().stop(),
     )
@@ -60,6 +78,10 @@ fn repeated_fast_input_requests_preserve_the_due_monitor_turn() {
         assert_eq!(timer.borrow().install_calls, [(0, 16)]);
         assert!(timer.borrow().deadline_ms.unwrap() < timer.borrow().now_ms);
         assert_eq!(timer.borrow().stop_calls, 0);
+        let started = timer.borrow().started;
+        assert!(!monitor.service_due(started + Duration::from_millis(15)));
+        assert!(monitor.service_due(started + Duration::from_millis(16)));
+        assert_eq!(monitor.last_service, Some(started));
     }
 }
 
@@ -109,6 +131,7 @@ fn no_live_renderer_stops_and_clears_before_a_fresh_restart() {
     assert!(request(&mut monitor, &timer, Some(16)));
     assert!(request(&mut monitor, &timer, None));
     assert_eq!(monitor.installed_interval, None);
+    assert_eq!(monitor.last_service, None);
     assert_eq!(timer.borrow().deadline_ms, None);
     assert_eq!(timer.borrow().stop_calls, 1);
     assert!(request(&mut monitor, &timer, None));
@@ -116,6 +139,10 @@ fn no_live_renderer_stops_and_clears_before_a_fresh_restart() {
     timer.borrow_mut().now_ms = 100;
     assert!(request(&mut monitor, &timer, Some(16)));
     assert_eq!(monitor.installed_interval, Some(16));
+    assert_eq!(
+        monitor.last_service,
+        Some(timer.borrow().started + Duration::from_millis(100))
+    );
     assert_eq!(timer.borrow().deadline_ms, Some(116));
     assert_eq!(timer.borrow().install_calls, [(0, 16), (100, 16)]);
 }
@@ -129,14 +156,17 @@ fn failed_initial_and_rate_change_installs_retry_until_success() {
     });
     assert!(!request(&mut monitor, &timer, Some(16)));
     assert_eq!(monitor.installed_interval, None);
+    assert_eq!(monitor.last_service, None);
     assert_eq!(timer.borrow().deadline_ms, None);
     timer.borrow_mut().now_ms = 10;
     assert!(request(&mut monitor, &timer, Some(16)));
     assert_eq!(monitor.installed_interval, Some(16));
     assert_eq!(timer.borrow().deadline_ms, Some(26));
     timer.borrow_mut().fail_next_install = true;
+    let previous_service = monitor.last_service;
     assert!(!request(&mut monitor, &timer, Some(250)));
     assert_eq!(monitor.installed_interval, Some(16));
+    assert_eq!(monitor.last_service, previous_service);
     assert_eq!(timer.borrow().deadline_ms, Some(26));
     timer.borrow_mut().now_ms = 20;
     assert!(request(&mut monitor, &timer, Some(250)));
@@ -146,4 +176,49 @@ fn failed_initial_and_rate_change_installs_retry_until_success() {
         timer.borrow().install_calls,
         [(0, 16), (10, 16), (10, 250), (20, 250)]
     );
+}
+
+#[test]
+fn due_fallback_waits_for_the_installed_interval_and_marks_completed_work() {
+    let mut monitor = RendererMonitor::default();
+    let timer = RefCell::new(NativeTimer::default());
+    let started = timer.borrow().started;
+    assert!(!monitor.service_due(started + Duration::from_secs(1)));
+    assert!(request(&mut monitor, &timer, Some(16)));
+    assert!(!monitor.service_due(started + Duration::from_millis(15)));
+    assert!(monitor.service_due(started + Duration::from_millis(16)));
+    // A poll admitted at16ms finishes at40ms; time spent in its atomic report
+    // is not permission to immediately start another whole-window turn.
+    let completed = started + Duration::from_millis(40);
+    monitor.serviced(completed);
+    assert!(!monitor.service_due(completed + Duration::from_millis(15)));
+    assert!(monitor.service_due(completed + Duration::from_millis(16)));
+    assert!(!monitor.native_turn_ready(completed));
+    assert!(!monitor.native_turn_ready(completed + Duration::from_micros(999)));
+    assert!(monitor.native_turn_ready(completed + Duration::from_millis(1)));
+    assert!(monitor.native_turn_ready(completed + Duration::from_millis(13)));
+}
+
+#[test]
+fn successful_rate_changes_reset_due_time_but_failed_changes_preserve_it() {
+    let mut monitor = RendererMonitor::default();
+    let timer = RefCell::new(NativeTimer::default());
+    let started = timer.borrow().started;
+    assert!(request(&mut monitor, &timer, Some(16)));
+    timer.borrow_mut().now_ms = 8;
+    timer.borrow_mut().fail_next_install = true;
+    assert!(!request(&mut monitor, &timer, Some(250)));
+    assert!(monitor.service_due(started + Duration::from_millis(16)));
+    timer.borrow_mut().now_ms = 10;
+    assert!(request(&mut monitor, &timer, Some(250)));
+    assert!(!monitor.service_due(started + Duration::from_millis(259)));
+    assert!(monitor.service_due(started + Duration::from_millis(260)));
+    assert!(request(&mut monitor, &timer, None));
+    monitor.serviced(started + Duration::from_secs(1));
+    assert_eq!(monitor.last_service, None);
+    assert!(!monitor.service_due(started + Duration::from_secs(2)));
+    timer.borrow_mut().now_ms = 1000;
+    assert!(request(&mut monitor, &timer, Some(16)));
+    assert!(!monitor.service_due(started + Duration::from_millis(1015)));
+    assert!(monitor.service_due(started + Duration::from_millis(1016)));
 }

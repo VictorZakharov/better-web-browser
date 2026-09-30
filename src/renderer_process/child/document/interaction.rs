@@ -71,6 +71,7 @@ impl DocumentRuntime {
                 wheel_acknowledgement = Some(crate::renderer_protocol::WheelAcknowledgement {
                     sequence,
                     decision,
+                    viewport_delta_y: outcome.viewport_wheel_delta_y,
                     dispatch_micros: micros(started.elapsed()),
                 });
                 (outcome, None)
@@ -224,6 +225,11 @@ impl DocumentRuntime {
             }
         };
         self.admit_user_input_outcome(&mut outcome, connection)?;
+        if let Some(wheel) = wheel_acknowledgement.as_mut() {
+            // Admission can run callbacks with a later absolute scroll. Retain
+            // only the default-action contribution that survives that barrier.
+            wheel.viewport_delta_y = outcome.viewport_wheel_delta_y;
+        }
         let mut presentation = self.presentation_after_user_input(
             outcome,
             force_accessibility_update,

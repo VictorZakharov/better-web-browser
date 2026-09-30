@@ -1,6 +1,34 @@
 use super::*;
 
 #[test]
+fn delayed_old_viewport_verdicts_are_superseded_but_dom_decisions_remain_observed() {
+    let now = Instant::now();
+    let mut trace = WheelTrace::default();
+    for sequence in 1..=4 {
+        trace.enqueue(document(1), sequence, 126, now);
+    }
+    trace.interrupt_viewport(document(1), Some(-1));
+    trace.acknowledge(document(1), &[ack(1, WheelDecision::Viewport)], None, now);
+    trace.supersede_viewport_before(document(1), 4);
+    assert_eq!(trace.samples[0].status, "superseded");
+    assert_eq!(trace.samples[0].decision, Some(WheelDecision::Viewport));
+    assert!(trace.samples[0].first_paint.is_none());
+    for (sequence, decision) in [
+        (2, WheelDecision::Cancelled),
+        (3, WheelDecision::NestedScroll),
+    ] {
+        trace.acknowledge(document(1), &[ack(sequence, decision)], Some(10), now);
+        trace.supersede_viewport_before(document(1), 4);
+    }
+    assert_eq!(trace.samples[1].status, "cancelled");
+    assert_eq!(trace.samples[2].status, "awaiting_nested_paint");
+    trace.acknowledge(document(1), &[ack(4, WheelDecision::Viewport)], None, now);
+    trace.supersede_viewport_before(document(1), 4);
+    assert_eq!(trace.samples[3].status, "awaiting_viewport_paint");
+    assert_eq!(trace.unmatched_acknowledgements, 0);
+}
+
+#[test]
 fn viewport_direction_endpoints_are_observed_once_for_the_owning_pending_input() {
     let now = Instant::now();
     let mut trace = WheelTrace::default();
@@ -12,6 +40,7 @@ fn viewport_direction_endpoints_are_observed_once_for_the_owning_pending_input()
         &[WheelAcknowledgement {
             sequence: 1,
             decision: WheelDecision::Viewport,
+            viewport_delta_y: -126.0,
             dispatch_micros: 10,
         }],
         None,
@@ -125,6 +154,11 @@ fn ack(sequence: u64, decision: WheelDecision) -> WheelAcknowledgement {
     WheelAcknowledgement {
         sequence,
         decision,
+        viewport_delta_y: if decision == WheelDecision::Viewport {
+            126.0
+        } else {
+            0.0
+        },
         dispatch_micros: 10_000,
     }
 }
