@@ -185,7 +185,7 @@ fn idle_and_reversed_gestures_start_with_a_prompt_first_frame() {
     position = next_scroll_position(position, 9_000, first_elapsed);
 
     assert!(animation.reverses_pending(position, -1));
-    assert!(animation.cancel());
+    assert!(animation.cancel(true).was_active);
     assert_eq!(animation.last_frame, None);
     let request = animation.plan_distance(position, -WHEEL_STEP_DIP, 10_000);
     assert_eq!(request.target, position - WHEEL_STEP_DIP);
@@ -194,8 +194,8 @@ fn idle_and_reversed_gestures_start_with_a_prompt_first_frame() {
     assert_eq!(reverse_elapsed, Duration::from_millis(15));
     assert!(next_scroll_position(position, request.target, reverse_elapsed) < position);
 
-    assert!(animation.cancel());
-    assert!(!animation.cancel());
+    assert!(animation.cancel(true).was_active);
+    assert!(!animation.cancel(true).was_active);
     assert_eq!(animation.target, None);
     assert_eq!(animation.last_frame, None);
 }
@@ -330,4 +330,70 @@ fn zero_same_direction_and_finished_targets_do_not_request_cancellation() {
         assert!(!animation.reverses_pending(500 + direction * 100, -direction));
     }
     assert!(!ScrollAnimation::default().reverses_pending(500, -1));
+}
+
+#[test]
+fn suspended_gesture_returns_with_a_fresh_same_direction_animation() {
+    for direction in [-1, 1] {
+        let now = Instant::now();
+        let mut animation = ScrollAnimation {
+            target: Some(1_000 + direction * WHEEL_STEP_DIP),
+            last_frame: Some(now),
+            wheel_delta_remainder: direction * 119,
+            pixel_remainder: direction as f64 * 0.25,
+        };
+        let cancellation = animation.cancel(true);
+        animation.discard_input_remainders();
+        assert!(cancellation.was_active && cancellation.stop_timer);
+        assert_eq!(animation.target, None);
+        assert_eq!(animation.last_frame, None);
+        assert_eq!(animation.wheel_delta_remainder, 0);
+        assert_eq!(animation.pixel_remainder, 0.0);
+        let request = animation.plan_distance(1_000, direction * WHEEL_STEP_DIP, 2_000);
+        assert_eq!(request.target, 1_000 + direction * WHEEL_STEP_DIP);
+        assert!(animation.retarget(request.target));
+        let elapsed = animation.frame_elapsed(now + Duration::from_secs(1));
+        assert_eq!(elapsed, Duration::from_millis(15));
+        assert_eq!(
+            next_scroll_position(1_000, request.target, elapsed).cmp(&1_000),
+            direction.cmp(&0)
+        );
+    }
+}
+
+#[test]
+fn background_defaults_and_absolute_cancellation_cannot_take_the_window_timer() {
+    let now = Instant::now();
+    let mut background = ScrollAnimation {
+        target: Some(900),
+        last_frame: Some(now),
+        ..ScrollAnimation::default()
+    };
+    // Cancellation is shared by accepted background wheel defaults and script
+    // absolute scroll requests. Neither may stop the foreground HWND timer.
+    let cancellation = background.cancel(false);
+    assert!(cancellation.was_active);
+    assert!(!cancellation.stop_timer);
+    let request = immediate_scroll_request(500, WHEEL_STEP_DIP, 1_000);
+    assert_eq!(
+        request.target, 626,
+        "late input starts at the actual position"
+    );
+    assert_eq!(background.target, None);
+    assert_eq!(background.last_frame, None);
+    let mut position = 500;
+    for _ in 0..16 {
+        let distance = background.consume_css_delta(0.25, 1.25);
+        assert!(!background.cancel(false).stop_timer);
+        position = immediate_scroll_request(position, distance, 1_000).target;
+    }
+    assert_eq!(
+        position, 505,
+        "direct defaults retain fractional CSS distance"
+    );
+    for (position, distance, target) in [(0, -126, 0), (1_000, 126, 1_000), (990, 126, 1_000)] {
+        let request = immediate_scroll_request(position, distance, 1_000);
+        assert_eq!(request.target, target);
+        assert_eq!(request.introduces_motion, target != position);
+    }
 }

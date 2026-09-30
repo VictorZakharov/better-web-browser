@@ -25,6 +25,19 @@ struct ScrollRequest {
     introduces_motion: bool,
 }
 
+struct ScrollCancellation {
+    was_active: bool,
+    stop_timer: bool,
+}
+
+fn immediate_scroll_request(position: i32, distance: i32, maximum: i32) -> ScrollRequest {
+    let target = position.saturating_add(distance).clamp(0, maximum);
+    ScrollRequest {
+        target,
+        introduces_motion: target != position,
+    }
+}
+
 impl ScrollAnimation {
     fn reverses_pending(&self, position: i32, direction: i32) -> bool {
         let remaining = self.target.unwrap_or(position).saturating_sub(position);
@@ -70,10 +83,13 @@ impl ScrollAnimation {
             .min(MAX_FRAME_ELAPSED)
     }
 
-    fn cancel(&mut self) -> bool {
+    fn cancel(&mut self, owns_timer: bool) -> ScrollCancellation {
         let was_active = self.target.take().is_some();
         self.last_frame = None;
-        was_active
+        ScrollCancellation {
+            was_active,
+            stop_timer: owns_timer,
+        }
     }
 
     fn consume_css_delta(&mut self, delta: f32, scale: f32) -> i32 {
@@ -105,6 +121,12 @@ fn next_scroll_position(position: i32, target: i32, elapsed: Duration) -> i32 {
 }
 
 impl BrowserState {
+    pub(super) unsafe fn suspend_wheel_gesture(&mut self) {
+        self.record_benchmark_scroll_interruption(None);
+        self.cancel_scroll_animation();
+        self.scroll_animation.discard_input_remainders();
+    }
+
     pub(super) unsafe fn apply_script_viewport_scroll(&mut self, css_y: Option<f32>) {
         if let Some(y) = css_y.filter(|y| y.is_finite() && *y >= 0.0) {
             self.scroll_to((y * self.page_scale()).round() as i32);
@@ -157,11 +179,20 @@ impl BrowserState {
 
     unsafe fn queue_scroll_distance(&mut self, distance: i32) {
         let maximum = (self.content_height - self.viewport_height()).max(0);
+        if self.processing_background_tab {
+            // A late accepted default action belongs to this tab's document,
+            // while the shared HWND timer belongs to the foreground tab.
+            self.cancel_scroll_animation();
+            let request = immediate_scroll_request(self.scroll_y, distance, maximum);
+            self.resolve_benchmark_wheel_viewport_request(request.introduces_motion);
+            self.commit_scroll_position(request.target);
+            return;
+        }
         let request = self
             .scroll_animation
             .plan_distance(self.scroll_y, distance, maximum);
-        // This must precede tick_scroll_animation: it can synchronously paint an
-        // unchanged old target, and later timer ticks continue that same animation.
+        // Resolve ownership before a new animation can synchronously paint its
+        // first frame; an active animation continues on its existing timer.
         self.resolve_benchmark_wheel_viewport_request(request.introduces_motion);
         let target = request.target;
         if target == self.scroll_y && self.scroll_animation.target.is_none() {
@@ -191,6 +222,9 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn tick_scroll_animation(&mut self) {
+        if self.processing_background_tab {
+            return;
+        }
         let Some(target) = self.scroll_animation.target else {
             KillTimer(self.window, ID_SCROLL_ANIMATION_TIMER);
             return;
@@ -213,10 +247,12 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn cancel_scroll_animation(&mut self) {
-        if self.scroll_animation.cancel() {
+        let owns_timer = !self.processing_background_tab;
+        let cancellation = self.scroll_animation.cancel(owns_timer);
+        if cancellation.was_active {
             self.performance.end_frame_sequence(Instant::now());
         }
-        if !self.window.is_null() {
+        if cancellation.stop_timer && !self.window.is_null() {
             KillTimer(self.window, ID_SCROLL_ANIMATION_TIMER);
         }
     }

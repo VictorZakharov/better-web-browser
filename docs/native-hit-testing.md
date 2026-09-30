@@ -184,6 +184,13 @@ paint; an explicit absolute scroll or reversal supersedes unfinished ownership.
 Bounded animation traces record observed native position commits separately
 from retained first-paint evidence and display scanout.
 
+Foreground tab suspension cancels its unfinished gesture and input residues.
+Returning to that tab starts a fresh animation rather than retaining a target
+whose window timer has stopped. A late accepted wheel default action for a
+background tab commits that document's clamped distance directly; it cannot
+start, reset or stop the foreground tab's shared window timer. Absolute scroll
+requests in a background tab likewise cancel only that tab's animation state.
+
 Renderer output compaction preserves opposite nonzero wheel directions as
 separate ordered reports rather than netting their distances. This interrupts
 animation, not DOM event delivery: trusted listeners, `preventDefault()`, nested
@@ -193,7 +200,8 @@ input, edge clamping, and the production first-frame response curve. Benchmark
 traces retain actual admission/first-paint viewport positions; missing evidence
 is null, never inferred from an acknowledgement or requested delta.
 
-Eight fresh hidden release runs used 1280×720 at 125% scale, `en-US`, an initial
+The reversal-only head (`12d8b91`) was tested with eight fresh hidden release
+runs using 1280×720 at 125% scale, `en-US`, an initial
 2,000 CSS-pixel scroll, eight 126 CSS-pixel wheel inputs in one direction, then
 one opposite input. Both directions and 15/30 ms spacing were tested on an owned
 long page and live HTML5test. All 72 inputs retained their verdicts, without
@@ -203,6 +211,26 @@ direction: 0.843–1.135 ms enqueue-to-paint on the owned page, and
 4.036–24.681 ms on HTML5test. These are small diagnostic samples of hidden
 retained paint, not monitor scanout or a Chrome speed comparison. The earlier
 hit-index before/after timings above were measured before this reversal follow-up.
+
+The continuous-timer follow-up (`7149374`) was then tested with six fresh hidden
+release runs at the same viewport, scale and locale. Each run observed exactly
+one initial frame, periodic timer commits while input continued, and tail
+commits after the last input. All 160 inputs were retained without missing
+verdicts, omitted animation frames, JavaScript errors or renderer exits. Every
+run finished at its exact accumulated target without direction reversals.
+
+| Continuous input | Timer commits during input | Tail commits | Maximum observed commit interval |
+| --- | ---: | ---: | ---: |
+| Owned long page, 32 inputs at 8 ms, both directions | 16 / 17 | 25 / 24 | 20.877 / 19.982 ms |
+| Owned long page, 32 inputs at 10 ms, both directions | 20 / 21 | 23 / 22 | 19.422 / 16.869 ms |
+| Live HTML5test, 16 inputs at 10 ms, both directions | 9 / 10 | 22 / 20 | 30.706 / 21.018 ms |
+
+These are observed native position commits, not display scanout. The diagnostic
+does not establish pixel-perfect Chrome cadence or include tab switching;
+separate production-state tests cover tab suspension and background timer
+ownership. Eight further reversal runs on this head retained all 72 inputs:
+reverse first owning paints moved 30.4 CSS pixels in the new direction, taking
+0.781–1.113 ms on the owned page and 3.697–28.624 ms on HTML5test.
 
 ## References
 
