@@ -9,7 +9,7 @@ fn implemented_audio_containers_skip_unknown_codecs_and_select_the_real_candidat
     ] {
         let page = Page::parse(
             &format!(
-                "<audio><source src='unknown.webm' type='audio/webm;codecs=opus'>\
+                "<audio><source src='unknown.webm' type='audio/webm;codecs=unknown'>\
              <source src='{file}' type='{mime}'><source src='fallback.wav' type='audio/wav'></audio>"
             ),
             "https://example.com/media/",
@@ -45,7 +45,7 @@ fn failed_new_container_advances_once_and_retires_its_old_resource() {
         let mut page = Page::parse(
             &format!(
                 "<audio><source src='broken.{extension}' type='{mime}'>\
-             <source src='unknown.webm' type='audio/webm;codecs=opus'>\
+             <source src='unknown.webm' type='audio/webm;codecs=unknown'>\
              <source src='fallback.mp3' type='audio/mpeg'></audio>"
             ),
             "https://example.com/media/",

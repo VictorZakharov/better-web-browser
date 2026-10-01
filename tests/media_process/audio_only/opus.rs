@@ -25,7 +25,14 @@ fn contained_opus_mono_and_stereo_play_pause_end_seek_and_replace_without_video(
     let mut options = decode_options();
     options.silent_audio = true;
     let mut session = MediaSession::launch(options).expect("launch hidden Opus media worker");
-    for (bytes, channels) in fixtures() {
+    let mut sources = fixtures().to_vec();
+    sources.push((
+        decode_base64(include_str!(
+            "../../fixtures/media/test-0.4s-opus.webm.base64"
+        )),
+        1,
+    ));
+    for (bytes, channels) in sources {
         let (source, report) = session.decode_owned_audio_fixture(&bytes).unwrap();
         assert_eq!(report.audio_codec, MediaCodecFamily::Opus);
         assert_eq!(report.video_codec, MediaCodecFamily::None);

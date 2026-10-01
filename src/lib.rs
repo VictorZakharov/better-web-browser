@@ -35,6 +35,7 @@ pub(crate) mod media_type;
 pub(crate) mod iso_bmff_audio;
 pub(crate) mod ogg_vorbis_headers;
 pub(crate) mod opus_audio;
+pub(crate) mod webm_opus;
 
 #[cfg(target_os = "windows")]
 pub mod renderer_process;

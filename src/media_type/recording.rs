@@ -12,6 +12,7 @@ pub(crate) fn recording_kind(input: &str) -> &'static str {
     match kind.essence.as_str() {
         "audio/flac" if kind.parameters == 0 => "flac",
         "audio/ogg" if kind.parameters == 0 => "opus",
+        "audio/webm" if kind.parameters == 0 => "webm-opus",
         "audio/ogg"
             if kind.parameters == 1
                 && kind.codecs.as_deref().is_some_and(|codec| {
@@ -19,6 +20,14 @@ pub(crate) fn recording_kind(input: &str) -> &'static str {
                 }) =>
         {
             "opus"
+        }
+        "audio/webm"
+            if kind.parameters == 1
+                && kind.codecs.as_deref().is_some_and(|codec| {
+                    codec.trim_matches([' ', '\t']).eq_ignore_ascii_case("opus")
+                }) =>
+        {
+            "webm-opus"
         }
         _ => "",
     }
@@ -45,7 +54,7 @@ mod tests {
             ("audio/ogg;codecs=opus;note=ignored", ""),
             ("audio/ogg;note=\"codecs=opus\"", ""),
             ("audio/flac;codecs=flac", ""),
-            ("audio/webm;codecs=opus", ""),
+            ("audio/webm;codecs=opus", "webm-opus"),
             ("audio/opus", ""),
             ("application/ogg;codecs=opus", ""),
             ("video/ogg;codecs=opus", ""),

@@ -56,6 +56,7 @@ pub(crate) fn capability_content_type(input: &str, media: &str, mode: &str) -> &
         }
     }
     let supported = match mode {
+        "record" => media == "audio" && !super::recording_kind(input).is_empty(),
         "file" => !can_play_type(input).is_empty(),
         "media-source" => media_source_supported(input),
         _ => false,
@@ -112,7 +113,7 @@ pub(crate) fn audio_parameters_supported(
         return false;
     };
     let rate = rate as u64;
-    if kind.essence == "audio/ogg"
+    if matches!(kind.essence.as_str(), "audio/ogg" | "audio/webm")
         && kind
             .codecs
             .as_deref()
@@ -151,7 +152,7 @@ mod tests {
     fn capability_queries_validate_track_mime_separately_from_support() {
         for (input, media, expected) in [
             ("audio/webm;codecs=vorbis", "audio", "supported"),
-            ("audio/webm;codecs=opus", "audio", "unsupported"),
+            ("audio/webm;codecs=opus", "audio", "supported"),
             ("video/webm;codecs=vp8", "video", "unsupported"),
             ("audio/webm;codecs=vorbis", "video", "invalid"),
             ("video/mp4;codecs=mp4a.40.2", "video", "invalid"),

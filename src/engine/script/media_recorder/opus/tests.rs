@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 mod exhaustion;
+mod webm;
 
 fn pcm(rate: usize, channels: usize, frames: usize, offset: usize) -> Vec<u8> {
     (offset..offset + frames)

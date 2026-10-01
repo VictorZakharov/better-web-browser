@@ -60,7 +60,7 @@ fn can_play_type_reports_only_decodeable_complete_source_audio_and_video() {
                 [audio, 'audio/ogg; codecs="flac"', 'probably'],
                 [audio, 'audio/webm', 'maybe'],
                 [audio, 'audio/webm; codecs="vorbis"', 'probably'],
-                [audio, 'audio/webm; codecs="opus"', ''],
+                [audio, 'audio/webm; codecs="opus"', 'probably'],
                 [audio, 'audio/ogg', 'maybe'],
                 [audio, 'audio/ogg; codecs="vorbis"', 'probably'],
                 [audio, 'audio/ogg; codecs="vorbis, opus"', ''],

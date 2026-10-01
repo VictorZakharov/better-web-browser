@@ -3,8 +3,8 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `f79f05f0604c88283bc871d221701bf2ea8ee322529627f0605140945409eea4`
-- Third-party packages: 243
+- Cargo.lock SHA-256: `3562db7184805c8b95d82c30c452220e2c7747789a704c26c652b1e6bd4bd63f`
+- Third-party packages: 259
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
@@ -53,6 +53,9 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `displaydoc` | 0.2.7 | MIT OR Apache-2.0 | [upstream](https://github.com/yaahc/displaydoc) |
 | `dtoa` | 1.0.11 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/dtoa) |
 | `dtoa-short` | 0.3.5 | MPL-2.0 | [upstream](https://github.com/upsuper/dtoa-short) |
+| `ebml-iterable` | 0.7.1 | MIT | [upstream](https://github.com/austinleroy/ebml-iterable) |
+| `ebml-iterable-specification` | 0.4.0 | MIT | [upstream](https://github.com/austinleroy/ebml-iterable) |
+| `ebml-iterable-specification-derive` | 0.4.0 | MIT | [upstream](https://github.com/austinleroy/ebml-iterable) |
 | `either` | 1.17.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rayon-rs/either) |
 | `encoding_rs` | 0.8.35 | (Apache-2.0 OR MIT) AND BSD-3-Clause | [upstream](https://github.com/hsivonen/encoding_rs) |
 | `euclid` | 0.22.14 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/euclid) |
@@ -68,6 +71,15 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `fontique` | 0.11.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/parley) |
 | `form_urlencoded` | 1.2.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url) |
 | `fslock` | 0.2.1 | MIT | [upstream](https://github.com/brunoczim/fslock) |
+| `futures` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
+| `futures-channel` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
+| `futures-core` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
+| `futures-executor` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
+| `futures-io` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
+| `futures-macro` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
+| `futures-sink` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
+| `futures-task` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
+| `futures-util` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
 | `generic-array` | 0.14.7 | MIT | [upstream](https://github.com/fizyk20/generic-array.git) |
 | `getrandom` | 0.4.3 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-random/getrandom) |
 | `gif` | 0.14.2 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image-gif) |
@@ -136,6 +148,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `phf_macros` | 0.13.1 | MIT | [upstream](https://github.com/rust-phf/rust-phf) |
 | `phf_shared` | 0.13.1 | MIT | [upstream](https://github.com/rust-phf/rust-phf) |
 | `pico-args` | 0.5.0 | MIT | [upstream](https://github.com/RazrFalcon/pico-args) |
+| `pin-project-lite` | 0.2.17 | Apache-2.0 OR MIT | [upstream](https://github.com/taiki-e/pin-project-lite) |
 | `png` | 0.18.1 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image-png) |
 | `polycool` | 0.4.0 | MIT OR Apache-2.0 | [upstream](https://github.com/linebender/kurbo) |
 | `potential_utf` | 0.1.5 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
@@ -172,6 +185,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `simplecss` | 0.2.2 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/simplecss) |
 | `siphasher` | 1.0.3 | MIT/Apache-2.0 | [upstream](https://github.com/jedisct1/rust-siphash) |
 | `skrifa` | 0.44.0 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
+| `slab` | 0.4.12 | MIT | [upstream](https://github.com/tokio-rs/slab) |
 | `smallvec` | 1.15.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-smallvec) |
 | `stable_deref_trait` | 1.2.1 | MIT OR Apache-2.0 | [upstream](https://github.com/storyyeller/stable_deref_trait) |
 | `static_assertions` | 1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/nvzqz/static-assertions-rs) |
@@ -192,6 +206,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `symphonia-format-mkv` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
 | `symphonia-format-ogg` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
 | `symphonia-metadata` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
+| `syn` | 1.0.109 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/syn) |
 | `syn` | 2.0.119 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/syn) |
 | `syn` | 3.0.3 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/syn) |
 | `synstructure` | 0.13.2 | MIT | [upstream](https://github.com/mystor/synstructure) |
@@ -218,6 +233,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `v8` | 152.2.0 | MIT | [upstream](https://github.com/denoland/rusty_v8) |
 | `version_check` | 0.9.5 | MIT/Apache-2.0 | [upstream](https://github.com/SergioBenitez/version_check) |
 | `web_atoms` | 0.2.6 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/html5ever) |
+| `webm-iterable` | 0.7.1 | MIT | [upstream](https://github.com/austinleroy/webm-iterable) |
 | `weezl` | 0.1.12 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/weezl) |
 | `which` | 6.0.3 | MIT | [upstream](https://github.com/harryfei/which-rs.git) |
 | `winapi` | 0.3.9 | MIT/Apache-2.0 | [upstream](https://github.com/retep998/winapi-rs) |
@@ -257,5 +273,6 @@ This file describes the complete third-party Rust graph linked into the Windows 
 - `psl2` embeds a compact Mozilla Public Suffix List snapshot. The crate is MIT OR Apache-2.0; the list data is MPL-2.0. The crate and list versions are pinned by `Cargo.lock` and `psl2::psl_version()`.
 - The AccessKit crates are MIT OR Apache-2.0 and contain portions derived from Chromium under a BSD license. The required upstream notice is preserved at `third_party/accesskit/LICENSE.chromium` and copied beside every AccessKit package notice in release archives.
 - `opus` 0.4.0 is the MIT OR Apache-2.0 safe Rust API. `opusic-sys` 0.7.5 statically builds bundled libopus 1.6.1 (BSD-3-Clause), not a downloaded system codec. Its package `LICENSE` is the complete upstream libopus `COPYING` notice; release packaging verifies that equality and retains the notice beside the Rust wrapper licenses. Native decoder code executes only in contained audio jobs. See `docs/ogg-opus.md` for provenance, build policy, and supported formats.
+- `webm-iterable` 0.7.1 and its `ebml-iterable` / specification / derive crates are MIT. Breeze uses the upstream writer for bounded browser-generated WebM/Opus recordings, not its reader for author input. Published checksums are locked; no upstream source is vendored or modified. The existing Symphonia demuxer and libopus decoder handle playback. `crc32fast` 1.5.0 (MIT OR Apache-2.0), already in the locked graph, verifies optional EBML checksums. See `docs/webm-opus.md` for the admission and dependency review boundaries.
 
 The release archive also contains each available package license/notice file under `licenses/<crate>-<version>/`. When a published crate omits a standalone license file, its package notice records the Cargo license expression and upstream repository. SPDX expressions in this document state the choices declared by each package; they do not relicense third-party work.

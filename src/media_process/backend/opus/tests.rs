@@ -22,6 +22,21 @@ fn fixtures() -> [(Vec<u8>, u16); 2] {
     })
 }
 
+fn supported_fixtures() -> Vec<(Vec<u8>, u16)> {
+    let mut fixtures = fixtures().to_vec();
+    fixtures.push((
+        base64::engine::general_purpose::STANDARD
+            .decode(
+                include_str!("../../../../tests/fixtures/media/test-0.4s-opus.webm.base64")
+                    .split_whitespace()
+                    .collect::<String>(),
+            )
+            .unwrap(),
+        1,
+    ));
+    fixtures
+}
+
 fn collect(decoder: &mut OpusDecoder) -> Vec<u8> {
     let mut result = Vec::new();
     while let Some(bytes) = decoder.next_sample().unwrap() {
@@ -129,7 +144,7 @@ fn opus_media_streams_more_than_an_audio_buffer_budget_without_whole_file_pcm_al
 
 #[test]
 fn opus_report_and_stream_use_only_actual_mono_or_stereo_presentation_pcm() {
-    for (bytes, channels) in fixtures() {
+    for (bytes, channels) in supported_fixtures() {
         assert!(crate::opus_audio::sniff(&bytes));
         let report = super::super::decode(&bytes, MediaLimits::default())
             .unwrap()
@@ -159,7 +174,7 @@ fn opus_report_and_stream_use_only_actual_mono_or_stereo_presentation_pcm() {
 
 #[test]
 fn opus_exact_seek_returns_the_entire_original_pcm_suffix_including_after_consecutive_seeks() {
-    for (bytes, channels) in fixtures() {
+    for (bytes, channels) in supported_fixtures() {
         let report = decode(&bytes, MediaLimits::default(), Instant::now())
             .unwrap()
             .report;

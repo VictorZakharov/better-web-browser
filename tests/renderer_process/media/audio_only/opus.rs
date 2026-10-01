@@ -2,23 +2,34 @@ use super::*;
 
 #[test]
 fn contained_renderer_opus_mono_and_stereo_sources_play_and_seek_without_video() {
-    for (document, fixture, path) in [
+    for (document, fixture, path, mime, response_type) in [
         (
             230,
             include_str!("../../../fixtures/media/test-0.4s-opus.ogg.base64"),
             "/tone.opus",
+            "audio/ogg; codecs=\"opus\"",
+            "audio/ogg",
         ),
         (
             231,
             include_str!("../../../fixtures/media/test-0.4s-opus-stereo.ogg.base64"),
             "/stereo.opus",
+            "audio/ogg; codecs=\"opus\"",
+            "audio/ogg",
+        ),
+        (
+            234,
+            include_str!("../../../fixtures/media/test-0.4s-opus.webm.base64"),
+            "/tone.webm",
+            "audio/webm; codecs=\"opus\"",
+            "audio/webm",
         ),
     ] {
         verify_audio_source_with_seek(
             document,
             path,
-            "audio/ogg; codecs=\"opus\"",
-            "audio/ogg",
+            mime,
+            response_type,
             "Opus",
             decode_base64(fixture),
             "0.2",
@@ -57,6 +68,13 @@ fn contained_renderer_decodes_opus_audio_buffers_with_real_resampled_pcm_and_asy
             2,
             44_100,
             17_640,
+        ),
+        (
+            235,
+            include_str!("../../../fixtures/media/test-0.4s-opus.webm.base64"),
+            1,
+            96_000,
+            38_400,
         ),
     ] {
         let document = better_web_browser::renderer_protocol::DocumentId::new(id).unwrap();

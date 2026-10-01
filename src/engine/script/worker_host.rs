@@ -119,6 +119,9 @@ pub(super) fn dispatch_worker_host_call(
     args: &[JsValue],
     state: &mut WorkerHostState,
 ) -> JsResult<JsValue> {
+    if let Some(value) = super::media_host::capabilities::dispatch(operation, args) {
+        return Ok(value);
+    }
     if let Some(value) = super::text_encoding_host::text_encoding_host_call(
         operation,
         args,
@@ -148,12 +151,14 @@ pub(super) fn dispatch_worker_host_call(
         )?)),
         "performanceNow" => Ok(JsValue::from(state.performance_clock.now())),
         "performanceTimeOrigin" => Ok(JsValue::from(state.performance_clock.time_origin())),
-        "performanceTaskSchedule" => {
+        "performanceTaskSchedule" | "mediaCapabilitiesTaskSchedule" => {
             let id = argument_id(args, 1);
-            let handle =
-                state
-                    .timers
-                    .queue_task(TaskSource::PerformanceTimeline, Duration::ZERO, id);
+            let source = if operation == "performanceTaskSchedule" {
+                TaskSource::PerformanceTimeline
+            } else {
+                TaskSource::MediaElement
+            };
+            let handle = state.timers.queue_task(source, Duration::ZERO, id);
             state.timer_handles.insert(id, handle);
             Ok(JsValue::from(id))
         }

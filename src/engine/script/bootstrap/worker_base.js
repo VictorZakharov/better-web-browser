@@ -158,6 +158,8 @@
         queue: callback => queueTimer(callback, 0, false, [], 'performanceTaskSchedule'),
         report: error => reportGlobalException(error, 'PerformanceObserver')
     };
+    globalThis.__mediaCapabilitiesQueue = callback =>
+        queueTimer(callback, 0, false, [], 'mediaCapabilitiesTaskSchedule');
     globalThis.queueMicrotask = callback => {
         if (typeof callback !== 'function') throw new TypeError('queueMicrotask requires a callback');
         host('queueMicrotask', () => {

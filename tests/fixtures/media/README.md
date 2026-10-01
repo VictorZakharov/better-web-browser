@@ -133,8 +133,12 @@ that duration as an exact sample count.
 
 `test-0.4s-opus.webm.base64` encodes the same signal as mono Opus (48,000 Hz).
 `test-0.4s-mixed.webm.base64` combines that Vorbis tone with a self-authored
-16×16 black VP8 video. Both are intentionally unsupported fixtures: an audio
-consumer must reject them without silently decoding just the supported track.
+16×16 black VP8 video. WebM/Opus now exercises complete-file decoding and
+contained playback with 19,200 presentation frames. The mixed video fixture
+remains intentionally unsupported: an audio consumer must reject it without
+silently decoding just the supported track. Test-only envelopes independently
+remux the owned Opus packets to cover lacing, timing, CRCs and malformed input;
+browser-generated recording chunks are also decoded through the real codec.
 
 Reproduce these fixtures with the reviewed development-only generator:
 
@@ -154,7 +158,7 @@ self-authored generated signals are distributed under the repository license.
 | ADTS AAC-LC | 5,369 | `76b93e544d01b957964254985a1281fe779a26169e52a903f04fd7755644a2c4` |
 | WebM/Vorbis | 4,545 | `ce4d94bcda536a557366c4d910b2661ab78dbebc624d4d4b953fb051dfc478a7` |
 | Ogg/FLAC | 4,970 | `13fe9b23d28fbcf68361a0987066058715127136e6261efe9f44330b6ce209e3` |
-| WebM/Opus (rejected) | 2,348 | `b879b6246f21074e21b40b41799409b1b58105def5e05aa8304415f33eb6582b` |
+| WebM/Opus | 2,348 | `b879b6246f21074e21b40b41799409b1b58105def5e05aa8304415f33eb6582b` |
 | WebM/VP8+Vorbis (rejected) | 4,810 | `872c2207771fd20478ce17bfd2396c8cc9f0d492048bd546edfb6b2b60f98917` |
 
 ## Self-authored Ogg/Opus presentation fixtures

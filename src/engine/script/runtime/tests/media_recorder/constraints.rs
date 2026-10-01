@@ -50,7 +50,7 @@ fn recorder_rejects_unsupported_formats_and_changed_track_sets() {
     let body = dom.elements_named("body").next().unwrap();
     assert_eq!(
         body.attr("data-supported").as_deref(),
-        Some("true,true,false,true,false,false,false,false,true,false")
+        Some("true,true,false,true,false,false,false,true,true,false")
     );
     assert_eq!(
         body.attr("data-mime-error").as_deref(),

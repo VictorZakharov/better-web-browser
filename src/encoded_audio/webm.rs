@@ -2,6 +2,8 @@
 //! interprets timing, block lacing and packets after this allocation preflight.
 
 use super::Budget;
+#[path = "webm_checksum.rs"]
+mod checksum;
 #[path = "webm_timing.rs"]
 mod timing;
 
@@ -13,10 +15,21 @@ const TRACK: u32 = 0xae;
 const MAX_LEAF: usize = 256 * 1024;
 
 pub(super) fn validate(bytes: &[u8], budget: &mut Budget<'_>) -> Result<(), String> {
+    validate_profile(bytes, budget, false)
+}
+
+pub(crate) fn validate_profile(
+    bytes: &[u8],
+    budget: &mut Budget<'_>,
+    opus: bool,
+) -> Result<(), String> {
     if !bytes.starts_with(&HEADER.to_be_bytes()) {
         return Err("WebM EBML header is missing".into());
     }
-    let mut policy = Policy::default();
+    let mut policy = Policy {
+        opus,
+        ..Policy::default()
+    };
     walk(bytes, 0, 0, budget, &mut policy)?;
     if policy.headers != 1
         || !policy.webm
@@ -24,7 +37,7 @@ pub(super) fn validate(bytes: &[u8], budget: &mut Budget<'_>) -> Result<(), Stri
         || policy.tracks != 1
         || policy.blocks == 0
     {
-        return Err("WebM requires one complete document with one Vorbis audio track".into());
+        return Err("WebM requires one complete document with one admitted audio track".into());
     }
     policy.timing.validate()?;
     Ok(())
@@ -32,6 +45,7 @@ pub(super) fn validate(bytes: &[u8], budget: &mut Budget<'_>) -> Result<(), Stri
 
 #[derive(Default)]
 struct Policy {
+    opus: bool,
     headers: usize,
     webm: bool,
     segments: usize,
@@ -51,7 +65,8 @@ fn walk(
         return Err("WebM metadata nesting exceeds admission limit".into());
     }
     let mut audio_type = false;
-    let mut vorbis = false;
+    let original_len = bytes.len();
+    let mut codec = false;
     let mut private = false;
     let mut timestamp = false;
     while !bytes.is_empty() {
@@ -81,6 +96,12 @@ fn walk(
         }
         policy.timing.metadata(id, parent, payload)?;
         match id {
+            0xbf => checksum::validate(
+                parent != 0 && bytes.len() == original_len,
+                payload,
+                &bytes[end..],
+                budget,
+            )?,
             HEADER => {
                 if parent != 0 || policy.headers != 0 || policy.segments != 0 || unknown {
                     return Err("WebM EBML header is misplaced or repeated".into());
@@ -131,16 +152,21 @@ fn walk(
                 audio_type = true;
             }
             0x86 if parent == TRACK => {
-                if vorbis || payload != b"A_VORBIS" {
-                    return Err("WebM audio codec is not Vorbis".into());
+                let expected: &[u8] = if policy.opus { b"A_OPUS" } else { b"A_VORBIS" };
+                if codec || payload != expected {
+                    return Err("WebM audio codec does not match the admitted profile".into());
                 }
-                vorbis = true;
+                codec = true;
             }
             0x63a2 if parent == TRACK => {
                 if private {
                     return Err("WebM repeats CodecPrivate".into());
                 }
-                crate::ogg_vorbis_headers::preflight_xiph_laced(payload, 8)?;
+                if policy.opus {
+                    crate::webm_opus::header::read(payload)?;
+                } else {
+                    crate::ogg_vorbis_headers::preflight_xiph_laced(payload, 8)?;
+                }
                 private = true;
             }
             0xe0 | 0x6d80 | 0xe2 => {
@@ -172,8 +198,8 @@ fn walk(
         }
         bytes = &bytes[end..];
     }
-    if parent == TRACK && (!audio_type || !vorbis || !private) {
-        return Err("WebM Vorbis track headers are incomplete".into());
+    if parent == TRACK && (!audio_type || !codec || !private) {
+        return Err("WebM audio track headers are incomplete".into());
     }
     if parent == CLUSTER && !timestamp {
         return Err("WebM Cluster has no Timestamp".into());
@@ -181,7 +207,10 @@ fn walk(
     Ok(())
 }
 
-fn unknown_cluster_length(bytes: &[u8], budget: &mut Budget<'_>) -> Result<usize, String> {
+pub(crate) fn unknown_cluster_length(
+    bytes: &[u8],
+    budget: &mut Budget<'_>,
+) -> Result<usize, String> {
     // An unknown-sized Cluster ends at the next Segment-level element, not
     // necessarily at EOF. Do not recursively nest following live clusters.
     let mut offset = 0_usize;
@@ -218,7 +247,7 @@ fn unknown_cluster_length(bytes: &[u8], budget: &mut Budget<'_>) -> Result<usize
     Ok(offset)
 }
 
-fn vint(bytes: &[u8], id: bool) -> Result<(u64, usize), String> {
+pub(crate) fn vint(bytes: &[u8], id: bool) -> Result<(u64, usize), String> {
     let first = *bytes.first().ok_or("WebM variable integer is truncated")?;
     let width = first.leading_zeros() as usize + 1;
     if width > if id { 4 } else { 8 } {
@@ -238,7 +267,7 @@ fn vint(bytes: &[u8], id: bool) -> Result<(u64, usize), String> {
     Ok((value, width))
 }
 
-fn uint(bytes: &[u8]) -> Result<u64, String> {
+pub(crate) fn uint(bytes: &[u8]) -> Result<u64, String> {
     if bytes.is_empty() || bytes.len() > 8 {
         return Err("WebM unsigned metadata width is invalid".into());
     }

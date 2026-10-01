@@ -9,6 +9,7 @@ use std::time::Instant;
 mod chunks;
 mod lifecycle;
 mod options;
+mod webm;
 
 fn start(options: &str, start_call: &str) -> (dom::Dom, ScriptRuntime, u64) {
     let html = format!(
@@ -113,6 +114,26 @@ fn bytes(dom: &dom::Dom) -> Vec<u8> {
 
 fn decoded(dom: &dom::Dom, channels: u16, frames: u64) -> Vec<f32> {
     let source: Arc<[u8]> = bytes(dom).into();
+    if source.starts_with(&[0x1a, 0x45, 0xdf, 0xa3]) {
+        assert_eq!(attribute(dom, "data-type"), "audio/webm;codecs=opus");
+        assert!(crate::webm_opus::sniff(&source));
+    } else {
+        check_ogg(Arc::clone(&source), channels, frames);
+    }
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut stream = Stream::open(source, Limits::default(), None, deadline).unwrap();
+    assert_eq!((stream.channels(), stream.frames()), (channels, frames));
+    let mut samples = Vec::new();
+    while let Some(chunk) = stream.next_pcm(None, deadline).unwrap() {
+        assert!(!chunk.is_empty());
+        assert!(chunk.iter().all(|sample| sample.is_finite()));
+        samples.extend(chunk);
+    }
+    assert_eq!(samples.len() as u64, frames * u64::from(channels));
+    samples
+}
+
+fn check_ogg(source: Arc<[u8]>, channels: u16, frames: u64) {
     let mut reader = PacketReader::new(Cursor::new(Arc::clone(&source)));
     let head = reader.read_packet().unwrap().unwrap();
     assert!(head.first_in_stream());
@@ -148,15 +169,4 @@ fn decoded(dom: &dom::Dom, channels: u16, frames: u64) -> Vec<f32> {
         }
     }
     assert!(ended, "completed recording must have an EOS page");
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let mut stream = Stream::open(source, Limits::default(), None, deadline).unwrap();
-    assert_eq!((stream.channels(), stream.frames()), (channels, frames));
-    let mut samples = Vec::new();
-    while let Some(chunk) = stream.next_pcm(None, deadline).unwrap() {
-        assert!(!chunk.is_empty());
-        assert!(chunk.iter().all(|sample| sample.is_finite()));
-        samples.extend(chunk);
-    }
-    assert_eq!(samples.len() as u64, frames * u64::from(channels));
-    samples
 }

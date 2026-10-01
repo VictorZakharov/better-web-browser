@@ -1,6 +1,7 @@
 use super::*;
 use base64::Engine;
 use std::time::Duration;
+mod webm;
 
 fn fixtures() -> [(Vec<u8>, usize); 2] {
     [
@@ -23,9 +24,24 @@ fn fixtures() -> [(Vec<u8>, usize); 2] {
     })
 }
 
+fn supported_fixtures() -> Vec<(Vec<u8>, usize)> {
+    let mut fixtures = fixtures().to_vec();
+    fixtures.push((
+        base64::engine::general_purpose::STANDARD
+            .decode(
+                include_str!("../../../../../tests/fixtures/media/test-0.4s-opus.webm.base64")
+                    .split_whitespace()
+                    .collect::<String>(),
+            )
+            .unwrap(),
+        1,
+    ));
+    fixtures
+}
+
 #[test]
 fn opus_audio_buffer_contains_exact_presentation_pcm_and_context_rate_conversion() {
-    for (bytes, channels) in fixtures() {
+    for (bytes, channels) in supported_fixtures() {
         let cancelled = AtomicBool::new(false);
         let audio = decode(&bytes, 48_000.0, &cancelled).unwrap();
         assert_eq!((audio.frames, audio.channels.len()), (19_200, channels));
@@ -55,7 +71,7 @@ fn opus_audio_buffer_contains_exact_presentation_pcm_and_context_rate_conversion
             assert!(channel.iter().any(|sample| sample.abs() > 0.01));
         }
     }
-    for (bytes, channels) in fixtures() {
+    for (bytes, channels) in supported_fixtures() {
         let cancelled = AtomicBool::new(false);
         let source = decode(&bytes, 48_000.0, &cancelled).unwrap();
         for (rate, frames) in [(24_000.0, 9_600), (44_100.0, 17_640), (96_000.0, 38_400)] {

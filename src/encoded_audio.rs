@@ -15,7 +15,7 @@ use symphonia::core::formats::well_known::{
 mod adts;
 pub(crate) mod ogg_envelope;
 mod ogg_flac;
-mod webm;
+pub(crate) mod webm;
 
 #[cfg(test)]
 pub(crate) fn webm_with_overflowing_second_cluster(bytes: &[u8]) -> Vec<u8> {
@@ -120,13 +120,19 @@ fn validate_inner(bytes: &[u8], kind: Kind, cancelled: Option<&AtomicBool>) -> R
     }
 }
 
-struct Budget<'a> {
+pub(crate) struct Budget<'a> {
     cancelled: Option<&'a AtomicBool>,
     units: usize,
 }
 
 impl Budget<'_> {
-    fn step(&mut self) -> Result<(), String> {
+    pub(crate) fn new(cancelled: Option<&AtomicBool>) -> Budget<'_> {
+        Budget {
+            cancelled,
+            units: 0,
+        }
+    }
+    pub(crate) fn step(&mut self) -> Result<(), String> {
         self.units += 1;
         if self
             .cancelled
