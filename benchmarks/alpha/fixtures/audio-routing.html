@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Web Audio routing contracts</title>
+  <link rel="stylesheet" href="/common.css">
+</head>
+<body>
+  <main class="panel">
+    <h1>Web Audio routing contracts</h1>
+    <p>Original PCM fixtures for channel configuration, normative speaker
+      matrices, AudioParam summing, and feedback routing. No remote media,
+      microphone grants, live audio output, or browser-specific branches.</p>
+    <p id="fixture-status">Running offline audio checks</p>
+    <p id="audio-result">Pending</p>
+    <pre id="audio-failures"></pre>
+    <div id="audio-observations"></div>
+  </main>
+  <script src="/audio-routing-contracts.js"></script>
+  <script src="/audio-routing-matrices.js"></script>
+  <script src="/audio-routing-feedback.js"></script>
+  <script src="/audio-routing-processing.js"></script>
+  <script src="/audio-routing-buffers.js"></script>
+  <script>AudioRoutingChecks.run();</script>
+</body>
+</html>

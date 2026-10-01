@@ -102,15 +102,14 @@
             const frames = Math.min(AUDIO_QUANTUM,
                 audioContextState.get(state.context).length - frame);
             const index = state.rate === 'k-rate' ? 0 : offset;
-            // Web Audio 1.0 §1.5.5/§1.6.3: connected outputs downmix to
-            // mono and sum with the intrinsic automation trajectory.
-            for (const edge of state.inputs) {
-                const samples = renderAudioNode(state.context, edge.source,
-                    frame, frames, cache, edge.output);
-                let mono = 0;
-                for (const channel of samples) mono += channel[index] / samples.length;
-                value += mono;
+            // §1.5.5 connect(AudioParam): each connected output downmixes to
+            // mono before summing with other outputs and intrinsic automation.
+            if (!cache.has(param)) {
+                const buses = [...state.inputs].map(edge => renderAudioNode(state.context,
+                    edge.source, frame, frames, cache, edge.output));
+                cache.set(param, mixAudioBuses(buses, 1, frames, 'speakers')[0]);
             }
+            value += cache.get(param)[index];
         }
         if (Number.isNaN(value)) value = param.defaultValue;
         // Computed DSP values are clamped to the nominal range; the exposed
@@ -154,9 +153,10 @@
         }
         get automationRate() { return audioParamState.get(this).rate; }
         set automationRate(value) {
-            if (value !== 'a-rate' && value !== 'k-rate')
-                throw new TypeError('Invalid automation rate');
             const state = audioParamState.get(this);
+            if (!state) throw new TypeError('Illegal AudioParam receiver');
+            value = audioEnumAttribute(value, ['a-rate', 'k-rate']);
+            if (value === null) return;
             if (state.fixedRate && value !== state.rate)
                 throw new DOMException('This AudioParam has a fixed automation rate',
                     'InvalidStateError');

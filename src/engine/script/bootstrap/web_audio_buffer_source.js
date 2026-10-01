@@ -25,23 +25,24 @@
 
     class AudioBufferSourceNode extends AudioScheduledSourceNode {
         constructor(context, options = {}) {
+            // AudioBufferSourceOptions is a standalone dictionary (§1.9.4).
+            options = audioOptionsDictionary(context, options);
             const suppliedBuffer = options.buffer;
             const buffer = suppliedBuffer === undefined ? null : suppliedBuffer;
             if (buffer !== null && !(buffer instanceof AudioBuffer))
                 throw new TypeError('Buffer must be an AudioBuffer or null');
+            const detune = audioOption(options, 'detune', 0,
+                value => finiteFloat(value, 'detune'));
             const loop = !!options.loop;
-            const suppliedLoopStart = options.loopStart;
-            const loopStart = suppliedLoopStart === undefined ? 0 :
-                nonnegative(suppliedLoopStart, 'loopStart');
             const suppliedLoopEnd = options.loopEnd;
             const loopEnd = suppliedLoopEnd === undefined ? 0 :
                 nonnegative(suppliedLoopEnd, 'loopEnd');
+            const suppliedLoopStart = options.loopStart;
+            const loopStart = suppliedLoopStart === undefined ? 0 :
+                nonnegative(suppliedLoopStart, 'loopStart');
             const suppliedPlaybackRate = options.playbackRate;
             const playbackRate = suppliedPlaybackRate === undefined ? 1 :
                 finiteFloat(suppliedPlaybackRate, 'playbackRate');
-            const suppliedDetune = options.detune;
-            const detune = suppliedDetune === undefined ? 0 :
-                finiteFloat(suppliedDetune, 'detune');
             super(audioNodeToken, context);
             audioBufferSourceState.set(this, { buffer: null, bufferSet: false,
                 loop: false, loopStart: 0, loopEnd: 0, offset: 0,
@@ -82,6 +83,7 @@
                 releaseBufferSourceContent(this);
             if (value !== null) state.bufferSet = true;
             state.buffer = value;
+            audioContextState.get(this.context).graphRevision++;
         }
         get loop() { return audioBufferSourceState.get(this).loop; }
         set loop(value) { audioBufferSourceState.get(this).loop = !!value; }

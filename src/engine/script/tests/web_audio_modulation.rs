@@ -142,7 +142,7 @@ fn param_connections_validate_context_output_and_cycles() {
         catch (error) { errors.push(error.name); }
         if (errors.join(',') !==
             'InvalidAccessError,IndexSizeError,IndexSizeError,' +
-            'NotSupportedError,NotSupportedError,InvalidAccessError')
+            'none,none,InvalidAccessError')
             throw Error('AudioParam routing validation: ' + errors.join(','));
         console.log('AudioParam routing validation passed');
     </script>"#,

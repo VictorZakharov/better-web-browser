@@ -206,21 +206,21 @@ fn stereo_panner_renders_mono_and_stereo_equal_power_equations() {
 }
 
 #[test]
-fn graph_rejects_cycles_and_foreign_contexts() {
+fn graph_accepts_cycles_but_rejects_foreign_contexts_and_missing_edges() {
     let (_, outcome) = execute_html(
         r#"<body><script>
         const context = new OfflineAudioContext(1, 128, 8000);
         const other = new OfflineAudioContext(1, 128, 8000);
         const first = context.createGain(), second = context.createGain();
         first.connect(second);
-        let cycle = false, foreign = false, missing = false;
-        try { second.connect(first); } catch (error) { cycle = error.name === 'NotSupportedError'; }
+        let foreign = false, missing = false;
+        if (second.connect(first) !== first) throw Error('cycle connection return');
         try { first.connect(other.destination); }
         catch (error) { foreign = error.name === 'InvalidAccessError'; }
         first.disconnect(second);
         try { first.disconnect(second); }
         catch (error) { missing = error.name === 'InvalidAccessError'; }
-        if (!cycle || !foreign || !missing) throw Error('graph connection contract');
+        if (!foreign || !missing) throw Error('graph connection contract');
         console.log('graph validation passed');
     </script>"#,
     );

@@ -1,26 +1,18 @@
     // Web Audio 1.0 §6.3.3: equal-power panning, with distinct mono/stereo equations.
     class StereoPannerNode extends AudioNode {
         constructor(context, options = {}) {
-            const pan = options.pan === undefined ? 0 : finiteFloat(options.pan, 'pan');
-            super(audioNodeToken, context, 1, 1);
+            const channels = readAudioChannelOptions(context, options);
+            const pan = audioOption(channels.options, 'pan', 0,
+                value => finiteFloat(value, 'pan'));
+            super(audioNodeToken, context, 1, 1,
+                audioChannelSettings(context, channels, 'stereo-panner'));
             Object.defineProperty(this, 'pan', { enumerable: true,
                 value: new AudioParam(audioParamToken, context,
                     pan, -1, 1) });
             audioParamState.get(this.pan).owner = this;
             audioNodeState.get(this).render = (frame, frames, cache) => {
-                const inputs = [...audioNodeState.get(this).inputs[0]].map(edge =>
-                    renderAudioNode(this.context, edge.source, frame, frames, cache,
-                        edge.output));
-                const stereo = inputs.some(samples => samples.length > 1);
-                const mixed = silence(stereo ? 2 : 1, frames);
-                for (const samples of inputs) {
-                    for (let i = 0; i < frames; ++i) {
-                        if (stereo) {
-                            mixed[0][i] += samples[0][i];
-                            mixed[1][i] += samples.length === 1 ? samples[0][i] : samples[1][i];
-                        } else mixed[0][i] += samples[0][i];
-                    }
-                }
+                const mixed = mixAudioInputs(this.context, this, frame, frames, cache);
+                const stereo = mixed.length === 2;
                 const output = silence(2, frames);
                 for (let i = 0; i < frames; ++i) {
                     const pan = Math.max(-1, Math.min(1,

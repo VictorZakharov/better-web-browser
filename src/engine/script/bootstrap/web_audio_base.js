@@ -9,10 +9,11 @@
     const MAX_AUDIO_DELAY_BYTES = 32 * 1024 * 1024;
     const MAX_AUDIO_SOURCE_SNAPSHOT_BYTES = 64 * 1024 * 1024;
     const MAX_AUDIO_AUTOMATION_CURVE_BYTES = 32 * 1024 * 1024;
-    const audioWorkWithinLimit = (state, nodes) =>
-        (!Number.isFinite(state.length) ||
-            state.length * state.channels * nodes <= 64_000_000) &&
-        AUDIO_QUANTUM * state.channels * nodes <= 262_144;
+    const audioWorkWithinLimit = (state, nodes) => {
+        const work = audioGraphWork(state, nodes);
+        return (!Number.isFinite(state.length) || state.length * work <= 64_000_000) &&
+            AUDIO_QUANTUM * work <= 262_144;
+    };
     const audioContextState = new WeakMap();
     const audioTask = globalThis.__webAudioRenderTask;
     const audioHost = globalThis.__webAudioHostCall;
@@ -21,9 +22,10 @@
     const AudioPromise = globalThis.Promise;
     const AudioEvent = globalThis.Event;
     const AudioDOMException = globalThis.DOMException;
+    const trustAudioEvent = globalThis.__markTrustedEvent;
 
     const finite = (value, name) => {
-        value = Number(value);
+        value = +value;
         if (!Number.isFinite(value)) throw new TypeError(name + ' must be finite');
         return value;
     };

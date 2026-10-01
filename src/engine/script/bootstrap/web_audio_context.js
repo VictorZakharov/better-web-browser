@@ -4,12 +4,15 @@
         constructor(token, channels, length, sampleRate) {
             super();
             if (token !== audioContextToken) throw new TypeError('Illegal constructor');
-            audioContextState.set(this, { channels, length, sampleRate, time: 0,
+            audioContextState.set(this, { context: this, channels, length, sampleRate, time: 0,
                 state: 'suspended', nodes: new Set(), panners: new Set(),
-                connections: 0,
+                connections: 0, graphRevision: 0, graphPlan: null,
                 renderStarted: false, onstatechange: null, oncomplete: null,
                 suspensions: new Map(), advance: null, delayBytes: 0,
                 sourceSnapshotBytes: 0, automationCurveBytes: 0 });
+            const state = audioContextState.get(this);
+            state.scriptProcessors = new Set();
+            state.scriptProcessorBytes = 0;
             Object.defineProperty(this, 'destination', { enumerable: true,
                 value: new AudioDestinationNode(audioNodeToken, this) });
             Object.defineProperty(this, 'listener', { enumerable: true,
@@ -26,6 +29,11 @@
             if (state.onstatechange) this.addEventListener('statechange', state.onstatechange);
         }
         createBuffer(channels, length, rate) {
+            if (!audioContextState.has(this)) throw new TypeError('Illegal BaseAudioContext receiver');
+            if (arguments.length < 3) throw new TypeError('createBuffer requires channels, length, and rate');
+            channels = audioChannelUnsigned(channels);
+            length = audioChannelUnsigned(length);
+            rate = finiteFloat(rate, 'sampleRate');
             return new AudioBuffer({ numberOfChannels: channels, length, sampleRate: rate });
         }
         createGain() { return new GainNode(this); }
@@ -55,6 +63,9 @@
                 disableNormalization: constraints.disableNormalization });
         }
         createAnalyser() { return new AnalyserNode(this); }
+        createScriptProcessor(bufferSize = 0, inputChannels = 2, outputChannels = 2) {
+            return createAudioScriptProcessor(this, bufferSize, inputChannels, outputChannels);
+        }
     }
 
     const setAudioContextState = (context, value) => {
@@ -75,37 +86,43 @@
     }
 
     const renderAudioNode = (context, node, frame, frames, cache, output = 0) => {
+        if (node === context.listener) return [];
         const rendered = cache.get(node);
         if (rendered?.has(output)) return rendered.get(output);
+        // A residual AudioParam/listener cycle is already classified by the
+        // graph plan. This guard also fails closed if a new processor omits a
+        // dependency rather than recursing into a renderer stack overflow.
+        if (cache.processing.has(node))
+            throw new AudioDOMException('Unresolved audio graph dependency', 'InvalidStateError');
+        cache.processing.add(node);
         const samples = audioNodeState.get(node).render(frame, frames, cache, output);
+        cache.processing.delete(node);
         if (rendered) rendered.set(output, samples);
         else cache.set(node, new Map([[output, samples]]));
         return samples;
     };
-    const mixAudioInputs = (context, node, frame, frames, cache, channels,
-        inputIndex = 0, interpretation = 'speakers') => {
-        const mixed = silence(channels, frames);
-        for (const edge of audioNodeState.get(node).inputs[inputIndex]) {
-            const samples = renderAudioNode(context, edge.source, frame, frames,
-                cache, edge.output);
-            for (let channel = 0; channel < channels; ++channel) {
-                for (let i = 0; i < frames; ++i) {
-                    let sample;
-                    if (channels === 1 && samples.length > 1) {
-                        sample = 0;
-                        for (const source of samples) sample += source[i] / samples.length;
-                    } else if (samples.length === 1 && interpretation !== 'explicit')
-                        sample = samples[0][i];
-                    else sample = samples[channel]?.[i] ?? 0;
-                    mixed[channel][i] += sample;
-                }
-            }
-        }
-        return mixed;
-    };
     const renderAudioQuantum = (context, frame, frames) => {
         const state = audioContextState.get(context);
         const cache = new Map();
+        cache.processing = new Set();
+        cache.plan = audioQuantumPlan(context);
+        for (const node of cache.plan.muted) {
+            if (node === context.listener) {
+                for (const name of [...SPATIAL_POSITION, ...SPATIAL_FORWARD, ...SPATIAL_UP])
+                    cache.set(context.listener[name], new Float32Array(frames));
+                continue;
+            }
+            cache.set(node, new Map(Array.from({ length: Math.max(1, node.numberOfOutputs) },
+                (_, output) => [output, silence(cache.plan.widths.get(node), frames)])));
+        }
+        // Seed every reader before pulling any writer. Reading one feedback
+        // delay must never advance another delay's ring or the shared source.
+        for (const delay of cache.plan.delays)
+            if (!cache.plan.muted.has(delay))
+                prepareDelayReader(delay, frame, frames, cache);
+        for (const delay of cache.plan.delays)
+            if (!cache.plan.muted.has(delay))
+                renderAudioNode(context, delay, frame, frames, cache);
         const samples = renderAudioNode(context, context.destination, frame, frames, cache);
         // Disconnected stateful nodes still advance once per quantum. A later
         // connection must not replay a source or erase a filter/delay tail.
@@ -114,8 +131,10 @@
                 node instanceof IIRFilterNode || node instanceof BiquadFilterNode ||
                 node instanceof DynamicsCompressorNode || node instanceof ConvolverNode ||
                 node instanceof WaveShaperNode ||
-                node instanceof AnalyserNode) && !cache.has(node))
+                node instanceof AnalyserNode || node instanceof ScriptProcessorNode) && !cache.has(node))
                 renderAudioNode(context, node, frame, frames, cache);
+        for (const delay of cache.plan.delays)
+            if (!cache.plan.muted.has(delay)) writeDelayQuantum(delay, frame, frames, cache);
         return samples;
     };
     class OfflineAudioContext extends BaseAudioContext {
@@ -191,8 +210,8 @@
                                 'NotSupportedError');
                         // A graph may grow between tasks or while suspended. Refresh the
                         // yield cadence from its actual size on every advance.
-                        const quantaPerTask = Math.max(1, Math.min(16,
-                            Math.floor(65_536 / (AUDIO_QUANTUM * state.channels * nodes))));
+                        const quantaPerTask = audioScriptTaskQuanta(this, Math.max(1, Math.min(16,
+                            Math.floor(65_536 / (AUDIO_QUANTUM * audioGraphWork(state, nodes))))));
                         for (let quantum = 0; quantum < quantaPerTask && frame < state.length;
                             ++quantum) {
                             const suspension = state.suspensions.get(frame);

@@ -25,51 +25,71 @@
             'coneOuterGain must be in [0, 1]', 'InvalidStateError');
         return number;
     };
-    const spatialOption = (options, name, fallback) => {
-        const value = options[name];
-        return value === undefined ? fallback : value;
+    const readSpatialOptions = options => {
+        // Web IDL converts the derived dictionary in lexical order before the
+        // constructor performs semantic validation or admits a graph node.
+        const number = (name, fallback) => audioOption(options, name, fallback,
+            value => finite(value, name));
+        const param = (name, fallback) => audioOption(options, name, fallback,
+            value => finiteFloat(value, name));
+        return {
+            coneInnerAngle: number('coneInnerAngle', 360),
+            coneOuterAngle: number('coneOuterAngle', 360),
+            coneOuterGain: number('coneOuterGain', 0),
+            distanceModel: audioOption(options, 'distanceModel', 'inverse', value =>
+                audioChannelEnum(value, ['linear', 'inverse', 'exponential'], 'distanceModel')),
+            maxDistance: number('maxDistance', 10000),
+            orientationX: param('orientationX', 1),
+            orientationY: param('orientationY', 0),
+            orientationZ: param('orientationZ', 0),
+            panningModel: audioOption(options, 'panningModel', 'equalpower', value =>
+                audioChannelEnum(value, ['equalpower', 'HRTF'], 'panningModel')),
+            positionX: param('positionX', 0),
+            positionY: param('positionY', 0),
+            positionZ: param('positionZ', 0),
+            refDistance: number('refDistance', 1),
+            rolloffFactor: number('rolloffFactor', 1)
+        };
     };
     const spatialOptions = options => ({
-        panningModel: spatialModel(spatialOption(options, 'panningModel', 'equalpower')),
-        distanceModel: spatialDistanceModel(spatialOption(options, 'distanceModel', 'inverse')),
-        refDistance: spatialNumber(spatialOption(options, 'refDistance', 1),
-            'refDistance', 0),
-        maxDistance: spatialMaximumDistance(spatialOption(options, 'maxDistance', 10000)),
-        rolloffFactor: spatialNumber(spatialOption(options, 'rolloffFactor', 1),
-            'rolloffFactor', 0),
-        coneInnerAngle: spatialNumber(spatialOption(options, 'coneInnerAngle', 360),
-            'coneInnerAngle'),
-        coneOuterAngle: spatialNumber(spatialOption(options, 'coneOuterAngle', 360),
-            'coneOuterAngle'),
-        coneOuterGain: spatialOuterGain(spatialOption(options, 'coneOuterGain', 0))
+        panningModel: spatialModel(options.panningModel),
+        distanceModel: spatialDistanceModel(options.distanceModel),
+        refDistance: spatialNumber(options.refDistance, 'refDistance', 0),
+        maxDistance: spatialMaximumDistance(options.maxDistance),
+        rolloffFactor: spatialNumber(options.rolloffFactor, 'rolloffFactor', 0),
+        coneInnerAngle: options.coneInnerAngle,
+        coneOuterAngle: options.coneOuterAngle,
+        coneOuterGain: spatialOuterGain(options.coneOuterGain)
     });
 
     class PannerNode extends AudioNode {
         constructor(context, options = {}) {
-            if (options == null) options = {};
-            if (typeof options !== 'object')
-                throw new TypeError('Panner options must be a dictionary');
+            const channels = readAudioChannelOptions(context, options);
+            options = readSpatialOptions(channels.options);
             const state = spatialOptions(options);
-            const params = Object.fromEntries(Object.entries({
-                positionX: 0, positionY: 0, positionZ: 0,
-                orientationX: 1, orientationY: 0, orientationZ: 0
-            }).map(([name, fallback]) => [name,
-                finiteFloat(spatialOption(options, name, fallback), name)]));
-            super(audioNodeToken, context, 1, 1);
+            super(audioNodeToken, context, 1, 1,
+                audioChannelSettings(context, channels, 'panner'));
             spatialPannerState.set(this, state);
-            for (const [name, initial] of Object.entries(params))
-                spatialAudioParam(this, context, name, initial);
+            for (const name of ['positionX', 'positionY', 'positionZ',
+                'orientationX', 'orientationY', 'orientationZ'])
+                spatialAudioParam(this, context, name, options[name]);
             audioContextState.get(context).panners.add(this);
             audioNodeState.get(this).render = (frame, frames, cache) =>
                 renderSpatialPanner(this, frame, frames, cache);
         }
         get panningModel() { return spatialPannerState.get(this).panningModel; }
         set panningModel(value) {
-            spatialPannerState.get(this).panningModel = spatialModel(value);
+            const state = spatialPannerState.get(this);
+            if (!state) throw new TypeError('Illegal PannerNode receiver');
+            value = audioEnumAttribute(value, ['equalpower', 'HRTF']);
+            if (value !== null) state.panningModel = spatialModel(value);
         }
         get distanceModel() { return spatialPannerState.get(this).distanceModel; }
         set distanceModel(value) {
-            spatialPannerState.get(this).distanceModel = spatialDistanceModel(value);
+            const state = spatialPannerState.get(this);
+            if (!state) throw new TypeError('Illegal PannerNode receiver');
+            value = audioEnumAttribute(value, ['linear', 'inverse', 'exponential']);
+            if (value !== null) state.distanceModel = value;
         }
         get refDistance() { return spatialPannerState.get(this).refDistance; }
         set refDistance(value) {
@@ -151,42 +171,10 @@
             gainR: Math.sin(x * Math.PI / 2) };
     };
 
-    // PannerNode's default input is clamped-max 2 with speaker interpretation.
-    // Web Audio 1.0 §4.5 downmixes each connection before summing the input;
-    // layouts other than mono, stereo, quad and 5.1 use discrete first channels.
-    const spatialMixInput = (inputs, frames) => {
-        const stereo = inputs.some(samples => samples.length > 1);
-        const left = new Float32Array(frames);
-        const right = stereo ? new Float32Array(frames) : null;
-        for (const samples of inputs) {
-            const count = samples.length;
-            if (count === 4) {
-                for (let i = 0; i < frames; i++) {
-                    left[i] += 0.5 * (samples[0][i] + samples[2][i]);
-                    right[i] += 0.5 * (samples[1][i] + samples[3][i]);
-                }
-            } else if (count === 6) {
-                for (let i = 0; i < frames; i++) {
-                    left[i] += samples[0][i] + Math.SQRT1_2 *
-                        (samples[2][i] + samples[4][i]);
-                    right[i] += samples[1][i] + Math.SQRT1_2 *
-                        (samples[2][i] + samples[5][i]);
-                }
-            } else {
-                for (let i = 0; i < frames; i++) {
-                    left[i] += samples[0][i];
-                    if (stereo) right[i] += (samples[1] ?? samples[0])[i];
-                }
-            }
-        }
-        return { left, right, stereo };
-    };
-
     const renderSpatialPanner = (node, frame, frames, cache) => {
-        const inputs = [...audioNodeState.get(node).inputs[0]].map(edge =>
-            renderAudioNode(node.context, edge.source, frame, frames, cache,
-                edge.output));
-        const { left, right, stereo } = spatialMixInput(inputs, frames);
+        const mixed = mixAudioInputs(node.context, node, frame, frames, cache);
+        const [left, right] = mixed;
+        const stereo = mixed.length === 2;
         const output = silence(2, frames);
         const listener = node.context.listener;
         const rate = node.context.sampleRate;

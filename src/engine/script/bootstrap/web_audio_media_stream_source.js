@@ -67,7 +67,9 @@
         constructor(context, options) {
             if (!(context instanceof AudioContext))
                 throw new TypeError('MediaStreamAudioSourceNode requires an AudioContext');
-            const stream = options?.mediaStream;
+            // MediaStreamAudioSourceOptions is not an AudioNodeOptions subtype.
+            options = audioOptionsDictionary(context, options);
+            const stream = options.mediaStream;
             if (typeof MediaStream !== 'function' || !(stream instanceof MediaStream))
                 throw new TypeError('mediaStream must be a MediaStream');
             // Web Audio 1.1 §1.24 fixes the first audio track in code-unit ID

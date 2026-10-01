@@ -1,8 +1,10 @@
     // Web Audio 1.0 §1.16: a scheduled mono signal whose offset is an a-rate parameter.
     class ConstantSourceNode extends AudioScheduledSourceNode {
         constructor(context, options = {}) {
-            const offset = options.offset === undefined ? 1 :
-                finiteFloat(options.offset, 'offset');
+            // ConstantSourceOptions does not inherit AudioNodeOptions (§1.16.3).
+            options = audioOptionsDictionary(context, options);
+            const offset = audioOption(options, 'offset', 1,
+                value => finiteFloat(value, 'offset'));
             super(audioNodeToken, context);
             Object.defineProperty(this, 'offset', { enumerable: true,
                 value: new AudioParam(audioParamToken, context,

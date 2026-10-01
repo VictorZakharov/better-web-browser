@@ -119,7 +119,8 @@ fn delay_node_rejects_invalid_or_unbounded_delay_lines() {
         r#"<body><script>
         const context = new OfflineAudioContext(2, 128, 48000);
         const names = [];
-        for (const max of [0, 180, 100]) {
+        // 179 seconds exceeds the bounded mono ring + layout metadata budget.
+        for (const max of [0, 180, 179]) {
             try { context.createDelay(max); names.push('accepted'); }
             catch (error) { names.push(error.name); }
         }
