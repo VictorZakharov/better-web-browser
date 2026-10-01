@@ -128,9 +128,10 @@ deadlines. Consumer and hidden renderer tests cover playback/source fallback,
 format metadata, and document retirement. Fixture hashes and generation
 commands are in [the media inventory](../tests/fixtures/media/README.md).
 
-WebM/Opus remains unsupported: `CodecDelay` and `DiscardPadding` presentation
-semantics are not implemented through the pinned demuxer. Complete Ogg decoding
-does not imply Ogg SourceBuffer, WebRTC, DRM, or hardware-efficiency support.
+The companion [WebM/Opus path](webm-opus.md) now implements its separate
+`CodecDelay`, signed timestamp and `DiscardPadding` presentation semantics.
+Complete Ogg/WebM decoding does not imply SourceBuffer, WebRTC, DRM, or
+hardware-efficiency support.
 
 ## Primary references
 

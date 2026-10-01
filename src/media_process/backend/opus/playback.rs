@@ -26,12 +26,12 @@ impl OpusDecoder {
             || expected_samples == 0
             || expected_samples as usize > MAX_MEDIA_DECODED_SAMPLES
         {
-            return Err("Ogg/Opus playback exceeds worker limits".into());
+            return Err("Opus playback exceeds worker limits".into());
         }
         let source: Arc<[u8]> = Arc::from(bytes);
         let stream = PcmStream::open(source.clone(), Instant::now() + MEDIA_COMMAND_TIMEOUT)?;
         if expected_sample_rate != SAMPLE_RATE || expected_channels != stream.channels {
-            return Err("Ogg/Opus format disagreed with decode report".into());
+            return Err("Opus format disagreed with decode report".into());
         }
         Ok(Self {
             source,
@@ -45,7 +45,7 @@ impl OpusDecoder {
     pub(in crate::media_process) fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
         let target_frame =
             u64::try_from(u128::from(position_100ns) * u128::from(SAMPLE_RATE) / 10_000_000)
-                .map_err(|_| "Ogg/Opus seek target overflow")?;
+                .map_err(|_| "Opus seek target overflow")?;
         // Restart applies gain, pre-skip and EOS trimming exactly once, even
         // when paused clients issue several seeks without requesting PCM.
         let deadline = Instant::now() + MEDIA_COMMAND_TIMEOUT;
@@ -58,12 +58,12 @@ impl OpusDecoder {
             };
             let end = frame
                 .checked_add(bytes.len() as u64 / (u64::from(self.channels) * 2))
-                .ok_or("Ogg/Opus seek frame count overflow")?;
+                .ok_or("Opus seek frame count overflow")?;
             if end > target_frame {
                 let skip = usize::try_from(target_frame - frame)
                     .ok()
                     .and_then(|frames| frames.checked_mul(usize::from(self.channels) * 2))
-                    .ok_or("Ogg/Opus seek offset overflow")?;
+                    .ok_or("Opus seek offset overflow")?;
                 self.pending = Some(bytes[skip..].to_vec());
                 break;
             }
@@ -82,10 +82,10 @@ impl OpusDecoder {
     fn read_packet(&mut self, deadline: Instant) -> Result<Option<Vec<u8>>, String> {
         let pcm = self.stream.next_sample(deadline)?;
         if self.stream.samples > self.expected_samples {
-            return Err("Ogg/Opus playback exceeded decoded report".into());
+            return Err("Opus playback exceeded decoded report".into());
         }
         if pcm.is_none() && self.stream.samples != self.expected_samples {
-            return Err("Ogg/Opus playback ended before decoded report".into());
+            return Err("Opus playback ended before decoded report".into());
         }
         Ok(pcm)
     }

@@ -1,7 +1,8 @@
 //! Bounded incremental RFC 7845 family-0 recording, using the vetted encoder.
 //! No resampling: unsupported capture rates fail rather than relabeling PCM.
 
-use ogg::writing::{PacketWriteEndInfo, PacketWriter};
+use super::opus_sink::Output;
+use ogg::writing::PacketWriteEndInfo;
 
 const MAX_INPUT_FRAMES: usize = 960;
 const MAX_PACKET_BYTES: usize = 4_000;
@@ -12,6 +13,7 @@ pub(super) struct Session {
     serial: u32,
     bitrate: u32,
     constant: bool,
+    webm: bool,
     encoder: Option<Encoding>,
     failed: bool,
     blocked: bool,
@@ -20,7 +22,7 @@ pub(super) struct Session {
 
 struct Encoding {
     codec: opus::Encoder,
-    writer: PacketWriter<Vec<u8>>,
+    writer: Output,
     rate: usize,
     channels: usize,
     pending: Vec<i16>,
@@ -38,10 +40,18 @@ impl Session {
             serial,
             bitrate,
             constant,
+            webm: false,
             encoder: None,
             failed: false,
             blocked: false,
             closed: false,
+        }
+    }
+
+    pub(super) fn new_webm(serial: u32, bitrate: u32, constant: bool) -> Self {
+        Self {
+            webm: true,
+            ..Self::new(serial, bitrate, constant)
         }
     }
 
@@ -61,18 +71,18 @@ impl Session {
         pcm: &[u8],
     ) -> Result<Vec<u8>, &'static str> {
         if self.failed || self.blocked || self.closed {
-            return Err("Ogg Opus recorder failed; start a new recording");
+            return Err("Opus recorder failed; start a new recording");
         }
         if !self.format_supported(rate, channels) {
             self.failed = true;
-            return Err("Ogg Opus requires unchanged native 8/12/16/24/48 kHz mono/stereo capture");
+            return Err("Opus requires unchanged native 8/12/16/24/48 kHz mono/stereo capture");
         }
         if pcm.is_empty()
             || pcm.len() > MAX_INPUT_FRAMES * channels * 2
             || !pcm.len().is_multiple_of(channels * 2)
         {
             self.failed = true;
-            return Err("Invalid Ogg Opus capture PCM packet");
+            return Err("Invalid Opus capture PCM packet");
         }
         if self.encoder.is_none() {
             self.encoder = Some(Encoding::new(
@@ -81,13 +91,14 @@ impl Session {
                 channels,
                 self.bitrate,
                 self.constant,
+                self.webm,
             )?);
         }
         let encoder = self.encoder.as_mut().unwrap();
         let frames = (pcm.len() / (channels * 2)) as u64;
         if let Err(error) = encoder.reserve_append(frames) {
             // No new PCM entered the predictive state. Seal the admitted prefix
-            // on stop/error rather than emitting an unplayable truncated Ogg.
+            // on stop/error rather than emitting an unplayable truncated stream.
             self.blocked = true;
             return Err(error);
         }
@@ -100,11 +111,11 @@ impl Session {
 
     pub(super) fn finish(&mut self) -> Result<Vec<u8>, &'static str> {
         if self.closed {
-            return Err("Ogg Opus recorder is already closed");
+            return Err("Opus recorder is already closed");
         }
         self.closed = true;
         if self.failed {
-            return Err("Ogg Opus recorder failed; discard the incomplete recording");
+            return Err("Opus recorder failed; discard the incomplete recording");
         }
         let Some(encoder) = self.encoder.as_mut() else {
             return Ok(Vec::new());
@@ -113,7 +124,7 @@ impl Session {
         let final_granule = encoder
             .presentation_frames()?
             .checked_add(u64::from(encoder.pre_skip))
-            .ok_or("Ogg Opus final granule overflows")?;
+            .ok_or("Opus final granule overflows")?;
         let packet_samples = (encoder.rate / 50) * encoder.channels;
         // Supply real encoder history plus zero padding until lookahead drains.
         // EOS trims exactly that padding; never invent PLC or a second stream.
@@ -122,7 +133,7 @@ impl Session {
             let next = encoder
                 .encoded_frames
                 .checked_add(960)
-                .ok_or("Ogg Opus raw duration overflows")?;
+                .ok_or("Opus raw duration overflows")?;
             let ending = if next >= final_granule {
                 PacketWriteEndInfo::EndStream
             } else {
@@ -144,17 +155,17 @@ impl Encoding {
             .checked_add(frames)
             .and_then(|frames| frames.checked_mul((48_000 / self.rate) as u64))
             .and_then(|frames| frames.checked_add(u64::from(self.pre_skip)))
-            .ok_or("Ogg Opus recording duration overflows")?;
+            .ok_or("Opus recording duration overflows")?;
         // Even a hypothetical zero-lookahead encoder needs a packet carrying
         // EOS; reserve at least one final packet beyond those already emitted.
         let packets = raw.div_ceil(960).max(self.packets as u64 + 1);
         if packets > MAX_PACKETS as u64 || packets * 960 > MAX_DURATION_FRAMES {
-            return Err("Ogg Opus recording exceeds its packet or raw duration limit");
+            return Err("Opus recording exceeds its packet or raw duration limit");
         }
         let remaining = usize::try_from(packets)
             .ok()
             .and_then(|packets| packets.checked_sub(self.packets))
-            .ok_or("Ogg Opus recording packet accounting is inconsistent")?;
+            .ok_or("Opus recording packet accounting is inconsistent")?;
         // Conservative packet-sized reservation includes EOS flush and lacing.
         // Draining Blob chunks never resets this cumulative complete-file bound.
         let page_bytes = MAX_PACKET_BYTES + 27 + MAX_PACKET_BYTES / 255 + 1;
@@ -162,9 +173,9 @@ impl Encoding {
             .checked_mul(page_bytes)
             .and_then(|bytes| bytes.checked_add(self.writer.inner().len()))
             .and_then(|bytes| bytes.checked_add(self.encoded_bytes))
-            .ok_or("Ogg Opus recording byte count overflows")?;
+            .ok_or("Opus recording byte count overflows")?;
         if reserved > crate::limits::MAX_MEDIA_ENCODED_QUEUE_BYTES {
-            return Err("Ogg Opus recording exceeds the 8 MiB complete-file limit");
+            return Err("Opus recording exceeds the 8 MiB complete-file limit");
         }
         Ok(())
     }
@@ -188,6 +199,7 @@ impl Encoding {
         channels: usize,
         bitrate: u32,
         constant: bool,
+        webm: bool,
     ) -> Result<Self, &'static str> {
         let native_channels = if channels == 1 {
             opus::Channels::Mono
@@ -195,24 +207,24 @@ impl Encoding {
             opus::Channels::Stereo
         };
         let mut codec = opus::Encoder::new(rate as u32, native_channels, opus::Application::Audio)
-            .map_err(|_| "Could not create Ogg Opus encoder")?;
+            .map_err(|_| "Could not create Opus encoder")?;
         codec
             .set_complexity(5)
-            .map_err(|_| "Could not bound Ogg Opus encoder complexity")?;
+            .map_err(|_| "Could not bound Opus encoder complexity")?;
         codec
             .set_bitrate(opus::Bitrate::Bits(bitrate as i32))
-            .map_err(|_| "Could not configure Ogg Opus target bitrate")?;
+            .map_err(|_| "Could not configure Opus target bitrate")?;
         codec
             .set_vbr(!constant)
-            .map_err(|_| "Could not configure Ogg Opus bitrate mode")?;
+            .map_err(|_| "Could not configure Opus bitrate mode")?;
         codec
             .set_dtx(false)
-            .map_err(|_| "Could not configure Ogg Opus continuous recording")?;
+            .map_err(|_| "Could not configure Opus continuous recording")?;
         let lookahead = codec
             .get_lookahead()
-            .map_err(|_| "Could not query Ogg Opus encoder delay")?;
+            .map_err(|_| "Could not query Opus encoder delay")?;
         let pre_skip = u16::try_from(i64::from(lookahead) * (48_000 / rate) as i64)
-            .map_err(|_| "Ogg Opus encoder delay exceeds the mapping header")?;
+            .map_err(|_| "Opus encoder delay exceeds the mapping header")?;
         let mut head = b"OpusHead".to_vec();
         head.extend([1, channels as u8]);
         head.extend_from_slice(&pre_skip.to_le_bytes());
@@ -223,7 +235,7 @@ impl Encoding {
         tags.extend_from_slice(&6_u32.to_le_bytes());
         tags.extend_from_slice(b"Breeze");
         tags.extend_from_slice(&0_u32.to_le_bytes());
-        let mut writer = PacketWriter::new(Vec::new());
+        let mut writer = Output::new(webm);
         for header in [head, tags] {
             writer
                 .write_packet(
@@ -232,7 +244,7 @@ impl Encoding {
                     PacketWriteEndInfo::EndPage,
                     0,
                 )
-                .map_err(|_| "Could not write Ogg Opus mapping headers")?;
+                .map_err(|_| "Could not write Opus mapping headers")?;
         }
         Ok(Self {
             codec,
@@ -252,7 +264,7 @@ impl Encoding {
     fn presentation_frames(&self) -> Result<u64, &'static str> {
         self.input_frames
             .checked_mul((48_000 / self.rate) as u64)
-            .ok_or("Ogg Opus presentation duration overflows")
+            .ok_or("Opus presentation duration overflows")
     }
 
     fn encode(
@@ -262,20 +274,20 @@ impl Encoding {
         granule: Option<u64>,
     ) -> Result<(), &'static str> {
         if self.packets >= MAX_PACKETS {
-            return Err("Ogg Opus recording exceeds the 16,384-packet limit");
+            return Err("Opus recording exceeds the 16,384-packet limit");
         }
         let packet_samples = (self.rate / 50) * self.channels;
         let next = self
             .encoded_frames
             .checked_add(960)
             .filter(|raw| *raw <= MAX_DURATION_FRAMES)
-            .ok_or("Ogg Opus recording exceeds the raw duration limit")?;
+            .ok_or("Opus recording exceeds the raw duration limit")?;
         let bytes = self
             .codec
             .encode(&self.pending[..packet_samples], &mut self.scratch)
-            .map_err(|_| "Ogg Opus PCM encoding failed")?;
+            .map_err(|_| "Opus PCM encoding failed")?;
         if bytes == 0 || bytes > self.scratch.len() {
-            return Err("Ogg Opus encoder returned an invalid packet");
+            return Err("Opus encoder returned an invalid packet");
         }
         self.writer
             .write_packet(
@@ -284,7 +296,7 @@ impl Encoding {
                 ending,
                 granule.unwrap_or(next),
             )
-            .map_err(|_| "Could not write Ogg Opus audio packet")?;
+            .map_err(|_| "Could not write Opus audio packet")?;
         self.pending.drain(..packet_samples);
         self.encoded_frames = next;
         self.packets += 1;
@@ -292,12 +304,12 @@ impl Encoding {
     }
 
     fn drain(&mut self) -> Result<Vec<u8>, &'static str> {
-        let bytes = std::mem::take(self.writer.inner_mut());
+        let bytes = self.writer.drain()?;
         self.encoded_bytes = self
             .encoded_bytes
             .checked_add(bytes.len())
             .filter(|total| *total <= crate::limits::MAX_MEDIA_ENCODED_QUEUE_BYTES)
-            .ok_or("Ogg Opus recording exceeds the 8 MiB complete-file limit")?;
+            .ok_or("Opus recording exceeds the 8 MiB complete-file limit")?;
         Ok(bytes)
     }
 }

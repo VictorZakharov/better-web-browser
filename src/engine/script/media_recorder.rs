@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 mod flac;
 mod opus;
+mod opus_sink;
 #[cfg(test)]
 mod tests;
 
@@ -22,7 +23,7 @@ enum Session {
 }
 
 pub(super) fn target_bitrate(kind: &str, requested: u32) -> u32 {
-    if kind == "opus" {
+    if matches!(kind, "opus" | "webm-opus") {
         requested.clamp(500, 512_000)
     } else {
         requested
@@ -46,6 +47,11 @@ impl MediaRecorders {
         let session = match kind {
             "flac" => Session::Flac(flac::Session::new()?),
             "opus" => Session::Opus(opus::Session::new(
+                id,
+                target_bitrate(kind, bitrate),
+                constant,
+            )),
+            "webm-opus" => Session::Opus(opus::Session::new_webm(
                 id,
                 target_bitrate(kind, bitrate),
                 constant,

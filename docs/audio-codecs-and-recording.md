@@ -10,7 +10,7 @@ models; FLAC framing follows [RFC 9639](https://www.rfc-editor.org/rfc/rfc9639).
 
 `BaseAudioContext.decodeAudioData` accepts complete, bounded encoded files:
 PCM/IEEE-float RIFF/WAVE, native FLAC, Ogg/Vorbis, MP3, AAC-in-M4A,
-ADTS AAC-LC, audio-only WebM/Vorbis, Ogg/FLAC, and mapping-family-0 Ogg/Opus. A
+ADTS AAC-LC, audio-only WebM/Vorbis, Ogg/FLAC, and mapping-family-0 Ogg/WebM Opus. A
 document-owned native worker decodes every admitted sample to planar `Float32`
 PCM, linearly resamples to the context sample rate, and resolves an
 `AudioBuffer` through the media task queue. It rejects malformed or unsupported
@@ -24,7 +24,7 @@ before accepting output. Ogg/Vorbis requires a complete single logical stream.
 Container/codec agreement is checked for MP3 and M4A, and a declared duration
 that materially exceeds decoded PCM is rejected as truncation. An MP3 stream
 with no duration header cut exactly at a valid frame boundary is inherently
-indistinguishable from a shorter valid stream. WebM/Opus, WebM video or multiple
+indistinguishable from a shorter valid stream. WebM video or multiple
 tracks, non-LC ADTS AAC, encrypted media, and arbitrary MP4 tracks are not
 claimed by `decodeAudioData`. The added containers use shared cancellation-aware
 complete-file admission before the upstream demuxer runs; see the
@@ -52,7 +52,7 @@ synthetic tones with generation commands and hashes in
 
 The contained media worker pulls bounded PCM16 chunks for ordinary complete
 FLAC, Ogg/Vorbis, MP3, AAC-in-M4A, ADTS AAC-LC, audio-only WebM/Vorbis,
-Ogg/FLAC, and mapping-family-0 Ogg/Opus resources. Seek restarts a verified
+Ogg/FLAC, and mapping-family-0 Ogg/WebM Opus resources. Seek restarts a verified
 decoder and discards samples until the requested point; it does not present a
 stale pre-seek chunk. Other supported containers, including H.264/AAC video,
 retain their separate media paths. No host-installed FLAC decoder is required.
@@ -68,8 +68,9 @@ misreported as a contained-decoder success.
 ## `MediaRecorder`
 
 `MediaRecorder` supports one live, browser-granted audio track and
-`audio/flac` or `audio/ogg;codecs=opus`. The empty/default request retains FLAC;
-an unspecified `audio/ogg` request selects Opus. FLAC converts captured PCM to signed 16-bit samples
+`audio/flac`, `audio/ogg;codecs=opus`, or `audio/webm;codecs=opus`.
+The empty/default request retains FLAC; unspecified `audio/ogg` or `audio/webm`
+requests select Opus. FLAC converts captured PCM to signed 16-bit samples
 and writes a FLAC STREAMINFO header followed by independently decodable
 variable-block frames. The STREAMINFO total-sample count and MD5 remain
 unknown while recording, as permitted by RFC 9639. A `dataavailable` Blob may
@@ -99,3 +100,8 @@ stereo PCM, short tails, pause/disabled capture and navigation retirement.
 These tests establish the stated paths and bounds, not full interoperability
 or a score claim from HTML5test. The measured score, if any, is recorded only
 after a fresh hidden release run under the README's fixed benchmark settings.
+
+WebM recording shares the real Opus encoder and seals exact sample duration
+using `CodecDelay` and `DiscardPadding`; see [WebM/Opus](webm-opus.md).
+[MediaCapabilities encoding queries](media-capabilities.md) use the actual
+recording matrix in Window and dedicated Workers, independently of decoders.

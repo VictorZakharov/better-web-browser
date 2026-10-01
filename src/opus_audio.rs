@@ -1,5 +1,5 @@
-//! Complete-file, mono/stereo Ogg Opus decoding (RFC 7845).
-//! The upstream Ogg reader and libopus do the demuxing and codec work. Admission
+//! Complete-file, mono/stereo Opus decoding in Ogg and WebM containers.
+//! The upstream readers and libopus do the demuxing and codec work. Admission
 //! validates the complete immutable source before any predictive PCM decoding.
 
 use ogg::reading::PacketReader;
@@ -9,6 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 mod admission;
+mod container;
+pub(crate) use container::Stream;
 #[cfg(test)]
 mod tests;
 mod timeline;
@@ -39,14 +41,15 @@ impl Default for Limits {
 /// Recognize the first physical packet, including unsupported/malformed heads;
 /// never search arbitrary comments or audio bytes for a codec signature.
 pub(crate) fn sniff(bytes: &[u8]) -> bool {
-    bytes.starts_with(b"OggS")
-        && bytes.get(26).is_some_and(|segments| {
-            let offset = 27 + usize::from(*segments);
-            bytes.get(offset..offset + 8) == Some(b"OpusHead")
-        })
+    crate::webm_opus::sniff(bytes)
+        || (bytes.starts_with(b"OggS")
+            && bytes.get(26).is_some_and(|segments| {
+                let offset = 27 + usize::from(*segments);
+                bytes.get(offset..offset + 8) == Some(b"OpusHead")
+            }))
 }
 
-pub(crate) struct Stream {
+pub(super) struct OggStream {
     reader: PacketReader<Cursor<Arc<[u8]>>>,
     decoder: opus::Decoder,
     channels: u16,
@@ -63,7 +66,7 @@ pub(crate) struct Stream {
     failed: bool,
 }
 
-impl Stream {
+impl OggStream {
     pub(crate) fn open(
         source: Arc<[u8]>,
         limits: Limits,

@@ -199,17 +199,13 @@ fn malformed_frames_and_unimplemented_profiles_or_codecs_are_terminal() {
 }
 
 #[test]
-fn actual_opus_and_video_mixed_webm_cannot_decode_a_supported_audio_subset() {
-    for encoded in [
-        include_str!("../../../../tests/fixtures/media/test-0.4s-opus.webm.base64"),
-        include_str!("../../../../tests/fixtures/media/test-0.4s-mixed.webm.base64"),
-    ] {
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(encoded.lines().collect::<String>())
-            .unwrap();
-        assert_eq!(classify(&bytes), Some(Kind::VorbisWebm));
-        assert!(super::super::decode(&bytes, MediaLimits::default()).is_err());
-    }
+fn video_mixed_webm_cannot_decode_a_supported_audio_subset() {
+    let encoded = include_str!("../../../../tests/fixtures/media/test-0.4s-mixed.webm.base64");
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded.lines().collect::<String>())
+        .unwrap();
+    assert_eq!(classify(&bytes), Some(Kind::VorbisWebm));
+    assert!(super::super::decode(&bytes, MediaLimits::default()).is_err());
 }
 
 #[test]

@@ -11,14 +11,15 @@ matrix after stricter one-track MIME/dictionary validation and output limits.
 | Audio-only WebM / Vorbis | Yes | Yes | No |
 | Ogg / FLAC | Yes | Yes | No |
 | Ogg / Opus, mapping family 0 mono/stereo | Yes | Yes | No |
+| Audio-only WebM / Opus, mapping family 0 mono/stereo | Yes | Yes | No |
 | MP3, ordinary AAC/M4A, WAV, native FLAC, Ogg/Vorbis | Existing paths preserved | Existing paths preserved | Only the existing supported ISO-BMFF segment paths |
-| WebM / Opus or video | No | No | No |
+| WebM / video or multiple tracks | No | No | No |
 
 ADTS playback previously used the Windows Media Foundation fallback. This batch
 adds the bundled, bounded AAC-LC path to both consumers and brings ADTS to Web
 Audio; it does not describe ADTS playback itself as previously unavailable.
 
-WebM is admitted only as an audio-only, single Vorbis track. Ogg/FLAC must be a
+WebM is admitted only as an audio-only, single Vorbis or Opus track. Ogg/FLAC must be a
 complete supported logical stream. AAC admission is restricted to the supported
 ADTS AAC-LC configuration. An unsupported or corrupt recognized source fails
 instead of silently falling through to another decoder. A child `<source>` may
@@ -35,6 +36,8 @@ to use lewton. No codec implementation is copied or rewritten here.
 Ogg/Opus uses the existing Ogg reader and vetted bundled libopus through a safe
 wrapper; its [presentation, provenance, and build policy](ogg-opus.md) are
 shared by Web Audio and contained playback.
+WebM/Opus reuses the demuxer and codec with a
+[separate bounded timing and recording contract](webm-opus.md).
 The added packages are official Symphonia 0.6.1 publications from upstream
 commit `ee35874b571a35a9a6e15d3bc9a3aaf8f11fbeee`; their MPL-2.0 license,
 absence of package build scripts, and `forbid(unsafe_code)` were inspected.
@@ -80,6 +83,8 @@ commands are recorded in [the media fixture inventory](../tests/fixtures/media/R
   overflow from masquerading as clean EOF after a partial decode; it is not a
   claim to admit every Matroska timeline. Empty `TrackTimestampScale` uses its
   schema default of 1.0, as required by [EBML's empty-element rule](https://www.rfc-editor.org/rfc/rfc8794.html#section-6.1).
+- Optional EBML CRC-32 is verified for complete WebM input before demuxing.
+  Corrupt, duplicate or misplaced checksums reject, including metadata damage.
 - ADTS complete framing and decoded packets are checked, but the pinned upstream
   parser skips rather than verifies an optional ADTS CRC. Ogg page CRCs are
   verified. This is a documented decoder limitation, not a claim of equivalent
@@ -88,8 +93,9 @@ commands are recorded in [the media fixture inventory](../tests/fixtures/media/R
   segment parser. Complete-file AAC support does not imply raw ADTS append support.
   Recording has separate encoder admission: the default remains FLAC, with
   [bounded Ogg/Opus microphone recording](ogg-opus.md#incremental-microphone-recording)
-  now supported. Complete-file decoder support does not imply AAC, MP3, Vorbis,
-  or WebM recording. Hardware efficiency is not claimed.
+  and [WebM/Opus recording](webm-opus.md#incremental-microphone-recording)
+  supported. Complete-file decoder support does not imply AAC, MP3, Vorbis,
+  or video recording. Hardware efficiency is not claimed.
 
 MIME parsing follows the MIME Sniffing algorithm for HTTP whitespace, quoted
 values, escaped characters and the first valid duplicate parameter. A quoted

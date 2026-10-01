@@ -4,10 +4,12 @@
 //! Unknown codecs must never be admitted because another track happens to be supported.
 
 mod capabilities;
+mod encoding;
 mod mime;
 mod recording;
 
 pub(crate) use capabilities::{audio_parameters_supported, capability_content_type};
+pub(crate) use encoding::encoding_audio_supported;
 pub(crate) use recording::recording_kind;
 #[cfg(test)]
 mod tests;
@@ -37,7 +39,7 @@ pub(crate) fn can_play_type(input: &str) -> &'static str {
     }
     let Some(codecs) = kind.codecs else {
         // All admitted containers have real decoding, but an unspecified codec
-        // may be unsupported. In particular, WebM does not imply Opus or video.
+        // may be unsupported. Audio-only WebM does not imply video or multiplexing.
         return "maybe";
     };
     let codecs = codecs.to_ascii_lowercase();
@@ -57,7 +59,7 @@ pub(crate) fn can_play_type(input: &str) -> &'static str {
     } else if ogg {
         codecs.len() == 1 && matches!(codecs[0], "vorbis" | "flac" | "opus")
     } else if webm {
-        codecs == ["vorbis"]
+        codecs.len() == 1 && matches!(codecs[0], "vorbis" | "opus")
     } else if flac {
         // RFC 9639's native FLAC media type defines no codec parameter.
         false

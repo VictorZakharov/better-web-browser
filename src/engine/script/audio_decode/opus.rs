@@ -1,4 +1,4 @@
-//! Complete Ogg/Opus presentation PCM for document-owned Web Audio jobs.
+//! Complete Ogg/WebM Opus presentation PCM for document-owned Web Audio jobs.
 
 use super::{DecodedAudio, MAX_DECODED_BYTES, MAX_ENCODED_BYTES, resample};
 use crate::limits::MEDIA_COMMAND_TIMEOUT;
@@ -32,8 +32,8 @@ pub(super) fn decode(
     {
         return Err("decoded Opus exceeds the 16 MiB AudioBuffer limit".into());
     }
-    // RFC 7845 presentation samples exclude pre-skip and EOS padding. Only
-    // those samples enter the AudioBuffer or its context-rate conversion.
+    // Container admission removes pre-skip and Ogg EOS/WebM DiscardPadding.
+    // Only presentation samples enter AudioBuffer/context-rate conversion.
     resample::output_frames(expected_frames, channels, SAMPLE_RATE, target_rate)?;
     let mut source = (0..channels)
         .map(|_| Vec::<f32>::with_capacity(expected_frames))

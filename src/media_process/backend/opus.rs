@@ -1,4 +1,4 @@
-//! Bounded Ogg/Opus playback through the shared presentation-sample decoder.
+//! Bounded Opus playback through the shared presentation-sample decoder.
 
 use super::DecodedMedia;
 use crate::limits::{MAX_MEDIA_ENCODED_QUEUE_BYTES, MEDIA_COMMAND_TIMEOUT};
@@ -26,14 +26,14 @@ pub(super) fn decode(
         || bytes.len() > MAX_MEDIA_ENCODED_QUEUE_BYTES
         || bytes.len() as u64 > limits.max_encoded_bytes
     {
-        return Err("encoded Ogg/Opus source exceeds worker limits".into());
+        return Err("encoded Opus source exceeds worker limits".into());
     }
     let deadline = started + MEDIA_COMMAND_TIMEOUT;
     let mut stream = PcmStream::open(Arc::from(bytes), deadline)?;
     while stream.next_sample(deadline)?.is_some() {}
     let duration = stream::frames_to_100ns(stream.frames)?;
     if stream.samples == 0 || stream.decoded_bytes == 0 || duration == 0 {
-        return Err("Ogg/Opus source produced no presentation PCM".into());
+        return Err("Opus source produced no presentation PCM".into());
     }
     let report = MediaDecodeReport {
         buffered: MediaBufferedExtent {
@@ -64,7 +64,7 @@ pub(super) fn decode(
     };
     report
         .validate(limits)
-        .map_err(|error| format!("validate Ogg/Opus source: {error}"))?;
+        .map_err(|error| format!("validate Opus source: {error}"))?;
     Ok(DecodedMedia {
         report,
         playback: None,

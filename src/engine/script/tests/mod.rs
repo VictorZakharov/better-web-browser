@@ -67,6 +67,7 @@ mod drag_drop;
 mod editing_hosts;
 mod element_scrolling;
 mod embedded_elements;
+mod encoding_capabilities;
 mod event_handler_attributes;
 mod event_source;
 mod events;

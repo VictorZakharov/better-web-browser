@@ -32,7 +32,7 @@ impl PcmStream {
     pub(super) fn next_sample(&mut self, deadline: Instant) -> Result<Option<Vec<u8>>, String> {
         let Some(samples) = self.core.next_pcm(None, deadline)? else {
             if self.frames != self.core.frames() {
-                return Err("Ogg/Opus PCM disagreed with its presentation duration".into());
+                return Err("Opus PCM disagreed with its presentation duration".into());
             }
             return Ok(None);
         };
@@ -41,19 +41,19 @@ impl PcmStream {
             .samples
             .checked_add(1)
             .filter(|samples| *samples as usize <= MAX_MEDIA_DECODED_SAMPLES)
-            .ok_or("Ogg/Opus playback sample count exceeds worker limit")?;
+            .ok_or("Opus playback sample count exceeds worker limit")?;
         self.decoded_bytes = self
             .decoded_bytes
             .checked_add(bytes.len() as u64)
             .filter(|bytes| *bytes <= MAX_MEDIA_DECODED_SOURCE_BYTES)
-            .ok_or("Ogg/Opus decoded bytes exceed worker limit")?;
+            .ok_or("Opus decoded bytes exceed worker limit")?;
         self.last_timestamp_100ns = i64::try_from(frames_to_100ns(self.frames)?)
-            .map_err(|_| "Ogg/Opus PCM timestamp overflow")?;
+            .map_err(|_| "Opus PCM timestamp overflow")?;
         self.frames = self
             .frames
             .checked_add(samples.len() as u64 / u64::from(self.channels))
             .filter(|frames| *frames <= self.core.frames())
-            .ok_or("Ogg/Opus PCM exceeded its presentation duration")?;
+            .ok_or("Opus PCM exceeded its presentation duration")?;
         frames_to_100ns(self.frames)?;
         Ok(Some(bytes))
     }
@@ -64,17 +64,17 @@ fn pcm16_bytes(samples: &[f32], channels: u16) -> Result<Vec<u8>, String> {
         || samples.is_empty()
         || !samples.len().is_multiple_of(usize::from(channels))
     {
-        return Err("Ogg/Opus PCM channel alignment is invalid".into());
+        return Err("Opus PCM channel alignment is invalid".into());
     }
     let byte_count = samples
         .len()
         .checked_mul(2)
         .filter(|bytes| *bytes <= MAX_MEDIA_DECODED_AUDIO_SAMPLE_BYTES)
-        .ok_or("Ogg/Opus PCM sample exceeds worker limit")?;
+        .ok_or("Opus PCM sample exceeds worker limit")?;
     let mut bytes = Vec::with_capacity(byte_count);
     for sample in samples {
         if !sample.is_finite() {
-            return Err("Ogg/Opus produced a non-finite PCM sample".into());
+            return Err("Opus produced a non-finite PCM sample".into());
         }
         // Header gain is applied by libopus before this output conversion.
         // Preserve unclipped float PCM in Web Audio, saturate only PCM16 playback.
@@ -91,5 +91,5 @@ pub(super) fn frames_to_100ns(frames: u64) -> Result<u64, String> {
         .checked_mul(10_000_000)
         .map(|value| value / u64::from(SAMPLE_RATE))
         .filter(|duration| *duration <= MAX_MEDIA_DURATION_100NS)
-        .ok_or_else(|| "Ogg/Opus duration exceeds worker limit".into())
+        .ok_or_else(|| "Opus duration exceeds worker limit".into())
 }

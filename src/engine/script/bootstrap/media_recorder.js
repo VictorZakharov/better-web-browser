@@ -8,7 +8,8 @@
     const BlobCtor = globalThis.Blob;
     const makeBlob = BlobCtor.__fromOwnedBytes;
     const CaptureStream = globalThis.MediaStream;
-    const mimeFor = kind => kind === 'opus' ? 'audio/ogg;codecs=opus' : 'audio/flac';
+    const mimeFor = kind => kind === 'opus' ? 'audio/ogg;codecs=opus' :
+        kind === 'webm-opus' ? 'audio/webm;codecs=opus' : 'audio/flac';
     const MAX_BLOB_BYTES = 16 * 1024 * 1024;
     const MIN_TIMESLICE = 100;
     const CAPTURE_TICKS_PER_SECOND = 10_000_000;
@@ -202,7 +203,7 @@
                 // change the constructor's WebIDL-visible requested value.
                 audioBitsPerSecond: requestedRate,
                 videoBitsPerSecond: dictionary.aggregate === undefined ? dictionary.video : 0,
-                mode: kind === 'opus' ? dictionary.mode : 'variable',
+                mode: kind === 'opus' || kind === 'webm-opus' ? dictionary.mode : 'variable',
                 conflictingKeyFrames: dictionary.count !== undefined && dictionary.duration !== undefined });
         }
         static isTypeSupported(type) {

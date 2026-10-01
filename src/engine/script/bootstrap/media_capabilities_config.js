@@ -104,7 +104,7 @@
         mediaCapabilityOptional(dictionary, result, 'video', mediaCapabilityKeyTrack);
         return result;
     };
-    const mediaConfigurationSnapshot = value => {
+    const mediaConfigurationSnapshot = (value, encoding = false) => {
         const dictionary = mediaCapabilityDictionary(value);
         const snapshot = {};
         // Inherited MediaConfiguration members precede the derived members;
@@ -112,9 +112,10 @@
         // https://webidl.spec.whatwg.org/#es-dictionary
         mediaCapabilityOptional(dictionary, snapshot, 'audio', value => mediaCapabilityTrack(value, 'audio'));
         mediaCapabilityOptional(dictionary, snapshot, 'video', value => mediaCapabilityTrack(value, 'video'));
-        mediaCapabilityOptional(dictionary, snapshot, 'keySystemConfiguration', mediaCapabilityKeySystem);
+        if (!encoding)
+            mediaCapabilityOptional(dictionary, snapshot, 'keySystemConfiguration', mediaCapabilityKeySystem);
         snapshot.type = mediaCapabilityRequired(dictionary, 'type',
-            mediaCapabilityEnum(['file', 'media-source', 'webrtc']));
+            mediaCapabilityEnum(encoding ? ['record', 'webrtc'] : ['file', 'media-source', 'webrtc']));
         const type = snapshot.type;
         if (!snapshot.audio && !snapshot.video)
             throw new TypeError('A media configuration requires audio or video');
@@ -123,12 +124,17 @@
             if (track && host('mediaCapabilitiesContentType', track.contentType, media, type) === 'invalid')
                 throw new TypeError('Invalid ' + media + ' track MIME configuration');
         }
-        if (snapshot.audio && type === 'webrtc' && 'spatialRendering' in snapshot.audio)
-            throw new TypeError('spatialRendering is not applicable to WebRTC');
+        if (snapshot.audio && (encoding || type === 'webrtc') && 'spatialRendering' in snapshot.audio)
+            throw new TypeError('spatialRendering is applicable only to file/source decoding');
         if (snapshot.video) {
             if (snapshot.video.framerate <= 0) throw new TypeError('Video framerate must be positive');
-            if (type !== 'webrtc' && 'scalabilityMode' in snapshot.video)
-                throw new TypeError('scalabilityMode is applicable only to WebRTC decoding');
+            if ((!encoding || type !== 'webrtc') && 'scalabilityMode' in snapshot.video)
+                throw new TypeError('scalabilityMode is applicable only to WebRTC encoding');
+            if ((encoding || type === 'webrtc') &&
+                ['colorGamut', 'hdrMetadataType', 'transferFunction'].some(name => name in snapshot.video))
+                throw new TypeError('HDR/color members are applicable only to file/source decoding');
+            if (encoding && 'spatialScalability' in snapshot.video)
+                throw new TypeError('spatialScalability is applicable only to decoding');
         }
         if (snapshot.keySystemConfiguration) {
             if (type === 'webrtc') throw new TypeError('WebRTC cannot use a keySystemConfiguration');

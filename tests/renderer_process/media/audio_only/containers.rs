@@ -46,11 +46,7 @@ fn contained_renderer_loads_plays_and_seeks_ogg_flac() {
 }
 
 #[test]
-fn contained_renderer_rejects_opus_and_video_mixed_webm_without_partial_playback() {
-    for encoded in [
-        include_str!("../../../fixtures/media/test-0.4s-opus.webm.base64"),
-        include_str!("../../../fixtures/media/test-0.4s-mixed.webm.base64"),
-    ] {
-        verify_audio_failure(200, decode_base64(encoded), 4, "audio/webm");
-    }
+fn contained_renderer_rejects_video_mixed_webm_without_partial_playback() {
+    let encoded = include_str!("../../../fixtures/media/test-0.4s-mixed.webm.base64");
+    verify_audio_failure(200, decode_base64(encoded), 4, "audio/webm");
 }

@@ -43,7 +43,7 @@ fn media_queries_observe_quoted_parameters_and_first_valid_codec() {
             const checks = [
                 ['audio/webm;note="ignored;codecs=opus";codecs=vorbis', 'probably'],
                 ['audio/webm;codecs=vorbis;codecs=opus', 'probably'],
-                ['audio/webm;codecs=opus;codecs=vorbis', ''],
+                ['audio/webm;codecs=opus;codecs=vorbis', 'probably'],
                 ['audio/webm;codecs=;codecs=vorbis', 'probably'],
                 ['audio/webm;codecs="";codecs=vorbis', ''],
                 ['audio/webm;codecs="vor\\bis"', 'probably'],

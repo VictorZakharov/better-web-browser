@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn opus_queries_claim_only_the_admitted_complete_ogg_shape() {
+fn opus_queries_claim_only_the_admitted_complete_audio_containers() {
     for (mime, expected) in [
         ("audio/ogg;codecs=opus", "probably"),
         ("Audio/Ogg;CODECS=OPUS", "probably"),
@@ -11,7 +11,7 @@ fn opus_queries_claim_only_the_admitted_complete_ogg_shape() {
         ("audio/ogg;codecs=opus,vorbis", ""),
         ("audio/ogg;codecs=opus,opus", ""),
         ("audio/ogg;codecs=opus,", ""),
-        ("audio/webm;codecs=opus", ""),
+        ("audio/webm;codecs=opus", "probably"),
         ("audio/mp4;codecs=opus", ""),
         ("video/ogg;codecs=opus", ""),
         ("audio/opus", ""),
@@ -26,7 +26,11 @@ fn opus_queries_claim_only_the_admitted_complete_ogg_shape() {
 
 #[test]
 fn opus_capabilities_distinguish_pcm_rate_from_original_input_metadata() {
-    for mime in ["audio/ogg;codecs=opus", "Audio/Ogg;codecs=\" OPUS \""] {
+    for mime in [
+        "audio/ogg;codecs=opus",
+        "Audio/Ogg;codecs=\" OPUS \"",
+        "audio/webm;codecs=opus",
+    ] {
         assert_eq!(capability_content_type(mime, "audio", "file"), "supported");
         for channels in ["1", "2"] {
             assert!(audio_parameters_supported(
@@ -75,8 +79,4 @@ fn opus_capabilities_distinguish_pcm_rate_from_original_input_metadata() {
         );
         assert_eq!(capability_content_type(mime, "video", "file"), "invalid");
     }
-    assert_eq!(
-        capability_content_type("audio/webm;codecs=opus", "audio", "file"),
-        "unsupported"
-    );
 }

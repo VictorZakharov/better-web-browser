@@ -2,6 +2,15 @@ use super::*;
 
 #[test]
 fn hidden_renderer_emitted_chunks_decode_real_stereo_with_exact_lookahead_and_eos_trim() {
+    verify_stereo_chunks("audio/ogg");
+}
+
+#[test]
+fn hidden_renderer_webm_chunks_decode_real_stereo_with_exact_lookahead_and_padding() {
+    verify_stereo_chunks("audio/webm");
+}
+
+fn verify_stereo_chunks(mime: &str) {
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
     let mut session =
         RendererSession::launch(options()).expect("launch hidden Opus recorder renderer");
@@ -11,10 +20,10 @@ fn hidden_renderer_emitted_chunks_decode_real_stereo_with_exact_lookahead_and_eo
         const order = []; const parts = []; const timecodes = [];
         let stage = 0;
         navigator.mediaDevices.getUserMedia({audio:true}).then(stream => {
-            window.recorder = new MediaRecorder(stream, {mimeType:'audio/ogg'});
+            window.recorder = new MediaRecorder(stream, {mimeType:'__MIME__'});
             recorder.onstart = () => {order.push('start'); state.textContent = 'ready';};
             recorder.ondataavailable = event => {
-                if (event.data.type !== 'audio/ogg;codecs=opus' || !event.isTrusted)
+                if (event.data.type !== '__MIME__;codecs=opus' || !event.isTrusted)
                     throw Error('recorded Blob type');
                 parts.push(event.data); timecodes.push(event.timecode); order.push('data');
                 state.textContent = 'chunks:' + parts.length;
@@ -23,7 +32,7 @@ fn hidden_renderer_emitted_chunks_decode_real_stereo_with_exact_lookahead_and_eo
             recorder.onstop = async () => {
                 try {
                     order.push('stop');
-                    const encoded = await new Blob(parts, {type:'audio/ogg;codecs=opus'}).arrayBuffer();
+                    const encoded = await new Blob(parts, {type:'__MIME__;codecs=opus'}).arrayBuffer();
                     const context = new OfflineAudioContext(2, 128, 48000);
                     const promise = context.decodeAudioData(encoded);
                     if (encoded.byteLength !== 0) throw Error('decode ownership');
@@ -46,8 +55,8 @@ fn hidden_renderer_emitted_chunks_decode_real_stereo_with_exact_lookahead_and_eo
             };
             recorder.start(100);
         }, error => state.textContent = 'failed:' + error.name);
-        </script>"#;
-    let request = grant(&session, document, html);
+        </script>"#.replace("__MIME__", mime);
+    let request = grant(&session, document, &html);
     wait(&session, document, "ready");
     for sequence in 1..=2 {
         audio(&session, document, request, sequence, 48_000, 2, 960);
@@ -71,6 +80,15 @@ fn hidden_renderer_emitted_chunks_decode_real_stereo_with_exact_lookahead_and_eo
 
 #[test]
 fn hidden_renderer_pause_omits_pcm_and_disabled_microphone_is_encoded_silence() {
+    verify_silence("audio/ogg");
+}
+
+#[test]
+fn hidden_renderer_webm_pause_omits_pcm_and_disabled_microphone_is_encoded_silence() {
+    verify_silence("audio/webm");
+}
+
+fn verify_silence(mime: &str) {
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
     let mut session =
         RendererSession::launch(options()).expect("launch hidden Opus silence renderer");
@@ -80,7 +98,7 @@ fn hidden_renderer_pause_omits_pcm_and_disabled_microphone_is_encoded_silence() 
         const events = [], parts = []; let stage = 0;
         navigator.mediaDevices.getUserMedia({audio:true}).then(stream => {
             const track = stream.getAudioTracks()[0];
-            const recorder = new MediaRecorder(stream, {mimeType:'audio/ogg;codecs=opus'});
+            const recorder = new MediaRecorder(stream, {mimeType:'__MIME__;codecs=opus'});
             recorder.onstart = () => events.push('start');
             recorder.onpause = () => {events.push('pause'); state.textContent='paused';};
             recorder.onresume = () => {events.push('resume'); state.textContent='resumed';};
@@ -99,8 +117,8 @@ fn hidden_renderer_pause_omits_pcm_and_disabled_microphone_is_encoded_silence() 
             };
             control.onclick=() => {if(stage++===0){track.enabled=false;recorder.resume();}else recorder.stop();};
             recorder.start(); recorder.pause();
-        });</script>"#;
-    let request = grant(&session, document, html);
+        });</script>"#.replace("__MIME__", mime);
+    let request = grant(&session, document, &html);
     wait(&session, document, "paused");
     audio(&session, document, request, 1, 48_000, 1, 960);
     session.ping(Duration::from_secs(2)).unwrap();

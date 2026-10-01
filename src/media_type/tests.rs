@@ -9,7 +9,7 @@ fn only_implemented_container_codec_combinations_are_admitted() {
         ("audio/aac;codecs=mp4a.40.5", ""),
         ("audio/webm", "maybe"),
         ("audio/webm;codecs=vorbis", "probably"),
-        ("audio/webm;codecs=opus", ""),
+        ("audio/webm;codecs=opus", "probably"),
         ("audio/webm;codecs=vp8,vorbis", ""),
         ("video/webm", ""),
         ("video/webm;codecs=vorbis", ""),
@@ -66,7 +66,7 @@ fn mime_parameters_use_first_valid_value_and_ignore_unrelated_quoted_codecs() {
     for (mime, expected) in [
         (" Audio/WebM \t;CODECS=vorbis", "probably"),
         ("audio/webm;codecs=vorbis;codecs=opus", "probably"),
-        ("audio/webm;codecs=opus;codecs=vorbis", ""),
+        ("audio/webm;codecs=opus;codecs=vorbis", "probably"),
         ("audio/webm;codecs=;codecs=vorbis", "probably"),
         ("audio/webm;codecs=\u{100};codecs=vorbis", "probably"),
         ("audio/webm;codecs=\"\";codecs=vorbis", ""),

@@ -108,23 +108,19 @@ fn truncated_new_containers_fail_in_the_worker_without_fallback_or_sibling_damag
 }
 
 #[test]
-fn unsupported_opus_and_video_mixed_webm_fail_without_partial_audio_playback() {
+fn video_mixed_webm_fails_without_partial_audio_playback() {
     let _serial = SERIAL
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut options = decode_options();
     options.silent_audio = true;
     let mut session = MediaSession::launch(options).expect("launch hidden media worker");
-    for encoded in [
-        include_str!("../../fixtures/media/test-0.4s-opus.webm.base64"),
-        include_str!("../../fixtures/media/test-0.4s-mixed.webm.base64"),
-    ] {
-        let bytes = decode_base64(encoded);
-        assert!(session.decode_owned_audio_fixture(&bytes).is_err());
-        session
-            .ping(38)
-            .expect("unsupported codec is a source-scoped error");
-    }
+    let encoded = include_str!("../../fixtures/media/test-0.4s-mixed.webm.base64");
+    let bytes = decode_base64(encoded);
+    assert!(session.decode_owned_audio_fixture(&bytes).is_err());
+    session
+        .ping(38)
+        .expect("unsupported codec is a source-scoped error");
     let (bytes, _) = fixtures().into_iter().nth(1).unwrap();
     let (_, report) = session
         .decode_owned_audio_fixture(&bytes)

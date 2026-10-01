@@ -8,6 +8,27 @@ fn pcm(samples: &[i16]) -> Vec<u8> {
         .collect()
 }
 
+#[test]
+fn flac_capability_rates_and_channels_match_native_capture_admission() {
+    for rate in [0, 7_999, 8_000, 44_100, 48_000, 48_001, 96_000, 192_000] {
+        for channels in [0, 1, 2, 3] {
+            let mut recorders = MediaRecorders::default();
+            let id = recorders.open("flac", 128_000, false).unwrap();
+            let claimed = crate::media_type::encoding_audio_supported(
+                "audio/flac",
+                Some(&channels.to_string()),
+                Some(rate as f64),
+                None,
+            );
+            assert_eq!(
+                claimed,
+                recorders.format_supported(id, rate, channels),
+                "rate={rate}, channels={channels}"
+            );
+        }
+    }
+}
+
 fn decoded(bytes: Vec<u8>) -> Vec<i32> {
     claxon::FlacReader::new(Cursor::new(bytes))
         .expect("FLAC header and frame must decode")
