@@ -7,6 +7,8 @@ license = "MIT"
 
 [dependencies]
 base64 = "0.22.1"
+# MPL-2.0 AVIF container parser; decode remains in the contained renderer.
+avif-parse = "=2.0.0"
 # Pure-Rust Apache-2.0 native FLAC decoder shared by Web Audio and the media worker.
 claxon = "=0.4.3"
 cssparser = "0.37.0"
@@ -20,6 +22,18 @@ flacenc = { version = "0.5.1", default-features = false }
 getrandom = "0.4.3"
 html5ever = "0.39.0"
 image = { version = "0.25.10", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "webp"] }
+# MIT/Apache-2.0 JPEG XL decoder, with pure-Rust color management and no thread pool.
+jxl-oxide = { version = "=0.12.6", default-features = false, features = ["moxcms"] }
+# Reuse its locked MIT/Apache-2.0 parser APIs for pre-allocation metadata checks.
+jxl-bitstream = "=1.1.0"
+jxl-color = "=0.11.0"
+jxl-oxide-common = "=1.0.0"
+# Already used by image and jxl-oxide (BSD-3-Clause/Apache-2.0); share ICC transforms.
+moxcms = "=0.8.1"
+# BSD-2-Clause AV1 decoder. The Rust paths avoid a new assembler/native toolchain.
+rav1d = { version = "=1.1.0", default-features = false, features = ["bitdepth_8", "bitdepth_16"] }
+# BSD-3-Clause planar YUV conversion; do not duplicate codec color transforms.
+yuv = { version = "=0.8.19", default-features = false }
 # Pure-Rust Vorbis decoder and Ogg container parser shared by Web Audio and media worker.
 lewton = "=0.10.2"
 ogg = "=0.8.0"

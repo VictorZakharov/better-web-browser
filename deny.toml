@@ -22,7 +22,9 @@ allow = [
     "Unlicense",
     "Zlib",
 ]
-exceptions = []
+# rav1d's no_std conversion-trait micro-crate: inspected source, no build script
+# or dependencies. Accept its CC0 public-domain dedication only at this pin.
+exceptions = [{ name = "to_method", version = "=1.1.0", allow = ["CC0-1.0"] }]
 
 [bans]
 multiple-versions = "warn"

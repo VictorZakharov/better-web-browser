@@ -219,6 +219,7 @@ impl DocumentRuntime {
                             snapshot.node,
                             snapshot.width,
                             snapshot.height,
+                            snapshot.content_size,
                             snapshot.pixels,
                         ) && self.page.diagnostics.len() < 32
                         {

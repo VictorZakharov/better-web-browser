@@ -3,8 +3,8 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `3562db7184805c8b95d82c30c452220e2c7747789a704c26c652b1e6bd4bd63f`
-- Third-party packages: 259
+- Cargo.lock SHA-256: `5c9779a58867e458cbbccc525e6e64ddda89b1e1c12271d0456f4e0a9c39b95e`
+- Third-party packages: 293
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
@@ -14,12 +14,18 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `adler2` | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | [upstream](https://github.com/oyvindln/adler2) |
 | `aho-corasick` | 1.1.5 | Unlicense OR MIT | [upstream](https://github.com/BurntSushi/aho-corasick) |
 | `alloc-no-stdlib` | 2.0.4 | BSD-3-Clause | [upstream](https://github.com/dropbox/rust-alloc-no-stdlib) |
+| `alloc-stdlib` | 0.2.4 | BSD-3-Clause | [upstream](https://github.com/dropbox/rust-alloc-no-stdlib) |
 | `arrayref` | 0.3.9 | BSD-2-Clause | [upstream](https://github.com/droundy/arrayref) |
 | `arrayvec` | 0.7.8 | MIT OR Apache-2.0 | [upstream](https://github.com/bluss/arrayvec) |
+| `assert_matches` | 1.5.0 | MIT/Apache-2.0 | [upstream](https://github.com/murarth/assert_matches) |
+| `atomig` | 0.4.3 | MIT/Apache-2.0 | [upstream](https://github.com/LukasKalbertodt/atomig/) |
+| `atomig-macro` | 0.4.0 | MIT/Apache-2.0 | [upstream](https://github.com/LukasKalbertodt/atomig/) |
 | `autocfg` | 1.5.1 | Apache-2.0 OR MIT | [upstream](https://github.com/cuviper/autocfg) |
+| `avif-parse` | 2.0.0 | MPL-2.0 | [upstream](https://github.com/kornelski/avif-parse) |
 | `base64` | 0.22.1 | MIT OR Apache-2.0 | [upstream](https://github.com/marshallpierce/rust-base64) |
 | `bindgen` | 0.72.1 | BSD-3-Clause | [upstream](https://github.com/rust-lang/rust-bindgen) |
 | `bitflags` | 2.13.1 | MIT OR Apache-2.0 | [upstream](https://github.com/bitflags/bitflags) |
+| `bitreader` | 0.3.11 | MIT OR Apache-2.0 | [upstream](https://github.com/irauta/bitreader) |
 | `block-buffer` | 0.10.4 | MIT OR Apache-2.0 | [upstream](https://github.com/RustCrypto/utils) |
 | `brotli-decompressor` | 5.0.3 | BSD-3-Clause/MIT | [upstream](https://github.com/dropbox/rust-brotli-decompressor) |
 | `built` | 0.7.7 | MIT | [upstream](https://github.com/lukaslueg/built) |
@@ -59,6 +65,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `either` | 1.17.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rayon-rs/either) |
 | `encoding_rs` | 0.8.35 | (Apache-2.0 OR MIT) AND BSD-3-Clause | [upstream](https://github.com/hsivonen/encoding_rs) |
 | `euclid` | 0.22.14 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/euclid) |
+| `fallible_collections` | 0.5.2 | MIT OR Apache-2.0 | [upstream](https://github.com/vcombey/fallible_collections.git) |
 | `fastrand` | 2.5.0 | Apache-2.0 OR MIT | [upstream](https://github.com/smol-rs/fastrand) |
 | `fdeflate` | 0.3.7 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/fdeflate) |
 | `find-msvc-tools` | 0.1.13 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/cc-rs) |
@@ -90,6 +97,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `hashbrown` | 0.16.1 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/hashbrown) |
 | `hashbrown` | 0.17.1 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/hashbrown) |
 | `heapless` | 0.8.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-embedded/heapless) |
+| `heck` | 0.5.0 | MIT OR Apache-2.0 | [upstream](https://github.com/withoutboats/heck) |
 | `home` | 0.5.12 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/cargo) |
 | `html5ever` | 0.39.0 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/html5ever) |
 | `icu_calendar` | 2.3.0 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
@@ -111,8 +119,23 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `itertools` | 0.13.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-itertools/itertools) |
 | `itoa` | 1.0.18 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/itoa) |
 | `ixdtf` | 0.6.6 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `jobserver` | 0.1.35 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/jobserver-rs) |
+| `jxl-bitstream` | 1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
+| `jxl-coding` | 1.0.1 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
+| `jxl-color` | 0.11.0 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
+| `jxl-frame` | 0.13.3 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
+| `jxl-grid` | 0.6.2 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
+| `jxl-image` | 0.13.0 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
+| `jxl-jbr` | 0.2.1 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
+| `jxl-modular` | 0.11.3 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
+| `jxl-oxide` | 0.12.6 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
+| `jxl-oxide-common` | 1.0.0 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
+| `jxl-render` | 0.12.4 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
+| `jxl-threadpool` | 1.0.0 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
+| `jxl-vardct` | 0.11.1 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
 | `kurbo` | 0.13.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/kurbo) |
 | `lazy_static` | 1.5.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang-nursery/lazy-static.rs) |
+| `leb128` | 0.2.7 | MIT OR Apache-2.0 | [upstream](https://github.com/gimli-rs/leb128) |
 | `lewton` | 0.10.2 | MIT OR Apache-2.0 | [upstream](https://github.com/RustAudio/lewton) |
 | `libc` | 0.2.189 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/libc) |
 | `libloading` | 0.8.9 | ISC | [upstream](https://github.com/nagisa/rust_libloading/) |
@@ -128,6 +151,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `minimal-lexical` | 0.2.1 | MIT/Apache-2.0 | [upstream](https://github.com/Alexhuszagh/minimal-lexical) |
 | `miniz_oxide` | 0.8.9 | MIT OR Zlib OR Apache-2.0 | [upstream](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide) |
 | `moxcms` | 0.8.1 | BSD-3-Clause OR Apache-2.0 | [upstream](https://github.com/awxkee/moxcms.git) |
+| `nasm-rs` | 0.3.2 | MIT OR Apache-2.0 | [upstream](https://github.com/medek/nasm-rs) |
 | `new_debug_unreachable` | 1.0.6 | MIT | [upstream](https://github.com/mbrubeck/rust-debug-unreachable) |
 | `nom` | 7.1.3 | MIT | [upstream](https://github.com/Geal/nom) |
 | `num-complex` | 0.4.6 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-complex) |
@@ -160,6 +184,8 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `pxfm` | 0.1.30 | BSD-3-Clause OR Apache-2.0 | [upstream](https://github.com/awxkee/pxfm) |
 | `quick-error` | 2.0.1 | MIT/Apache-2.0 | [upstream](http://github.com/tailhook/quick-error) |
 | `quote` | 1.0.47 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/quote) |
+| `rav1d` | 1.1.0 | BSD-2-Clause | [upstream](https://github.com/memorysafety/rav1d) |
+| `raw-cpuid` | 11.6.0 | MIT | [upstream](https://github.com/gz/rust-cpuid) |
 | `read-fonts` | 0.37.0 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
 | `read-fonts` | 0.41.0 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
 | `regex` | 1.13.1 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/regex) |
@@ -193,6 +219,8 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `strict-num` | 0.1.1 | MIT | [upstream](https://github.com/RazrFalcon/strict-num) |
 | `string_cache` | 0.9.0 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/string-cache) |
 | `string_cache_codegen` | 0.6.1 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/string-cache) |
+| `strum` | 0.26.3 | MIT | [upstream](https://github.com/Peternator7/strum) |
+| `strum_macros` | 0.26.4 | MIT | [upstream](https://github.com/Peternator7/strum) |
 | `svgtypes` | 0.16.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/svgtypes) |
 | `swash` | 0.2.10 | Apache-2.0 OR MIT | [upstream](https://github.com/dfrg/swash) |
 | `symphonia` | 0.6.1 | MPL-2.0 | [upstream](https://github.com/pdeljanov/Symphonia) |
@@ -221,6 +249,9 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `tiny-skia-path` | 0.12.0 | BSD-3-Clause | [upstream](https://github.com/linebender/tiny-skia/tree/master/path) |
 | `tinystr` | 0.8.4 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `tinyvec` | 1.13.3 | Zlib OR Apache-2.0 OR MIT | [upstream](https://github.com/Lokathor/tinyvec) |
+| `to_method` | 1.1.0 | CC0-1.0 | [upstream](https://github.com/whentze/to_method) |
+| `tracing` | 0.1.44 | MIT | [upstream](https://github.com/tokio-rs/tracing) |
+| `tracing-core` | 0.1.36 | MIT | [upstream](https://github.com/tokio-rs/tracing) |
 | `typenum` | 1.20.0 | MIT OR Apache-2.0 | [upstream](https://github.com/paholg/typenum) |
 | `unicode-bidi` | 0.3.18 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/unicode-bidi) |
 | `unicode-ident` | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | [upstream](https://github.com/dtolnay/unicode-ident) |
@@ -257,7 +288,10 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `yazi` | 0.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/dfrg/yazi) |
 | `yoke` | 0.8.3 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `yoke-derive` | 0.8.2 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `yuv` | 0.8.19 | BSD-3-Clause OR Apache-2.0 | [upstream](https://github.com/awxkee/yuvutils-rs) |
 | `zeno` | 0.3.3 | Apache-2.0 OR MIT | [upstream](https://github.com/dfrg/zeno) |
+| `zerocopy` | 0.7.35 | BSD-2-Clause OR Apache-2.0 OR MIT | [upstream](https://github.com/google/zerocopy) |
+| `zerocopy-derive` | 0.7.35 | BSD-2-Clause OR Apache-2.0 OR MIT | [upstream](https://github.com/google/zerocopy) |
 | `zerofrom` | 0.1.8 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `zerofrom-derive` | 0.1.7 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `zerotrie` | 0.2.5 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |

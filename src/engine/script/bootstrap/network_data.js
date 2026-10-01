@@ -208,6 +208,20 @@
         if (state.chunks.length > 1) state.chunks = [concatBytes(state.chunks)];
         return state.chunks[0];
     };
+    // Window Canvas is initialized earlier; worker Canvas is initialized later.
+    // Pass immutable bytes through a bootstrap-only capability, then remove it.
+    // createImageBitmap must not call author-overridable Blob.bytes()/getters.
+    const imageBitmapBlobSnapshot = value => {
+        const state = blobStates.get(value);
+        if (!state) return null;
+        if (state.size > 24 * 1024 * 1024)
+            throw new DOMException('Image source exceeds the decode budget', 'InvalidStateError');
+        return new Uint8Array(materializeBlob(value));
+    };
+    if (globalThis.__bindImageBitmapBlob) {
+        globalThis.__bindImageBitmapBlob(imageBitmapBlobSnapshot);
+        delete globalThis.__bindImageBitmapBlob;
+    } else globalThis.__imageBitmapBlobSnapshot = imageBitmapBlobSnapshot;
     const initializeBlob = (blob, chunks, type) => {
         blobStates.set(blob, {chunks: chunks.length ? chunks : [new Uint8Array()],
             size: chunks.reduce((total, chunk) => total + chunk.length, 0), type: normalizedBlobType(type)});

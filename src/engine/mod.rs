@@ -3,6 +3,7 @@ pub mod display_list;
 pub mod dom;
 pub(crate) mod font;
 pub(crate) mod fragment_navigation;
+pub(crate) mod image_decode;
 pub mod invalidation;
 pub mod layout;
 pub mod page;

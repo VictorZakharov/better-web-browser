@@ -5,8 +5,13 @@ use crate::limits::MAX_CANVAS_PIXELS;
 
 const KEY_PREFIX: &str = "breeze-internal:canvas:";
 
-fn key(node: NodeId) -> String {
-    format!("{KEY_PREFIX}{}", node.to_wire())
+fn key(node: NodeId, content_size: (u32, u32)) -> String {
+    format!(
+        "{KEY_PREFIX}{}:{}x{}",
+        node.to_wire(),
+        content_size.0,
+        content_size.1
+    )
 }
 
 /// HTML canvas width and height content attributes are non-negative integers.
@@ -36,12 +41,8 @@ pub(super) fn image_url(page: &Page, node: &NodeRef) -> Option<String> {
     if !page.scripting_enabled {
         return None;
     }
-    let key = key(node.id());
-    let dimensions = intrinsic_size(node);
-    page.images
-        .get(&key)
-        .filter(|image| (image.width, image.height) == dimensions)
-        .map(|_| key)
+    let key = key(node.id(), intrinsic_size(node));
+    page.images.contains_key(&key).then_some(key)
 }
 
 impl Page {
@@ -54,6 +55,7 @@ impl Page {
         node_id: NodeId,
         width: u32,
         height: u32,
+        content_size: (u32, u32),
         pixels: Option<Vec<u8>>,
     ) -> Result<(), String> {
         let Some(node) = self.dom.find_node(node_id) else {
@@ -61,11 +63,11 @@ impl Page {
         };
         if node.tag_name() != Some("canvas")
             || Node::shadow_including_root(&node).id() != self.dom.document.id()
-            || intrinsic_size(&node) != (width, height)
+            || intrinsic_size(&node) != content_size
         {
             return Ok(());
         }
-        let key = key(node_id);
+        let key = key(node_id, content_size);
         let count = usize::try_from(width)
             .ok()
             .and_then(|width| {
@@ -130,12 +132,16 @@ impl Page {
                 return true;
             };
             let connected = encoded
+                .split(':')
+                .next()
+                .unwrap_or_default()
                 .parse::<u128>()
                 .ok()
                 .and_then(NodeId::from_wire)
                 .and_then(|id| self.dom.find_node(id))
                 .is_some_and(|node| {
                     Node::shadow_including_root(&node).id() == self.dom.document.id()
+                        && key == &self::key(node.id(), intrinsic_size(&node))
                 });
             if !connected {
                 self.canvas_image_updates.remove(key);
@@ -156,14 +162,43 @@ mod tests {
             "https://example.test/",
         );
         let node = page.dom.elements_named("canvas").next().unwrap();
-        page.install_canvas_bitmap(node.id(), 2, 1, Some(vec![200, 100, 50, 128, 0, 0, 0, 0]))
-            .unwrap();
+        page.install_canvas_bitmap(
+            node.id(),
+            2,
+            1,
+            (2, 1),
+            Some(vec![200, 100, 50, 128, 0, 0, 0, 0]),
+        )
+        .unwrap();
         let key = image_url(&page, &node).unwrap();
         assert_eq!(&*page.images[&key].bgra, &[25, 50, 100, 128, 0, 0, 0, 0]);
         assert!(page.take_canvas_image_updates().contains(&key));
         node.set_attr("width", "3");
         assert_eq!(image_url(&page, &node), None);
-        page.install_canvas_bitmap(node.id(), 3, 1, None).unwrap();
+        page.install_canvas_bitmap(node.id(), 3, 1, (3, 1), None)
+            .unwrap();
+        page.prune_detached_canvas_images();
         assert!(!page.images.contains_key(&key));
+    }
+
+    #[test]
+    fn natural_bitmap_size_is_independent_but_its_content_stamp_rejects_stale_resize() {
+        let mut page = Page::parse_scripted("<canvas width=9 height=8></canvas>", "about:blank");
+        let node = page.dom.elements_named("canvas").next().unwrap();
+        let pixels = [255, 0, 0, 255].repeat(6);
+        page.install_canvas_bitmap(node.id(), 3, 2, (9, 8), Some(pixels.clone()))
+            .unwrap();
+        let url = image_url(&page, &node).unwrap();
+        assert_eq!((page.images[&url].width, page.images[&url].height), (3, 2));
+        node.set_attr("width", "10");
+        assert!(image_url(&page, &node).is_none());
+        page.prune_detached_canvas_images();
+        assert!(!page.images.contains_key(&url));
+        page.install_canvas_bitmap(node.id(), 3, 2, (9, 8), Some(pixels))
+            .unwrap();
+        assert!(
+            page.images.is_empty(),
+            "stale snapshots must not reinstall resized content"
+        );
     }
 }

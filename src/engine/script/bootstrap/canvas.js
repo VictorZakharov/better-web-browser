@@ -59,16 +59,22 @@
         const height = canvas.height;
         let state = canvasStates.get(canvas);
         if (!state) {
-            state = { width: -1, height: -1, pixels: null, context: null, mode: 'none', placeholder: null };
+            state = { width: -1, height: -1, inputWidth: -1, inputHeight: -1,
+                pixels: null, context: null, mode: 'none', placeholder: null };
             canvasStates.set(canvas, state);
         }
-        if (forceReset || state.width !== width || state.height !== height) {
+        // bitmaprenderer owns its transferred bitmap's natural dimensions,
+        // independently of the unchanged Canvas width/height content attributes.
+        if (forceReset || state.inputWidth !== width || state.inputHeight !== height) {
+            state.inputWidth = width;
+            state.inputHeight = height;
             state.width = width;
             state.height = height;
             state.pixels = width * height <= MAX_CANVAS_PIXELS
                 ? new Uint8ClampedArray(width * height * 4)
                 : null;
-            state.context?.__reset?.();
+            if (state.mode === 'bitmaprenderer') resetCanvasBitmapRenderer(state.context);
+            else state.context?.__reset?.();
         }
         return state;
     };
@@ -284,13 +290,16 @@
             this.setAttribute('height', Math.max(0, Math.trunc(Number(value))) || 0);
             stateForCanvas(this, true);
         }
-        getContext(contextId) {
-            const mode = String(contextId).toLowerCase();
+        getContext(contextId, options = undefined) {
+            const mode = String(contextId);
             if (mode !== '2d' && mode !== 'bitmaprenderer') return null;
             const state = stateForCanvas(this);
             if (state.mode !== 'none' && state.mode !== mode) return null;
+            if (state.context) return state.context;
+            const context = mode === '2d' ? new CanvasRenderingContext2D(this) :
+                new ImageBitmapRenderingContext(canvasBitmapContextToken, this, options);
+            state.context = context;
             state.mode = mode;
-            return state.context ||= mode === '2d' ? new CanvasRenderingContext2D(this) :
-                new ImageBitmapRenderingContext(canvasBitmapContextToken, this);
+            return context;
         }
     }

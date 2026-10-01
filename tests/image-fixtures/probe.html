@@ -1,0 +1,41 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Owned modern-image pixels</title>
+<style>body{font:16px sans-serif}output{display:block;white-space:pre-wrap}canvas{image-rendering:pixelated;width:90px;height:60px}</style>
+<h1>Modern image decode and Canvas readback</h1>
+<p>Each result is a decoded 3×2 bitmap from six project-owned colors.</p>
+<main id="results"></main>
+<script>
+(async () => {
+    const fixtures = ['rgb-lossless.avif', 'yuv420-full.avif', 'yuv422-limited.avif',
+        'yuv444-10.avif', 'yuv420-12.avif', 'gray.avif', 'gray10.avif',
+        'rgb-lossless.jxl', 'rgba-lossless.jxl', 'gray-lossless.jxl',
+        'graya-lossless.jxl', 'rgb16-lossless.jxl', 'rgba16-lossless.jxl', 'rgb-lossy.jxl', 'rgba-lossless.avif'];
+    for (const name of fixtures) {
+        const output = document.createElement('output');
+        output.className = 'pixels';
+        output.dataset.fixture = name;
+        document.querySelector('main').append(output);
+        try {
+            const text = await (await fetch(name + '.base64')).text();
+            const encoded = Uint8Array.from(atob(text.replace(/\s/g, '')), character => character.charCodeAt(0));
+            const type = name.endsWith('.avif') ? 'image/avif' : 'image/jxl';
+            const bitmap = await createImageBitmap(new Blob([encoded], {type}), {premultiplyAlpha:'none'});
+            const canvas = document.createElement('canvas');
+            canvas.width = bitmap.width; canvas.height = bitmap.height;
+            document.querySelector('main').append(canvas);
+            const context = canvas.getContext('2d');
+            context.drawImage(bitmap, 0, 0);
+            const pixels = [...context.getImageData(0, 0, bitmap.width, bitmap.height).data];
+            output.dataset.pixels = pixels.join(',');
+            output.dataset.dimensions = bitmap.width + 'x' + bitmap.height;
+            output.textContent = name + '|' + bitmap.width + 'x' + bitmap.height + '|' + pixels.join(',');
+            bitmap.close();
+        } catch (error) {
+            output.dataset.error = error.name + ':' + error.message;
+            output.textContent = name + '|ERROR|' + output.dataset.error;
+        }
+    }
+    document.body.dataset.fixtureReady = 'true';
+})();
+</script>

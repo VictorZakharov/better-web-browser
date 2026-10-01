@@ -1,4 +1,4 @@
-use super::{DecodedImage, MAX_DECODED_IMAGE_PIXELS, MAX_INLINE_SVGS, Page, bounded_utf8_prefix};
+use super::{DecodedImage, MAX_INLINE_SVGS, Page, bounded_utf8_prefix};
 use crate::engine::css::StyleSet;
 use crate::engine::dom::{Node, NodeData, NodeRef};
 use crate::limits::MAX_SVG_SOURCE_BYTES;
@@ -101,6 +101,18 @@ pub(crate) fn looks_like_svg(bytes: &[u8]) -> bool {
 }
 
 pub(crate) fn decode_svg(source: &[u8], description: &str) -> Result<DecodedImage, String> {
+    decode_svg_with_limits(
+        source,
+        description,
+        crate::engine::image_decode::DecodeLimits::PAGE,
+    )
+}
+
+pub(crate) fn decode_svg_with_limits(
+    source: &[u8],
+    description: &str,
+    limits: crate::engine::image_decode::DecodeLimits,
+) -> Result<DecodedImage, String> {
     if source.len() > MAX_SVG_SOURCE_BYTES {
         return Err(format!(
             "{description} exceeds the {MAX_SVG_SOURCE_BYTES}-byte limit"
@@ -112,10 +124,7 @@ pub(crate) fn decode_svg(source: &[u8], description: &str) -> Result<DecodedImag
     let size = tree.size().to_int_size();
     let width = size.width();
     let height = size.height();
-    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_DECODED_IMAGE_PIXELS
-    {
-        return Err(format!("{description} has invalid dimensions"));
-    }
+    limits.rgba_len(width, height)?;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
         .ok_or_else(|| format!("allocate {description} pixels"))?;
     resvg::render(

@@ -48,6 +48,7 @@ pub(super) const WORKER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/canvas_raster.js"),
     include_str!("bootstrap/canvas_stroke_styles.js"),
     include_str!("bootstrap/canvas_export.js"),
+    include_str!("bootstrap/canvas_bitmap_options.js"),
     include_str!("bootstrap/canvas_bitmap.js"),
     include_str!("bootstrap/canvas_pattern.js"),
     include_str!("bootstrap/canvas_image_draw.js"),

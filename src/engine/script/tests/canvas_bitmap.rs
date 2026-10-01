@@ -248,7 +248,7 @@ fn offscreen_empty_and_invalid_images_reject_with_dom_errors() {
                     .then(() => 'resolved', error => error.name)
             ]).then(names => { document.querySelector('output').textContent = names.join(','); });
         </script></body>"#,
-        "IndexSizeError,InvalidStateError,IndexSizeError",
+        "IndexSizeError,InvalidStateError,RangeError",
     );
 }
 

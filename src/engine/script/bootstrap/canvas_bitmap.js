@@ -2,28 +2,37 @@
     const imageBitmapToken = Symbol('ImageBitmap');
     const canvasBitmapContextToken = Symbol('ImageBitmapRenderingContext');
     const imageBitmapStates = new WeakMap();
-    class ImageBitmap {
-        constructor(token, width, height, pixels) {
-            if (token !== imageBitmapToken) throw new TypeError('Illegal constructor');
-            imageBitmapStates.set(this, { width, height, pixels });
-        }
-        get width() { return imageBitmapStates.get(this)?.pixels ? imageBitmapStates.get(this).width : 0; }
-        get height() { return imageBitmapStates.get(this)?.pixels ? imageBitmapStates.get(this).height : 0; }
-        close() {
-            const state = imageBitmapStates.get(this);
-            if (state) { state.width = 0; state.height = 0; state.pixels = null; }
-        }
-    }
-    const imageBitmapPixels = bitmap => {
+    let readImageBitmapBlob = globalThis.__imageBitmapBlobSnapshot;
+    delete globalThis.__imageBitmapBlobSnapshot;
+    if (!readImageBitmapBlob) globalThis.__bindImageBitmapBlob = reader => { readImageBitmapBlob = reader; };
+    const imageBitmapState = bitmap => {
         const state = imageBitmapStates.get(bitmap);
-        if (!state?.pixels) throw new DOMException('ImageBitmap is closed', 'InvalidStateError');
+        if (!state) throw new TypeError('Illegal ImageBitmap receiver');
         return state;
     };
-    const makeImageBitmap = (width, height, pixels) => {
+    const closeImageBitmap = bitmap => {
+        const state = imageBitmapState(bitmap);
+        state.width = 0; state.height = 0; state.pixels = null;
+    };
+    class ImageBitmap {
+        constructor(token, width, height, pixels, premultiplied) {
+            if (token !== imageBitmapToken) throw new TypeError('Illegal constructor');
+            imageBitmapStates.set(this, { width, height, pixels, premultiplied });
+        }
+        get width() { const state = imageBitmapState(this); return state.pixels ? state.width : 0; }
+        get height() { const state = imageBitmapState(this); return state.pixels ? state.height : 0; }
+        close() { closeImageBitmap(this); }
+    }
+    const imageBitmapPixels = bitmap => {
+        const state = imageBitmapState(bitmap);
+        if (!state.pixels) throw new DOMException('ImageBitmap is closed', 'InvalidStateError');
+        return state;
+    };
+    const makeImageBitmap = (width, height, pixels, premultiplied = false) => {
         if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0 ||
             width * height > MAX_CANVAS_PIXELS || pixels.length !== width * height * 4)
             throw new DOMException('ImageBitmap exceeds the bitmap budget', 'NotSupportedError');
-        return new ImageBitmap(imageBitmapToken, width, height, pixels);
+        return new ImageBitmap(imageBitmapToken, width, height, pixels, premultiplied);
     };
     const canvasBitmapSnapshot = canvas => {
         const state = stateForCanvas(canvas);
@@ -33,9 +42,9 @@
         return { width: output.width, height: output.height, pixels: new Uint8ClampedArray(output.pixels) };
     };
     const imageSourceSnapshot = (source, allowImageData = false) => {
-        if (source instanceof ImageBitmap) {
-            const { width, height, pixels } = imageBitmapPixels(source);
-            return { width, height, pixels: new Uint8ClampedArray(pixels) };
+        if (imageBitmapStates.has(source)) {
+            const state = imageBitmapPixels(source);
+            return { width: state.width, height: state.height, pixels: bitmapStraightPixels(state) };
         }
         if (source instanceof HTMLCanvasElement || source instanceof OffscreenCanvas)
             return canvasBitmapSnapshot(source);
@@ -48,19 +57,18 @@
             return { width: decoded.width, height: decoded.height,
                 pixels: new Uint8ClampedArray(decoded.pixels) };
         }
-        if (allowImageData && source instanceof ImageData)
+        if (allowImageData && source instanceof ImageData) {
+            if (!source.data.byteLength)
+                throw new DOMException('ImageData buffer is detached', 'InvalidStateError');
             return { width: source.width, height: source.height, pixels: new Uint8ClampedArray(source.data) };
+        }
         throw new TypeError('Unsupported Canvas image source');
     };
     const cropImageBitmap = (source, x, y, width, height) => {
-        [x, y, width, height] = [x, y, width, height].map(Number);
-        if (![x, y, width, height].every(Number.isFinite) || width === 0 || height === 0)
-            throw new DOMException('Invalid ImageBitmap crop rectangle', 'IndexSizeError');
+        if (width === 0 || height === 0) throw new RangeError('ImageBitmap crop dimension is zero');
         if (width < 0) { x += width; width = -width; }
         if (height < 0) { y += height; height = -height; }
-        x = Math.floor(x); y = Math.floor(y); width = Math.ceil(width); height = Math.ceil(height);
-        if (width * height > MAX_CANVAS_PIXELS)
-            throw new DOMException('ImageBitmap crop exceeds the bitmap budget', 'NotSupportedError');
+        bitmapPixelBudget(width, height);
         const pixels = new Uint8ClampedArray(width * height * 4);
         for (let row = 0; row < height; row++) for (let column = 0; column < width; column++) {
             const fromX = x + column, fromY = y + row;
@@ -71,49 +79,28 @@
         }
         return { width, height, pixels };
     };
-    const imageBitmapOptions = (source, options) => {
-        if (options === null || typeof options !== 'object') throw new TypeError('ImageBitmap options must be an object');
-        const orientation = options.imageOrientation ?? 'from-image';
-        if (!['from-image', 'flipY', 'none'].includes(orientation))
-            throw new TypeError('Invalid ImageBitmap imageOrientation');
-        const quality = options.resizeQuality ?? 'low';
-        if (!['pixelated', 'low', 'medium', 'high'].includes(quality))
-            throw new TypeError('Invalid ImageBitmap resizeQuality');
-        const width = options.resizeWidth === undefined ? undefined : Number(options.resizeWidth);
-        const height = options.resizeHeight === undefined ? undefined : Number(options.resizeHeight);
-        if ((width !== undefined && (!Number.isInteger(width) || width <= 0)) ||
-            (height !== undefined && (!Number.isInteger(height) || height <= 0)))
-            throw new DOMException('ImageBitmap resize dimensions must be positive', 'InvalidStateError');
-        const outputWidth = width ?? Math.max(1, Math.round(source.width * (height ?? source.height) / source.height));
-        const outputHeight = height ?? Math.max(1, Math.round(source.height * outputWidth / source.width));
-        if (outputWidth * outputHeight > MAX_CANVAS_PIXELS)
-            throw new DOMException('ImageBitmap resize exceeds the bitmap budget', 'NotSupportedError');
-        let output = outputWidth === source.width && outputHeight === source.height ? source :
-            resampleCanvasBitmap(source, outputWidth, outputHeight, quality !== 'pixelated');
-        if (orientation === 'flipY') {
-            const pixels = new Uint8ClampedArray(output.pixels.length);
-            const stride = output.width * 4;
-            for (let row = 0; row < output.height; row++)
-                pixels.set(output.pixels.subarray(row * stride, (row + 1) * stride),
-                    (output.height - row - 1) * stride);
-            output = { width: output.width, height: output.height, pixels };
-        }
-        return output;
-    };
-    globalThis.createImageBitmap = (source, ...arguments_) => {
+    globalThis.createImageBitmap = function createImageBitmap(source, ...arguments_) {
+        if (arguments.length === 0) throw new TypeError('createImageBitmap requires an image source');
+        const cropped = arguments_.length >= 4;
+        if (arguments_.length !== 0 && arguments_.length !== 1 && arguments_.length < 4)
+            throw new TypeError('createImageBitmap requires a source, optional crop, and options');
+        // IDL conversion errors throw synchronously, before returning a Promise.
+        const rectangle = cropped ? arguments_.slice(0, 4).map(bitmapLong) : null;
+        const options = convertImageBitmapOptions(cropped ? arguments_[4] : arguments_[0]);
         try {
-            const cropped = arguments_.length >= 4;
-            if (arguments_.length !== 0 && arguments_.length !== 1 &&
-                arguments_.length !== 4 && arguments_.length !== 5)
-                throw new TypeError('createImageBitmap requires a source, optional crop, and options');
-            const options = cropped ? arguments_[4] ?? {} : arguments_[0] ?? {};
+            if (rectangle && (!rectangle[2] || !rectangle[3]))
+                throw new RangeError('ImageBitmap crop dimension is zero');
+            if (options.resizeWidth === 0 || options.resizeHeight === 0)
+                throw new DOMException('ImageBitmap resize dimension is zero', 'InvalidStateError');
             const finish = snapshot => {
-                const region = cropped ? cropImageBitmap(snapshot, ...arguments_.slice(0, 4)) : snapshot;
-                const output = imageBitmapOptions(region, options);
-                return makeImageBitmap(output.width, output.height, output.pixels);
+                const region = rectangle ? cropImageBitmap(snapshot, ...rectangle) : snapshot;
+                const output = formatImageBitmap(region, options);
+                return makeImageBitmap(output.width, output.height, output.pixels, output.premultiplied);
             };
-            if (source instanceof Blob) return source.bytes().then(bytes => {
-                const decoded = host('canvasDecode', bytes);
+            const bytes = readImageBitmapBlob(source);
+            if (bytes) return Promise.resolve().then(() => {
+                const decoded = host('canvasDecode', bytes,
+                    options.imageOrientation !== 'from-image', options.colorSpaceConversion === 'none');
                 if (!decoded) throw new DOMException('Image could not be decoded', 'InvalidStateError');
                 return finish({ width: decoded[0], height: decoded[1], pixels: decoded[2] });
             });
@@ -121,23 +108,54 @@
             return Promise.resolve().then(() => finish(snapshot));
         } catch (error) { return Promise.reject(error); }
     };
-    class ImageBitmapRenderingContext {
-        constructor(token, canvas) {
-            if (token !== canvasBitmapContextToken) throw new TypeError('Illegal constructor');
-            Object.defineProperty(this, 'canvas', { enumerable: true, value: canvas });
+    const bitmapRendererStates = new WeakMap();
+    const bitmapRendererState = context => {
+        const state = bitmapRendererStates.get(context);
+        if (!state) throw new TypeError('Illegal ImageBitmapRenderingContext receiver');
+        return state;
+    };
+    const opaqueBitmap = pixels => {
+        for (let offset = 0; offset < pixels.length; offset += 4) {
+            const alpha = pixels[offset + 3];
+            for (let channel = 0; channel < 3; channel++)
+                pixels[offset + channel] = Math.floor((pixels[offset + channel] * alpha + 127) / 255);
+            pixels[offset + 3] = 255;
         }
-        __reset() {}
+    };
+    const resetCanvasBitmapRenderer = context => {
+        const renderer = bitmapRendererState(context);
+        const state = canvasStates.get(renderer.canvas);
+        if (!renderer.alpha && state?.pixels) opaqueBitmap(state.pixels);
+    };
+    class ImageBitmapRenderingContext {
+        constructor(token, canvas, options) {
+            if (token !== canvasBitmapContextToken) throw new TypeError('Illegal constructor');
+            if (options === null || options === undefined) options = {};
+            if (typeof options !== 'object' && typeof options !== 'function')
+                throw new TypeError('Bitmap renderer settings must be a dictionary');
+            const setting = options.alpha;
+            bitmapRendererStates.set(this, {canvas, alpha: setting === undefined ? true : Boolean(setting)});
+            resetCanvasBitmapRenderer(this);
+        }
+        get canvas() { return bitmapRendererState(this).canvas; }
         transferFromImageBitmap(bitmap) {
-            const state = stateForCanvas(this.canvas);
+            const renderer = bitmapRendererState(this);
+            if (renderer.canvas instanceof OffscreenCanvas && renderer.canvas.__detached)
+                throw new DOMException('Canvas is detached', 'InvalidStateError');
             if (bitmap === null) {
-                if (state.pixels) state.pixels.fill(0);
+                stateForCanvas(renderer.canvas, true);
                 return;
             }
-            if (!(bitmap instanceof ImageBitmap)) throw new TypeError('Expected ImageBitmap or null');
+            if (!imageBitmapStates.has(bitmap)) throw new TypeError('Expected ImageBitmap or null');
             const image = imageBitmapPixels(bitmap);
-            if (!state.pixels) throw new DOMException('Canvas bitmap exceeds the budget', 'NotSupportedError');
-            if (image.width === state.width && image.height === state.height) state.pixels = image.pixels;
-            else state.pixels = resampleCanvasBitmap(image, state.width, state.height, true).pixels;
-            bitmap.close();
+            const state = stateForCanvas(renderer.canvas);
+            state.width = image.width;
+            state.height = image.height;
+            // Take ownership without resampling to the content-attribute size.
+            // Straight inputs need no copy; associated inputs are normalized for
+            // the Canvas representation before the source is detached.
+            state.pixels = image.premultiplied ? bitmapStraightPixels(image) : image.pixels;
+            if (!renderer.alpha) opaqueBitmap(state.pixels);
+            closeImageBitmap(bitmap);
         }
     }

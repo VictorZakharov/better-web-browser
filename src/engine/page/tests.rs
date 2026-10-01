@@ -99,7 +99,7 @@ fn prefers_lazy_and_high_density_image_sources_over_placeholders() {
 fn selects_picture_sources_by_media_type_and_viewport() {
     let mut page = Page::parse(
         r#"<picture>
-                <source type="image/avif" srcset="unsupported.avif">
+                <source type="image/heic" srcset="unsupported.heic">
                 <source media="(max-width: 600px)" srcset="phone.jpg">
                 <source media="(min-width: 601px)" srcset="desktop.webp" type="image/webp">
                 <img src="fallback.jpg" alt="responsive">
@@ -383,3 +383,4 @@ fn ignores_delayed_meta_refresh_for_immediate_navigation() {
     );
     assert_eq!(page.immediate_refresh_url(), None);
 }
+use std::io::Cursor;
