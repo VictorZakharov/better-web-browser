@@ -2,24 +2,6 @@
     // changes apply only on the next assignment. FFT state lives with the node.
     const audioConvolverState = new WeakMap();
     const convolverError = message => new AudioDOMException(message, 'NotSupportedError');
-    const convolverChannelCount = value => {
-        value = Number(value);
-        if (!Number.isInteger(value) || value < 1 || value > 2)
-            throw convolverError('ConvolverNode channelCount must be 1 or 2');
-        return value;
-    };
-    const convolverCountMode = value => {
-        value = String(value);
-        if (value !== 'clamped-max' && value !== 'explicit')
-            throw convolverError('ConvolverNode channelCountMode cannot be max');
-        return value;
-    };
-    const convolverInterpretation = value => {
-        value = String(value);
-        if (value !== 'speakers' && value !== 'discrete')
-            throw new TypeError('Invalid channelInterpretation');
-        return value;
-    };
     const convolverImpulse = (buffer, contextState, normalize, releasedBytes) => {
         if (buffer === null) return { bank: null, bytes: 0 };
         if (!(buffer instanceof AudioBuffer))
@@ -51,40 +33,9 @@
     };
 
     const mixConvolverInput = (node, state, frame, frames, cache) => {
-        const buses = [...audioNodeState.get(node).inputs[0]].map(edge =>
-            renderAudioNode(node.context, edge.source, frame, frames, cache, edge.output));
-        const sourceChannels = Math.max(1, ...buses.map(bus => bus.length));
-        const channels = state.channelCountMode === 'explicit' ? state.channelCount :
-            Math.min(state.channelCount, sourceChannels);
-        const mixed = silence(channels, frames);
-        for (const bus of buses) for (let i = 0; i < frames; ++i) {
-            let left = bus[0]?.[i] ?? 0;
-            let right = bus[1]?.[i] ?? 0;
-            if (state.channelInterpretation === 'speakers') {
-                if (bus.length === 1) right = left;
-                else if (bus.length === 3) {
-                    left += Math.SQRT1_2 * bus[2][i];
-                    right += Math.SQRT1_2 * bus[2][i];
-                } else if (bus.length === 4) {
-                    left += Math.SQRT1_2 * bus[2][i];
-                    right += Math.SQRT1_2 * bus[3][i];
-                } else if (bus.length >= 6) {
-                    left += Math.SQRT1_2 * (bus[2][i] + bus[4][i]);
-                    right += Math.SQRT1_2 * (bus[2][i] + bus[5][i]);
-                }
-            }
-            // Non-finite source data must not persist in the FFT history and
-            // overlap buffers after a malformed sample has passed the node.
-            if (!Number.isFinite(left)) left = 0;
-            if (!Number.isFinite(right)) right = 0;
-            if (channels === 1)
-                mixed[0][i] += bus.length === 1 ? left :
-                    state.channelInterpretation === 'speakers' ? (left + right) * 0.5 : left;
-            else {
-                mixed[0][i] += left;
-                mixed[1][i] += right;
-            }
-        }
+        const mixed = mixAudioInputs(node.context, node, frame, frames, cache);
+        const channels = mixed.length;
+        // Non-finite source data must not persist in FFT history or overlap.
         for (const channel of mixed)
             for (let i = 0; i < frames; ++i)
                 if (!Number.isFinite(channel[i])) channel[i] = 0;
@@ -97,29 +48,30 @@
         const state = audioConvolverState.get(node);
         const { input, channels } = mixConvolverInput(node, state, frame, frames, cache);
         if (!state.bank) return silence(1, frames);
+        const outputWidth = retainAudioTailWidth(state, channels, frame, frames,
+            state.buffer.length);
         const output = renderConvolverBank(state.bank, input, frames);
         if (!output) return silence(1, frames);
-        return channels === 1 && state.buffer.numberOfChannels === 1 ?
+        return outputWidth === 1 && state.buffer.numberOfChannels === 1 ?
             [output[0]] : output;
     };
 
     class ConvolverNode extends AudioNode {
         constructor(context, options = {}) {
-            options = options == null ? {} : Object(options);
+            const channels = readAudioChannelOptions(context, options);
+            options = channels.options;
             const contextState = audioContextState.get(context);
             if (!contextState) throw new TypeError('ConvolverNode requires an audio context');
-            const channelCount = options.channelCount === undefined ? 2 :
-                convolverChannelCount(options.channelCount);
-            const channelCountMode = options.channelCountMode === undefined ?
-                'clamped-max' : convolverCountMode(options.channelCountMode);
-            const channelInterpretation = options.channelInterpretation === undefined ?
-                'speakers' : convolverInterpretation(options.channelInterpretation);
+            const buffer = audioOption(options, 'buffer', null, value => {
+                if (value !== null && !(value instanceof AudioBuffer))
+                    throw new TypeError('Convolver buffer must be an AudioBuffer or null');
+                return value;
+            });
             const normalize = !Boolean(options.disableNormalization);
-            const buffer = options.buffer === undefined ? null : options.buffer;
+            const settings = audioChannelSettings(context, channels, 'convolver');
             const prepared = convolverImpulse(buffer, contextState, normalize, 0);
-            super(audioNodeToken, context, 1, 1);
-            audioConvolverState.set(this, { buffer, normalize, ...prepared,
-                channelCount, channelCountMode, channelInterpretation });
+            super(audioNodeToken, context, 1, 1, settings);
+            audioConvolverState.set(this, { buffer, normalize, ...prepared });
             contextState.convolverBytes = (contextState.convolverBytes || 0) + prepared.bytes;
             audioNodeState.get(this).render = (frame, frames, cache) =>
                 renderConvolver(this, frame, frames, cache);
@@ -134,22 +86,9 @@
             state.buffer = value;
             state.bank = prepared.bank;
             state.bytes = prepared.bytes;
+            state.channelDeadlines = null;
+            contextState.graphRevision++;
         }
         get normalize() { return audioConvolverState.get(this).normalize; }
         set normalize(value) { audioConvolverState.get(this).normalize = Boolean(value); }
-        get channelCount() { return audioConvolverState.get(this).channelCount; }
-        set channelCount(value) {
-            audioConvolverState.get(this).channelCount = convolverChannelCount(value);
-        }
-        get channelCountMode() { return audioConvolverState.get(this).channelCountMode; }
-        set channelCountMode(value) {
-            audioConvolverState.get(this).channelCountMode = convolverCountMode(value);
-        }
-        get channelInterpretation() {
-            return audioConvolverState.get(this).channelInterpretation;
-        }
-        set channelInterpretation(value) {
-            audioConvolverState.get(this).channelInterpretation =
-                convolverInterpretation(value);
-        }
     }

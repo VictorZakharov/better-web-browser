@@ -12,15 +12,17 @@
 
     class BiquadFilterNode extends AudioNode {
         constructor(context, options = {}) {
-            const type = options.type === undefined ? 'lowpass' : String(options.type);
+            const channels = readAudioChannelOptions(context, options);
+            options = channels.options;
+            const q = audioOption(options, 'Q', 1, value => finiteFloat(value, 'Q'));
+            const detune = audioOption(options, 'detune', 0,
+                value => finiteFloat(value, 'detune'));
+            const frequency = audioOption(options, 'frequency', 350,
+                value => finiteFloat(value, 'frequency'));
+            const gain = audioOption(options, 'gain', 0, value => finiteFloat(value, 'gain'));
+            const type = audioOption(options, 'type', 'lowpass', value => `${value}`);
             if (!biquadTypes.includes(type)) throw new TypeError('Invalid biquad filter type');
-            const frequency = options.frequency === undefined ? 350 :
-                finiteFloat(options.frequency, 'frequency');
-            const detune = options.detune === undefined ? 0 :
-                finiteFloat(options.detune, 'detune');
-            const q = options.Q === undefined ? 1 : finiteFloat(options.Q, 'Q');
-            const gain = options.gain === undefined ? 0 : finiteFloat(options.gain, 'gain');
-            super(audioNodeToken, context, 1, 1);
+            super(audioNodeToken, context, 1, 1, audioChannelSettings(context, channels));
             const rate = context.sampleRate;
             const parameter = (value, min, max) =>
                 new AudioParam(audioParamToken, context, value, min, max);
@@ -37,9 +39,7 @@
             });
             for (const param of [this.frequency, this.detune, this.Q, this.gain])
                 audioParamState.get(param).owner = this;
-            audioBiquadState.set(this, { type,
-                channels: Array.from({ length: audioContextState.get(context).channels },
-                    () => ({ x1: 0, x2: 0, y1: 0, y2: 0 })) });
+            audioBiquadState.set(this, { type, channels: [] });
             audioNodeState.get(this).render = (frame, frames, cache) =>
                 renderBiquad(this, frame, frames, cache);
         }
@@ -51,8 +51,8 @@
         set type(value) {
             const state = audioBiquadState.get(this);
             if (!state) throw new TypeError('Illegal BiquadFilterNode invocation');
-            value = String(value);
-            if (!biquadTypes.includes(value)) throw new TypeError('Invalid biquad filter type');
+            value = audioEnumAttribute(value, biquadTypes);
+            if (value === null) return;
             state.type = value;
         }
         getFrequencyResponse(frequencyHz, magResponse, phaseResponse) {
@@ -69,9 +69,10 @@
 
     const renderBiquad = (node, frame, frames, cache) => {
         const histories = audioBiquadState.get(node).channels;
-        const input = mixAudioInputs(node.context, node, frame, frames,
-            cache, histories.length);
-        const output = silence(histories.length, frames);
+        const mixed = mixAudioInputs(node.context, node, frame, frames, cache);
+        const input = audioFilterInput(node, mixed, histories, biquadTailActive,
+            () => ({ x1: 0, x2: 0, y1: 0, y2: 0 }));
+        const output = silence(input.length, frames);
         for (let i = 0; i < frames; ++i) {
             const { b, a } = biquadParametersAt(node, frame, i, cache);
             for (let channel = 0; channel < histories.length; ++channel) {

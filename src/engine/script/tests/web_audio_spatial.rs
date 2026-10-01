@@ -167,7 +167,7 @@ fn listener_position_modulation_changes_panner_pcm_without_a_cycle() {
 }
 
 #[test]
-fn panner_rejects_unsupported_hrtf_and_listener_feedback_cycles() {
+fn panner_rejects_unsupported_hrtf_but_accepts_listener_cycle_connections() {
     let (_, outcome) = execute_html(
         r#"<body><script>
         const context = new OfflineAudioContext(2, 128, 8000);
@@ -187,8 +187,8 @@ fn panner_rejects_unsupported_hrtf_and_listener_feedback_cycles() {
             catch (error) { errors.push(error.name); }
         }
         if (errors.join(',') !== 'NotSupportedError,NotSupportedError,' +
-            'TypeError,RangeError,RangeError,InvalidStateError,' +
-            'NotSupportedError,TypeError')
+            'none,RangeError,RangeError,InvalidStateError,' +
+            'none,TypeError')
             throw Error('spatial validation: ' + errors.join(','));
         if (panner.panningModel !== 'equalpower' || panner.refDistance !== 1)
             throw Error('invalid setter changed spatial state');

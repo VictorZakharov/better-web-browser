@@ -145,7 +145,7 @@ fn wave_shaper_accepts_oversampling_and_rejects_invalid_modes_or_second_curve() 
         if (shaper.oversample !== '2x') throw Error('2x mode was not stored');
         shaper.oversample = '4x';
         if (shaper.oversample !== '4x') throw Error('4x mode was not stored');
-        try { shaper.oversample = 'invalid'; }
+        try { new WaveShaperNode(context, {oversample: 'invalid'}); }
         catch (error) { errors.push(error.name); }
         if (shaper.oversample !== '4x') throw Error('invalid mode changed state');
         try { new WaveShaperNode(context, {curve: [1]}); }

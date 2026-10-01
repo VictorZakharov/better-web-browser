@@ -30,7 +30,7 @@
     };
 
     const validateWaveShaperOversample = value => {
-        value = String(value);
+        value = `${value}`;
         if (value !== 'none' && value !== '2x' && value !== '4x')
             throw new TypeError('Invalid WaveShaper oversample mode');
         return value;
@@ -38,18 +38,18 @@
 
     class WaveShaperNode extends AudioNode {
         constructor(context, options = {}) {
-            if (options == null) options = {};
-            const oversample = validateWaveShaperOversample(
-                options.oversample === undefined ? 'none' : options.oversample);
-            const curve = options.curve === undefined ? null :
-                waveShaperOptionCurve(options.curve);
+            const channels = readAudioChannelOptions(context, options);
+            options = channels.options;
+            const curve = audioOption(options, 'curve', null, waveShaperOptionCurve);
+            const oversample = audioOption(options, 'oversample', 'none',
+                validateWaveShaperOversample);
             const contextState = audioContextState.get(context);
             if (curve && (!contextState ||
                 (contextState.waveCurveBytes || 0) + curve.byteLength >
                     MAX_WAVESHAPER_CONTEXT_BYTES))
                 throw new AudioDOMException('WaveShaper curve budget exceeded',
                     'NotSupportedError');
-            super(audioNodeToken, context, 1, 1);
+            super(audioNodeToken, context, 1, 1, audioChannelSettings(context, channels));
             audioWaveShaperState.set(this, {
                 curve: null, samples: null, curveSet: false, oversample,
                 oversampleDsp: null
@@ -96,20 +96,15 @@
         get oversample() { return waveShaperState(this).oversample; }
         set oversample(value) {
             const state = waveShaperState(this);
-            const mode = validateWaveShaperOversample(value);
+            const mode = audioEnumAttribute(value, ['none', '2x', '4x']);
+            if (mode === null) return;
             if (mode !== state.oversample) state.oversampleDsp = null;
             state.oversample = mode;
         }
     }
 
     const renderWaveShaper = (node, frame, frames, cache) => {
-        const edges = audioNodeState.get(node).inputs[0];
-        let channels = 1;
-        for (const edge of edges)
-            channels = Math.max(channels, renderAudioNode(node.context,
-                edge.source, frame, frames, cache, edge.output).length);
-        const input = mixAudioInputs(node.context, node, frame, frames, cache,
-            channels);
+        const input = mixAudioInputs(node.context, node, frame, frames, cache);
         const state = audioWaveShaperState.get(node);
         const curve = state.samples;
         if (!curve) return input;

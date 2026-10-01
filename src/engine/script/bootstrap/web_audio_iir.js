@@ -56,18 +56,18 @@
     // Coefficients are copied at construction and cannot change afterwards.
     class IIRFilterNode extends AudioNode {
         constructor(context, options) {
+            const channels = readAudioChannelOptions(context, options);
+            options = channels.options;
             if (options == null || typeof options !== 'object')
                 throw new TypeError('IIRFilterNode requires coefficient options');
-            const b = iirCoefficients(options.feedforward, 'feedforward');
             const a = iirCoefficients(options.feedback, 'feedback');
+            const b = iirCoefficients(options.feedforward, 'feedforward');
             if (b.every(value => value === 0) || a[0] === 0)
                 throw new DOMException('IIR coefficients have no valid transfer function',
                     'InvalidStateError');
-            super(audioNodeToken, context, 1, 1);
-            const channels = audioContextState.get(context).channels;
+            super(audioNodeToken, context, 1, 1, audioChannelSettings(context, channels));
             audioIirState.set(this, { b, a, position: 0,
-                input: Array.from({ length: channels }, () => new Float64Array(20)),
-                output: Array.from({ length: channels }, () => new Float64Array(20)) });
+                input: [], output: [] });
             audioNodeState.get(this).render = (frame, frames, cache) =>
                 renderIir(this, frame, frames, cache);
         }
@@ -80,8 +80,13 @@
     }
     const renderIir = (node, frame, frames, cache) => {
         const state = audioIirState.get(node);
-        const channels = audioContextState.get(node.context).channels;
-        const input = mixAudioInputs(node.context, node, frame, frames, cache, channels);
+        const mixed = mixAudioInputs(node.context, node, frame, frames, cache);
+        const input = audioFilterInput(node, mixed, state.output,
+            (history, channel) => iirTailActive(history) || iirTailActive(state.input[channel]),
+            () => new Float64Array(20));
+        const channels = input.length;
+        resizeAudioHistories(state.input, channels, () => new Float64Array(20));
+        resizeAudioHistories(state.output, channels, () => new Float64Array(20));
         const output = silence(channels, frames);
         for (let i = 0; i < frames; ++i) {
             const position = state.position++ % 20;

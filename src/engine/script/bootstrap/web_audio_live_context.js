@@ -24,11 +24,16 @@
         const live = state.live;
         if (!audioWorkWithinLimit(state, state.nodes.size))
             throw liveError('NotSupportedError', 'Audio graph exceeds the rendering work limit');
-        const frames = AUDIO_QUANTUM * live.chunkQuanta;
+        const quanta = audioScriptTaskQuanta(context, live.chunkQuanta);
+        const frames = AUDIO_QUANTUM * quanta;
         const bytes = new Uint8Array(frames * state.channels * 2);
         const view = new DataView(bytes.buffer);
-        for (let quantum = 0; quantum < live.chunkQuanta; ++quantum) {
-            const samples = renderAudioQuantum(context, live.renderFrame, AUDIO_QUANTUM);
+        for (let quantum = 0; quantum < quanta; ++quantum) {
+            const destination = renderAudioQuantum(context, live.renderFrame, AUDIO_QUANTUM);
+            // Node channelCount changes the logical destination input, not the
+            // native device's stereo PCM transport format.
+            const samples = mixAudioBuses([destination], state.channels,
+                AUDIO_QUANTUM, 'speakers');
             for (let frame = 0; frame < AUDIO_QUANTUM; ++frame) {
                 for (let channel = 0; channel < state.channels; ++channel) {
                     const value = samples[channel][frame];
@@ -83,6 +88,7 @@
         live.closeSubmitted = false;
         if (live.pending) live.pending.submitted = false;
         if (live.finalClose) {
+            retireAudioScriptProcessors(context);
             clearCaptureAudioForContext(context);
             live.pending = null;
             setAudioContextState(context, 'closed');
@@ -218,7 +224,8 @@
                     settleLivePromises(live.resumePromises);
                     live.acceptedChunks++;
                     // Prime four transport chunks, then pace to the audio clock.
-                    // The supported live rate keeps every chunk above 10 ms.
+                    // ScriptProcessor boundaries may shorten a transport chunk;
+                    // pace using the actual accepted duration, not its maximum.
                     let delay = 0;
                     if (live.acceptedChunks >= 4) {
                         const now = performance.now();
@@ -251,6 +258,7 @@
         ChannelSplitterNode, ChannelMergerNode, IIRFilterNode, BiquadFilterNode,
         DynamicsCompressorNode, ConvolverNode,
         WaveShaperNode, PeriodicWave, AnalyserNode,
+        ScriptProcessorNode, AudioProcessingEvent,
         BaseAudioContext, AudioContext, OfflineAudioContext, OfflineAudioCompletionEvent
     });
 })();

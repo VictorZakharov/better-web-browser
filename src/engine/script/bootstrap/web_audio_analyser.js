@@ -43,22 +43,23 @@
 
     class AnalyserNode extends AudioNode {
         constructor(context, options = {}) {
-            if (options == null) options = {};
-            const size = validAnalyserSize(options.fftSize === undefined ?
-                2048 : options.fftSize);
-            const { minimum, maximum } = validAnalyserRange(
-                options.minDecibels === undefined ? -100 : options.minDecibels,
-                options.maxDecibels === undefined ? -30 : options.maxDecibels);
-            const smoothing = validAnalyserSmoothing(
-                options.smoothingTimeConstant === undefined ?
-                    0.8 : options.smoothingTimeConstant);
+            const channels = readAudioChannelOptions(context, options);
+            options = channels.options;
+            const size = audioOption(options, 'fftSize', 2048, validAnalyserSize);
+            const max = audioOption(options, 'maxDecibels', -30,
+                value => finite(value, 'maxDecibels'));
+            const min = audioOption(options, 'minDecibels', -100,
+                value => finite(value, 'minDecibels'));
+            const smoothing = audioOption(options, 'smoothingTimeConstant', 0.8,
+                validAnalyserSmoothing);
+            const { minimum, maximum } = validAnalyserRange(min, max);
             if (!(context instanceof BaseAudioContext))
                 throw new TypeError('AnalyserNode requires a BaseAudioContext');
             const contextState = audioContextState.get(context);
             if ((contextState.analyserNodes ?? 0) >= MAX_ANALYSER_NODES)
                 throw new AudioDOMException('AnalyserNode limit reached',
                     'NotSupportedError');
-            super(audioNodeToken, context, 1, 1);
+            super(audioNodeToken, context, 1, 1, audioChannelSettings(context, channels));
             contextState.analyserNodes = (contextState.analyserNodes ?? 0) + 1;
             const state = { size, minimum, maximum, smoothing,
                 history: new Float32Array(ANALYSER_HISTORY), cursor: 0,
@@ -66,12 +67,12 @@
                 frequency: new Float32Array(size / 2) };
             analyserState.set(this, state);
             audioNodeState.get(this).render = (frame, frames, cache) => {
-                const samples = mixAudioInputs(this.context, this, frame, frames,
-                    cache, contextState.channels);
+                const samples = mixAudioInputs(this.context, this, frame, frames, cache);
+                // §1.8.5 always uses the speaker mono matrix for analysis,
+                // independently of the node's pass-through interpretation.
+                const mono = mixAudioBuses([samples], 1, frames, 'speakers')[0];
                 for (let i = 0; i < frames; ++i) {
-                    let mono = 0;
-                    for (const channel of samples) mono += channel[i] / samples.length;
-                    state.history[state.cursor] = mono;
+                    state.history[state.cursor] = mono[i];
                     state.cursor = (state.cursor + 1) % ANALYSER_HISTORY;
                 }
                 state.frame = frame;

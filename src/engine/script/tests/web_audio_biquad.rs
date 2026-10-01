@@ -110,7 +110,8 @@ fn biquad_frequency_response_validates_arrays_and_type() {
             filter.gain.defaultValue !== 0)
             throw Error('biquad defaults mismatch');
         const names = [];
-        try { filter.type = 'bogus'; } catch (error) { names.push(error.name); }
+        try { new BiquadFilterNode(context, {type: 'bogus'}); }
+        catch (error) { names.push(error.name); }
         try { filter.getFrequencyResponse(new Float32Array(2),
             new Float32Array(1), new Float32Array(2)); }
         catch (error) { names.push(error.name); }
