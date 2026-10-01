@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Owned ImageDecoder and VideoFrame contract probes</title>
+<style>
+body{font:16px sans-serif;background:white;color:#172b4d;margin:24px}
+table{border-collapse:collapse;width:100%;max-width:1100px}
+td,th{padding:8px;border:1px solid #ddd;text-align:left}
+[data-status=pass]{color:#075d2a}[data-status=fail]{color:#a60000}
+canvas{image-rendering:pixelated;max-width:100px}
+</style>
+<h1>Owned image-frame contracts</h1>
+<p>These inputs contain only tiny project-owned pixel patterns. No external requests.</p>
+<output id="summary">Waiting for frame APIs</output>
+<table><thead><tr><th>Contract</th><th>Result</th><th>Detail</th></tr></thead><tbody id="results"></tbody></table>
+<script src="probe.js"></script>
+<script src="probe_frames.js"></script>
+<script src="probe_decoders.js"></script>
+<script>runFrameProbes();</script>

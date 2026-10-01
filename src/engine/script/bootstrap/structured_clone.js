@@ -14,6 +14,8 @@
     const fail = () => { throw new DOMException('The value could not be cloned', 'DataCloneError'); };
     const blobSnapshot = globalThis.__blobStructuredCloneSnapshot;
     delete globalThis.__blobStructuredCloneSnapshot;
+    const frames = globalThis.__videoFrameCloneBindings;
+    delete globalThis.__videoFrameCloneBindings;
     const transferList = options => {
         const source = Array.isArray(options) ? options : options?.transfer;
         if (source === undefined) return [];
@@ -23,15 +25,15 @@
         for (const value of result) {
             const canvas = globalThis.__cloneCanvasBindings;
             if ((!(value instanceof ArrayBuffer) && !globalThis.__clonePortBindings?.isPort(value) &&
-                !canvas?.isBitmap(value) && !canvas?.isOffscreen(value)) ||
+                !canvas?.isBitmap(value) && !canvas?.isOffscreen(value) && !frames?.has(value)) ||
                 value.detached || ((canvas?.isBitmap(value) || canvas?.isOffscreen(value)) &&
-                    canvas.isDetached(value)) || seen.has(value)) fail();
+                    canvas.isDetached(value)) || (frames?.has(value) && frames.closed(value)) || seen.has(value)) fail();
             if (globalThis.__clonePortBindings?.isPort(value)) globalThis.__clonePortBindings.describe(value);
             seen.add(value);
         }
         return result;
     };
-    globalThis.__serializeClone = (input, transfers = []) => {
+    globalThis.__serializeClone = (input, transfers = [], forStorage = false) => {
         transfers = transferList(transfers);
         const seen = new Map(); let nextId = 1;
         const portDescriptors = new Map();
@@ -51,6 +53,15 @@
             if (typeof value !== 'object') return fail();
             if (seen.has(value)) return { t: 'reference', v: seen.get(value) };
             const id = nextId++; seen.set(value, id);
+            if (frames?.has(value)) {
+                // WebCodecs frame resources are cloneable/transferable between
+                // realms, but explicitly not serializable into persistent stores.
+                if (forStorage || frames.closed(value)) return fail();
+                const record = frames.snapshot(value);
+                const pixels = bytesToBase64(record.pixels);
+                delete record.pixels;
+                return {t:'video-frame', id, v:record, p:pixels};
+            }
             if (globalThis.__clonePortBindings?.isPort(value)) {
                 if (!portDescriptors.has(value)) return fail();
                 return { t: 'port', id, v: portDescriptors.get(value) };
@@ -114,6 +125,7 @@
         const serialized = JSON.stringify(ports.length ? { __breezeClonePorts: true, payload, ports } : payload);
         for (const value of transfers) {
             if (value instanceof ArrayBuffer) __hostCall('arrayBufferDetach', value);
+            else if (frames?.has(value)) frames.detach(value);
             else if (globalThis.__cloneCanvasBindings?.isBitmap(value) ||
                 globalThis.__cloneCanvasBindings?.isOffscreen(value))
                 globalThis.__cloneCanvasBindings.detach(value);
@@ -143,6 +155,7 @@
             if (node.t === 'number') return ({ nan: NaN, infinity: Infinity, '-infinity': -Infinity, '-0': -0 })[node.v];
             let value;
             if (node.t === 'port') value = receive(node.v);
+            else if (node.t === 'video-frame') value = frames?.receive(node.v, base64ToBytes(node.p)) ?? fail();
             else if (node.t === 'imagebitmap' || node.t === 'offscreencanvas')
                 value = globalThis.__cloneCanvasBindings?.receive(node, base64ToBytes(node.p)) ?? fail();
             else if (node.t === 'dom-matrix') {

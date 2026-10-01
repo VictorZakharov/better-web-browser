@@ -42,6 +42,7 @@
         return { width: output.width, height: output.height, pixels: new Uint8ClampedArray(output.pixels) };
     };
     const imageSourceSnapshot = (source, allowImageData = false) => {
+        if (videoFrameStates.has(source)) return videoFrameSnapshot(source);
         if (imageBitmapStates.has(source)) {
             const state = imageBitmapPixels(source);
             return { width: state.width, height: state.height, pixels: bitmapStraightPixels(state) };

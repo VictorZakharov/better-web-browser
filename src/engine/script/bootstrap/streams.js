@@ -2,6 +2,7 @@
     'use strict';
     const typeError = message => Promise.reject(new TypeError(message));
     let byteBindings;
+    const readableStreamBrand = new WeakSet();
     Object.defineProperty(globalThis, '__installReadableByteStreams', {
         configurable: true, value(bindings) { byteBindings = bindings; }
     });
@@ -100,6 +101,7 @@
 
     class ReadableStream {
         constructor(source = {}, strategy = {}) {
+            readableStreamBrand.add(this);
             if (source === null) throw new TypeError('ReadableStream source must not be null');
             source = Object(source); strategy = Object(strategy);
             const sourceType = source.type;
@@ -272,4 +274,17 @@
     Object.assign(globalThis, {
         ReadableStream, ReadableStreamDefaultReader, ReadableStreamDefaultController
     });
+    const getReader = ReadableStream.prototype.getReader;
+    const read = ReadableStreamDefaultReader.prototype.read;
+    const cancel = ReadableStreamDefaultReader.prototype.cancel;
+    const release = ReadableStreamDefaultReader.prototype.releaseLock;
+    const imageBindings = {
+        has: value => readableStreamBrand.has(value),
+        unusable: value => value.__reader !== null && value.__reader !== undefined || value.__disturbed,
+        reader: value => getReader.call(value), read: value => read.call(value),
+        cancel: (value, reason) => cancel.call(value, reason), release: value => release.call(value)
+    };
+    if (globalThis.__bindImageDecoderStreams) globalThis.__bindImageDecoderStreams(imageBindings);
+    else globalThis.__imageDecoderStreamBindings = imageBindings;
+    delete globalThis.__bindImageDecoderStreams;
 })();

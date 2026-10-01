@@ -24,7 +24,7 @@ fn has_text(presentation: &RendererPresentation, wanted: &str) -> bool {
         .any(|item| matches!(item, DisplayItem::Text { text, .. } if text.contains(wanted)))
 }
 
-fn completed(
+pub(super) fn completed(
     session: &RendererSession,
     mut presentation: RendererPresentation,
     marker: &str,

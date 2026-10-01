@@ -59,6 +59,7 @@ impl HostBridge {
         if matches!(
             operation.as_str(),
             "cacheStorageSecureContext"
+                | "imageDecoderSecureContext"
                 | "storageManagerSecureContext"
                 | "mediaCapabilitiesSecureContext"
         ) {

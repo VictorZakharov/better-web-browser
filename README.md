@@ -45,6 +45,7 @@ Current page support includes:
 - Standards-based layout fixes and their headless Chrome comparisons are tracked in [layout compatibility](docs/layout-standards.md), including explicit remaining gaps.
 - External stylesheets with [nested import loading and separate script/paint gates](docs/stylesheet-loading-dependencies.md), CSS background images, raster images, alpha compositing, inline/external SVG geometry (SVG text is not yet painted), and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
 - [AVIF and JPEG XL decoding](docs/modern-images-and-bitmaps.md) through shared page/Canvas/worker paths, with real alpha/color/orientation handling and bounded ImageBitmap crop, resize, ownership and bitmaprenderer presentation contracts
+- [ImageDecoder and VideoFrame](docs/image-decoder-and-video-frame.md) with animated GIF/APNG/WebP frame decoding, image streams, eleven 8-bit pixel layouts, frame transfer, and Canvas/worker rendering; complete-input CPU decoding with explicit resource and SDR limits
 - [Owned and imported CSSOM](docs/parser-observation-and-cssom.md): preferred titled sheets, per-occurrence import identity, rule edits reflected in the cascade, and constructed/adopted sheets
 - A bounded V8 JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers, [native microtasks independent of author Promise implementations](docs/native-microtasks-and-resource-invalidation.md), navigation, and browser-authoritative cookie/storage projections
 - [HTML event-handler attributes](docs/html-event-handlers.md), with lazy compilation, DOM scope lookup, stable listener ordering, cancellation, and body/window forwarding
@@ -708,6 +709,25 @@ new paths deliberately retain documented SDR/first-frame/metadata limits.
 Independent FFmpeg pixels, an exact Chromium 12-bit reference, and contained
 renderer pixel tests back the implementation. Pinned open-source decoders
 are reused with reviewed licenses; no benchmark or test-site behavior is faked.
+
+The next 2026-10-01 [ImageDecoder and VideoFrame](docs/image-decoder-and-video-frame.md)
+batch also rendered **487 / 588** in three identical hidden fresh-profile release
+captures, unchanged from the same-day main build. The settings remain 1280×720,
+125% scale, `en-US`, and default Breeze identity; all six captures returned HTTP
+200 without JavaScript errors or renderer exits. No HTML5test score gain is claimed.
+
+| Original behavior-level fixture | Before | After | Unified-headless Chrome 154.0.8037.92 |
+| --- | ---: | ---: | ---: |
+| Frame pixels, layouts, ownership, streams, animation and Canvas contracts | 0/40 | 40/40 | 38/40 |
+
+The two Chrome differences are kept visible: this fixture's separate APNG poster
+track is not exposed by Chrome, and its invalid-image-MIME query resolves false
+instead of the current WebCodecs draft's TypeError rejection. These are explicit
+contract differences, not a browser-superiority or full-conformance claim. Native
+codecs, dedicated-worker tests and contained-renderer BGRA readbacks back the new
+API paths. No new production dependency is added; bounded complete-input CPU
+decoding, SDR conversion and explicit codec/streaming limits remain documented.
+Returning animation frames does not yet add automatic animated `<img>` playback.
 
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
