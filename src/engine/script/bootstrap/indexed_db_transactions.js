@@ -155,7 +155,7 @@
             const found = this.keyPath === null ? key : idbPathValue(value, this.keyPath);
             const recordKey = found === undefined ? null : idbKey(found);
             if (recordKey === null && !this.autoIncrement) idbInvalidKey();
-            const serialized = __serializeClone(value);
+            const serialized = __serializeClone(value, [], true);
             return this.transaction._enqueue(this, {
                 kind: 'put', store: this.name, key: recordKey, value: serialized, overwrite
             }, result => idbKeyValue(result.Key));

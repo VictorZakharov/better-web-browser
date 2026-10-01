@@ -30,6 +30,7 @@ pub(super) struct WorkerHostState {
     pub(super) console: Vec<String>,
     pub(super) compression_streams: super::host_call::compression_host::CompressionStreams,
     pub(super) text_decoders: super::text_encoding_host::TextDecoders,
+    pub(super) image_frames: super::image_frames::ImageFrames,
     pub(super) closed: bool,
     pub(super) module_evaluation_pending: bool,
     pub(super) module_evaluation_completion: Option<Result<(), String>>,
@@ -72,6 +73,7 @@ impl WorkerHostState {
             console: Vec::new(),
             compression_streams: Default::default(),
             text_decoders: Default::default(),
+            image_frames: Default::default(),
             closed: false,
             module_evaluation_pending: false,
             module_evaluation_completion: None,
@@ -140,6 +142,9 @@ pub(super) fn dispatch_worker_host_call(
         return Ok(value);
     }
     if let Some(value) = super::canvas_host::canvas_host_call(operation, args)? {
+        return Ok(value);
+    }
+    if let Some(value) = super::image_frames::dispatch(operation, args, &mut state.image_frames)? {
         return Ok(value);
     }
     if let Some(value) = super::worker_websocket_host::dispatch(operation, args, state)? {
@@ -284,6 +289,7 @@ pub(super) fn dispatch_worker_host_call(
         }
         "workerClose" => {
             state.closed = true;
+            state.image_frames.cancel_all();
             Ok(JsValue::undefined())
         }
         "timerSchedule" => {

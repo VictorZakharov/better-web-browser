@@ -29,6 +29,7 @@ mod host_call;
 mod host_profiling;
 mod host_state;
 mod idle_callbacks;
+mod image_frames;
 pub(crate) mod import_maps;
 mod media_environment;
 mod media_host;
@@ -62,10 +63,8 @@ mod worker_module;
 mod worker_runtime;
 mod worker_websocket_host;
 mod workers;
-use engine::{
-    Context, HostBridge, JsError, JsNativeError, JsResult, JsString, JsValue, ModuleEvaluation,
-    Source,
-};
+use engine::{Context, HostBridge, JsError, JsNativeError, JsResult, JsString, JsValue};
+use engine::{ModuleEvaluation, Source};
 pub use execution::{execute, execute_with_loader};
 use host_state::HostState;
 pub(crate) use host_state::geometry::LayoutFlushCallback;

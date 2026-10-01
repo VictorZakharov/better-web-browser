@@ -91,6 +91,9 @@ pub(crate) struct RasterImage {
 }
 
 impl RasterImage {
+    pub(crate) fn apply_icc(&mut self, profile: &[u8]) -> DecodeResult<()> {
+        color::apply_icc(self, profile)
+    }
     pub fn new(width: u32, height: u32, rgba: Vec<u8>, limits: DecodeLimits) -> DecodeResult<Self> {
         if rgba.len() != limits.rgba_len(width, height)? {
             return Err("image pixel buffer does not match its dimensions".into());

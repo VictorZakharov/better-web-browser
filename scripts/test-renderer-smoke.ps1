@@ -24,6 +24,8 @@ $contracts = @(
     'capture::opus_recorder::round_trip::hidden_renderer_emitted_chunks_decode_real_stereo_with_exact_lookahead_and_eos_trim',
     'canvas_presentation::modern_images::modern_image_pixels_cross_the_contained_renderer_without_double_premultiplication',
     'canvas_presentation::modern_images::malformed_modern_images_reject_without_stopping_the_contained_document',
+    'canvas_presentation::image_frames::image_decoder_outputs_real_animation_pixels_in_the_contained_renderer',
+    'canvas_presentation::image_frames::malformed_image_decoder_rejects_but_the_renderer_remains_usable',
     'media::cadence::video_pixels_advance_while_a_javascript_callback_owns_the_document_thread',
     'media::cadence::advancing_video_does_not_mask_a_document_watchdog_timeout',
     'media::failure::a_late_video_decode_error_does_not_stop_the_document'

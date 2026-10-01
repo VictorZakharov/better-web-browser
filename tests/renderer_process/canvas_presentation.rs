@@ -4,6 +4,8 @@ use better_web_browser::renderer_process::{RendererEvent, RendererSession};
 use better_web_browser::renderer_protocol::RendererPresentation;
 use std::time::Duration;
 
+#[path = "canvas_presentation/image_frames.rs"]
+mod image_frames;
 #[path = "canvas_presentation/modern_images.rs"]
 mod modern_images;
 

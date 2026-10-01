@@ -9,6 +9,8 @@ mod event_listener;
 mod event_source;
 #[path = "worker_runtime_tests/file_api.rs"]
 mod file_api;
+#[path = "worker_runtime_tests/image_frames.rs"]
+mod image_frames;
 #[path = "worker_runtime_tests/indexed_db.rs"]
 mod indexed_db;
 #[path = "worker_runtime_tests/media_capabilities.rs"]
