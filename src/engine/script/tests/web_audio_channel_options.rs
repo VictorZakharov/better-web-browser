@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn routing_members_are_enumerable_inherited_web_idl_properties() {
+    let (_, outcome) = execute_html(
+        r#"<body><script>
+        const context=new OfflineAudioContext(1,128,8000),node=context.createGain();
+        for(const name of ['channelCount','channelCountMode','channelInterpretation']) {
+            const descriptor=Object.getOwnPropertyDescriptor(AudioNode.prototype,name);
+            if(!descriptor?.enumerable||!descriptor.configurable||
+                typeof descriptor.get!=='function'||typeof descriptor.set!=='function'||
+                Object.hasOwn(node,name)) throw Error('routing attribute '+name);
+            for(const operation of [()=>descriptor.get.call({}),
+                ()=>descriptor.set.call({},node[name])]) {
+                let error;try{operation();}catch(caught){error=caught;}
+                if(error?.name!=='TypeError') throw Error('routing receiver '+name);
+            }
+        }
+        for(const name of ['connect','disconnect']) {
+            const descriptor=Object.getOwnPropertyDescriptor(AudioNode.prototype,name);
+            if(!descriptor.enumerable||!descriptor.configurable||!descriptor.writable||
+                typeof descriptor.value!=='function') throw Error('routing operation '+name);
+        }
+        if(node.connect.length!==1||node.disconnect.length!==0)
+            throw Error('routing operation required argument count');
+        console.log('routing descriptors passed');
+        </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(outcome.console, ["log: routing descriptors passed"]);
+}
+
+#[test]
 fn audio_node_channel_properties_are_inherited_branded_accessors() {
     let (_, outcome) = execute_html(
         r#"<body><script>

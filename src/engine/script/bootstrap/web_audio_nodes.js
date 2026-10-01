@@ -66,10 +66,18 @@
         connect(destination, output = 0, input = 0) {
             return connectAudioNode(this, destination, output, input);
         }
-        disconnect(destinationOrOutput, output, input) {
+        disconnect() {
             return disconnectAudioNode(this, Array.from(arguments));
         }
     }
+
+    // Web IDL puts ordinary attributes and operations on the prototype as
+    // enumerable members. Class syntax alone would make them non-enumerable.
+    for (const name of ['channelCount', 'channelCountMode', 'channelInterpretation',
+        'connect', 'disconnect'])
+        Object.defineProperty(AudioNode.prototype, name, {
+            ...Object.getOwnPropertyDescriptor(AudioNode.prototype, name), enumerable: true
+        });
 
     class AudioDestinationNode extends AudioNode {
         constructor(token, context) {
