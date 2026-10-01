@@ -60,6 +60,10 @@ fn m4a_aac_is_decoded_without_a_synthetic_video_track() {
         "../../../../tests/fixtures/media/test-1s-audio-fragmented.mp4.base64"
     ));
     let decoded = super::super::decode(&bytes, MediaLimits::default()).unwrap();
+    assert!(
+        decoded.foundation.is_some(),
+        "audio-only handoff lost its platform"
+    );
     assert!(decoded.playback.is_none());
     assert_eq!(decoded.report.video_codec, MediaCodecFamily::None);
     assert_eq!(decoded.report.audio_codec, MediaCodecFamily::Aac);

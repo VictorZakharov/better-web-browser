@@ -156,3 +156,22 @@ Native FFmpeg reference comparisons keep small explicit rounding tolerances;
 the 12-bit subsampled case uses Chrome instead because FFmpeg interpolates it
 differently. There is no claim of pixel-perfect color equivalence for all files,
 and no speed or memory improvement is inferred from this codec coverage.
+
+## Hosted renderer contracts
+
+The first two hosted runs exposed an existing adaptive H.264/AAC startup
+deadline failure before the busy-callback watchdog assertion. Native decode
+inspection could release its last Media Foundation reference before lazy video
+and threaded audio playback acquired theirs. Microsoft's [work-queue lifecycle
+documentation](https://learn.microsoft.com/windows/win32/medfound/using-work-queues)
+describes a five-second shutdown wait. Native decode results now carry a platform
+guard through the handoff; playback releases it after video and the joined audio
+thread. Software-only codecs do not initialize the native platform. Regression
+tests check the guard, real AAC PCM and the first H.264 frame. The five-second
+media reply deadline and busy-callback watchdog assertions remain unchanged.
+
+The same hosted run also observed a native peak-memory counter below the sampled
+current working set. Diagnostics now include that observed current value in the
+reported peak, with a deterministic unit test; they do not reduce current memory
+or claim a memory improvement. Both new contained image-pixel and malformed-image
+tests are included in the PR renderer smoke gate, not only the full main suite.
