@@ -110,6 +110,15 @@ The main build before this slice has no VideoFrame or ImageDecoder and fails
 all these contracts; release results and the measured HTML5test before/after
 are recorded in README and the PR body after final verification.
 
+The 2026-10-01 release comparison measured 0/40 contracts on main and 40/40
+after this slice. Unified-headless Chrome 154.0.8037.92 passed 38/40 on the same
+owned fixture. It exposed only the animated APNG track rather than the separate
+poster, and resolved false for a non-image MIME support query. The latter differs
+from the current WebCodecs draft's explicit TypeError rejection; Breeze follows
+that specification. Neither assertion is relaxed based on browser identity.
+HTML5test stayed at 487/588 in three before and three after captures. This is
+functional coverage, not a score or throughput improvement claim.
+
 Unit tests run the installed V8 interface and the native session boundary.
 Separate worker tests prove isolation, secure exposure, stream binding order,
 and messages. Contained-renderer tests prove decoded frame pixels cross the
@@ -136,5 +145,7 @@ cargo run --locked --example generate_frame_fixtures -- G:\Git\better-web-browse
 
 Known gaps remain explicit: no VideoDecoder/VideoEncoder integration, no
 camera/video-element live frame sourcing, no GPU textures, no full HDR color
-pipeline, and no all-format incremental image streaming. This API slice should
-not be used to advertise any of those capabilities.
+pipeline, and no all-format incremental image streaming. Returning animated
+image frames through ImageDecoder does not add automatic animated `<img>`
+playback to the page renderer. This API slice should not be used to advertise
+any of those capabilities.
