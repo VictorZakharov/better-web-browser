@@ -73,5 +73,6 @@ pub(super) fn decode(
     Ok(DecodedMedia {
         report,
         playback: Some(playback),
+        foundation: None,
     })
 }

@@ -217,7 +217,7 @@ mod tests {
     fn previously_sent_child_canvas_update_is_emitted_and_acknowledged() {
         let mut page = Page::parse_scripted("<canvas width=1 height=1></canvas>", "about:blank");
         let canvas = page.dom.elements_named("canvas").next().unwrap();
-        page.install_canvas_bitmap(canvas.id(), 1, 1, Some(vec![255, 0, 0, 255]))
+        page.install_canvas_bitmap(canvas.id(), 1, 1, (1, 1), Some(vec![255, 0, 0, 255]))
             .unwrap();
         let canvas_updates = page.take_canvas_image_updates();
         let key = canvas_updates.iter().next().unwrap().clone();

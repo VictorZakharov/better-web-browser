@@ -49,6 +49,7 @@ use stream::read_stream;
 pub(super) struct DecodedMedia {
     pub(super) report: MediaDecodeReport,
     pub(super) playback: Option<VideoDecoder>,
+    pub(super) foundation: Option<MediaFoundation>,
 }
 
 pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, String> {
@@ -64,7 +65,7 @@ pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, 
     if ogg_vorbis::is_ogg(bytes) {
         return ogg_vorbis::decode(bytes, limits, Instant::now());
     }
-    decode_sources(bytes, bytes, bytes.len() as u64, limits)
+    with_native_platform(|| decode_sources(bytes, bytes, bytes.len() as u64, limits))
 }
 
 pub(super) fn decode_tracks(
@@ -77,7 +78,24 @@ pub(super) fn decode_tracks(
         .checked_add(audio_bytes.len())
         .and_then(|bytes| u64::try_from(bytes).ok())
         .ok_or_else(|| "adaptive media length overflowed".to_string())?;
-    adaptive::decode(video_bytes, audio_bytes, encoded_bytes, limits)
+    with_native_platform(|| adaptive::decode(video_bytes, audio_bytes, encoded_bytes, limits))
+}
+
+fn with_native_platform(
+    decode: impl FnOnce() -> Result<DecodedMedia, String>,
+) -> Result<DecodedMedia, String> {
+    // Inspectors and lazy playback decoders own separate MFStartup references.
+    // Retain one across their handoff: a last-reference MFShutdown can wait five
+    // seconds for async work queues, exhausting the unchanged IPC deadline.
+    // https://learn.microsoft.com/windows/win32/medfound/using-work-queues
+    let _apartment = ComApartment::initialize().map_err(|status| {
+        format!("initialize native playback COM apartment: HRESULT {status:#x}")
+    })?;
+    let foundation = MediaFoundation::start()
+        .map_err(|status| format!("start native playback platform: HRESULT {status:#x}"))?;
+    let mut decoded = decode()?;
+    decoded.foundation = Some(foundation);
+    Ok(decoded)
 }
 
 fn decode_sources(
@@ -277,6 +295,7 @@ fn decode_sources(
     Ok(DecodedMedia {
         report,
         playback: Some(playback),
+        foundation: None,
     })
 }
 
@@ -310,7 +329,7 @@ impl Drop for ComApartment {
     }
 }
 
-struct MediaFoundation;
+pub(super) struct MediaFoundation;
 
 impl MediaFoundation {
     fn start() -> Result<Self, i32> {

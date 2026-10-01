@@ -14,6 +14,10 @@ fn complete_video_only_fixture_seeks_with_media_foundation() {
         .expect("decode WPT H.264 fixture");
     let decoded =
         super::super::decode(&bytes, MediaLimits::default()).expect("decode video-only fixture");
+    assert!(
+        decoded.foundation.is_some(),
+        "native handoff lost its platform"
+    );
     let mut playback = decoded.playback.expect("video decoder");
     playback
         .seek(decoded.report.duration_100ns.saturating_sub(100_000))
@@ -24,6 +28,48 @@ fn complete_video_only_fixture_seeks_with_media_foundation() {
             .expect("decode sought frame")
             .is_some()
     );
+}
+
+#[test]
+fn adaptive_decode_retains_native_platform_through_audio_and_first_video_frame() {
+    use base64::Engine as _;
+    let fixture = |encoded: &str| {
+        base64::engine::general_purpose::STANDARD
+            .decode(encoded.split_whitespace().collect::<String>())
+            .unwrap()
+    };
+    let video = fixture(include_str!(
+        "../../../../tests/fixtures/media/test-1s-video-fragmented.mp4.base64"
+    ));
+    let audio = fixture(include_str!(
+        "../../../../tests/fixtures/media/test-1s-audio-fragmented.mp4.base64"
+    ));
+    let mut decoded = super::super::decode_tracks(&video, &audio, MediaLimits::default()).unwrap();
+    assert!(
+        decoded.foundation.is_some(),
+        "AAC inspection dropped the last native platform reference"
+    );
+    let report = decoded.report;
+    let mut pcm = super::super::AudioDecoder::open(
+        &audio,
+        report.audio_codec,
+        report.audio_samples,
+        report.audio_sample_rate,
+        report.audio_channels,
+    )
+    .unwrap();
+    assert!(pcm.next_sample().unwrap().is_some());
+    assert!(
+        decoded
+            .playback
+            .as_mut()
+            .unwrap()
+            .next_frame()
+            .unwrap()
+            .is_some()
+    );
+    // Retaining the guard also covers the lazy first H.264 transform activation.
+    assert!(decoded.foundation.is_some());
 }
 use crate::media_process::backend::fragmented_mp4::VideoSample;
 

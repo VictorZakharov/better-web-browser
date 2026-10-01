@@ -128,7 +128,7 @@
             const output = placeholder && !placeholder.__detached
                 ? stateForCanvas(placeholder) : state;
             let pixels = output.pixels;
-            if (placeholder?.__detached || output.width !== width || output.height !== height ||
+            if (placeholder?.__detached || !output.width || !output.height ||
                 !width || !height || !pixels)
                 pixels = null;
             else if (pixels.byteLength > MAX_PRESENTED_CANVAS_BYTES) {
@@ -143,7 +143,10 @@
                 deferred = true;
                 continue;
             } else bytes += pixels.byteLength;
-            snapshots.push([nodeId(canvas), width, height, pixels]);
+            // The backing bitmap may have different natural dimensions after
+            // bitmaprenderer transfer. Preserve both it and the attribute-size
+            // stamp, so native painting can reject stale post-resize assets.
+            snapshots.push([nodeId(canvas), output.width, output.height, width, height, pixels]);
             if (pixels) exportedBitmaps.add(canvas);
             presentedDimensions.set(canvas, [width, height]);
             dirtyCanvases.delete(canvas);

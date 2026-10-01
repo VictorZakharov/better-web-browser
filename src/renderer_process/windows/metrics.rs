@@ -48,7 +48,7 @@ pub(crate) fn process_sample(process: &OwnedHandle) -> ProcessSample {
         working_set: if memory_ok { memory.WorkingSetSize } else { 0 },
         private_memory: if memory_ok { memory.PrivateUsage } else { 0 },
         peak_working_set: if memory_ok {
-            memory.PeakWorkingSetSize
+            observed_peak(memory.PeakWorkingSetSize, memory.WorkingSetSize)
         } else {
             0
         },
@@ -59,6 +59,12 @@ pub(crate) fn process_sample(process: &OwnedHandle) -> ProcessSample {
         },
         handle_count: handles,
     }
+}
+
+fn observed_peak(reported_peak: usize, current: usize) -> usize {
+    // Include the working set actually observed in this sample. Windows can
+    // return a briefly lagging high-water counter while the process grows.
+    reported_peak.max(current)
 }
 
 pub(crate) fn process_exited(process: &OwnedHandle) -> bool {
@@ -93,4 +99,17 @@ pub(crate) fn terminate_job_checked(job: &OwnedHandle, code: u32) -> std::io::Re
 
 fn file_time(time: windows_sys::Win32::Foundation::FILETIME) -> u64 {
     (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::observed_peak;
+
+    #[test]
+    fn observed_peak_never_understates_measured_working_set_or_native_peak() {
+        assert_eq!(observed_peak(8192, 4096), 8192);
+        assert_eq!(observed_peak(4096, 8192), 8192);
+        assert_eq!(observed_peak(0, 0), 0);
+        assert_eq!(observed_peak(usize::MAX, 0), usize::MAX);
+    }
 }

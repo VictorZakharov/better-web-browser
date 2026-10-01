@@ -22,6 +22,8 @@ $contracts = @(
     'media::audio_only::opus::contained_renderer_opus_mono_and_stereo_sources_play_and_seek_without_video',
     'media::audio_only::opus::contained_renderer_decodes_opus_audio_buffers_with_real_resampled_pcm_and_async_callbacks',
     'capture::opus_recorder::round_trip::hidden_renderer_emitted_chunks_decode_real_stereo_with_exact_lookahead_and_eos_trim',
+    'canvas_presentation::modern_images::modern_image_pixels_cross_the_contained_renderer_without_double_premultiplication',
+    'canvas_presentation::modern_images::malformed_modern_images_reject_without_stopping_the_contained_document',
     'media::cadence::video_pixels_advance_while_a_javascript_callback_owns_the_document_thread',
     'media::cadence::advancing_video_does_not_mask_a_document_watchdog_timeout',
     'media::failure::a_late_video_decode_error_does_not_stop_the_document'

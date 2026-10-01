@@ -2,7 +2,7 @@
 
 use super::binding_helpers::argument_id;
 use super::*;
-use image::{DynamicImage, ImageBuffer, ImageFormat, ImageReader, Rgba};
+use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
 use std::io::Cursor;
 
 #[cfg(windows)]
@@ -25,7 +25,11 @@ pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Op
                 .with_message("ImageBitmap decoding requires an image byte array")
                 .into());
         };
-        return Ok(Some(match decode(bytes) {
+        let options = crate::engine::image_decode::DecodeOptions {
+            ignore_orientation: matches!(args.get(2), Some(JsValue::Boolean(true))),
+            ignore_color_profile: matches!(args.get(3), Some(JsValue::Boolean(true))),
+        };
+        return Ok(Some(match decode_with_options(bytes, options) {
             Some((width, height, pixels)) => JsValue::Array(vec![
                 JsValue::from(f64::from(width)),
                 JsValue::from(f64::from(height)),
@@ -71,12 +75,25 @@ pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Op
     ])))
 }
 
+#[cfg(test)]
 fn decode(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+    decode_with_options(bytes, Default::default())
+}
+
+fn decode_with_options(
+    bytes: &[u8],
+    options: crate::engine::image_decode::DecodeOptions,
+) -> Option<(u32, u32, Vec<u8>)> {
     if bytes.is_empty() || bytes.len() > MAX_ENCODED_BYTES {
         return None;
     }
     if crate::engine::page::looks_like_svg_image(bytes) {
-        let image = crate::engine::page::decode_svg_image(bytes, "Canvas SVG").ok()?;
+        let image = crate::engine::page::decode_svg_image_with_limits(
+            bytes,
+            "Canvas SVG",
+            crate::engine::image_decode::DecodeLimits::CANVAS,
+        )
+        .ok()?;
         let mut rgba = image.bgra.to_vec();
         for pixel in rgba.chunks_exact_mut(4) {
             let alpha = u32::from(pixel[3]);
@@ -99,21 +116,13 @@ fn decode(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
         }
         return Some((image.width, image.height, rgba));
     }
-    let mut reader = ImageReader::new(Cursor::new(bytes))
-        .with_guessed_format()
-        .ok()?;
-    let mut limits = image::Limits::default();
-    limits.max_image_width = Some(8192);
-    limits.max_image_height = Some(8192);
-    limits.max_alloc = Some(64 * 1024 * 1024);
-    reader.limits(limits);
-    let decoded = reader.decode().ok()?;
-    let (width, height) = (decoded.width(), decoded.height());
-    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_CANVAS_PIXELS as u64
-    {
-        return None;
-    }
-    Some((width, height, decoded.into_rgba8().into_raw()))
+    let image = crate::engine::image_decode::decode(
+        bytes,
+        crate::engine::image_decode::DecodeLimits::CANVAS,
+        options,
+    )
+    .ok()?;
+    Some((image.width, image.height, image.rgba))
 }
 
 fn encode(

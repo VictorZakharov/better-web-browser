@@ -8,6 +8,8 @@ mod link_preloads;
 mod media;
 mod media_sources;
 pub(crate) use media_sources::MediaSourceAdvance;
+#[cfg(test)]
+mod modern_image_tests;
 mod parsing;
 mod preload;
 mod refresh;
@@ -31,7 +33,7 @@ use self::resources::{discover_resources, document_base_url, resolve_image_url};
 pub(crate) use self::svg::inline_svg_key;
 use self::svg::{decode_inline_svg, decode_svg, looks_like_svg};
 pub(crate) use self::svg::{
-    decode_svg as decode_svg_image, looks_like_svg as looks_like_svg_image,
+    decode_svg_with_limits as decode_svg_image_with_limits, looks_like_svg as looks_like_svg_image,
 };
 use super::css::media::MediaEnvironment;
 use super::css::{StyleRefreshStats, StyleSet};
@@ -41,14 +43,11 @@ use super::script::{
     self, ScriptFetchOptions, ScriptInput, ScriptKind, ScriptOutcome, ScriptRuntime,
 };
 use crate::limits::{
-    MAX_DECODED_IMAGE_BYTES, MAX_DECODED_IMAGE_DIMENSION, MAX_DECODED_IMAGE_PIXELS,
     MAX_IMAGE_SOURCE_BYTES, MAX_INLINE_SVGS, MAX_PAGE_IMAGES as MAX_IMAGES, MAX_SCRIPT_BYTES,
     MAX_STYLE_IMAGES, MAX_WEB_FONTS, bounded_utf8_prefix,
 };
 use crate::navigation::resolve_url;
-use image::ImageReader;
 use std::collections::{HashMap, HashSet};
-use std::io::Cursor;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -262,42 +261,12 @@ impl Page {
             let image = decode_svg(bytes, "external SVG")?;
             return self.install_decoded_image(url, image);
         }
-        let mut reader = ImageReader::new(Cursor::new(bytes))
-            .with_guessed_format()
-            .map_err(|error| format!("detect image format: {error}"))?;
-        // image's reader reserves the decoder-reported output size before allocating the output
-        // buffer. Keep its own limit active as the primary allocation boundary, then validate the
-        // exact pixel product below because independent width/height limits cannot express it.
-        let mut decoder_limits = image::Limits::default();
-        decoder_limits.max_image_width = Some(MAX_DECODED_IMAGE_DIMENSION);
-        decoder_limits.max_image_height = Some(MAX_DECODED_IMAGE_DIMENSION);
-        decoder_limits.max_alloc = Some(MAX_DECODED_IMAGE_BYTES);
-        reader.limits(decoder_limits);
-        let image = reader
-            .decode()
-            .map_err(|error| format!("decode image: {error}"))?;
-        let width = image.width();
-        let height = image.height();
-        if u64::from(width) * u64::from(height) > MAX_DECODED_IMAGE_PIXELS {
-            return Err(format!("image is too large: {width}×{height}"));
-        }
-        let rgba = image.into_rgba8();
-        let mut bgra = rgba.into_raw();
-        for pixel in bgra.chunks_exact_mut(4) {
-            let alpha = u16::from(pixel[3]);
-            pixel[0] = ((u16::from(pixel[0]) * alpha + 127) / 255) as u8;
-            pixel[1] = ((u16::from(pixel[1]) * alpha + 127) / 255) as u8;
-            pixel[2] = ((u16::from(pixel[2]) * alpha + 127) / 255) as u8;
-            pixel.swap(0, 2);
-        }
-        self.install_decoded_image(
-            url,
-            DecodedImage {
-                width,
-                height,
-                bgra: bgra.into(),
-            },
-        )
+        let image = super::image_decode::decode(
+            bytes,
+            super::image_decode::DecodeLimits::PAGE,
+            Default::default(),
+        )?;
+        self.install_decoded_image(url, image.into_premultiplied_bgra())
     }
 
     pub fn image_url(&self, node: &NodeRef) -> Option<String> {

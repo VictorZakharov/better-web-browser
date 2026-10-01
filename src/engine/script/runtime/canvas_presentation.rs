@@ -7,6 +7,7 @@ pub(crate) struct CanvasPaintSnapshot {
     pub(crate) node: NodeId,
     pub(crate) width: u32,
     pub(crate) height: u32,
+    pub(crate) content_size: (u32, u32),
     pub(crate) pixels: Option<Vec<u8>>,
 }
 
@@ -39,14 +40,18 @@ impl ScriptRuntime {
             let JsValue::Array(fields) = record else {
                 return Err("Canvas snapshot record is not an array".into());
             };
-            let [handle, width, height, pixels]: [JsValue; 4] = fields
-                .try_into()
-                .map_err(|_| "Canvas snapshot record has the wrong shape")?;
+            let [handle, width, height, content_width, content_height, pixels]: [JsValue; 6] =
+                fields
+                    .try_into()
+                    .map_err(|_| "Canvas snapshot record has the wrong shape")?;
             let (Some(handle), Some(width), Some(height)) =
                 (unsigned(&handle), unsigned(&width), unsigned(&height))
             else {
                 return Err("Canvas snapshot has invalid dimensions or node handle".into());
             };
+            let content_size = unsigned(&content_width)
+                .zip(unsigned(&content_height))
+                .ok_or("Canvas snapshot has invalid content dimensions")?;
             let node = self
                 .host
                 .borrow()
@@ -76,6 +81,7 @@ impl ScriptRuntime {
                 node: node.id(),
                 width,
                 height,
+                content_size,
                 pixels: bytes,
             });
         }

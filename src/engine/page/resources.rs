@@ -253,6 +253,8 @@ pub(super) fn supported_image_type(kind: &str) -> bool {
             .to_ascii_lowercase()
             .as_str(),
         "image/bmp"
+            | "image/avif"
+            | "image/jxl"
             | "image/gif"
             | "image/jpeg"
             | "image/png"

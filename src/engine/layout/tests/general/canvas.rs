@@ -23,8 +23,14 @@ fn scripted_canvas_has_intrinsic_replaced_size_and_paints_published_pixels() {
         )
     );
 
-    page.install_canvas_bitmap(canvas.id(), 2, 1, Some(vec![255, 0, 0, 255, 0, 0, 0, 0]))
-        .unwrap();
+    page.install_canvas_bitmap(
+        canvas.id(),
+        2,
+        1,
+        (2, 1),
+        Some(vec![255, 0, 0, 255, 0, 0, 0, 0]),
+    )
+    .unwrap();
     let painted = layout_page(&page, 800.0, 600.0, &mut measurer);
     assert!(painted.items.iter().any(|item| matches!(item, DisplayItem::Image { url, .. } if url.starts_with("breeze-internal:canvas:"))));
 }

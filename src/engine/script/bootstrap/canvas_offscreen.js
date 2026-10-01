@@ -33,16 +33,19 @@
             this.__height = canvasUnsignedDimension(value);
             stateForCanvas(this, true);
         }
-        getContext(contextId) {
+        getContext(contextId, options = undefined) {
             if (this.__detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
-            const mode = String(contextId).toLowerCase();
+            const mode = String(contextId);
             if (mode !== '2d' && mode !== 'bitmaprenderer') return null;
             const state = stateForCanvas(this);
             if (state.mode !== 'none' && state.mode !== mode) return null;
-            state.mode = mode;
-            return state.context ||= mode === '2d' ?
+            if (state.context) return state.context;
+            const context = mode === '2d' ?
                 new OffscreenCanvasRenderingContext2D(offscreenContextToken, this) :
-                new ImageBitmapRenderingContext(canvasBitmapContextToken, this);
+                new ImageBitmapRenderingContext(canvasBitmapContextToken, this, options);
+            state.context = context;
+            state.mode = mode;
+            return context;
         }
         convertToBlob(options = {}) {
             if (this.__detached)
@@ -65,6 +68,7 @@
                 throw new DOMException('Canvas has no available bitmap', 'InvalidStateError');
             const result = makeImageBitmap(state.width, state.height, state.pixels);
             state.pixels = new Uint8ClampedArray(state.width * state.height * 4);
+            if (state.mode === 'bitmaprenderer') resetCanvasBitmapRenderer(state.context);
             return result;
         }
     }
@@ -92,17 +96,20 @@
                 const state = stateForCanvas(value);
                 if (!state.pixels) throw new DOMException('Canvas exceeds the bitmap budget', 'DataCloneError');
                 return { width: state.width, height: state.height, pixels: state.pixels,
+                    canvasWidth: value.width, canvasHeight: value.height,
+                    alpha: bitmapRendererStates.get(state.context)?.alpha,
                     mode: state.mode, kind: 'offscreencanvas' };
             }
             const state = imageBitmapPixels(value);
-            return { width: state.width, height: state.height, pixels: state.pixels, kind: 'imagebitmap' };
+            return { width: state.width, height: state.height, pixels: state.pixels,
+                premultiplied: state.premultiplied, kind: 'imagebitmap' };
         },
         detach(value) {
             if (value instanceof OffscreenCanvas) {
                 value.__detached = true;
                 const state = canvasStates.get(value);
                 if (state) { state.pixels = null; state.context = null; }
-            } else value.close();
+            } else closeImageBitmap(value);
         },
         receive(record, bytes) {
             const width = Number(record.w), height = Number(record.h);
@@ -110,13 +117,18 @@
                 width * height > MAX_CANVAS_PIXELS || bytes.length !== width * height * 4)
                 throw new DOMException('Invalid bitmap transfer', 'DataCloneError');
             const pixels = new Uint8ClampedArray(bytes);
-            if (record.t === 'imagebitmap') return makeImageBitmap(width, height, pixels);
+            if (record.t === 'imagebitmap') return makeImageBitmap(width, height, pixels, record.a === true);
             if (record.t !== 'offscreencanvas')
                 throw new DOMException('Unknown bitmap transfer', 'DataCloneError');
-            const canvas = new OffscreenCanvas(width, height), state = stateForCanvas(canvas);
+            const canvasWidth = record.cw ?? width, canvasHeight = record.ch ?? height;
+            if (!Number.isInteger(canvasWidth) || !Number.isInteger(canvasHeight) ||
+                canvasWidth < 0 || canvasHeight < 0 || canvasWidth > 0xffffffff || canvasHeight > 0xffffffff)
+                throw new DOMException('Invalid Canvas dimensions in transfer', 'DataCloneError');
+            const canvas = new OffscreenCanvas(canvasWidth, canvasHeight), state = stateForCanvas(canvas);
+            state.width = width; state.height = height;
             state.pixels = pixels;
             if (record.m === '2d') canvas.getContext('2d');
-            else if (record.m === 'bitmaprenderer') canvas.getContext('bitmaprenderer');
+            else if (record.m === 'bitmaprenderer') canvas.getContext('bitmaprenderer', {alpha:record.o !== false});
             return canvas;
         }
     };

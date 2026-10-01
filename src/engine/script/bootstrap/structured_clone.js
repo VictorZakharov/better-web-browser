@@ -61,7 +61,8 @@
                 if (canvas.isDetached(value)) return fail();
                 const record = canvas.snapshot(value);
                 return { t: record.kind, id, w: record.width, h: record.height,
-                    m: record.mode, p: bytesToBase64(record.pixels) };
+                    cw: record.canvasWidth, ch: record.canvasHeight, o: record.alpha,
+                    m: record.mode, a: record.premultiplied, p: bytesToBase64(record.pixels) };
             }
             if (typeof DOMMatrixReadOnly === 'function' && value instanceof DOMMatrixReadOnly)
                 return { t: 'dom-matrix', id, v: Array.from(value.toFloat64Array(), encode),

@@ -20,6 +20,8 @@ pub(super) struct Playback {
     video_clock: Option<VideoClock>,
     encoded_bytes: u64,
     silent_audio: bool,
+    // Last field drops after both native video and the joined audio thread.
+    foundation: Option<backend::MediaFoundation>,
 }
 
 impl Playback {
@@ -33,6 +35,7 @@ impl Playback {
             video_clock: None,
             encoded_bytes: 0,
             silent_audio,
+            foundation: None,
         }
     }
 
@@ -174,7 +177,11 @@ impl Playback {
         frame_writer: &mut DecodedFrameWriter<File>,
         writer: &mut MediaFrameWriter<File>,
     ) -> Result<(), String> {
-        let backend::DecodedMedia { report, playback } = decoded;
+        let backend::DecodedMedia {
+            report,
+            playback,
+            foundation,
+        } = decoded;
         let audio = if report.audio_codec == crate::media_protocol::MediaCodecFamily::None {
             None
         } else {
@@ -200,6 +207,7 @@ impl Playback {
         self.last_frame_id = frame_id;
         self.active = playback.map(|playback| (source_id, playback));
         self.audio = audio.map(|audio| (source_id, audio));
+        self.foundation = foundation;
         self.video_clock = (report.audio_codec == crate::media_protocol::MediaCodecFamily::None)
             .then(|| VideoClock::new(source_id, report.duration_100ns));
         self.encoded_bytes = report.encoded_bytes;

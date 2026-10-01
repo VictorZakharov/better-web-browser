@@ -202,7 +202,12 @@ fn hidden_contained_renderer_handshakes_pings_and_shuts_down() {
     assert_eq!(snapshot.context_id, 77);
     assert!(snapshot.working_set > 0);
     assert!(snapshot.private_memory > 0);
-    assert!(snapshot.peak_working_set >= snapshot.working_set);
+    assert!(
+        snapshot.peak_working_set >= snapshot.working_set,
+        "peak {} understated observed working set {}",
+        snapshot.peak_working_set,
+        snapshot.working_set
+    );
     assert!(snapshot.handle_count > 0);
     let exit = session.shutdown().expect("clean renderer shutdown");
     assert_eq!(exit.reason, RendererExitReason::CleanShutdown);

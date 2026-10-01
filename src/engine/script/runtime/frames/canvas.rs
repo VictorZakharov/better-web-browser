@@ -42,6 +42,7 @@ impl ChildRuntimes {
                 snapshot.node,
                 snapshot.width,
                 snapshot.height,
+                snapshot.content_size,
                 snapshot.pixels,
             ) {
                 child.host.borrow_mut().diagnose(error);

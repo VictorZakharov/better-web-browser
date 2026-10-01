@@ -146,9 +146,12 @@ fn opus_media_streams_more_than_an_audio_buffer_budget_without_whole_file_pcm_al
 fn opus_report_and_stream_use_only_actual_mono_or_stereo_presentation_pcm() {
     for (bytes, channels) in supported_fixtures() {
         assert!(crate::opus_audio::sniff(&bytes));
-        let report = super::super::decode(&bytes, MediaLimits::default())
-            .unwrap()
-            .report;
+        let decoded = super::super::decode(&bytes, MediaLimits::default()).unwrap();
+        assert!(
+            decoded.foundation.is_none(),
+            "software Opus initialized the native platform"
+        );
+        let report = decoded.report;
         assert_eq!(report.audio_codec, MediaCodecFamily::Opus);
         assert_eq!(report.video_codec, MediaCodecFamily::None);
         assert_eq!((report.video_samples, report.video_decoded_bytes), (0, 0));

@@ -44,6 +44,7 @@ Current page support includes:
 - A growing CSS cascade with custom properties, `calc()` lengths, [cascade layers](docs/css-cascade-layers.md), [nested rules and Selectors Level 4 features](docs/css-nesting-selectors.md), [conditional queries and scoped rules](docs/css-conditional-scope.md), block/inline flow, flex, grid, table, float, and positioned layout
 - Standards-based layout fixes and their headless Chrome comparisons are tracked in [layout compatibility](docs/layout-standards.md), including explicit remaining gaps.
 - External stylesheets with [nested import loading and separate script/paint gates](docs/stylesheet-loading-dependencies.md), CSS background images, raster images, alpha compositing, inline/external SVG geometry (SVG text is not yet painted), and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
+- [AVIF and JPEG XL decoding](docs/modern-images-and-bitmaps.md) through shared page/Canvas/worker paths, with real alpha/color/orientation handling and bounded ImageBitmap crop, resize, ownership and bitmaprenderer presentation contracts
 - [Owned and imported CSSOM](docs/parser-observation-and-cssom.md): preferred titled sheets, per-occurrence import identity, rule edits reflected in the cascade, and constructed/adopted sheets
 - A bounded V8 JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers, [native microtasks independent of author Promise implementations](docs/native-microtasks-and-resource-invalidation.md), navigation, and browser-authoritative cookie/storage projections
 - [HTML event-handler attributes](docs/html-event-handlers.md), with lazy compilation, DOM scope lookup, stable listener ordering, cancellation, and body/window forwarding
@@ -693,6 +694,20 @@ Chrome 154.0.8037.92 passed **72/80** under the same oracle; its eight differing
 destination, feedback, and legacy processing behaviors are explicitly documented,
 not hidden by browser-specific assertions. This comparison does not establish
 overall browser superiority or full Web Audio conformance.
+
+The subsequent 2026-10-01 [modern images and ImageBitmap](docs/modern-images-and-bitmaps.md)
+batch rendered **487 / 588** in three hidden fresh-profile release captures,
+unchanged from three same-day main captures using the same settings. All six
+returned HTTP 200 without JavaScript errors or renderer exits. No score gain
+is claimed. The original 15-image Canvas readback fixture improved from
+**0/15 decoded** to **15/15 decoded**: eight AVIF and seven JPEG XL variants.
+Unified-headless Chrome 154.0.8037.92 decoded the eight AVIF fixtures and rejected
+the seven JPEG XL fixtures. This is format coverage, not a superiority score:
+some subsampled YUV pixels differ because of chroma interpolation, and the
+new paths deliberately retain documented SDR/first-frame/metadata limits.
+Independent FFmpeg pixels, an exact Chromium 12-bit reference, and contained
+renderer pixel tests back the implementation. Pinned open-source decoders
+are reused with reviewed licenses; no benchmark or test-site behavior is faked.
 
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
