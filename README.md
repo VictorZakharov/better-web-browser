@@ -786,6 +786,41 @@ painting. Higher AV1 profiles/depths, hardware decoding, color overrides and
 VideoEncoder remain unavailable. These additions do not establish complete
 media-site playback or universal codec conformance.
 
+The following 2026-10-02 [stylesheet CSS Animations/CSSOM](docs/css-animations.md)
+batch rendered **487 / 588** in three hidden fresh-profile release captures,
+unchanged from three alternating captures of merged #219. All six returned HTTP
+200 with no JavaScript errors or renderer exits, at 1280×720, 125% scale,
+`en-US`, default Breeze identity and a 10-second observation window. No points
+gain is claimed; this batch adds native behavior rather than new inventory flags.
+
+| Measurement | Before (#219) | After | Unified-headless Chrome 154.0.8037.97 |
+| --- | ---: | ---: | ---: |
+| Original animation/CSSOM fixture contracts | 1/13 reached; 12 failed | 23/23 | 23/23 |
+| Curated upstream WPT assertions / cases | 5,991 / 550 | 6,086 / 554 | Not measured for this batch |
+| HTML5test page-ready, median of three | 246.0 ms | 236.1 ms | Not measured for this batch |
+| HTML5test accumulated JavaScript time, median | 402.4 ms | 566.4 ms | Not measured for this batch |
+| HTML5test combined working set, median | 177.2 MiB | 190.8 MiB | Not measured for this batch |
+| Animation fixture ready, release median of three | Not measured | 219.8 ms | 446.1 ms |
+| Animation fixture combined working set, median | Not measured | 44.1 MiB | 547.7 MiB |
+
+The old fixture stops at missing keyframe CSSOM support after thirteen checks;
+unreached checks are not counted as failures or passes. All twenty-three checks
+complete in both new browsers; the perceptual screenshot difference is 0.018.
+The new native validation/playback paths have a visible cost on HTML5test:
+recorded JavaScript work rises about 164 ms and combined working set about
+13.6 MiB. Similar first-paint timing is not evidence of faster score completion.
+These small local samples are not a universal speed or memory comparison:
+Breeze ready follows its first owned paint, whereas Chrome ready follows load;
+combined working sets include two Breeze processes versus ten Chrome processes.
+Captures ran without competing compilation, in alternating before/after order.
+
+The batch reuses existing `cssparser` and Web Animations code with no new
+dependency or copied implementation. It adds scoped/layered keyframes, real
+timeline sampling/events, native authored-value CSSOM editing, transition
+cascade/reversal fixes, and regression tests. Initial animation settings are
+shared until edited. Pseudo-elements, additive composition, compositor
+offloading and complete CSSOM serialization remain explicitly open.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -793,9 +828,9 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
 ./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ `
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
-  -SettleMs 4500 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-10-02-codecs-reproduction.json `
-  -Screenshot target/html5test/2026-10-02-codecs-reproduction.png
+  -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
+  -Output target/html5test/2026-10-02-css-animations-reproduction.json `
+  -Screenshot target/html5test/2026-10-02-css-animations-reproduction.png
 ```
 
 New releases must refresh or explicitly date these observations using the
