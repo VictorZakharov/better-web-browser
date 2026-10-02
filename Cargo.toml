@@ -61,6 +61,9 @@ xmlparser = "0.13.6"
 webm-iterable = "=0.7.1"
 
 [target.'cfg(windows)'.dependencies]
+# BSD-3-Clause ANGLE/GLES2 + WebGL shader validation, built from locked source.
+# EGL pbuffers only; no native window or borrowed browser DLLs.
+mozangle = { version = "=0.7.1", features = ["egl"] }
 accesskit = "0.24.1"
 accesskit_windows = "0.34.0"
 fontique = { version = "0.11.1", default-features = false, features = ["system"] }

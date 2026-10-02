@@ -7,6 +7,7 @@ use std::io::Cursor;
 
 #[cfg(windows)]
 mod text;
+pub(crate) mod webgl;
 
 use crate::limits::MAX_CANVAS_PIXELS;
 const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;

@@ -39,6 +39,9 @@ runs:
     - name: Prepare V8 build path
       shell: pwsh
       run: ./scripts/prepare-v8.ps1 -Profile debug
+    - name: Check ANGLE binding compiler
+      shell: pwsh
+      run: ./scripts/prepare-angle.ps1
     - name: Flush Cargo source volume before caching
       if: inputs.populate-source-cache == 'true' && steps.sources.outputs.cache-hit != 'true'
       shell: pwsh

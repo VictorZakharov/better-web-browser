@@ -1,0 +1,198 @@
+//! One native owner thread. Realm callers never move ANGLE contexts across threads.
+use super::{BackendContexts, MAX_CONTEXTS, MAX_SHADER_BYTES, MAX_UPLOAD_BYTES, gl, json};
+use serde_json::Value;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex, OnceLock, Weak, mpsc},
+    time::Duration,
+};
+
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(3);
+static OWNER: OnceLock<Option<mpsc::SyncSender<Request>>> = OnceLock::new();
+static RETIRED: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+type Bitmap = (u32, u32, Vec<u8>);
+enum Operation {
+    Create(u32, u32, String, Weak<()>),
+    Command(u32, String, Option<Vec<u8>>),
+    Snapshot(u32),
+}
+enum Reply {
+    Created(Option<u32>),
+    Command(Value),
+    Snapshot(Option<Bitmap>),
+}
+struct Request {
+    operation: Operation,
+    reply: mpsc::SyncSender<Reply>,
+}
+
+#[derive(Default)]
+pub(crate) struct Contexts {
+    live: HashSet<u32>,
+    leases: HashMap<u32, Arc<()>>,
+}
+impl Contexts {
+    pub(crate) fn create(&mut self, width: u32, height: u32, options: &str) -> Option<u32> {
+        if self.live.len() >= MAX_CONTEXTS || options.len() > 1024 {
+            return None;
+        }
+        let lease = Arc::new(());
+        let Reply::Created(Some(id)) = request(Operation::Create(
+            width,
+            height,
+            options.into(),
+            Arc::downgrade(&lease),
+        ))?
+        else {
+            return None;
+        };
+        self.live.insert(id);
+        self.leases.insert(id, lease);
+        Some(id)
+    }
+    pub(crate) fn remove(&mut self, id: u32) {
+        if self.live.remove(&id) {
+            self.leases.remove(&id);
+            retire(std::iter::once(id));
+        }
+    }
+    pub(crate) fn clear(&mut self) {
+        if self.live.is_empty() {
+            return;
+        }
+        retire(self.live.drain());
+        self.leases.clear();
+    }
+    pub(crate) fn execute(&mut self, id: u32, command: &str, bytes: Option<&[u8]>) -> Value {
+        if !self.live.contains(&id) {
+            return json!({"lost":true});
+        }
+        // Reject before copying data into the bounded submission queue.
+        let (command, bytes) = if command.len() > MAX_SHADER_BYTES + 4096
+            || bytes.is_some_and(|b| b.len() > MAX_UPLOAD_BYTES)
+        {
+            (
+                json!({"op":"bridgeError","i":[gl::OUT_OF_MEMORY]}).to_string(),
+                None,
+            )
+        } else {
+            (command.into(), bytes.map(<[u8]>::to_vec))
+        };
+        match request(Operation::Command(id, command, bytes)) {
+            Some(Reply::Command(value)) => value,
+            _ => json!({"lost":true}),
+        }
+    }
+    pub(crate) fn snapshot(&mut self, id: u32) -> Option<Bitmap> {
+        if !self.live.contains(&id) {
+            return None;
+        }
+        match request(Operation::Snapshot(id)) {
+            Some(Reply::Snapshot(bitmap)) => bitmap,
+            _ => None,
+        }
+    }
+}
+impl Drop for Contexts {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+fn request(operation: Operation) -> Option<Reply> {
+    let owner = OWNER
+        .get_or_init(|| {
+            // Only one pending large upload is admitted. This thread owns display creation,
+            // GLSL compiler TLS, drawing and final destruction for every realm in the renderer.
+            let (sender, incoming) = mpsc::sync_channel(1);
+            std::thread::Builder::new()
+                .name("breeze-webgl".into())
+                .stack_size(8 * 1024 * 1024)
+                .spawn(move || run(incoming))
+                .ok()
+                .map(|_| sender)
+        })
+        .as_ref()?;
+    let (reply, incoming) = mpsc::sync_channel(1);
+    let mut pending = Request { operation, reply };
+    let deadline = std::time::Instant::now() + RESPONSE_TIMEOUT;
+    loop {
+        match owner.try_send(pending) {
+            Ok(()) => break,
+            Err(mpsc::TrySendError::Disconnected(_)) => return None,
+            Err(mpsc::TrySendError::Full(value)) => {
+                if std::time::Instant::now() >= deadline {
+                    return None;
+                }
+                pending = value;
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+    }
+    incoming
+        .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+        .ok()
+}
+
+fn run(incoming: mpsc::Receiver<Request>) {
+    let mut backend = BackendContexts::default();
+    let mut leases: HashMap<u32, Weak<()>> = HashMap::new();
+    loop {
+        let pending = incoming.recv_timeout(Duration::from_millis(10));
+        let retired = std::mem::take(
+            &mut *RETIRED
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        for id in retired {
+            backend.remove(id);
+            leases.remove(&id);
+        }
+        leases.retain(|id, lease| {
+            if lease.strong_count() == 0 {
+                backend.remove(*id);
+                false
+            } else {
+                true
+            }
+        });
+        let Request { operation, reply } = match pending {
+            Ok(request) => request,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
+        let (response, orphan) = match operation {
+            Operation::Create(width, height, options, lease) => {
+                let id = if lease.strong_count() == 0 {
+                    None
+                } else {
+                    backend.create(width, height, &options)
+                };
+                if let Some(id) = id {
+                    leases.insert(id, lease);
+                }
+                (Reply::Created(id), id)
+            }
+            Operation::Command(id, command, bytes) => (
+                Reply::Command(backend.execute(id, &command, bytes.as_deref())),
+                Some(id),
+            ),
+            Operation::Snapshot(id) => (Reply::Snapshot(backend.snapshot(id)), Some(id)),
+        };
+        // A timed-out creation/command cannot leave an unowned native context alive.
+        if reply.send(response).is_err()
+            && let Some(id) = orphan
+        {
+            backend.remove(id);
+            leases.remove(&id);
+        }
+    }
+}
+fn retire(ids: impl Iterator<Item = u32>) {
+    // Destruction never waits behind a full upload queue. Every accepted name is
+    // retired once; the number of live native contexts bounds this cleanup list.
+    RETIRED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .extend(ids);
+}
