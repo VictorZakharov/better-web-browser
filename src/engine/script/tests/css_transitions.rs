@@ -1,4 +1,5 @@
 use super::*;
+mod advanced;
 
 #[test]
 fn class_change_interpolates_computed_color_transform_and_width() {
@@ -112,7 +113,7 @@ fn detaching_an_active_transition_cancels_without_a_late_end_event() {
 }
 
 #[test]
-fn interrupted_transition_cancels_and_restarts_from_current_presentation() {
+fn reversed_transition_uses_spec_reversing_shortening_factor() {
     let (dom, outcome) = execute_html(
         r#"<body><div id=target style='opacity:0;transition:opacity 1s linear'></div><script>
             let now = 100;
@@ -145,7 +146,7 @@ fn interrupted_transition_cancels_and_restarts_from_current_presentation() {
             .attr("data-result")
             .as_deref(),
         Some(
-            "0.5|0.5|0.25|0|transitionrun:0,transitionstart:0,transitioncancel:0.5,transitionrun:0,transitionstart:0,transitionend:1"
+            "0.5|0.5|0|0|transitionrun:0,transitionstart:0,transitioncancel:0.5,transitionrun:0,transitionstart:0,transitionend:0.5"
         )
     );
 }

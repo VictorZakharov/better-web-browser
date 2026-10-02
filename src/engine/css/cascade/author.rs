@@ -1,6 +1,8 @@
 //! Author-origin cascade ordering, including CSS Cascade Level 5 layers.
 use super::*;
 use std::collections::HashSet;
+mod helpers;
+use helpers::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct LayerKey {
@@ -13,6 +15,7 @@ struct Cascaded<'a> {
     declaration: &'a Declaration,
     base_url: &'a str,
     layer: LayerKey,
+    name_scope: Option<NodeId>,
 }
 
 pub(super) struct AuthorCascadeInput<'a> {
@@ -22,6 +25,7 @@ pub(super) struct AuthorCascadeInput<'a> {
     pub(super) matching: &'a [&'a Rule],
     pub(super) inline_declarations: &'a [Declaration],
     pub(super) animation_declarations: &'a [Declaration],
+    pub(super) transition_declarations: &'a [Declaration],
 }
 
 impl StyleSet {
@@ -37,6 +41,7 @@ impl StyleSet {
             matching,
             inline_declarations,
             animation_declarations,
+            transition_declarations,
         } = input;
         let mut cascaded = Vec::new();
         let scoped = matching
@@ -109,6 +114,7 @@ impl StyleSet {
                 .filter(|declaration| declaration.important == important)
                 .map(|declaration| Cascaded {
                     declaration,
+                    name_scope: tree_scope(node),
                     base_url: &self.document_base_url,
                     layer: LayerKey {
                         band: if important { 4 } else { 1 },
@@ -128,6 +134,7 @@ impl StyleSet {
                         .filter(|declaration| declaration.important == important)
                         .map(|declaration| Cascaded {
                             declaration,
+                            name_scope: rule_scope(rule.scope),
                             base_url: &rule.base_url,
                             layer: LayerKey {
                                 band: if important { 3 } else { 0 },
@@ -146,6 +153,7 @@ impl StyleSet {
                         .filter(|declaration| !declaration.important)
                         .map(|declaration| Cascaded {
                             declaration,
+                            name_scope: tree_scope(node),
                             base_url: &self.document_base_url,
                             layer: LayerKey {
                                 band: 2,
@@ -156,6 +164,24 @@ impl StyleSet {
                 );
             }
         }
+
+        // CSS transition origin outranks even important declarations and animation origin.
+        // https://drafts.csswg.org/css-cascade-5/#cascade-sort
+        cascaded.extend(
+            transition_declarations
+                .iter()
+                .filter(|declaration| !declaration.important)
+                .map(|declaration| Cascaded {
+                    declaration,
+                    name_scope: tree_scope(node),
+                    base_url: &self.document_base_url,
+                    layer: LayerKey {
+                        band: 5,
+                        context: outer_context,
+                        rank: 0,
+                    },
+                }),
+        );
 
         // Most pages never use revert-layer. Do not clone a computed style at every layer
         // boundary on their hot style-recalculation path.
@@ -248,7 +274,7 @@ impl StyleSet {
                                 .find(|(key, _)| *key == earlier.layer)
                                 .map(|(_, start)| start)
                                 .unwrap_or(lower_origin);
-                            apply_resolved_declaration(
+                            crate::engine::css::variables::apply_scoped_declaration(
                                 &mut baseline,
                                 earlier.declaration,
                                 DeclarationContext {
@@ -259,6 +285,7 @@ impl StyleSet {
                                     viewport_width: self.viewport_width,
                                     viewport_height: self.viewport_height,
                                 },
+                                earlier.name_scope,
                             );
                         }
                         important_starts.push((item.layer, baseline.clone()));
@@ -267,7 +294,7 @@ impl StyleSet {
                 }
                 previous = Some(item.layer);
             }
-            apply_resolved_declaration(
+            crate::engine::css::variables::apply_scoped_declaration(
                 style,
                 item.declaration,
                 DeclarationContext {
@@ -278,56 +305,11 @@ impl StyleSet {
                     viewport_width: self.viewport_width,
                     viewport_height: self.viewport_height,
                 },
+                item.name_scope,
             );
             if needs_snapshot && item.layer.band >= 3 {
                 prior_important.push(item);
             }
         }
     }
-}
-
-fn normal_prefix(
-    history: &[(LayerKey, ComputedStyle)],
-    origin: &ComputedStyle,
-    before: LayerKey,
-) -> ComputedStyle {
-    history
-        .iter()
-        .rev()
-        .find(|(key, _)| {
-            key.context > before.context
-                || (key.context == before.context && key.rank < before.rank)
-        })
-        .map_or_else(|| origin.clone(), |(_, style)| style.clone())
-}
-
-fn shadow_context_depth(root: &NodeRef) -> u8 {
-    let mut depth = 0_u8;
-    let mut current = root.clone();
-    while let Some(host) = current.shadow_host() {
-        depth = depth.saturating_add(1);
-        current = Node::tree_root(&host);
-    }
-    depth
-}
-
-fn part_context_depth(node: &NodeRef, scope: RuleScope) -> Option<u8> {
-    let RuleScope::Shadow(source_root) = scope else {
-        return matches!(scope, RuleScope::Document).then_some(0);
-    };
-    let mut root = Node::tree_root(node);
-    loop {
-        if root.id() == source_root {
-            return Some(shadow_context_depth(&root));
-        }
-        root = Node::tree_root(&root.shadow_host()?);
-    }
-}
-
-fn might_revert_layer(value: &str) -> bool {
-    value.as_bytes().contains(&b'\\')
-        || value
-            .as_bytes()
-            .windows(b"revert-layer".len())
-            .any(|part| part.eq_ignore_ascii_case(b"revert-layer"))
 }

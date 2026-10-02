@@ -1,5 +1,39 @@
 use super::{Length, serialize_number, serialize_px};
 
+pub(super) fn serialize_computed_length(value: Length, font_size: f32) -> String {
+    let value = match value {
+        Length::Em(em) => Length::Px(em * font_size),
+        Length::Calc {
+            px,
+            percent,
+            em,
+            rem,
+            vw,
+            vh,
+            vmin,
+            vmax,
+        } if em != 0.0 => {
+            if percent == 0.0 && rem == 0.0 && vw == 0.0 && vh == 0.0 && vmin == 0.0 && vmax == 0.0
+            {
+                Length::Px(px + em * font_size)
+            } else {
+                Length::Calc {
+                    px: px + em * font_size,
+                    percent,
+                    em: 0.0,
+                    rem,
+                    vw,
+                    vh,
+                    vmin,
+                    vmax,
+                }
+            }
+        }
+        value => value,
+    };
+    serialize_length(value)
+}
+
 pub(super) fn serialize_length(value: Length) -> String {
     match value {
         Length::Auto => "auto".to_string(),
@@ -57,7 +91,7 @@ mod tests {
     use super::super::*;
 
     #[test]
-    fn mixed_calc_keeps_each_length_term_in_cssom() {
+    fn mixed_calc_resolves_font_units_but_keeps_unresolved_percentage_terms() {
         let mut style = ComputedStyle::initial();
         style.width = Length::Calc {
             px: 12.0,
@@ -71,7 +105,7 @@ mod tests {
         };
         assert_eq!(
             resolved_property_value(&style, "width").as_deref(),
-            Some("calc(12px + 25% - 2em + 1.5vw)")
+            Some("calc(-20px + 25% + 1.5vw)")
         );
         assert_eq!(serialize_length(Length::Rem(1.25)), "1.25rem");
     }

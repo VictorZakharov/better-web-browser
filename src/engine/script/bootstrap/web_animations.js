@@ -5,29 +5,32 @@
     const animationAppliedStyles = new WeakMap();
     const transitionAppliedStyles = new WeakMap();
     let animationFrameHandle = null;
+    let animationSamplingTargets = null;
     const animationNow = () => performance.now();
     const animationEndTime = timing => Math.max(0,
         timing.delay + animationActiveDuration(timing) + timing.endDelay);
     const applyAnimationStyles = target => {
         if (!target) return;
+        if (animationSamplingTargets !== null) { animationSamplingTargets.add(target); return; }
         const declarations = new Map();
-        for (const animation of documentAnimations) {
+        const ordered = [...documentAnimations].filter(animation => animation.effect?.target === target)
+            .sort(compareAnimationOrder);
+        for (const animation of ordered) {
             if (animation.effect?.target !== target || animation.replaceState === 'removed') continue;
             const progress = sampleAnimationProgress(animation.effect.__timing, animation.currentTime);
             for (const [property, value] of sampleAnimationValues(animation.effect,
                 progress, animation.__underlying)) declarations.set(property, value);
         }
-        for (const [property, value] of transitionAppliedStyles.get(target) ?? [])
-            if (!declarations.has(property)) declarations.set(property, value);
         const style = [...declarations].map(([name, value]) => `${name}: ${value};`).join(' ');
         if (animationAppliedStyles.get(target) === style) return;
         animationAppliedStyles.set(target, style);
         host('setAnimationStyle', nodeId(target), style);
     };
     const setTransitionStyles = (target, declarations) => {
-        if (declarations?.size) transitionAppliedStyles.set(target, declarations);
-        else transitionAppliedStyles.delete(target);
-        applyAnimationStyles(target);
+        const style = [...(declarations ?? [])].map(([name,value]) => `${name}: ${value};`).join(' ');
+        if (transitionAppliedStyles.get(target) === style) return;
+        transitionAppliedStyles.set(target, style);
+        host('setTransitionStyle', nodeId(target), style);
     };
     const animationTargetProperties = animation => new Set(
         animation.effect?.__frames.flatMap(frame => [...frame.values.keys()]) ?? []);
@@ -42,7 +45,7 @@
         const animations = [...documentAnimations], changed = new Set();
         for (let index = 0; index < animations.length; index++) {
             const older = animations[index];
-            if (!replaceableAnimation(older) || older.replaceState !== 'active') continue;
+            if (cssAnimationRecords.has(older) || !replaceableAnimation(older) || older.replaceState !== 'active') continue;
             const properties = animationTargetProperties(older);
             if (!properties.size) continue;
             const covered = new Set();
@@ -63,8 +66,16 @@
             animation.__clock() !== null)) return;
         animationFrameHandle = windowObject.requestAnimationFrame(() => {
             animationFrameHandle = null;
-            for (const animation of [...documentAnimations]) animation.__tick();
-            removeReplacedAnimations();
+            animationSamplingTargets = new Set();
+            let targets;
+            try {
+                for (const animation of [...documentAnimations]) animation.__tick();
+                removeReplacedAnimations();
+            } finally {
+                targets = animationSamplingTargets;
+                animationSamplingTargets = null;
+            }
+            for (const target of targets) applyAnimationStyles(target);
             scheduleAnimationTick();
         });
     };
@@ -95,6 +106,7 @@
     class Animation extends EventTarget {
         constructor(effect = null, timeline = document.timeline) {
             super();
+            animationSequence.set(this, ++nextAnimationSequence);
             if (effect !== null && !(effect instanceof KeyframeEffect))
                 throw new TypeError('Animation effect must be a KeyframeEffect or null');
             if (timeline !== null && !(timeline instanceof AnimationTimeline))
@@ -357,6 +369,7 @@
         return animation;
     };
     Element.prototype.getAnimations = function (options = {}) {
+        syncCssAnimations();
         const subtree = !!Object(options).subtree;
         const includes = target => {
             if (!subtree) return target === this;
@@ -366,11 +379,15 @@
         };
         return [...documentAnimations].filter(animation => includes(animation.effect?.target) &&
             animation.replaceState !== 'removed' &&
-            sampleAnimationProgress(animation.effect.__timing, animation.currentTime) !== null);
+            (cssAnimationRecords.has(animation) && animation.playState !== 'idle' && animation.playState !== 'finished' ||
+                sampleAnimationProgress(animation.effect.__timing, animation.currentTime) !== null))
+            .sort(compareAnimationOrder);
     };
-    document.getAnimations = () => [...documentAnimations].filter(animation =>
+    document.getAnimations = () => { syncCssAnimations(); return [...documentAnimations].filter(animation =>
         animation.effect?.target && animation.effect.target.isConnected &&
         animation.replaceState !== 'removed' &&
-        sampleAnimationProgress(animation.effect.__timing, animation.currentTime) !== null);
+        (cssAnimationRecords.has(animation) && animation.playState !== 'idle' && animation.playState !== 'finished' ||
+            sampleAnimationProgress(animation.effect.__timing, animation.currentTime) !== null))
+        .sort(compareAnimationOrder); };
     Object.assign(windowObject, { Animation, AnimationEffect, AnimationPlaybackEvent,
         AnimationTimeline, DocumentTimeline, KeyframeEffect });

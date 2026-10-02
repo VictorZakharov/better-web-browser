@@ -124,6 +124,7 @@
 
     const computedStyleProxy = (element, pseudo) => new Proxy({
         getPropertyValue(name) {
+            syncCssAnimations();
             name = String(name);
             if (!name.startsWith('--')) name = name.toLowerCase();
             return element ? host('computedStyle', nodeId(element), name, pseudo) : '';
@@ -139,6 +140,7 @@
         }
     });
     windowObject.getComputedStyle = (element, pseudo = '') => {
+        syncCssAnimations();
         pseudo = pseudo == null ? '' : String(pseudo).trim().toLowerCase();
         if (pseudo === ':before') pseudo = '::before';
         if (pseudo === ':after') pseudo = '::after';

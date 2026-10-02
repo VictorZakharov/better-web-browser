@@ -32,6 +32,18 @@ pub(crate) fn supports_import_declaration_valid(prelude: &str) -> bool {
 /// feature query, its property name is used literally and its value cannot carry `!important`.
 /// https://drafts.csswg.org/css-conditional-3/#the-css-namespace
 pub(crate) fn supports_declaration_value(property: &str, value: &str) -> bool {
+    declaration_value(property, value, false)
+}
+
+// CSSOM must not discard implemented declarations merely because a capability
+// query deliberately declines the property's incomplete rendering contract.
+// Properties without a complete value validator retain native token validation;
+// this is not grounds for returning true from CSS.supports().
+pub(crate) fn cssom_declaration_value(property: &str, value: &str) -> bool {
+    declaration_value(property, value, true)
+}
+
+fn declaration_value(property: &str, value: &str, preserve_unclassified: bool) -> bool {
     let mut input = ParserInput::new(property);
     let mut parser = Parser::new(&mut input);
     let Ok(Token::Ident(name)) = parser.next_including_whitespace_and_comments().cloned() else {
@@ -43,7 +55,7 @@ pub(crate) fn supports_declaration_value(property: &str, value: &str) -> bool {
     let Some(value) = condition::property_value(value) else {
         return false;
     };
-    supports_declaration(property, value.trim())
+    declaration(property, value.trim(), preserve_unclassified)
 }
 
 pub(crate) fn supports_property(property: &str) -> bool {
@@ -55,6 +67,10 @@ pub(crate) fn supports_property(property: &str) -> bool {
 }
 
 fn supports_declaration(property: &str, value: &str) -> bool {
+    declaration(property, value, false)
+}
+
+fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool {
     if property.is_empty()
         || value
             .trim_end()
@@ -70,10 +86,12 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         return false;
     }
     let property = property.to_ascii_lowercase();
-    if matches!(
-        property.as_str(),
-        "perspective" | "transform-style" | "filter"
-    ) {
+    if !preserve_unclassified
+        && matches!(
+            property.as_str(),
+            "perspective" | "transform-style" | "filter"
+        )
+    {
         return false;
     }
     // A supported property with a syntactically valid var() reference is valid at parse time.
@@ -82,6 +100,14 @@ fn supports_declaration(property: &str, value: &str) -> bool {
     // https://www.w3.org/TR/css-variables-1/#using-variables
     if supports_property(&property) && variables::contains_valid_variable_reference(value) {
         return true;
+    }
+    if values::animations::supported_property(&property) {
+        return super::css_wide::supports_css_wide_keyword(&property, value)
+            || values::animations::apply(
+                &mut values::animations::AnimationSettings::default(),
+                &property,
+                value,
+            );
     }
     let value = value.to_ascii_lowercase();
     if super::css_wide::supports_css_wide_keyword(&property, &value) {
@@ -143,7 +169,11 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         "content-visibility" => matches!(value.as_str(), "visible" | "hidden"),
         "pointer-events" => matches!(value.as_str(), "auto" | "none"),
         "overflow" | "overflow-x" | "overflow-y" => {
-            matches!(value.as_str(), "visible" | "hidden" | "clip")
+            if preserve_unclassified {
+                Overflow::declaration_valid(&property, &value)
+            } else {
+                matches!(value.as_str(), "visible" | "hidden" | "clip")
+            }
         }
         "color" | "background-color" => parse_color(&value).is_some(),
         "border-color" => values::borders::color_values(&value).is_some(),
@@ -280,7 +310,10 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         | "-moz-flex-shrink" => value
             .parse::<f32>()
             .is_ok_and(|number| number.is_finite() && number >= 0.0),
-        _ => false,
+        _ => {
+            preserve_unclassified
+                && super::css_wide::supports_css_wide_keyword(&property, "initial")
+        }
     }
 }
 

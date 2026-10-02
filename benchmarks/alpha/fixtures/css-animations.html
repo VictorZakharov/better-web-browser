@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Stylesheet animation cascade contracts</title>
+<link rel="stylesheet" href="css-animations.css">
+<main id="main">
+  <h1>Stylesheet animation cascade contracts</h1>
+  <p>These samples pause real stylesheet animations at deterministic times. The same
+     fixture runs unchanged in Breeze and Chromium; it does not detect the browser.</p>
+  <section class="samples">
+    <article><h2>Opacity</h2><div id="fade" class="sample fade">Half opacity</div></article>
+    <article><h2>Color</h2><div id="color" class="sample color">Interpolated color</div></article>
+    <article><h2>Box edges</h2><div id="edges" class="sample edges">Native shorthand</div></article>
+    <article><h2>Implicit endpoint</h2><div id="implicit" class="sample implicit">Underlying style</div></article>
+    <article><h2>Layer precedence</h2><div id="layer" class="sample layer">Higher layer</div></article>
+    <article><h2>Tree scope</h2><div id="shadow-host" class="sample">Shadow animation</div></article>
+  </section>
+  <h2>Behavior checks</h2>
+  <ol id="results"></ol>
+  <p id="fixture-status">Checking native animation behavior…</p>
+  <p>The visible values above should remain stable while scrolling. Author style
+     attributes are not rewritten by sampled presentation styles.</p>
+</main>
+<script src="css-animations.js"></script>
+</html>

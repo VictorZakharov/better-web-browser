@@ -60,6 +60,7 @@
     let queuePolicyViolation = () => {};
     let resetAttributeNameMode = () => {};
     let transitionBeforeAttributeChange = () => null;
+    let syncCssAnimations = () => {};
     let transitionAfterAttributeChange = () => {};
     let invalidateMutationAncestors = () => {};
     let replaceElementInnerHtml = () => {};

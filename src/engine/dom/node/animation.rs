@@ -1,6 +1,28 @@
 use super::*;
 
 impl Node {
+    pub(crate) fn transition_style(&self) -> Option<String> {
+        self.element()?
+            .transition_style
+            .borrow()
+            .as_deref()
+            .map(str::to_owned)
+    }
+
+    pub(crate) fn set_transition_style(&self, declarations: &str) -> bool {
+        let Some(element) = self.element() else {
+            return false;
+        };
+        let next = (!declarations.is_empty()).then(|| Box::<str>::from(declarations));
+        let mut slot = element.transition_style.borrow_mut();
+        if *slot == next {
+            return false;
+        }
+        *slot = next;
+        drop(slot);
+        self.mark_mutated();
+        true
+    }
     pub(crate) fn animation_style(&self) -> Option<String> {
         self.element()?
             .animation_style

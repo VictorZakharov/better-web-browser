@@ -10,7 +10,10 @@ use crate::limits::{
     MAX_CSS_SOURCE_BYTES, MAX_PAGE_CSS_RULES, bounded_utf8_prefix,
 };
 use std::rc::Rc;
+mod comments;
 mod declarations;
+pub(super) use comments::strip_comments;
+pub(crate) mod keyframes;
 mod nesting;
 mod part_selectors;
 mod scope;
@@ -348,21 +351,6 @@ fn parse_rule_list(
         }
         cursor = close + 1;
     }
-}
-
-pub(super) fn strip_comments(css: &str) -> String {
-    let mut output = String::with_capacity(css.len());
-    let mut cursor = 0;
-    while let Some(start_offset) = css[cursor..].find("/*") {
-        let start = cursor + start_offset;
-        output.push_str(&css[cursor..start]);
-        let Some(end_offset) = css[start + 2..].find("*/") else {
-            return output;
-        };
-        cursor = start + 2 + end_offset + 2;
-    }
-    output.push_str(&css[cursor..]);
-    output
 }
 
 #[cfg(test)]

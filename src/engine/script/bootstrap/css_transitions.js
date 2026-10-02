@@ -1,7 +1,7 @@
     // CSS Transitions Level 1. An attribute-driven style change compares the
     // previous presentation with the new underlying computed style, then writes
-    // sampled declarations through the same native animation-origin paint path
-    // as Web Animations. No inline style or author stylesheet is rewritten.
+    // sampled declarations through a dedicated native transition-origin paint
+    // path. No inline style or author stylesheet is rewritten.
     // https://drafts.csswg.org/css-transitions-1/#starting
     const transitionProperties = [
         'opacity', 'color', 'background-color', 'transform', 'width', 'height',
@@ -27,6 +27,7 @@
             style.replace(/\/\*[\s\S]*?\*\//g, ' ') : style);
     };
     const runningTransitions = new WeakMap();
+    const transitionRendered = new WeakMap();
     const transitionTargets = new Set();
     const pendingTransitionEvents = [];
     let transitionFrame = null;
@@ -60,7 +61,7 @@
         properties: snapshot[0].split(',').map(part => part.trim()),
         durations: snapshot[1].split(',').map(part => parseFloat(part) || 0),
         delays: snapshot[2].split(',').map(part => parseFloat(part) || 0),
-        easings: snapshot[3].split(',').map(part => part.trim())
+        easings: splitMediaQueryList(snapshot[3])
     });
     const transitionShorthands = {
         background: ['background-color'],
@@ -123,7 +124,13 @@
     const sampleTransitions = (target, now) => {
         const transitions = runningTransitions.get(target);
         if (!transitions?.size) { transitionTargets.delete(target); return; }
-        if (!target.isConnected) {
+        const revision = host('cssAnimationRevision');
+        let rendered = transitionRendered.get(target);
+        if (!rendered || rendered.revision !== revision) {
+            rendered = {revision, value:host('cssAnimationRendered', nodeId(target))};
+            transitionRendered.set(target, rendered);
+        }
+        if (!target.isConnected || !rendered.value) {
             // A detached subtree must not be kept alive by the frame scheduler,
             // nor receive a late transitionend after leaving the document.
             for (const [property, transition] of transitions) {
@@ -166,16 +173,26 @@
     };
     transitionBeforeAttributeChange = (target, name, nextValue) => {
         if (!['class', 'id', 'style'].includes(name) || !target.isConnected) return null;
-        if (!runningTransitions.get(target)?.size &&
-            !host('mayTransitionOnAttribute', nodeId(target), name,
-                String(nextValue ?? '')) &&
-            !hasInlineTransition(host('attrGet', nodeId(target), 'style')) &&
-            !hasInlineTransition(name === 'style' ? nextValue : ''))
-            return null;
-        sampleTransitions(target, transitionTime());
-        return transitionSnapshot(target);
+        const candidates = new Set(host('transitionAffectedTargets', nodeId(target), name,
+            String(nextValue ?? '')).map(wrap));
+        if (runningTransitions.get(target)?.size ||
+            hasInlineTransition(host('attrGet', nodeId(target), 'style')) ||
+            hasInlineTransition(name === 'style' ? nextValue : '')) candidates.add(target);
+        for (const active of transitionTargets) {
+            for (let node = active; node; node = node.parentNode ?? node.host)
+                if (node === target) { candidates.add(active); break; }
+        }
+        const previous = [];
+        const now = transitionTime();
+        for (const candidate of candidates) {
+            if (previous.length === maxTransitionTargets) break;
+            sampleTransitions(candidate, now);
+            const snapshot = transitionSnapshot(candidate);
+            if (snapshot) previous.push([candidate, snapshot]);
+        }
+        return previous.length ? previous : null;
     };
-    transitionAfterAttributeChange = (target, previous) => {
+    const transitionAfterStyleChange = (target, previous) => {
         if (!previous) return;
         const old = runningTransitions.get(target) ?? new Map();
         // Query the after-change style without the presentation overlay. Both
@@ -203,7 +220,17 @@
             if (old.size >= maxTransitionsPerTarget ||
                 (!transitionTargets.has(target) && transitionTargets.size >= maxTransitionTargets))
                 continue;
-            old.set(property, {from, to, ...options, started: now,
+            let reversingStart = from, shortening = 1;
+            if (prior && prior.reversingStart === to) {
+                // Reversing-shortening factor includes previous reversals, not just elapsed time.
+                // https://drafts.csswg.org/css-transitions-1/#reversing
+                const eased = animationEasingProgress(prior.easing, transitionProgress(prior, now));
+                shortening = Math.max(0, Math.min(1, Math.abs(eased * prior.shortening + 1 - prior.shortening)));
+                reversingStart = prior.to;
+                options.duration *= shortening;
+                if (options.delay < 0) options.delay *= shortening;
+            }
+            old.set(property, {from, to, ...options, reversingStart, shortening, started: now,
                 startedEvent: false, pendingRun: true});
         }
         if (old.size) {
@@ -216,4 +243,7 @@
             transitionTargets.delete(target);
             setTransitionStyles(target, null);
         }
+    };
+    transitionAfterAttributeChange = (_target, records) => {
+        for (const [target, previous] of records ?? []) transitionAfterStyleChange(target, previous);
     };

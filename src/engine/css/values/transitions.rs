@@ -3,6 +3,7 @@
 //! https://drafts.csswg.org/css-transitions-1/#transitions
 
 use super::super::split_css_top_level;
+mod linear;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TransitionSettings {
@@ -114,7 +115,7 @@ fn time_list(value: &str, allow_negative: bool) -> Option<Vec<f32>> {
     (!times.is_empty() && times.len() <= 64).then_some(times)
 }
 
-fn time(value: &str, allow_negative: bool) -> Option<f32> {
+pub(super) fn time(value: &str, allow_negative: bool) -> Option<f32> {
     let (number, scale) = if let Some(number) = value.strip_suffix("ms") {
         (number, 0.001)
     } else if let Some(number) = value.strip_suffix('s') {
@@ -137,7 +138,10 @@ fn easing_list(value: &str) -> Option<Vec<String>> {
     (!easings.is_empty() && easings.len() <= 64).then_some(easings)
 }
 
-fn easing(value: &str) -> Option<&str> {
+pub(super) fn easing(value: &str) -> Option<&str> {
+    if linear::valid(value) {
+        return Some(value);
+    }
     if matches!(
         value,
         "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out" | "step-start" | "step-end"
@@ -225,7 +229,7 @@ fn shorthand(value: &str) -> Option<TransitionSettings> {
         .then_some(settings)
 }
 
-fn whitespace_components(value: &str) -> Vec<&str> {
+pub(super) fn whitespace_components(value: &str) -> Vec<&str> {
     let mut result = Vec::new();
     let mut start = None;
     let mut depth = 0u32;

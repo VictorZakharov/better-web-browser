@@ -7,6 +7,7 @@ impl ScriptRuntime {
     pub(crate) fn set_media_environment(&mut self, environment: MediaEnvironment) {
         let mut host = self.host.borrow_mut();
         host.media_environment = environment;
+        host.css_animation_revision = host.css_animation_revision.wrapping_add(1);
         host.computed_styles = None;
         host.offset_parent_styles = None;
     }

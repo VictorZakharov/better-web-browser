@@ -2,7 +2,9 @@
 
 use super::binding_helpers::{argument_id, argument_string, js_string};
 use super::*;
+mod animations;
 mod client_rect;
+mod declarations;
 pub(in crate::engine::script) mod intersection;
 mod point_query;
 
@@ -11,6 +13,12 @@ pub(super) fn style_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if let Some(value) = declarations::call(operation, args)? {
+        return Ok(Some(value));
+    }
+    if let Some(value) = animations::call(operation, args, state)? {
+        return Ok(Some(value));
+    }
     if operation == "intersectionGeometry" {
         return Ok(Some(intersection::geometry(args, state)));
     }
@@ -108,7 +116,7 @@ pub(super) fn style_host_call(
             state.transition_rule_candidate(node, &name, &next)
         }))));
     }
-    if operation == "setAnimationStyle" {
+    if matches!(operation, "setAnimationStyle" | "setTransitionStyle") {
         let node = state.node(argument_id(args, 1));
         let declarations = argument_string(args, 2)?;
         if declarations.len() > 8 * 1024 {
@@ -117,9 +125,16 @@ pub(super) fn style_host_call(
                 .into());
         }
         if let Some(node) = node
-            && node.set_animation_style(&declarations)
+            && if operation == "setTransitionStyle" {
+                node.set_transition_style(&declarations)
+            } else {
+                node.set_animation_style(&declarations)
+            }
         {
+            let revision = state.css_animation_revision;
             state.record_mutation(Some(&node), MutationKind::State);
+            // Presentation samples do not change the authored animation list.
+            state.css_animation_revision = revision;
         }
         return Ok(Some(JsValue::undefined()));
     }

@@ -386,6 +386,6 @@ fn assigning_element_style_forwards_to_the_same_css_text_declaration() {
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        "true|display: grid; color: blue|grid|blue|display: grid; color: blue"
+        "true|display: grid; color: blue;|grid|blue|display: grid; color: blue"
     );
 }
