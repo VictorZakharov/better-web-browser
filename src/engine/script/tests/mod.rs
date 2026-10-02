@@ -223,6 +223,12 @@ mod web_audio_speaker_matrix;
 mod web_audio_suspend;
 mod web_audio_waveshaper;
 mod web_audio_waveshaper_oversample;
+#[cfg(windows)]
+mod webgl;
+#[cfg(windows)]
+mod webgl_contracts;
+#[cfg(windows)]
+mod webgl_presentation;
 mod websocket;
 mod window_named_access;
 mod workers;

@@ -11,6 +11,9 @@ pub(super) enum Kind {
     Shader,
     Program,
     Uniform,
+    Texture,
+    Framebuffer,
+    Renderbuffer,
 }
 pub(super) struct Object {
     pub kind: Kind,
@@ -20,6 +23,9 @@ pub(super) struct Object {
     pub buffer_target: u32,
     pub owner: u32,
     pub generation: u32,
+    pub pending_delete: bool,
+    references: u32,
+    attached: Vec<u32>,
 }
 #[derive(Default)]
 pub(super) struct Objects {
@@ -55,6 +61,9 @@ impl Objects {
                 buffer_target: 0,
                 owner: 0,
                 generation: 0,
+                pending_delete: false,
+                references: 0,
+                attached: Vec::new(),
             },
         );
         Ok(id)
@@ -83,6 +92,22 @@ impl Objects {
             return Ok(());
         }
         self.get(id, kind)?;
+        if matches!(kind, Kind::Shader | Kind::Program) {
+            let object = self.get_mut(id, kind)?;
+            if object.pending_delete {
+                return Ok(());
+            }
+            object.pending_delete = true;
+            unsafe {
+                if kind == Kind::Shader {
+                    gl::DeleteShader(object.native);
+                } else {
+                    gl::DeleteProgram(object.native);
+                }
+            }
+            self.retire_unreferenced(id);
+            return Ok(());
+        }
         if let Some(object) = self.entries.remove(&id) {
             destroy(object);
         }
@@ -93,15 +118,69 @@ impl Objects {
             destroy(object);
         }
     }
+    pub fn attach(&mut self, program: u32, shader: u32) -> Result<()> {
+        self.get_mut(program, Kind::Program)?.attached.push(shader);
+        let object = self.get_mut(shader, Kind::Shader)?;
+        object.references = object.references.checked_add(1).ok_or(gl::OUT_OF_MEMORY)?;
+        Ok(())
+    }
+    pub fn detach(&mut self, program: u32, shader: u32) -> Result<()> {
+        self.get_mut(program, Kind::Program)?
+            .attached
+            .retain(|id| *id != shader);
+        self.release(shader);
+        Ok(())
+    }
+    pub fn switch_program(&mut self, old: u32, new: u32) -> Result<()> {
+        if old == new {
+            return Ok(());
+        }
+        if new != 0 {
+            self.get_mut(new, Kind::Program)?.references += 1;
+        }
+        if old != 0 {
+            self.release(old);
+        }
+        Ok(())
+    }
+    fn release(&mut self, id: u32) {
+        if let Some(object) = self.entries.get_mut(&id) {
+            object.references = object.references.saturating_sub(1);
+        }
+        self.retire_unreferenced(id);
+    }
+    fn retire_unreferenced(&mut self, id: u32) {
+        if self
+            .entries
+            .get(&id)
+            .is_some_and(|o| o.pending_delete && o.references == 0)
+            && let Some(object) = self.entries.remove(&id)
+        {
+            // GLES already received Delete*. Names are held only while attached/current;
+            // once the last reference disappears they must never alias a recycled driver ID.
+            for shader in object.attached {
+                self.release(shader);
+            }
+        }
+    }
+    pub fn public_name(&self, native: u32, kind: Kind) -> Option<u32> {
+        self.entries.iter().find_map(|(&id, object)| {
+            (object.kind == kind && object.native == native).then_some(id)
+        })
+    }
 }
 fn destroy(object: Object) {
     // SAFETY: called only with the owning context current and a typed live driver name.
     unsafe {
         match object.kind {
             Kind::Buffer => gl::DeleteBuffers(1, &object.native),
-            Kind::Shader => gl::DeleteShader(object.native),
-            Kind::Program => gl::DeleteProgram(object.native),
+            Kind::Shader if !object.pending_delete => gl::DeleteShader(object.native),
+            Kind::Program if !object.pending_delete => gl::DeleteProgram(object.native),
+            Kind::Shader | Kind::Program => {}
             Kind::Uniform => {}
+            Kind::Texture => gl::DeleteTextures(1, &object.native),
+            Kind::Framebuffer => gl::DeleteFramebuffers(1, &object.native),
+            Kind::Renderbuffer => gl::DeleteRenderbuffers(1, &object.native),
         }
     }
 }

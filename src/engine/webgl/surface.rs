@@ -29,6 +29,7 @@ impl Surface {
         // SAFETY: dimensions are bounded, null texture data allocates storage, and ANGLE's
         // robust resource initialization is enabled. Clear also initializes depth/stencil.
         unsafe {
+            let format = if options.alpha { gl::RGBA } else { gl::RGB };
             gl::GenTextures(1, &mut result.texture);
             gl::BindTexture(gl::TEXTURE_2D, result.texture);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
@@ -36,11 +37,11 @@ impl Surface {
             gl::TexImage2D(
                 gl::TEXTURE_2D,
                 0,
-                gl::RGBA as i32,
+                format as i32,
                 width as i32,
                 height as i32,
                 0,
-                gl::RGBA,
+                format,
                 gl::UNSIGNED_BYTE,
                 ptr::null(),
             );

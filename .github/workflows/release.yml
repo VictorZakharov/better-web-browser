@@ -60,6 +60,9 @@ jobs:
       - name: Prepare V8 build path
         shell: pwsh
         run: ./scripts/prepare-v8.ps1 -Profile release -Target x86_64-pc-windows-msvc
+      - name: Prepare ANGLE compiler
+        shell: pwsh
+        run: ./scripts/prepare-angle.ps1
       - name: Build canonical release executable
         run: cargo build --release --locked --target x86_64-pc-windows-msvc --bin better-web-browser
       - name: Exercise renderer crash recovery headlessly

@@ -12,6 +12,7 @@ The first build downloads locked dependencies and the checksum-verified V8 libra
 
 ```powershell
 ./scripts/prepare-v8.ps1 -Profile release
+./scripts/prepare-angle.ps1
 cargo build --release --locked --bin better-web-browser
 ./target/release/better-web-browser.exe
 ./target/release/better-web-browser.exe https://example.org/
@@ -217,11 +218,13 @@ contract are documented in [docs/security-and-fuzzing.md](docs/security-and-fuzz
 
 ```powershell
 ./scripts/prepare-v8.ps1 -Profile debug
+./scripts/prepare-angle.ps1
 cargo test --all-targets --locked
 cargo clippy --all-targets --locked -- -D warnings
 cargo fmt --all -- --check
 ./scripts/check-source-size.ps1
 ./scripts/prepare-v8.ps1 -Profile release
+./scripts/prepare-angle.ps1
 cargo build --release --locked --bin better-web-browser
 ./scripts/run-fuzz-smoke.ps1
 
@@ -357,6 +360,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | Canvas, media, and downloads | Bounded software Canvas 2D provides real sRGB pixels, SVG paths, fills/strokes, gradients/patterns, clipping, shadows, filters, compositing, shaped/rasterized text, Geometry Interfaces, `ImageData`, image drawing, `ImageBitmap`, `OffscreenCanvas` (including workers), and PNG/JPEG/WebP export. Dirty document and child-frame Canvas bitmaps participate in live image presentation. The contained media worker plays URL-backed PCM WAV, MP3, ordinary AAC/M4A, Ogg/Vorbis, native FLAC, ADTS AAC-LC, audio-only WebM/Vorbis, Ogg/FLAC, and mapping-family-0 Ogg/WebM Opus with bundled decoders, plus H.264/AAC MP4 and H.264-only MP4 with a video clock; it also supports synchronized XAudio2 output, progressive Media Source input, and play/pause/seek/volume/mute/fullscreen controls. Browser-owned [camera and microphone grants](docs/media-capture.md) provide a bounded `getUserMedia` path, with captured video presented through `<video srcObject>`. One granted microphone track can be recorded as actual FLAC or [Ogg/Opus](docs/ogg-opus.md) / [WebM/Opus](docs/webm-opus.md) with bounded [`MediaRecorder`](docs/audio-codecs-and-recording.md); Opus recording accepts native 8/12/16/24/48 kHz, not 44.1 kHz capture. [Window/Worker encoding and decoding queries](docs/media-capabilities.md) use the implemented codec matrices without claiming hardware efficiency. HTML `<source>` fallback and stale-response rejection are tested. Text tracks can load WebVTT and paint bounded captions; audio/video track lists expose the accepted decoder streams and allow disabling their output. [Container limits](docs/encoded-audio-containers.md) include WebM video/multiple tracks, and streaming the new complete-file formats. [Other remaining limits](docs/html-media-hints-csp.md) include DRM, detached `new Audio(src)` loading, multiple selectable decoded streams, full caption styling/regions, picture-in-picture, and mature downloads. |
 | ◩ | Web Audio | `OfflineAudioContext` renders bounded 128-frame `Float32` PCM graphs with buffer, oscillator, constant, gain, filter, delay, panning, channel-routing, WaveShaper, Analyser, DynamicsCompressor, and Convolver nodes. Shared [speaker/discrete mixing, channel modes, and legal delayed feedback](docs/web-audio-routing.md) preserve wide intermediate buses and pending tails. Deprecated `ScriptProcessorNode` supplies real author-produced PCM and asynchronous processing events; it is not AudioWorklet. A live `AudioContext` sends rendered PCM through the contained media worker to XAudio2 after user activation, with bounded backpressure and lifecycle handling. `decodeAudioData` asynchronously decodes supported PCM/float WAV, FLAC, Ogg/Vorbis, MP3, AAC/M4A, ADTS AAC-LC, audio-only WebM/Vorbis, Ogg/FLAC, and mapping-family-0 Ogg/WebM Opus into resampled `AudioBuffer` data with promise and callback completion. A [browser-granted captured microphone](docs/media-capture.md) can feed a live graph through `MediaStreamAudioSourceNode`, including an analyser-only branch. `AudioWorklet`, media-element sources, additional encoded formats, and full conformance remain unavailable; see the [supported scope and limits](docs/web-audio.md), [codec contracts](docs/audio-codecs-and-recording.md), and [new container boundaries](docs/encoded-audio-containers.md). |
 | ◩ | Web Animations, CSS Animations, and Transitions | Script-created and stylesheet keyframes sample through the native cascade/paint path, with timelines, effect inspection, lifecycle events, scoped/layered names, and live keyframe CSSOM editing. Attribute-driven transitions include ancestor changes, a dedicated cascade origin, and reversing-shortening. Pseudo-elements, additive compositing, and compositor offloading remain open; see the [CSS animation](docs/css-animations.md), [Web Animations](docs/html5test-animation-media-csp.md), and [transition](docs/css-transitions.md) contracts. |
+| ◩ | WebGL 1 | Windows Canvas/OffscreenCanvas use real ANGLE/GLES2 shader rendering through software D3D11 WARP, including textures, indexed geometry, uniforms, framebuffer/renderbuffer objects, readback and worker export. Native resource admission and origin-clean texture sources are bounded. Antialiasing, extensions, restoration, accelerated adapters, full conformance, WebGL 2 and WebGPU remain open; see the [backend contract](docs/webgl-backend.md). |
 | ◩ | Accessibility | A bounded renderer semantic tree is validated and exposed with browser chrome through AccessKit and Windows UI Automation, including focus/invoke/value actions. Accessible-name/ARIA coverage, rich text patterns, live regions, and non-Windows adapters remain incomplete; see [Accessibility architecture](docs/accessibility.md). |
 | ◩ | Process and site isolation | Each tab has a capability-free AppContainer renderer that owns remote-document parsing, JavaScript/DOM, CSS/layout, image/font decoding, Workers, and immutable presentation construction. The browser reconstructs privileged Fetch requests and owns persistent state; bounded IPC/queues, Job limits, hang detection, and tab-local containment cover aborts, access violations, OOM termination, and native stack overflow. Cross-site frame isolation is not implemented. |
 | ☐ | Security-audited browsing | The browser has not received a security audit and is not suitable for sensitive authenticated browsing. |
@@ -821,6 +825,45 @@ cascade/reversal fixes, and regression tests. Initial animation settings are
 shared until edited. Pseudo-elements, additive composition, compositor
 offloading and complete CSSOM serialization remain explicitly open.
 
+The subsequent 2026-10-02 [WebGL 1 baseline](docs/webgl-backend.md) adds real
+Windows shader rendering through pinned ANGLE/GLES2 and D3D11 WARP, including
+indexed textured geometry, uniforms, framebuffer/renderbuffer objects, Canvas
+painting and OffscreenCanvas worker export. Twenty-eight focused regression tests
+exercise native pixels and security/lifecycle contracts; the shared rendering
+fixture checks eighteen contracts against unified-headless Chrome. This is not
+full WebGL conformance: antialiasing, extensions, restoration, WebGL 2 and WebGPU
+remain unavailable. Non-Windows builds do not advertise a native WebGL backend.
+Windows builds additionally require LLVM's `libclang.dll` version 19 or later;
+`prepare-angle.ps1` validates its location without downloading a compiler.
+Native and embedded license notices are included in release archives.
+
+All three fresh-profile release captures show **502 / 588**, versus **487 / 588**
+in three alternating captures of merged #220 (**+15**). These use the default
+Breeze identity, 125% scale, `en-US`, a 1280×720 hidden window and a ten-second
+observation period. All six return HTTP 200 without JavaScript errors or renderer
+exits. Compilation and other test suites were idle during measurement.
+
+| Measurement | Before (#220) | WebGL baseline | Unified-headless Chrome 154.0.8037.97 |
+| --- | ---: | ---: | ---: |
+| HTML5test rendered score, three runs | 487 / 588 | 502 / 588 | Not measured for this batch |
+| Real textured WebGL fixture contracts | Backend unavailable | 18/18 | 18/18 |
+| Curated upstream WPT assertions / cases | 6,086 / 554 | 6,086 / 554 | Not measured for this batch |
+| HTML5test page-ready median | 248.8 ms | 265.4 ms | Not measured for this batch |
+| HTML5test accumulated JavaScript median | 589.2 ms | 598.7 ms | Not measured for this batch |
+| HTML5test combined working-set median | 193.2 MiB | 221.5 MiB | Not measured for this batch |
+| WebGL fixture ready, median of three | Not measured | 245.6 ms | 844.0 ms |
+| WebGL fixture combined working-set median | Not measured | 99.2 MiB | 550.9 MiB |
+
+The new native backend costs about **28.3 MiB** on HTML5test in this sample;
+page-ready rises about 16.6 ms. These are not score-completion or universal browser
+performance claims. Ready follows Breeze's first owned paint versus Chrome's load;
+combined working sets include two Breeze processes versus Chrome's multiprocess
+tree. The rendering fixture uses approximately matching content viewports
+(Breeze 1248.8×548 CSS pixels; Chrome 1249×548) and 125% scale. Exact shader/readback
+pixels and copy orientation match; existing Canvas image-scaling and page-layout
+differences mean the full screenshots are not pixel-perfect. Software WARP is
+deliberately chosen for this first hidden, contained rendering baseline.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -829,8 +872,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-10-02-css-animations-reproduction.json `
-  -Screenshot target/html5test/2026-10-02-css-animations-reproduction.png
+  -Output target/html5test/2026-10-02-webgl-reproduction.json `
+  -Screenshot target/html5test/2026-10-02-webgl-reproduction.png
 ```
 
 New releases must refresh or explicitly date these observations using the

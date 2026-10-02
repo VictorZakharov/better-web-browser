@@ -17,6 +17,9 @@ mod indexed_db;
 mod media_capabilities;
 #[path = "worker_runtime_tests/storage_manager.rs"]
 mod storage_manager;
+#[cfg(windows)]
+#[path = "worker_runtime_tests/webgl.rs"]
+mod webgl;
 #[path = "worker_runtime_tests/websocket.rs"]
 mod websocket;
 

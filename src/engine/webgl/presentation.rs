@@ -6,6 +6,9 @@ impl WebGl {
         if self.options.preserve {
             return;
         }
+        self.clear_default_surface();
+    }
+    pub(super) fn clear_default_surface(&mut self) {
         let mut framebuffer = 0;
         let mut color = [0.0; 4];
         let mut depth = 0.0;

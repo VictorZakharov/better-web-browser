@@ -68,6 +68,7 @@ function Copy-ReleaseText {
     param([string] $Source, [string] $Destination)
     Write-Utf8File -Path $Destination -Text ([IO.File]::ReadAllText($Source))
 }
+. (Join-Path $PSScriptRoot 'package-native-graphics-notices.ps1')
 
 try {
     [IO.File]::Copy($executablePath, (Join-Path $packageRoot 'better-web-browser.exe'), $true)
@@ -98,6 +99,8 @@ license: $($package.license)
 source: $repository
 "@
         $sourceDirectory = Split-Path -Parent $package.manifest_path
+        Copy-NativeGraphicsNotices -PackageName $package.name -SourceDirectory $sourceDirectory `
+            -Destination $destination -RepositoryRoot $repoRoot
         if ([string] $package.name -eq 'opusic-sys') {
             # The published root notice covers the bundled native codec. Do not
             # silently package only Rust metadata after an upstream layout change.

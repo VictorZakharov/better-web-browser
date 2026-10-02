@@ -7,13 +7,23 @@ use std::collections::{HashMap, VecDeque};
 mod buffers;
 mod commands;
 mod context;
+mod copy_texture;
+mod framebuffers;
+mod object_queries;
 mod objects;
+mod parameters;
 mod presentation;
+mod queries;
+mod resize;
 mod session;
+mod shader_queries;
 mod surface;
 #[cfg(test)]
 mod tests;
+mod textures;
 mod uniforms;
+#[cfg(test)]
+mod validation_tests;
 pub(crate) use session::Contexts;
 
 use context::NativeContext;
@@ -184,11 +194,18 @@ struct WebGl {
     element_buffer: u32,
     program: u32,
     attributes: Vec<buffers::Attribute>,
+    framebuffer: u32,
+    renderbuffer: u32,
+    texture_unit: usize,
+    textures: Vec<[u32; 2]>,
 }
 impl WebGl {
     fn new(width: u32, height: u32, options: Options) -> std::result::Result<Self, String> {
         let native = NativeContext::new()?;
         let surface = Surface::new(width, height, options)?;
+        unsafe {
+            gl::ClearColor(0.0, 0.0, 0.0, 0.0);
+        }
         let mut count = 0;
         let mut units = 0;
         // SAFETY: a current GLES2 context and writable scalar out-parameters.
@@ -217,6 +234,10 @@ impl WebGl {
             element_buffer: 0,
             program: 0,
             attributes: vec![buffers::Attribute::default(); count as usize],
+            framebuffer: 0,
+            renderbuffer: 0,
+            texture_unit: 0,
+            textures: vec![[0; 2]; units as usize],
         })
     }
     fn error(&mut self, error: u32) {

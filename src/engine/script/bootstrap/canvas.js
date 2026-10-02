@@ -2,6 +2,8 @@
     // operations backed by real pixels; unsupported context types and APIs continue to fail closed.
     const MAX_CANVAS_PIXELS = 4 * 1024 * 1024;
     const canvasStates = new WeakMap();
+    let synchronizeWebGlCanvas = () => {};
+    let resetWebGlCanvas = () => {};
 
     const canvasDimension = (element, name, fallback) => {
         const raw = element.getAttribute(name);
@@ -74,8 +76,10 @@
                 ? new Uint8ClampedArray(width * height * 4)
                 : null;
             if (state.mode === 'bitmaprenderer') resetCanvasBitmapRenderer(state.context);
+            else if (state.mode === 'webgl') resetWebGlCanvas(state);
             else state.context?.__reset?.();
         }
+        if (state.mode === 'webgl') synchronizeWebGlCanvas(state);
         return state;
     };
 
@@ -291,13 +295,15 @@
             stateForCanvas(this, true);
         }
         getContext(contextId, options = undefined) {
-            const mode = String(contextId);
-            if (mode !== '2d' && mode !== 'bitmaprenderer') return null;
+            const requested = String(contextId);
+            const mode = requested === 'experimental-webgl' ? 'webgl' : requested;
+            if (!['2d', 'bitmaprenderer', 'webgl'].includes(mode)) return null;
             const state = stateForCanvas(this);
             if (state.mode !== 'none' && state.mode !== mode) return null;
             if (state.context) return state.context;
-            const context = mode === '2d' ? new CanvasRenderingContext2D(this) :
+            const context = mode === 'webgl' ? createWebGlContext(this, options) : mode === '2d' ? new CanvasRenderingContext2D(this) :
                 new ImageBitmapRenderingContext(canvasBitmapContextToken, this, options);
+            if (!context) return null;
             state.context = context;
             state.mode = mode;
             return context;

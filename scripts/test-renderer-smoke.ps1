@@ -26,6 +26,7 @@ $contracts = @(
     'canvas_presentation::modern_images::malformed_modern_images_reject_without_stopping_the_contained_document',
     'canvas_presentation::image_frames::image_decoder_outputs_real_animation_pixels_in_the_contained_renderer',
     'canvas_presentation::image_frames::malformed_image_decoder_rejects_but_the_renderer_remains_usable',
+    'canvas_presentation::webgl::webgl_textured_pixels_and_api_contracts_cross_the_contained_renderer',
     'media::cadence::video_pixels_advance_while_a_javascript_callback_owns_the_document_thread',
     'media::cadence::advancing_video_does_not_mask_a_document_watchdog_timeout',
     'media::failure::a_late_video_decode_error_does_not_stop_the_document'

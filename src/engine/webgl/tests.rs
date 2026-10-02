@@ -1,13 +1,13 @@
 use super::*;
 
-fn context() -> (Contexts, u32) {
+pub(super) fn context() -> (Contexts, u32) {
     let mut contexts = Contexts::default();
     let id = contexts
         .create(16, 16, "{}")
         .expect("headless ANGLE/WARP context");
     (contexts, id)
 }
-fn command(
+pub(super) fn command(
     contexts: &mut Contexts,
     id: u32,
     op: &str,

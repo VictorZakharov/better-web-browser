@@ -44,6 +44,7 @@ impl WebGl {
                                 Kind::Shader => gl::DeleteShader(name),
                                 Kind::Program => gl::DeleteProgram(name),
                                 Kind::Uniform => unreachable!(),
+                                _ => unreachable!(),
                             }
                         }
                         return Err(error);
@@ -85,14 +86,22 @@ impl WebGl {
                 }
             }
             "attachShader" | "detachShader" => {
-                let program = self.objects.get(c.u(0)?, Kind::Program)?.native;
-                let shader = self.objects.get(c.u(1)?, Kind::Shader)?.native;
+                let program_id = c.u(0)?;
+                let shader_id = c.u(1)?;
+                let program = self.objects.get(program_id, Kind::Program)?.native;
+                let shader = self.objects.get(shader_id, Kind::Shader)?.native;
                 unsafe {
                     if c.op == "attachShader" {
                         gl::AttachShader(program, shader);
                     } else {
                         gl::DetachShader(program, shader);
                     }
+                }
+                self.driver_result()?;
+                if c.op == "attachShader" {
+                    self.objects.attach(program_id, shader_id)?;
+                } else {
+                    self.objects.detach(program_id, shader_id)?;
                 }
             }
             "linkProgram" | "validateProgram" => {
@@ -117,6 +126,7 @@ impl WebGl {
                     gl::UseProgram(program);
                 }
                 self.driver_result()?;
+                self.objects.switch_program(self.program, id)?;
                 self.program = id;
             }
             "getShaderParameter" | "getProgramParameter" => {
@@ -165,42 +175,7 @@ impl WebGl {
                     },
                 );
             }
-            "getShaderInfoLog" | "getProgramInfoLog" => {
-                let shader = c.op == "getShaderInfoLog";
-                let object = self
-                    .objects
-                    .get(c.u(0)?, if shader { Kind::Shader } else { Kind::Program })?;
-                let mut length = 0;
-                unsafe {
-                    if shader {
-                        gl::GetShaderiv(object.native, gl::INFO_LOG_LENGTH, &mut length);
-                    } else {
-                        gl::GetProgramiv(object.native, gl::INFO_LOG_LENGTH, &mut length);
-                    }
-                }
-                let mut data = vec![0u8; length.clamp(1, MAX_SHADER_BYTES as i32) as usize];
-                let mut written = 0;
-                unsafe {
-                    if shader {
-                        gl::GetShaderInfoLog(
-                            object.native,
-                            data.len() as i32,
-                            &mut written,
-                            data.as_mut_ptr().cast(),
-                        );
-                    } else {
-                        gl::GetProgramInfoLog(
-                            object.native,
-                            data.len() as i32,
-                            &mut written,
-                            data.as_mut_ptr().cast(),
-                        );
-                    }
-                }
-                data.truncate(written.max(0) as usize);
-                self.driver_result()?;
-                return Ok(json!(String::from_utf8_lossy(&data)));
-            }
+            "getShaderInfoLog" | "getProgramInfoLog" => return self.shader_log(c),
             "getAttribLocation" | "bindAttribLocation" => {
                 let program = self.objects.get(c.u(0)?, Kind::Program)?.native;
                 if c.text.len() > 256 || c.text.starts_with("gl_") {
@@ -321,6 +296,99 @@ impl WebGl {
             | "disableVertexAttribArray"
             | "drawArrays"
             | "drawElements" => return self.buffer_command(c, bytes),
+            "createTexture" | "deleteTexture" | "bindTexture" | "activeTexture" | "texImage2D"
+            | "texSubImage2D" | "texParameteri" | "texParameterf" | "generateMipmap"
+            | "pixelStorei" | "getTexParameter" => return self.texture_command(c, bytes),
+            "createFramebuffer"
+            | "deleteFramebuffer"
+            | "bindFramebuffer"
+            | "createRenderbuffer"
+            | "deleteRenderbuffer"
+            | "bindRenderbuffer"
+            | "renderbufferStorage"
+            | "framebufferTexture2D"
+            | "framebufferRenderbuffer"
+            | "checkFramebufferStatus"
+            | "getRenderbufferParameter"
+            | "getFramebufferAttachmentParameter" => return self.framebuffer_command(c),
+            "getParameter"
+            | "isEnabled"
+            | "getBufferParameter"
+            | "readPixels"
+            | "getActiveUniform"
+            | "getActiveAttrib"
+            | "getShaderPrecisionFormat"
+            | "getShaderSource"
+            | "getAttachedShaders"
+            | "getVertexAttrib"
+            | "getVertexAttribOffset"
+            | "getUniform" => return self.query_command(c, bytes),
+            "resize" => return self.resize(c),
+            "copyTexImage2D" | "copyTexSubImage2D" => return self.copy_texture(c),
+            "hint" => {
+                if c.u(0)? != gl::GENERATE_MIPMAP_HINT {
+                    return Err(gl::INVALID_ENUM);
+                }
+                unsafe {
+                    gl::Hint(c.u(0)?, c.u(1)?);
+                }
+            }
+            "compressedTexImage2D" | "compressedTexSubImage2D" => return Err(gl::INVALID_ENUM),
+            "isBuffer" | "isTexture" | "isFramebuffer" | "isRenderbuffer" | "isShader"
+            | "isProgram" => return self.object_query(c),
+            "vertexAttrib1f" | "vertexAttrib2f" | "vertexAttrib3f" | "vertexAttrib4f" => {
+                let index = c.u(0)?;
+                if index as usize >= self.attributes.len() {
+                    return Err(gl::INVALID_VALUE);
+                }
+                let mut values = [0.0, 0.0, 0.0, 1.0];
+                let count = c.op.as_bytes()[12] - b'0';
+                for (index, value) in values.iter_mut().enumerate().take(usize::from(count)) {
+                    *value = c.float(index)?;
+                }
+                unsafe {
+                    gl::VertexAttrib4fv(index, values.as_ptr());
+                }
+            }
+            "blendColor" => unsafe {
+                gl::BlendColor(c.float(0)?, c.float(1)?, c.float(2)?, c.float(3)?);
+            },
+            "blendFuncSeparate" => unsafe {
+                gl::BlendFuncSeparate(c.u(0)?, c.u(1)?, c.u(2)?, c.u(3)?);
+            },
+            "blendEquationSeparate" => unsafe {
+                gl::BlendEquationSeparate(c.u(0)?, c.u(1)?);
+            },
+            "depthRange" => unsafe {
+                gl::DepthRangef(c.float(0)?, c.float(1)?);
+            },
+            "polygonOffset" => unsafe {
+                gl::PolygonOffset(c.float(0)?, c.float(1)?);
+            },
+            "sampleCoverage" => unsafe {
+                gl::SampleCoverage(c.float(0)?, u8::from(c.u(0)? != 0));
+            },
+            "lineWidth" => unsafe {
+                gl::LineWidth(c.float(0)?);
+            },
+            "stencilFunc" => unsafe {
+                gl::StencilFunc(c.u(0)?, c.n(1)?, c.u(2)?);
+            },
+            "stencilFuncSeparate" => unsafe {
+                gl::StencilFuncSeparate(c.u(0)?, c.u(1)?, c.n(2)?, c.u(3)?);
+            },
+            "stencilMask" => unsafe {
+                gl::StencilMask(c.u(0)?);
+            },
+            "stencilMaskSeparate" => unsafe {
+                gl::StencilMaskSeparate(c.u(0)?, c.u(1)?);
+            },
+            "stencilOp" => unsafe {
+                gl::StencilOp(c.u(0)?, c.u(1)?, c.u(2)?);
+            },
+            "stencilOpSeparate" => unsafe {
+                gl::StencilOpSeparate(c.u(0)?, c.u(1)?, c.u(2)?, c.u(3)?);
+            },
             "getUniformLocation" | "uniform1f" | "uniform2f" | "uniform3f" | "uniform4f"
             | "uniform1fv" | "uniform2fv" | "uniform3fv" | "uniform4fv" | "uniform1i"
             | "uniform2i" | "uniform3i" | "uniform4i" | "uniform1iv" | "uniform2iv"

@@ -1,10 +1,9 @@
-# WebGL backend work in progress
+# WebGL 1 native baseline
 
-This branch does not yet expose `WebGLRenderingContext` or return a WebGL context
-from Canvas. The native foundation is implemented; author-facing WebGL must stay
-unadvertised until the remaining integration and compatibility tests pass.
-HTML5test is guidance, not an acceptance substitute. The fresh pre-change Windows
-baseline is **487/588**. No score increase is claimed for this foundation.
+Windows Canvas and OffscreenCanvas expose real WebGL 1 rendering, including worker
+rendering and Canvas painting/export. This is a bounded baseline, not a full WebGL
+conformance certification. HTML5test is guidance, not an acceptance substitute.
+The fresh pre-change Windows baseline is **487/588**.
 
 ## Backend and provenance
 
@@ -19,8 +18,11 @@ The published package's `UPSTREAM`, root license, native ANGLE license, Cargo
 manifest, build script and relevant shader/context implementations were inspected.
 That is a provenance/build-policy review, not a claim of a comprehensive native
 security audit. The build script compiles local source and generates bindings;
-the selected build path does not execute downloaded installer scripts. License
-packaging and the native build preflight still need integration before release.
+the selected build path does not execute downloaded installer scripts. Release
+archives retain wrapper, native ANGLE, Chromium, zlib, Khronos and embedded-source
+notices. Packaging fails closed if the pinned native revision changes.
+`UPSTREAM` pins `FIREFOX_153_3_0esr_RELEASE`, revision
+`861fdeb0d32fe1bd101fea886687e680f612d735`.
 
 `.cargo/config.toml` selects ANGLE's upstream-supported
 `ANGLE_STD_ASYNC_WORKERS=0` policy. This keeps shader compilation within the
@@ -40,7 +42,7 @@ arrays. Backend failure must produce context-creation failure, not a fake contex
   Requests have a three-second deadline and one pending-upload slot. Owner leases
   ensure timed-out creations cannot retain orphaned contexts; retirement does not
   wait behind a full upload queue.
-- Browser-owned RGBA drawing framebuffer, with optional depth/stencil storage.
+- Browser-owned RGBA (or opaque RGB) drawing framebuffer, with optional depth/stencil storage.
   EGL's pbuffer is not the author drawing buffer. Initial pixels are cleared;
   snapshot destinations are initialized and sized exactly before readback.
 - Opaque, typed resource names that are unique across contexts. Author commands
@@ -52,10 +54,10 @@ arrays. Backend failure must produce context-creation failure, not a fake contex
 - Native post-presentation clearing for unpreserved buffers, restoring the
   author's framebuffer, clear values, scissor and write masks afterward.
 
-Initial limits: eight contexts per realm and sixteen per renderer, 1,024 live objects per context,
+Initial limits: eight contexts per realm and sixteen per native owner, 1,024 live objects per context,
 64 MiB resource budget per context and 128 MiB across native contexts, 16 MiB uploads, 32 KiB shader source,
-one million vertices per draw and four million drawing-buffer pixels. Resource
-The resource budget includes drawing-buffer attachments and both native buffer
+one million vertices per draw, four million drawing-buffer pixels and maximum
+admitted dimensions of 4,096. The budget includes drawing-buffer attachments and both native buffer
 storage and its CPU mirror. Charges are not reclaimed on deletion because GLES can retain references after
 public deletion. Limits must remain explicit and fail closed.
 
@@ -64,20 +66,40 @@ out-of-bounds draw rejection without pixel damage, malformed commands, wrong obj
 types, peer-context lifetime, cross-context names and presentation retirement.
 These are not a WebGL conformance claim.
 
-## Remaining before author exposure
+## Author-facing integration and limitations
 
-Complete uniform queries, textures, framebuffer/renderbuffer objects and typed parameter
-queries; correct deleted-object and link-generation semantics; skip unused vertex
-attributes during range validation; implement Canvas resize without destroying
-live resources. Integrate branded IDL bindings, context attributes, loss/restore,
-Canvas/OffscreenCanvas painting and export, and origin-clean texture restrictions.
-The presentation hook must clear after actual compositing, not after arbitrary
-snapshot/export reads. Premultiplied-alpha compositing requires explicit handling.
+The bindings implement uniform queries, texture uploads/copies, framebuffer and
+renderbuffer attachments, typed parameter queries, branded IDL objects and
+receiver/arity checks. Shader/program deletion waits for retained native references;
+uniform locations track link generations. Drawing validates active attributes only.
+Canvas resize preserves live objects and author state while reinitializing pixels.
+Readback preserves destination padding and out-of-bounds pixels.
 
-Complete native/transitive license packaging, run the existing local checks and
-regression suites, then perform hidden
-pixel comparisons against Chromium and fresh HTML5test runs. No WebGL 2, WebGPU,
-WebVR, WebXR or unsupported extension should be advertised by this slice.
+The Canvas presentation checkpoint clears unpreserved native buffers after exporting
+the browser-owned paint bitmap, not after arbitrary readback or `toDataURL`.
+Premultiplied WebGL pixels convert once into the straight-alpha Canvas pipeline.
+Opaque-alpha buffers ignore author alpha writes. Worker OffscreenCanvas rendering
+uses the same native owner; bitmap export resets pixels without destroying resources.
+Structured transfer of an active WebGL canvas is rejected rather than moving native
+ownership incorrectly.
+
+Texture sources reuse existing origin-clean decoded image, Canvas, ImageData and
+ImageBitmap paths. ImageBitmap creation options are not overridden by unpack flags.
+This does not establish complete TexImageSource/CORS/video coverage. Antialiasing,
+optional extensions and context restoration remain unavailable. Failed creation or
+loss produces actionable events instead of a fake context. Rendering is Windows-only
+software WARP; other platforms do not advertise a native WebGL backend.
+
+Twenty-eight focused unit tests cover real pixels, isolation, malformed requests, resize
+under author masks, deferred deletion, alpha, padding, presentation and worker export.
+The shared `tests/fixtures/webgl-rendering.html` checks eighteen rendering/API
+contracts against unified-headless Chrome, including indexed textured geometry
+and Canvas-copy orientation. A required renderer smoke test runs the same eighteen
+checks inside the AppContainer and verifies both owned bitmaps across IPC.
+Full upstream WebGL conformance, accelerated adapters
+and wider resource limits remain follow-up work. No WebGL 2, WebGPU, WebVR, WebXR
+or unsupported extension is advertised. Measurements are recorded in the README
+and PR; there is no score-specific browser behavior.
 
 The binding-parser preflight is `./scripts/prepare-angle.ps1`. It accepts an
 explicit LLVM directory or discovers the installed LLVM `bin` directory, requires

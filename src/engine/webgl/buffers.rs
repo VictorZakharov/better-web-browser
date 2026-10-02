@@ -5,10 +5,10 @@ use std::ptr;
 
 #[derive(Clone, Default)]
 pub(super) struct Attribute {
-    buffer: u32,
+    pub(super) buffer: u32,
     size: u32,
     stride: u32,
-    offset: u32,
+    pub(super) offset: u32,
     enabled: bool,
 }
 impl WebGl {
@@ -163,8 +163,15 @@ impl WebGl {
                     gl::UNSIGNED_SHORT => 2,
                     _ => return Err(gl::INVALID_ENUM),
                 };
-                if count > MAX_DRAW_VERTICES as usize || !offset.is_multiple_of(size) {
+                if count > MAX_DRAW_VERTICES as usize {
                     return Err(gl::INVALID_VALUE);
+                }
+                if !offset.is_multiple_of(size) {
+                    return Err(gl::INVALID_OPERATION);
+                }
+                if count == 0 {
+                    self.validate_program()?;
+                    return Ok(Value::Null);
                 }
                 let object = self.objects.get(self.element_buffer, Kind::Buffer)?;
                 let end = offset
@@ -211,7 +218,52 @@ impl WebGl {
         Ok(id)
     }
     fn validate_attributes(&self, maximum: u32) -> Result<()> {
-        for attribute in self.attributes.iter().filter(|a| a.enabled) {
+        let program = self.objects.get(self.program, Kind::Program)?.native;
+        let mut count = 0;
+        unsafe {
+            gl::GetProgramiv(program, gl::ACTIVE_ATTRIBUTES, &mut count);
+        }
+        let mut active = vec![false; self.attributes.len()];
+        for index in 0..count.max(0) as u32 {
+            let mut name = vec![0u8; super::MAX_SHADER_BYTES + 1];
+            let (mut length, mut size, mut kind) = (0, 0, 0);
+            unsafe {
+                gl::GetActiveAttrib(
+                    program,
+                    index,
+                    name.len() as i32,
+                    &mut length,
+                    &mut size,
+                    &mut kind,
+                    name.as_mut_ptr().cast(),
+                );
+            }
+            if length < 0 || length as usize >= name.len() {
+                return Err(gl::INVALID_OPERATION);
+            }
+            let location = unsafe { gl::GetAttribLocation(program, name.as_ptr().cast()) };
+            let columns = match kind {
+                gl::FLOAT_MAT2 => 2,
+                gl::FLOAT_MAT3 => 3,
+                gl::FLOAT_MAT4 => 4,
+                _ => 1,
+            };
+            for offset in 0..columns * size.max(1) {
+                if let Some(value) = usize::try_from(location + offset)
+                    .ok()
+                    .and_then(|index| active.get_mut(index))
+                {
+                    *value = true;
+                }
+            }
+        }
+        for (index, attribute) in self
+            .attributes
+            .iter()
+            .enumerate()
+            .filter(|(index, a)| a.enabled && active[*index])
+        {
+            let _ = index;
             let buffer = self.objects.get(attribute.buffer, Kind::Buffer)?;
             let stride = if attribute.stride == 0 {
                 attribute.size
