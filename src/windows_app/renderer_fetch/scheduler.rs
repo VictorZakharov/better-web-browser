@@ -85,6 +85,19 @@ mod tests {
     use std::sync::{Arc, Condvar};
     use std::time::Duration;
 
+    fn observe_starts_and_release(
+        receiver: &std::sync::mpsc::Receiver<u8>,
+        release: &(Mutex<bool>, Condvar),
+        timeout: Duration,
+    ) -> Result<Vec<u8>, std::sync::mpsc::RecvTimeoutError> {
+        let started = (0..3).map(|_| receiver.recv_timeout(timeout)).collect();
+        // Release before any assertion or propagated receive error. Otherwise
+        // scope unwinding joins a worker that is waiting for the failed test.
+        *release.0.lock().unwrap() = true;
+        release.1.notify_all();
+        started
+    }
+
     #[test]
     fn starts_queued_work_before_a_slow_peer_finishes() {
         let (started_tx, started_rx) = std::sync::mpsc::channel();
@@ -105,22 +118,42 @@ mod tests {
                 })
             });
 
-            let mut first = [
-                started_rx.recv_timeout(Duration::from_secs(2)).unwrap(),
-                started_rx.recv_timeout(Duration::from_secs(2)).unwrap(),
-            ];
-            first.sort_unstable();
-            assert_eq!(first, [0, 1]);
+            // Queue ownership is ordered, but sends from different workers are
+            // not. Observe all starts while the slow peer is held, in any order.
+            let started = observe_starts_and_release(&started_rx, &release, Duration::from_secs(2));
+            let bytes = worker.join().unwrap();
+            let mut started =
+                started.expect("all requests must start before releasing the slow peer");
+            started.sort_unstable();
             assert_eq!(
-                started_rx.recv_timeout(Duration::from_secs(2)).unwrap(),
-                2,
+                started,
+                [0, 1, 2],
                 "the free slot should start the next request without waiting for its slow peer"
             );
-            let (lock, changed) = &*release;
-            *lock.lock().unwrap() = true;
-            changed.notify_one();
-            assert_eq!(worker.join().unwrap(), 6);
+            assert_eq!(bytes, 6);
         });
+    }
+
+    #[test]
+    fn start_observation_accepts_cross_worker_message_order() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        for item in [1, 2, 0] {
+            sender.send(item).unwrap();
+        }
+        let release = (Mutex::new(false), Condvar::new());
+        assert_eq!(
+            observe_starts_and_release(&receiver, &release, Duration::ZERO).unwrap(),
+            [1, 2, 0]
+        );
+        assert!(*release.0.lock().unwrap());
+    }
+
+    #[test]
+    fn failed_start_observation_still_releases_slow_peer() {
+        let (_sender, receiver) = std::sync::mpsc::channel();
+        let release = (Mutex::new(false), Condvar::new());
+        assert!(observe_starts_and_release(&receiver, &release, Duration::ZERO).is_err());
+        assert!(*release.0.lock().unwrap());
     }
 
     #[test]
