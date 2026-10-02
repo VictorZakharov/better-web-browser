@@ -1,11 +1,15 @@
 //! Realm-owned streaming codecs. A retained permit covers the entire worker
 //! lifetime, including cancellation; close/reopen cannot evade concurrency caps.
+mod compressed;
 mod config;
 mod decoder;
 mod encoder;
+mod flac_encoder;
 mod host;
 mod packet_encoder;
 mod pcm;
+#[cfg(test)]
+pub(in crate::engine::script) mod test_packets;
 #[cfg(test)]
 mod tests;
 
@@ -31,6 +35,8 @@ struct Output {
     timestamp: i64,
     duration: u64,
     frames: u32,
+    sample_rate: u32,
+    channels: u32,
     description: Option<Vec<u8>>,
 }
 
@@ -180,11 +186,17 @@ fn worker(
         Encode(encoder::Encoder),
         Decode(decoder::Decoder),
         Pcm(pcm::Decoder),
+        Compressed(compressed::Decoder),
+        Flac(flac_encoder::Encoder),
     }
-    let codec = if encode {
+    let codec = if encode && config.codec == "flac" {
+        flac_encoder::Encoder::new(&config).map(Codec::Flac)
+    } else if encode {
         encoder::Encoder::new(&config).map(Codec::Encode)
     } else if pcm::supported(&config.codec) {
         pcm::Decoder::new(&config).map(Codec::Pcm)
+    } else if compressed::supported(&config.codec) {
+        compressed::Decoder::new(&config).map(Codec::Compressed)
     } else {
         decoder::Decoder::new(&config).map(Codec::Decode)
     };
@@ -203,6 +215,10 @@ fn worker(
             return;
         }
         let result = match (&mut codec, command) {
+            (Codec::Flac(codec), Command::Input { bytes, timestamp }) => {
+                codec.encode(&bytes, timestamp, cancelled)
+            }
+            (Codec::Flac(codec), Command::Flush) => codec.flush(cancelled),
             (Codec::Encode(codec), Command::Input { bytes, timestamp }) => {
                 codec.encode(&bytes, timestamp, cancelled)
             }
@@ -215,6 +231,10 @@ fn worker(
                 codec.decode(&bytes, timestamp)
             }
             (Codec::Pcm(_), Command::Flush) => Ok(Vec::new()),
+            (Codec::Compressed(codec), Command::Input { bytes, timestamp }) => {
+                codec.decode(&bytes, timestamp)
+            }
+            (Codec::Compressed(_), Command::Flush) => Ok(Vec::new()),
         };
         let failed = result.is_err();
         if cancelled.load(Ordering::Acquire) || results.send(result).is_err() || failed {

@@ -68,6 +68,8 @@ impl Decoder {
             timestamp,
             duration: (frames - skip) as u64 * 1_000_000 / u64::from(self.rate),
             frames: (frames - skip) as u32,
+            sample_rate: self.rate,
+            channels: self.channels as u32,
             description: None,
         }])
     }

@@ -1,6 +1,6 @@
 //! AVIF demuxing is delegated to avif-parse; this module owns decode policy.
 
-mod decoder;
+pub(super) mod decoder;
 mod metadata;
 mod pixels;
 

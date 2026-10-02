@@ -62,6 +62,8 @@ impl Decoder {
             format: self.format,
             timestamp,
             frames: frames as u32,
+            sample_rate: self.rate,
+            channels: self.channels as u32,
             duration: frames as u64 * 1_000_000 / u64::from(self.rate),
             description: None,
         }])

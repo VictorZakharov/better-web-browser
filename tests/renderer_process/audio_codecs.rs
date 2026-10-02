@@ -4,7 +4,10 @@ use better_web_browser::renderer_process::{RendererEvent, RendererSession};
 use better_web_browser::renderer_protocol::RendererPresentation;
 use std::time::{Duration, Instant};
 
-fn completed_audio_page(session: &RendererSession, html: &str) -> RendererPresentation {
+#[path = "audio_codecs/flac.rs"]
+mod flac;
+
+pub(super) fn completed_audio_page(session: &RendererSession, html: &str) -> RendererPresentation {
     let initial = load_html_document(session, 701, html);
     assert!(
         initial.runtime.errors.is_empty(),

@@ -9,6 +9,9 @@ use rav1d::include::dav1d::{
 use rav1d::src::lib::*;
 use std::{mem::MaybeUninit, ptr::NonNull};
 
+mod video;
+pub(crate) use video::VideoAv1Decoder;
+
 struct Context(Option<Dav1dContext>);
 struct Data(Dav1dData);
 pub(super) struct Picture(pub Dav1dPicture);

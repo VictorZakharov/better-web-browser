@@ -2,6 +2,9 @@
 param(
     [string] $Browser,
     [string] $OutputDirectory = 'target/audio-codecs-proof',
+    [string] $FixtureRoot,
+    [ValidateRange(100,60000)]
+    [int] $SettleMs = 1000,
     [switch] $Chrome,
     [ValidateRange(0,1000)]
     [int] $Begin = 0,
@@ -27,7 +30,10 @@ $env:TMP = $scratch
 . (Join-Path $PSScriptRoot 'alpha-fixture-server.ps1')
 $server = $null
 try {
-    $server = Start-AlphaFixtureServer -OutputDirectory $outputRoot -Root (Join-Path $repo 'tests/audio-codec-fixtures')
+    $root = if ($FixtureRoot) { [IO.Path]::GetFullPath($FixtureRoot) } else {
+        Join-Path $repo 'tests/audio-codec-fixtures'
+    }
+    $server = Start-AlphaFixtureServer -OutputDirectory $outputRoot -Root $root
     $url = $server.Url + "probe.html?begin=$Begin&end=$End"
     $output = Join-Path $outputRoot 'contracts.json'
     $selectors = @('#summary','#results tr')
@@ -37,11 +43,11 @@ try {
         $env:DOTNET_CLI_HOME = Join-Path $repo 'target/dotnet-home'
         dotnet run --project (Join-Path $repo 'benchmarks/chromium') --configuration Release --no-build -- `
             --url $url --output $output --diagnostic-selector '#summary' --diagnostic-selector '#results tr' `
-            --require-fixture-ready --settle-ms 1000 --timeout-ms 15000
+            --require-fixture-ready --settle-ms $SettleMs --timeout-ms 60000
         if ($LASTEXITCODE -ne 0) { throw 'Headless Chromium audio comparison failed.' }
     } else {
         $arguments = @{ Url=$url; Output=$output; DiagnosticSelector=$selectors;
-            SettleMs=1000; TimeoutSeconds=20; FreshProfile=$true }
+            SettleMs=$SettleMs; TimeoutSeconds=90; FreshProfile=$true }
         if ($Browser) { $arguments.Browser=$Browser }
         & (Join-Path $PSScriptRoot 'run-hidden-benchmark.ps1') @arguments
     }

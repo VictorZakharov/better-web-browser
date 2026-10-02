@@ -190,6 +190,8 @@ impl Encoder {
             timestamp,
             duration,
             frames: 0,
+            sample_rate: self.rate,
+            channels: self.channels as u32,
             description,
         })
     }

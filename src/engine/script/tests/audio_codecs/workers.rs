@@ -2,7 +2,7 @@
 use super::*;
 use std::sync::Arc;
 
-fn worker_check(source: &str) {
+pub(super) fn worker_check(source: &str) {
     let source = format!(
         r#"
         const assert=(value,message)=>{{if(!value)throw Error(message);}};

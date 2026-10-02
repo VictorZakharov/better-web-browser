@@ -5,48 +5,64 @@ const SAMPLE_RATES: [u32; 13] = [
     7_350,
 ];
 
+pub(crate) struct Frame<'a> {
+    pub(crate) rate: u32,
+    pub(crate) channels: u32,
+    pub(crate) payload: &'a [u8],
+    pub(crate) bytes: usize,
+    pub(crate) protected: bool,
+}
+
+/// Complete single-raw-block AAC-LC framing shared by file and packet consumers.
+/// A CRC is framing, not verification: callers decide their integrity policy.
+pub(crate) fn frame(bytes: &[u8]) -> Result<Frame<'_>, String> {
+    let head = bytes.get(..7).ok_or("ADTS frame header is truncated")?;
+    if head[0] != 0xff || head[1] & 0xf6 != 0xf0 {
+        return Err("ADTS frame synchronization or layer is invalid".into());
+    }
+    let rate = SAMPLE_RATES
+        .get(usize::from((head[2] >> 2) & 15))
+        .copied()
+        .ok_or("ADTS sample-rate index is reserved")?;
+    let channels = u32::from(((head[2] & 1) << 2) | (head[3] >> 6));
+    if head[2] >> 6 != 1 || rate < 8_000 || channels == 0 || head[6] & 3 != 0 {
+        return Err("ADTS source requires supported AAC-LC with one raw block per frame".into());
+    }
+    let protected = head[1] & 1 == 0;
+    let header_bytes = if protected { 9 } else { 7 };
+    let frame_bytes =
+        (usize::from(head[3] & 3) << 11) | (usize::from(head[4]) << 3) | usize::from(head[5] >> 5);
+    if frame_bytes <= header_bytes || frame_bytes > bytes.len() {
+        return Err("ADTS frame payload is empty or truncated".into());
+    }
+    Ok(Frame {
+        rate,
+        channels,
+        payload: &bytes[header_bytes..frame_bytes],
+        bytes: frame_bytes,
+        protected,
+    })
+}
+
 pub(super) fn validate(bytes: &[u8], budget: &mut super::Budget<'_>) -> Result<(), String> {
     let mut remaining = bytes;
     let mut format = None;
     let mut frames = 0_usize;
     while !remaining.is_empty() {
         budget.step()?;
-        let head = remaining.get(..7).ok_or("ADTS frame header is truncated")?;
-        if head[0] != 0xff || head[1] & 0xf6 != 0xf0 {
-            return Err("ADTS frame synchronization or layer is invalid".into());
-        }
-        // The enabled upstream decoder implements AAC-LC. Other Audio Object
-        // Types must not be advertised merely because they share ADTS framing.
-        let profile = head[2] >> 6;
-        let rate = SAMPLE_RATES
-            .get(usize::from((head[2] >> 2) & 15))
-            .copied()
-            .ok_or("ADTS sample-rate index is reserved")?;
-        let channels = ((head[2] & 1) << 2) | (head[3] >> 6);
-        if profile != 1 || rate < 8_000 || channels == 0 || head[6] & 3 != 0 {
-            return Err(
-                "ADTS source requires supported AAC-LC with one raw block per frame".into(),
-            );
-        }
-        let current = (profile, rate, channels);
+        let packet = frame(remaining)?;
+        let current = (packet.rate, packet.channels);
         if format.is_some_and(|previous| previous != current) {
             return Err("ADTS audio format changes within the source".into());
         }
         format = Some(current);
         // Symphonia reads/skips the optional ADTS CRC but does not verify it.
         // This policy proves complete framing, not that transport checksum.
-        let header_bytes = if head[1] & 1 == 0 { 9 } else { 7 };
-        let frame_bytes = (usize::from(head[3] & 3) << 11)
-            | (usize::from(head[4]) << 3)
-            | usize::from(head[5] >> 5);
-        if frame_bytes <= header_bytes || frame_bytes > remaining.len() {
-            return Err("ADTS frame payload is empty or truncated".into());
-        }
         frames += 1;
         if frames > crate::limits::MAX_MEDIA_DECODED_SAMPLES {
             return Err("ADTS frame count exceeds the decode limit".into());
         }
-        remaining = &remaining[frame_bytes..];
+        remaining = &remaining[packet.bytes..];
     }
     if frames == 0 {
         return Err("ADTS source has no frames".into());
