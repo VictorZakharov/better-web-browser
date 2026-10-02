@@ -1,5 +1,6 @@
 //! Script result and input types shared with the renderer and app layers.
 
+pub(crate) use super::types::is_classic_javascript_type;
 pub use super::types::{
     DynamicScriptLoader, DynamicScriptRequest, ScriptBroadcastAction, ScriptCaptionCue,
     ScriptClipboardAction, ScriptFetchOptions, ScriptFontAction, ScriptFullscreenAction,

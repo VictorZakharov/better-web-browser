@@ -71,6 +71,7 @@
     {"path":"webcodecs/audio-data.any.js","area":"WebCodecs audio","expected":"pass"},
     {"path":"webcodecs/audio-data-copyTo.any.js","area":"WebCodecs audio","expected":"pass"},
     {"path":"webcodecs/encoded-audio-chunk.any.js","area":"WebCodecs audio","expected":"pass"},
+    {"path":"webcodecs/encoded-video-chunk.any.js","area":"WebCodecs video","expected":"pass"},
     {"path":"webmessaging/Channel_postMessage_Blob.any.js","area":"Window messaging","expected":"pass"},
     {"path":"webmessaging/Channel_postMessage_DataCloneErr.any.js","area":"Window messaging","expected":"pass"},
     {"path":"webmessaging/Channel_postMessage_clone_port.any.js","area":"Window messaging","expected":"pass"},

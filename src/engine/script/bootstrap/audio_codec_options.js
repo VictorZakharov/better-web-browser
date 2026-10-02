@@ -20,6 +20,14 @@
             throw new TypeError('Invalid Opus encoder options');
         return {application, complexity, format, frameDuration, packetlossperc, signal, usedtx, useinbandfec};
     };
+    const flacEncoderOptions = value => {
+        const input = frameDictionary(value);
+        const block = input.blockSize;
+        const blockSize = block === undefined ? 0 : frameUint(block);
+        const level = input.compressLevel;
+        const compressLevel = level === undefined ? 5 : frameUint(level);
+        return {blockSize, compressLevel};
+    };
     const audioCodecConfig = (value, encode) => {
         const input = frameDictionary(value);
         const config = {};
@@ -33,9 +41,13 @@
             const description = input.description;
             if (description !== undefined) {
                 const bytes = frameBuffer(description);
-                if (bytes.length > 256) throw frameError('Codec description exceeds its 256 byte budget', 'NotSupportedError');
+                if (bytes.length > 65536) throw frameError('Codec description exceeds its 64 KiB budget', 'NotSupportedError');
                 config.description = new Uint8Array(bytes);
             }
+        }
+        if (encode) {
+            const flac = input.flac;
+            if (flac !== undefined) config.flac = flacEncoderOptions(flac);
         }
         config.numberOfChannels = frameUint(frameRequired(input.numberOfChannels, 'numberOfChannels'));
         if (encode) {

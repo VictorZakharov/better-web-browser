@@ -47,14 +47,14 @@
                     duration:result.duration, data:result.bytes});
                 metadata = {};
                 if (state.metadataPending || result.description !== null) {
-                    metadata.decoderConfig = {codec:'opus', sampleRate:state.config.sampleRate,
-                        numberOfChannels:state.config.numberOfChannels};
+                    metadata.decoderConfig = {codec:state.config.codec, sampleRate:result.sampleRate,
+                        numberOfChannels:result.numberOfChannels};
                     if (result.description !== null) metadata.decoderConfig.description = result.description.buffer.slice(0);
                     state.metadataPending = false;
                 }
             } else {
-                value = new AudioData({format:result.format, sampleRate:state.config.sampleRate,
-                    numberOfFrames:result.frames, numberOfChannels:state.config.numberOfChannels,
+                value = new AudioData({format:result.format, sampleRate:result.sampleRate,
+                    numberOfFrames:result.frames, numberOfChannels:result.numberOfChannels,
                     timestamp:result.timestamp, data:result.bytes});
             }
             // Author callback exceptions are reported, never interpreted as a

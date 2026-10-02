@@ -61,6 +61,7 @@ impl HostBridge {
             "cacheStorageSecureContext"
                 | "imageDecoderSecureContext"
                 | "audioCodecSecureContext"
+                | "videoCodecSecureContext"
                 | "storageManagerSecureContext"
                 | "mediaCapabilitiesSecureContext"
         ) {

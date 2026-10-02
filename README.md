@@ -756,6 +756,36 @@ all admitted packet durations/rates, exact 24-bit sample expansion, reset/flush,
 callback ordering and hidden AppContainer execution. Resource, timing, priming,
 padding and unsupported-codec limits are explicit in the implementation notes.
 
+The following 2026-10-02 [compressed audio](docs/webcodecs-audio.md) and
+[AV1 VideoDecoder](docs/webcodecs-video.md) batch rendered **487 / 588** in three
+hidden fresh-profile release captures, unchanged from three captures of merged
+#218. All six returned HTTP 200 with no JavaScript errors or renderer exits, at
+1280×720, 125% scale, `en-US`, and default Breeze identity. The six rendered score
+captures are byte-identical. No HTML5test score gain is claimed: its older
+inventory does not exercise these elementary WebCodecs paths.
+
+| Original behavior-level fixture | Before (#218) | After | Unified-headless Chrome 154.0.8037.97 |
+| --- | ---: | ---: | ---: |
+| MP3/AAC-LC/FLAC/Vorbis packets, snapshots, FLAC encoding and error/reset contracts | 1/21 | 21/21 | 12/21 |
+| AV1 inter-frame pixels, chunk/frame ownership, Canvas, aspect ratio and reset | 0/7 | 7/7 | 7/7 |
+| Curated upstream WPT assertions | 5,988 | 5,991 | Not measured for this batch |
+
+The audio reference's nine differences remain visible: six FLAC encoder cases
+were unavailable, two Vorbis cases returned fewer samples than this fixture
+expects, and its FLAC corruption case did not deliver the expected error.
+These are functionality contracts, not a browser-superiority or speed score.
+The AV1 comparison checks eight actual changing frames against an independent
+FFmpeg pixel reference, not just the presence of a decoder constructor.
+
+The batch reuses existing locked Symphonia, Claxon, flacenc and rav1d libraries;
+no dependency or third-party source is added. MP3/AAC-LC/FLAC/Vorbis decoding
+uses real stream dimensions; FLAC encoding emits unpadded raw frame packets.
+AV1 retains inter-frame references in bounded software workers and produces
+owned VideoFrames in Window/Worker realms, with native transfer and Canvas
+painting. Higher AV1 profiles/depths, hardware decoding, color overrides and
+VideoEncoder remain unavailable. These additions do not establish complete
+media-site playback or universal codec conformance.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -764,8 +794,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 4500 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-10-01-routing-reproduction.json `
-  -Screenshot target/html5test/2026-10-01-routing-reproduction.png
+  -Output target/html5test/2026-10-02-codecs-reproduction.json `
+  -Screenshot target/html5test/2026-10-02-codecs-reproduction.png
 ```
 
 New releases must refresh or explicitly date these observations using the

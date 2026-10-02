@@ -2,16 +2,23 @@
 use super::*;
 use std::time::{Duration, Instant};
 
+mod compressed;
+mod compressed_fixture;
 mod configuration;
 mod lifecycle;
 mod messaging;
 mod pcm;
 mod pipelines;
 mod reconfiguration;
+mod worker_compressed;
 mod workers;
 
-fn check(source: &str) -> Vec<String> {
+pub(super) fn check(source: &str) -> Vec<String> {
     check_with_errors(source, &[])
+}
+
+pub(super) fn worker_check(source: &str) {
+    workers::worker_check(source);
 }
 
 fn check_with_errors(source: &str, expected_errors: &[&str]) -> Vec<String> {
@@ -111,7 +118,7 @@ fn support_queries_clone_recognized_config_and_do_not_claim_other_codecs() {
         assert(support.supported&&support.config.codec==='opus','real Opus capability');
         assert(!('unknown' in support.config)&&!('unknown' in support.config.opus),'recognized dictionaries');
         input.opus.complexity=10;assert(support.config.opus.complexity===3,'configuration snapshot');
-        for(const codec of ['aac','flac','mp3','not-a-codec']){
+        for(const codec of ['aac','flac','vorbis','not-a-codec']){
             const result=await AudioDecoder.isConfigSupported({codec,sampleRate:48000,numberOfChannels:1});
             assert(result.supported===false,'unsupported codec '+codec);
         }

@@ -93,6 +93,9 @@ pub(super) fn dispatch_host_call(
     if let Some(value) = super::audio_codecs::dispatch(operation, args, &mut state.audio_codecs)? {
         return Ok(value);
     }
+    if let Some(value) = super::video_codecs::dispatch(operation, args, &mut state.video_codecs)? {
+        return Ok(value);
+    }
     if let Some(value) = super::image_frames::dispatch(operation, args, &mut state.image_frames)? {
         return Ok(value);
     }

@@ -4,6 +4,7 @@
 //! representation to premultiplied BGRA; Canvas must not premultiply it a second time.
 
 mod avif;
+pub(crate) use avif::decoder::VideoAv1Decoder;
 mod color;
 #[cfg(test)]
 pub(crate) mod fixtures;

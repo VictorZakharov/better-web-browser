@@ -7,6 +7,7 @@ mod opus_capabilities;
 mod serialization;
 mod url_pattern;
 mod url_resolution;
+mod video_codecs;
 mod wake_lock;
 mod xhr_document;
 

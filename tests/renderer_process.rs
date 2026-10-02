@@ -88,6 +88,8 @@ mod termination;
 mod title_navigation;
 #[path = "renderer_process/user_agent.rs"]
 mod user_agent;
+#[path = "renderer_process/video_codecs.rs"]
+mod video_codecs;
 #[path = "renderer_process/viewport_observers.rs"]
 mod viewport_observers;
 #[path = "renderer_process/xhr_reuse.rs"]

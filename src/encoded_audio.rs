@@ -12,7 +12,7 @@ use symphonia::core::formats::well_known::{
     FORMAT_ID_ADTS, FORMAT_ID_ISOMP4, FORMAT_ID_MKV, FORMAT_ID_MP3, FORMAT_ID_OGG,
 };
 
-mod adts;
+pub(crate) mod adts;
 pub(crate) mod ogg_envelope;
 mod ogg_flac;
 pub(crate) mod webm;

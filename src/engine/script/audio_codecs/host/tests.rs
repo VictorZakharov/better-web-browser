@@ -121,6 +121,8 @@ fn native_outputs_are_typed_bytes_not_untrusted_json_or_host_references() {
         timestamp: -99,
         duration: 375,
         frames: 3,
+        sample_rate: 8000,
+        channels: 1,
         description: Some(vec![1, 2]),
     });
     let JsValue::Object(entries) = value else {
@@ -133,6 +135,8 @@ fn native_outputs_are_typed_bytes_not_untrusted_json_or_host_references() {
     assert_eq!(field("timestamp").as_number(), Some(-99.0));
     assert_eq!(field("frames").as_number(), Some(3.0));
     assert_eq!(field("duration").as_number(), Some(375.0));
+    assert_eq!(field("sampleRate").as_number(), Some(8000.0));
+    assert_eq!(field("numberOfChannels").as_number(), Some(1.0));
 }
 
 #[test]

@@ -31,6 +31,8 @@ fn output(value: Output) -> JsValue {
         ("timestamp", JsValue::from(value.timestamp as f64)),
         ("duration", JsValue::from(value.duration as f64)),
         ("frames", JsValue::from(value.frames)),
+        ("sampleRate", JsValue::from(value.sample_rate)),
+        ("numberOfChannels", JsValue::from(value.channels)),
         (
             "description",
             value.description.map_or(JsValue::Null, JsValue::Bytes),

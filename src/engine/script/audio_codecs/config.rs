@@ -16,6 +16,24 @@ pub(super) struct Config {
     pub(super) description: Option<Vec<u8>>,
     #[serde(default)]
     pub(super) opus: Option<OpusOptions>,
+    #[serde(default)]
+    pub(super) flac: Option<FlacOptions>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct FlacOptions {
+    pub(super) block_size: u32,
+    pub(super) compress_level: u32,
+}
+
+impl Default for FlacOptions {
+    fn default() -> Self {
+        Self {
+            block_size: 0,
+            compress_level: 5,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -48,7 +66,9 @@ impl Default for OpusOptions {
 
 impl Config {
     pub(super) fn read(json: &str, encode: bool) -> Result<Self, String> {
-        if json.len() > 4096 {
+        // JSON represents each extradata byte with up to four characters plus
+        // separators. The wire budget must accommodate the 64 KiB byte budget.
+        if json.len() > 384 * 1024 {
             return Err("audio codec configuration exceeds its metadata budget".into());
         }
         let config: Self =
@@ -58,6 +78,22 @@ impl Config {
     }
 
     pub(super) fn validate(&self, encode: bool) -> Result<(), String> {
+        if self
+            .description
+            .as_ref()
+            .is_some_and(|bytes| bytes.len() > 65_536)
+        {
+            return Err("audio codec description exceeds 64 KiB".into());
+        }
+        if self.codec == "flac" && encode {
+            return super::flac_encoder::validate(self);
+        }
+        if self.flac.is_some() {
+            return Err("FLAC encoder options require a FLAC encoder".into());
+        }
+        if super::compressed::supported(&self.codec) {
+            return super::compressed::validate(self, encode);
+        }
         if super::pcm::supported(&self.codec) {
             if encode
                 || self.description.is_some()
