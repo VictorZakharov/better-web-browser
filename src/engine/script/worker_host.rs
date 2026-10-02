@@ -31,6 +31,7 @@ pub(super) struct WorkerHostState {
     pub(super) compression_streams: super::host_call::compression_host::CompressionStreams,
     pub(super) text_decoders: super::text_encoding_host::TextDecoders,
     pub(super) image_frames: super::image_frames::ImageFrames,
+    pub(super) audio_codecs: super::audio_codecs::AudioCodecs,
     pub(super) closed: bool,
     pub(super) module_evaluation_pending: bool,
     pub(super) module_evaluation_completion: Option<Result<(), String>>,
@@ -74,6 +75,7 @@ impl WorkerHostState {
             compression_streams: Default::default(),
             text_decoders: Default::default(),
             image_frames: Default::default(),
+            audio_codecs: Default::default(),
             closed: false,
             module_evaluation_pending: false,
             module_evaluation_completion: None,
@@ -145,6 +147,9 @@ pub(super) fn dispatch_worker_host_call(
         return Ok(value);
     }
     if let Some(value) = super::image_frames::dispatch(operation, args, &mut state.image_frames)? {
+        return Ok(value);
+    }
+    if let Some(value) = super::audio_codecs::dispatch(operation, args, &mut state.audio_codecs)? {
         return Ok(value);
     }
     if let Some(value) = super::worker_websocket_host::dispatch(operation, args, state)? {
@@ -290,6 +295,7 @@ pub(super) fn dispatch_worker_host_call(
         "workerClose" => {
             state.closed = true;
             state.image_frames.cancel_all();
+            state.audio_codecs.cancel_all();
             Ok(JsValue::undefined())
         }
         "timerSchedule" => {

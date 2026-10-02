@@ -729,6 +729,33 @@ API paths. No new production dependency is added; bounded complete-input CPU
 decoding, SDR conversion and explicit codec/streaming limits remain documented.
 Returning animation frames does not yet add automatic animated `<img>` playback.
 
+The 2026-10-02 [WebCodecs audio](docs/webcodecs-audio.md) batch rendered
+**487 / 588** in three identical hidden fresh-profile release captures, unchanged
+from the preceding main release's same-day **487 / 588** capture. All returned
+HTTP 200 without JavaScript errors or renderer exits, at 1280×720, 125% scale,
+`en-US`, and default Breeze identity. No HTML5test score increase is claimed:
+its older inventory does not exercise these WebCodecs audio contracts.
+
+| Original behavior-level fixture | Before | After | Unified-headless Chrome 154.0.8037.97 |
+| --- | ---: | ---: | ---: |
+| Audio samples, chunk ownership, MessagePort transfers and real codec output | 0/17 | 17/17 | 14/16 completed; final PCM probe timed out |
+| Curated upstream WPT assertions | 5,960 | 5,988 | Not measured for this batch |
+
+The reference comparison retains two differences: Chrome returned
+`NotSupportedError` for an invalid zero-rate AudioData initializer instead of
+the current draft's `TypeError`, and rejected explicit registered Opus `ogg`
+format. Its signed 24-bit PCM probe was isolated after a timeout, not counted
+as a pass. The full Breeze fixture remains seventeen contracts, including PCM.
+
+This slice adds eight AudioData sample layouts, bit-preserving copying,
+clone/transfer across Window and Worker realms, actual asynchronous Opus
+encoding/decoding, and five registered raw PCM decoders. The existing locked
+libopus dependency and header parser are reused; no new codec dependency or
+copied codec implementation is introduced. Tests cover real decoded energy,
+all admitted packet durations/rates, exact 24-bit sample expansion, reset/flush,
+callback ordering and hidden AppContainer execution. Resource, timing, priming,
+padding and unsupported-codec limits are explicit in the implementation notes.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 

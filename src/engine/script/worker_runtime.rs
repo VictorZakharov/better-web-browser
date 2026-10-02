@@ -297,6 +297,7 @@ impl WorkerRuntime {
         let mut host = self.host.borrow_mut();
         host.closed = true;
         host.image_frames.cancel_all();
+        host.audio_codecs.cancel_all();
         host.timers.clear();
         host.timer_handles.clear();
         host.fetch_actions.clear();
