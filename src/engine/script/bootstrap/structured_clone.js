@@ -16,6 +16,8 @@
     delete globalThis.__blobStructuredCloneSnapshot;
     const frames = globalThis.__videoFrameCloneBindings;
     delete globalThis.__videoFrameCloneBindings;
+    const audio = globalThis.__audioCloneBindings;
+    delete globalThis.__audioCloneBindings;
     const transferList = options => {
         const source = Array.isArray(options) ? options : options?.transfer;
         if (source === undefined) return [];
@@ -25,9 +27,10 @@
         for (const value of result) {
             const canvas = globalThis.__cloneCanvasBindings;
             if ((!(value instanceof ArrayBuffer) && !globalThis.__clonePortBindings?.isPort(value) &&
-                !canvas?.isBitmap(value) && !canvas?.isOffscreen(value) && !frames?.has(value)) ||
+                !canvas?.isBitmap(value) && !canvas?.isOffscreen(value) && !frames?.has(value) && !audio?.has(value)) ||
                 value.detached || ((canvas?.isBitmap(value) || canvas?.isOffscreen(value)) &&
-                    canvas.isDetached(value)) || (frames?.has(value) && frames.closed(value)) || seen.has(value)) fail();
+                    canvas.isDetached(value)) || (frames?.has(value) && frames.closed(value)) ||
+                (audio?.has(value) && audio.closed(value)) || seen.has(value)) fail();
             if (globalThis.__clonePortBindings?.isPort(value)) globalThis.__clonePortBindings.describe(value);
             seen.add(value);
         }
@@ -53,6 +56,14 @@
             if (typeof value !== 'object') return fail();
             if (seen.has(value)) return { t: 'reference', v: seen.get(value) };
             const id = nextId++; seen.set(value, id);
+            if (audio?.has(value) || audio?.hasChunk(value)) {
+                const chunk = audio.hasChunk(value);
+                if (!chunk && (forStorage || audio.closed(value))) return fail();
+                const record = chunk ? audio.chunkSnapshot(value) : audio.snapshot(value);
+                const bytes = bytesToBase64(record.bytes);
+                delete record.bytes;
+                return {t: chunk ? 'audio-chunk' : 'audio-data', id, v: record, p: bytes};
+            }
             if (frames?.has(value)) {
                 // WebCodecs frame resources are cloneable/transferable between
                 // realms, but explicitly not serializable into persistent stores.
@@ -126,6 +137,7 @@
         for (const value of transfers) {
             if (value instanceof ArrayBuffer) __hostCall('arrayBufferDetach', value);
             else if (frames?.has(value)) frames.detach(value);
+            else if (audio?.has(value)) audio.detach(value);
             else if (globalThis.__cloneCanvasBindings?.isBitmap(value) ||
                 globalThis.__cloneCanvasBindings?.isOffscreen(value))
                 globalThis.__cloneCanvasBindings.detach(value);
@@ -155,6 +167,8 @@
             if (node.t === 'number') return ({ nan: NaN, infinity: Infinity, '-infinity': -Infinity, '-0': -0 })[node.v];
             let value;
             if (node.t === 'port') value = receive(node.v);
+            else if (node.t === 'audio-data') value = audio?.receive(node.v, base64ToBytes(node.p)) ?? fail();
+            else if (node.t === 'audio-chunk') value = audio?.receiveChunk(node.v, base64ToBytes(node.p)) ?? fail();
             else if (node.t === 'video-frame') value = frames?.receive(node.v, base64ToBytes(node.p)) ?? fail();
             else if (node.t === 'imagebitmap' || node.t === 'offscreencanvas')
                 value = globalThis.__cloneCanvasBindings?.receive(node, base64ToBytes(node.p)) ?? fail();

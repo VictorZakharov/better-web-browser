@@ -60,6 +60,7 @@ impl HostBridge {
             operation.as_str(),
             "cacheStorageSecureContext"
                 | "imageDecoderSecureContext"
+                | "audioCodecSecureContext"
                 | "storageManagerSecureContext"
                 | "mediaCapabilitiesSecureContext"
         ) {

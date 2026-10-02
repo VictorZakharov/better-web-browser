@@ -1,5 +1,7 @@
 use super::*;
 use crate::engine::dom;
+mod audio_codecs;
+mod audio_data;
 mod dom_parser;
 mod opus_capabilities;
 mod serialization;

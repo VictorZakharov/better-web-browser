@@ -207,6 +207,7 @@ impl ScriptRuntime {
         host.pending_geolocation_actions.clear();
         host.pending_media_device_actions.clear();
         host.media_recorders = Default::default();
+        host.audio_codecs.cancel_all();
         host.pending_sensor_actions.clear();
         host.pending_sensor_update = None;
         host.pending_worker_actions.clear();
