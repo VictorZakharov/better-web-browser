@@ -57,6 +57,7 @@ mod compatibility;
 mod conditional_query_integration;
 mod crypto;
 mod csp_events;
+mod css_animations;
 mod css_transitions;
 mod cssom;
 mod cssom_layers;

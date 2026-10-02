@@ -100,6 +100,15 @@ function Assert-BreezeFixture {
     }
 }
 
+function Assert-RequiredFixtureMarker {
+    param($Record, [string] $Selector, [string] $Browser)
+    if ([string]::IsNullOrWhiteSpace($Selector)) { return }
+    $markers = @($Record.diagnostics | Where-Object selector -eq $Selector)
+    if ($markers.Count -ne 1 -or [int] $markers[0].total_matches -ne 1) {
+        throw "$Browser did not satisfy the fixture behavior marker: $Selector"
+    }
+}
+
 $records = [Collections.Generic.List[object]]::new()
 try {
     foreach ($case in $cases) {
@@ -125,12 +134,16 @@ try {
                 DiagnosticSelector = @('#main', 'html[data-fixture-ready=true]')
             }
             if ([bool] $case.early_scroll) { $breezeArguments.EarlyScrollTrace = $true }
+            if (-not $Live -and -not [string]::IsNullOrWhiteSpace($case.required_selector)) {
+                $breezeArguments.DiagnosticSelector += [string] $case.required_selector
+            }
             & (Join-Path $repoRoot 'scripts\run-hidden-benchmark.ps1') @breezeArguments | Write-Host
             $breeze = Get-Content -LiteralPath $breezeJson -Raw | ConvertFrom-Json
             if ($Live -and ($null -ne $breeze.error -or [int] $breeze.http_status -lt 200 -or [int] $breeze.http_status -ge 400)) {
                 throw "$($case.id) Breeze live navigation failed: status $($breeze.http_status), $($breeze.error)"
             }
             if (-not $Live) { Assert-BreezeFixture $breeze $case.id }
+            if (-not $Live) { Assert-RequiredFixtureMarker $breeze $case.required_selector 'Breeze' }
 
             $viewportWidth = [int] [Math]::Round([double] $breeze.viewport_width_css_px)
             $viewportHeight = [int] [Math]::Round([double] $breeze.viewport_height_css_px)
@@ -150,6 +163,9 @@ try {
             )
             if ([bool] $case.early_scroll) { $chromiumArguments += '--early-scroll' }
             if (-not $Live) { $chromiumArguments += '--require-fixture-ready' }
+            if (-not $Live -and -not [string]::IsNullOrWhiteSpace($case.required_selector)) {
+                $chromiumArguments += @('--diagnostic-selector', [string] $case.required_selector)
+            }
             & dotnet @chromiumArguments | Write-Host
             if ($LASTEXITCODE -ne 0) {
                 $failureDetail = 'No Chromium report was produced.'
@@ -160,6 +176,7 @@ try {
                 throw "$($case.id) Chromium run failed. $failureDetail"
             }
             $chromium = Get-Content -LiteralPath $chromiumJson -Raw | ConvertFrom-Json
+            if (-not $Live) { Assert-RequiredFixtureMarker $chromium $case.required_selector 'Chromium' }
 
             if (-not $chromium.headless -or -not $chromium.unified_headless -or
                 -not $chromium.fresh_profile -or -not $chromium.cache_disabled) {

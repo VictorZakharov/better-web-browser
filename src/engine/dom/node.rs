@@ -180,6 +180,7 @@ pub struct ElementData {
     pub attrs: RefCell<Vec<Attribute>>,
     /// Web Animations declarations have their own cascade origin, not a style attribute.
     pub(crate) animation_style: RefCell<Option<Box<str>>>,
+    pub(crate) transition_style: RefCell<Option<Box<str>>>,
     pub template_contents: RefCell<Option<NodeRef>>,
     pub shadow_root: RefCell<Option<NodeRef>>,
     pub mathml_annotation_xml_integration_point: bool,

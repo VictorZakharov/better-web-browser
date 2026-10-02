@@ -96,36 +96,7 @@
     }
 
     function splitDeclarations(source) {
-        const declarations = [];
-        let start = 0;
-        let depth = 0;
-        let quote = '';
-        let escaped = false;
-        for (let index = 0; index <= source.length; index++) {
-            const character = source[index] || ';';
-            if (quote) {
-                if (escaped) escaped = false;
-                else if (character === '\\') escaped = true;
-                else if (character === quote) quote = '';
-                continue;
-            }
-            if (character === '"' || character === "'") { quote = character; continue; }
-            if (character === '(' || character === '[') depth++;
-            else if ((character === ')' || character === ']') && depth > 0) depth--;
-            else if (character === ';' && depth === 0) {
-                const declaration = source.slice(start, index).trim();
-                const colon = declaration.indexOf(':');
-                if (colon > 0) {
-                    const name = declarationName(declaration.slice(0, colon).trim());
-                    let value = declaration.slice(colon + 1).trim();
-                    const important = /!\s*important\s*$/i.test(value);
-                    if (important) value = value.replace(/!\s*important\s*$/i, '').trim();
-                    declarations.push([name, value, important ? 'important' : '']);
-                }
-                start = index + 1;
-            }
-        }
-        return declarations;
+        return host('cssDeclarationList', String(source), false);
     }
 
     class RuleStyleDeclaration extends CSSStyleDeclaration {
@@ -133,8 +104,8 @@
             super(null);
             this.__rule = rule;
             this.__declarations = new Map();
-            for (const [name, value, priority] of splitDeclarations(source))
-                this.__declarations.set(name, { value, priority });
+            for (const [name, value, important] of host('cssDeclarationList', source, false))
+                this.__declarations.set(name, {value, priority:important ? 'important' : ''});
         }
         get cssText() {
             return [...this.__declarations].map(([name, entry]) =>
@@ -142,11 +113,12 @@
         }
         set cssText(value) {
             this.__declarations.clear();
-            for (const [name, text, priority] of splitDeclarations(String(value)))
-                this.__declarations.set(name, { value: text, priority });
+            for (const [name, text, important] of host('cssDeclarationList', String(value), false))
+                this.__declarations.set(name, {value:text, priority:important ? 'important' : ''});
             this.__rule.__changed();
         }
         get length() { return this.__declarations.size; }
+        get parentRule() { return this.__rule; }
         item(index) { return [...this.__declarations.keys()][Number(index)] || ''; }
         getPropertyValue(name) {
             return this.__declarations.get(declarationName(name))?.value || '';
@@ -158,9 +130,11 @@
             name = declarationName(name);
             value = String(value);
             priority = String(priority).toLowerCase();
-            if (priority && priority !== 'important') return;
             if (!value) { this.removeProperty(name); return; }
-            this.__declarations.set(name, { value, priority });
+            if (priority && priority !== 'important') return;
+            const parsed = host('cssDeclarationValue', name, value);
+            if (parsed === null) return;
+            this.__declarations.set(name, {value:parsed, priority});
             this.__rule.__changed();
         }
         removeProperty(name) {
@@ -212,6 +186,8 @@
         }
         const open = cssRuleBlockStart(text);
         if (open >= 0 && text.trimEnd().endsWith('}')) {
+            if (/^@(?:-webkit-)?keyframes(?=\s|["'])/i.test(text))
+                return new CSSKeyframesRule(sheet, text, cssKeyframesRuleToken);
             if (/^@scope(?=\s|\{|\()/i.test(text)) {
                 const boundaries = host('stylesheetScopeBoundaries', text.slice(6, open).trim());
                 if (boundaries === null)

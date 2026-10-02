@@ -49,6 +49,10 @@ pub(super) fn apply_declaration(
     ) {
         return;
     }
+    if values::animations::supported_property(name) {
+        values::animations::apply(Arc::make_mut(&mut style.animation), name, value);
+        return;
+    }
     if values::transitions::supported_property(name) {
         values::transitions::apply(&mut style.transition, name, value);
         return;

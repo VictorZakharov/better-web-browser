@@ -6,6 +6,8 @@
         name = String(name);
         const property = name.startsWith('--') ? name : name.includes('-') ? name.toLowerCase() :
             name === 'cssFloat' ? 'float' : name.replace(/[A-Z]/g, match => '-' + match.toLowerCase());
+        if (property === 'animation' || property.startsWith('animation-') ||
+            property === 'transition' || property.startsWith('transition-')) return null;
         return host('cssPropertySupported', property) ? property : null;
     };
     const animationIdlProperty = property => property.startsWith('--') ? property :
@@ -79,7 +81,7 @@
         if (offsets.length) computeAnimationOffsets(frames);
         return frames;
     };
-    const normalizeAnimationFrames = source => {
+    const normalizeAnimationFrames = (source, limits = {frames:64, properties:32}) => {
         if (source == null) return [];
         let frames;
         if (Array.isArray(source)) {
@@ -97,10 +99,10 @@
         } else if (typeof source === 'object') {
             frames = normalizePropertyIndexedFrames(source);
         } else throw new TypeError('Keyframes must be an object or array');
-        if (frames.length > 64) throw new DOMException('Too many keyframes', 'NotSupportedError');
+        if (frames.length > limits.frames) throw new DOMException('Too many keyframes', 'NotSupportedError');
         let last = -1;
         for (const frame of frames) {
-            if (frame.values.size > 32) throw new DOMException('Too many animated properties', 'NotSupportedError');
+            if (frame.values.size > limits.properties) throw new DOMException('Too many animated properties', 'NotSupportedError');
             if (frame.offset !== null) {
                 if (!Number.isFinite(frame.offset) || frame.offset < 0 || frame.offset > 1)
                     throw new TypeError('Keyframe offset must be between 0 and 1');

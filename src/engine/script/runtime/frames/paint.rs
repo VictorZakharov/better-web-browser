@@ -66,9 +66,14 @@ impl ScriptRuntime {
                             let host = Rc::clone(&child.host);
                             Box::new(move |layout, viewport| {
                                 let mut host = host.borrow_mut();
-                                host.media_environment = host
+                                let environment = host
                                     .media_environment
                                     .with_viewport(viewport.width, viewport.height);
+                                if host.media_environment != environment {
+                                    host.css_animation_revision =
+                                        host.css_animation_revision.wrapping_add(1);
+                                    host.media_environment = environment;
+                                }
                                 host.layout_viewport_width = viewport.width;
                                 host.layout_viewport_height = viewport.height;
                                 host.embedding_rect = Some(viewport);

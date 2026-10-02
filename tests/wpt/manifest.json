@@ -11,6 +11,7 @@
     "expectations": "forbidden"
   },
   "support": [
+    "css/support/parsing-testcommon.js",
     "common/media.js",
     "webcodecs/utils.js",
     "resources/testharnessreport.js",
@@ -1305,6 +1306,10 @@
     {"path":"css/css-cascade/scope-import-scope-end.html","area":"CSS scoped imports","expected":"pass"},
     {"path":"css/css-cascade/scope-import-multiple.html","area":"CSS scoped imports","expected":"pass"},
     {"path":"css/css-cascade/scope-declarations.html","area":"CSS Scope","expected":"pass"},
-    {"path":"css/css-cascade/scope-implicit.html","area":"CSS Scope","expected":"pass"}
+    {"path":"css/css-cascade/scope-implicit.html","area":"CSS Scope","expected":"pass"},
+    {"path":"css/css-animations/parsing/keyframes-name-valid.html","area":"CSS Animations names","expected":"pass"},
+    {"path":"css/css-animations/parsing/keyframes-name-invalid.html","area":"CSS Animations names","expected":"pass"},
+    {"path":"css/css-animations/parsing/animation-name-valid.html","area":"CSS Animations authored values","expected":"pass"},
+    {"path":"css/css-animations/parsing/animation-name-invalid.html","area":"CSS Animations authored values","expected":"pass"}
   ]
 }

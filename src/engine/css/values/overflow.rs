@@ -12,6 +12,14 @@ pub enum Overflow {
 }
 
 impl Overflow {
+    pub(in crate::engine::css) fn declaration_valid(property: &str, value: &str) -> bool {
+        let words = value.split_ascii_whitespace().collect::<Vec<_>>();
+        let maximum = if property == "overflow" { 2 } else { 1 };
+        !words.is_empty()
+            && words.len() <= maximum
+            && words.iter().all(|word| Self::parse(word).is_some())
+    }
+
     fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "visible" => Self::Visible,

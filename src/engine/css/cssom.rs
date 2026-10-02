@@ -3,7 +3,9 @@
 use super::values::LineHeight;
 use super::*;
 
+pub(crate) mod declarations;
 mod lengths;
+#[cfg(test)]
 use lengths::serialize_length;
 
 const MAX_DIAGNOSTIC_CUSTOM_PROPERTIES: usize = 64;
@@ -37,6 +39,10 @@ pub(crate) fn diagnostic_custom_properties(style: &ComputedStyle) -> (u64, Vec<(
 }
 
 pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> Option<String> {
+    let serialize_length = |value| lengths::serialize_computed_length(value, style.font_size);
+    if let Some(value) = style.animation.property_value(property) {
+        return Some(value);
+    }
     if property.starts_with("--") {
         let value = style.custom_properties.get(property)?;
         return super::variables::substitute_variables(value, &style.custom_properties);

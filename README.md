@@ -356,7 +356,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ☑ | Tabs and windows | Multiple live tabs, [browser-owned session history](docs/history-traversal.md) with structured-cloned state, per-entry viewport scroll restoration (`history.scrollRestoration`), and same-document Back/Forward, tab search and restoration, keyboard shortcuts, multi-selection, reordering, and detach/redock across windows are supported. Back/forward document caching, restoration of nested scroll containers, and persistent tab sessions across browser restarts are not. |
 | ◩ | Canvas, media, and downloads | Bounded software Canvas 2D provides real sRGB pixels, SVG paths, fills/strokes, gradients/patterns, clipping, shadows, filters, compositing, shaped/rasterized text, Geometry Interfaces, `ImageData`, image drawing, `ImageBitmap`, `OffscreenCanvas` (including workers), and PNG/JPEG/WebP export. Dirty document and child-frame Canvas bitmaps participate in live image presentation. The contained media worker plays URL-backed PCM WAV, MP3, ordinary AAC/M4A, Ogg/Vorbis, native FLAC, ADTS AAC-LC, audio-only WebM/Vorbis, Ogg/FLAC, and mapping-family-0 Ogg/WebM Opus with bundled decoders, plus H.264/AAC MP4 and H.264-only MP4 with a video clock; it also supports synchronized XAudio2 output, progressive Media Source input, and play/pause/seek/volume/mute/fullscreen controls. Browser-owned [camera and microphone grants](docs/media-capture.md) provide a bounded `getUserMedia` path, with captured video presented through `<video srcObject>`. One granted microphone track can be recorded as actual FLAC or [Ogg/Opus](docs/ogg-opus.md) / [WebM/Opus](docs/webm-opus.md) with bounded [`MediaRecorder`](docs/audio-codecs-and-recording.md); Opus recording accepts native 8/12/16/24/48 kHz, not 44.1 kHz capture. [Window/Worker encoding and decoding queries](docs/media-capabilities.md) use the implemented codec matrices without claiming hardware efficiency. HTML `<source>` fallback and stale-response rejection are tested. Text tracks can load WebVTT and paint bounded captions; audio/video track lists expose the accepted decoder streams and allow disabling their output. [Container limits](docs/encoded-audio-containers.md) include WebM video/multiple tracks, and streaming the new complete-file formats. [Other remaining limits](docs/html-media-hints-csp.md) include DRM, detached `new Audio(src)` loading, multiple selectable decoded streams, full caption styling/regions, picture-in-picture, and mature downloads. |
 | ◩ | Web Audio | `OfflineAudioContext` renders bounded 128-frame `Float32` PCM graphs with buffer, oscillator, constant, gain, filter, delay, panning, channel-routing, WaveShaper, Analyser, DynamicsCompressor, and Convolver nodes. Shared [speaker/discrete mixing, channel modes, and legal delayed feedback](docs/web-audio-routing.md) preserve wide intermediate buses and pending tails. Deprecated `ScriptProcessorNode` supplies real author-produced PCM and asynchronous processing events; it is not AudioWorklet. A live `AudioContext` sends rendered PCM through the contained media worker to XAudio2 after user activation, with bounded backpressure and lifecycle handling. `decodeAudioData` asynchronously decodes supported PCM/float WAV, FLAC, Ogg/Vorbis, MP3, AAC/M4A, ADTS AAC-LC, audio-only WebM/Vorbis, Ogg/FLAC, and mapping-family-0 Ogg/WebM Opus into resampled `AudioBuffer` data with promise and callback completion. A [browser-granted captured microphone](docs/media-capture.md) can feed a live graph through `MediaStreamAudioSourceNode`, including an analyser-only branch. `AudioWorklet`, media-element sources, additional encoded formats, and full conformance remain unavailable; see the [supported scope and limits](docs/web-audio.md), [codec contracts](docs/audio-codecs-and-recording.md), and [new container boundaries](docs/encoded-audio-containers.md). |
-| ◩ | Web Animations and CSS Transitions | Script-created keyframe animations participate in the CSS cascade, with document timelines, effect inspection, playback promises/events, easing, replacement, and bounded style commitment. An attribute-driven CSS Transitions baseline samples supported colors, lengths, opacity, and 2D translations through the native style/paint path with lifecycle events. Ancestor-driven changes, pseudo-elements, transition cascade priority, reversing-shortening, and compositor offloading remain open; see the [animation](docs/html5test-animation-media-csp.md) and [transition](docs/css-transitions.md) contracts. |
+| ◩ | Web Animations, CSS Animations, and Transitions | Script-created and stylesheet keyframes sample through the native cascade/paint path, with timelines, effect inspection, lifecycle events, scoped/layered names, and live keyframe CSSOM editing. Attribute-driven transitions include ancestor changes, a dedicated cascade origin, and reversing-shortening. Pseudo-elements, additive compositing, and compositor offloading remain open; see the [CSS animation](docs/css-animations.md), [Web Animations](docs/html5test-animation-media-csp.md), and [transition](docs/css-transitions.md) contracts. |
 | ◩ | Accessibility | A bounded renderer semantic tree is validated and exposed with browser chrome through AccessKit and Windows UI Automation, including focus/invoke/value actions. Accessible-name/ARIA coverage, rich text patterns, live regions, and non-Windows adapters remain incomplete; see [Accessibility architecture](docs/accessibility.md). |
 | ◩ | Process and site isolation | Each tab has a capability-free AppContainer renderer that owns remote-document parsing, JavaScript/DOM, CSS/layout, image/font decoding, Workers, and immutable presentation construction. The browser reconstructs privileged Fetch requests and owns persistent state; bounded IPC/queues, Job limits, hang detection, and tab-local containment cover aborts, access violations, OOM termination, and native stack overflow. Cross-site frame isolation is not implemented. |
 | ☐ | Security-audited browsing | The browser has not received a security audit and is not suitable for sensitive authenticated browsing. |
@@ -786,6 +786,41 @@ painting. Higher AV1 profiles/depths, hardware decoding, color overrides and
 VideoEncoder remain unavailable. These additions do not establish complete
 media-site playback or universal codec conformance.
 
+The following 2026-10-02 [stylesheet CSS Animations/CSSOM](docs/css-animations.md)
+batch rendered **487 / 588** in three hidden fresh-profile release captures,
+unchanged from three alternating captures of merged #219. All six returned HTTP
+200 with no JavaScript errors or renderer exits, at 1280×720, 125% scale,
+`en-US`, default Breeze identity and a 10-second observation window. No points
+gain is claimed; this batch adds native behavior rather than new inventory flags.
+
+| Measurement | Before (#219) | After | Unified-headless Chrome 154.0.8037.97 |
+| --- | ---: | ---: | ---: |
+| Original animation/CSSOM fixture contracts | 1/13 reached; 12 failed | 23/23 | 23/23 |
+| Curated upstream WPT assertions / cases | 5,991 / 550 | 6,086 / 554 | Not measured for this batch |
+| HTML5test page-ready, median of three | 246.0 ms | 236.1 ms | Not measured for this batch |
+| HTML5test accumulated JavaScript time, median | 402.4 ms | 566.4 ms | Not measured for this batch |
+| HTML5test combined working set, median | 177.2 MiB | 190.8 MiB | Not measured for this batch |
+| Animation fixture ready, release median of three | Not measured | 219.8 ms | 446.1 ms |
+| Animation fixture combined working set, median | Not measured | 44.1 MiB | 547.7 MiB |
+
+The old fixture stops at missing keyframe CSSOM support after thirteen checks;
+unreached checks are not counted as failures or passes. All twenty-three checks
+complete in both new browsers; the perceptual screenshot difference is 0.018.
+The new native validation/playback paths have a visible cost on HTML5test:
+recorded JavaScript work rises about 164 ms and combined working set about
+13.6 MiB. Similar first-paint timing is not evidence of faster score completion.
+These small local samples are not a universal speed or memory comparison:
+Breeze ready follows its first owned paint, whereas Chrome ready follows load;
+combined working sets include two Breeze processes versus ten Chrome processes.
+Captures ran without competing compilation, in alternating before/after order.
+
+The batch reuses existing `cssparser` and Web Animations code with no new
+dependency or copied implementation. It adds scoped/layered keyframes, real
+timeline sampling/events, native authored-value CSSOM editing, transition
+cascade/reversal fixes, and regression tests. Initial animation settings are
+shared until edited. Pseudo-elements, additive composition, compositor
+offloading and complete CSSOM serialization remain explicitly open.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -793,9 +828,9 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
 ./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ `
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
-  -SettleMs 4500 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-10-02-codecs-reproduction.json `
-  -Screenshot target/html5test/2026-10-02-codecs-reproduction.png
+  -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
+  -Output target/html5test/2026-10-02-css-animations-reproduction.json `
+  -Screenshot target/html5test/2026-10-02-css-animations-reproduction.png
 ```
 
 New releases must refresh or explicitly date these observations using the

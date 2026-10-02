@@ -9,6 +9,7 @@ use super::timer_execution::{TimerSlice, settle_timer_slice};
 use super::*;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+mod animations;
 mod canvas_presentation;
 mod capture;
 mod completions;
@@ -448,6 +449,7 @@ impl ScriptRuntime {
                 stopped_runtime_outcome(panic_detail(payload))
             }
         };
+        self.synchronize_css_animations(&mut outcome);
         self.append_memory_diagnostic(&mut outcome);
         let outcome = finish_host(outcome, &self.host);
         self.collect_child_outcomes(outcome)

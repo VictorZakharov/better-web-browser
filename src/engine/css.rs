@@ -4,7 +4,7 @@ pub(crate) mod clip_path;
 mod color_parser;
 mod content;
 mod css_wide;
-mod cssom;
+pub(crate) mod cssom;
 pub(crate) mod font_family;
 mod fullscreen;
 pub(crate) mod imports;

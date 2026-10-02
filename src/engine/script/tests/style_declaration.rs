@@ -1,4 +1,5 @@
 use super::*;
+mod native_parsing;
 
 #[test]
 fn inset_clip_path_is_exposed_without_claiming_unsupported_shapes() {

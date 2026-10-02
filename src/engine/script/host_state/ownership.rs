@@ -110,6 +110,7 @@ impl HostState {
     }
 
     pub(in crate::engine::script) fn adopt_subtree(&mut self, parent: &NodeRef, child: &NodeRef) {
+        self.inline_transitions.inserted(child);
         self.assign_subtree_owner(child, self.owner_document_identity(parent), false);
     }
 

@@ -14,6 +14,9 @@ pub(super) fn rule_indices(rules: &[Rule]) -> Vec<usize> {
 }
 
 impl StyleSet {
+    pub(crate) fn has_transition_rules(&self) -> bool {
+        !self.compiled.transition_rule_indices.is_empty()
+    }
     /// Conservative rightmost-selector filter for an element's own attribute
     /// change. Unknown functional/attribute conditions stay candidates.
     pub(crate) fn may_transition_on_attribute(

@@ -153,6 +153,7 @@ impl StyleSet {
                 matching,
                 inline_declarations: &[],
                 animation_declarations: &[],
+                transition_declarations: &[],
             },
         );
         // Generated pseudo-elements are flex/grid items just like real children. CSS Display

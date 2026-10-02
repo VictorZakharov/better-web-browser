@@ -2,6 +2,8 @@
 
 use super::*;
 
+mod animations;
+pub(super) mod inline_transitions;
 mod viewport;
 
 #[cfg(test)]
@@ -59,6 +61,7 @@ impl HostState {
         // Preserve the owning Page's sequence for layout, computed style, and offsetParent.
         // https://www.w3.org/TR/css-cascade-3/#cascade-order
         if self.stylesheet_sources.as_slice() != stylesheets {
+            self.css_animation_revision = self.css_animation_revision.wrapping_add(1);
             self.stylesheet_sources = stylesheets.to_vec();
             // Resource completion can change the cascade without a DOM mutation.
             self.computed_styles = None;
