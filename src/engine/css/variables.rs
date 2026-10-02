@@ -105,10 +105,14 @@ pub(super) fn apply_scoped_declaration(
     // refer to the scope of their winning declaration, not the animated element's scope.
     // https://drafts.csswg.org/css-scoping-1/#shadow-names
     let assigns_names = matches!(declaration.name.as_str(), "animation" | "animation-name")
-        && super::values::animations::apply(&mut style.animation.clone(), &declaration.name, value);
+        && super::values::animations::apply(
+            &mut (*style.animation).clone(),
+            &declaration.name,
+            value,
+        );
     apply_declaration(style, (&declaration.name, value), context);
     if assigns_names {
-        style.animation.name_scope = name_scope;
+        Arc::make_mut(&mut style.animation).name_scope = name_scope;
     }
 }
 

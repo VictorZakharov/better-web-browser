@@ -4,6 +4,7 @@
 
 use super::super::{Parser, ParserInput, Token, split_css_top_level};
 use super::transitions::{easing, time};
+use std::sync::{Arc, LazyLock};
 
 mod shorthand;
 #[cfg(test)]
@@ -108,6 +109,16 @@ impl Default for AnimationSettings {
             fills: vec!["none".into()],
             states: vec!["running".into()],
         }
+    }
+}
+
+impl AnimationSettings {
+    pub(crate) fn initial() -> Arc<Self> {
+        // Most elements have no animation. Share immutable initial lists instead
+        // of allocating eight vectors for every computed style and grammar probe.
+        static INITIAL: LazyLock<Arc<AnimationSettings>> =
+            LazyLock::new(|| Arc::new(AnimationSettings::default()));
+        Arc::clone(&INITIAL)
     }
 }
 

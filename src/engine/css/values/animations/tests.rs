@@ -155,3 +155,31 @@ fn css_wide_copy_changes_only_the_requested_component() {
     assert!(next.copy_property(&settings, "animation"));
     assert_eq!(next, settings);
 }
+
+#[test]
+fn static_computed_styles_share_initial_lists_and_edits_are_copy_on_write() {
+    use crate::engine::css::{ComputedStyle, DeclarationContext, properties::apply_declaration};
+    use std::sync::Arc;
+    let original = ComputedStyle::initial();
+    let mut changed = original.clone();
+    assert!(Arc::ptr_eq(&original.animation, &changed.animation));
+    let initial = ComputedStyle::initial();
+    assert!(Arc::ptr_eq(&initial.animation, &original.animation));
+    let context = || DeclarationContext {
+        parent: None,
+        lower_origin: &initial,
+        layer_start: &initial,
+        base_url: "https://example.test/",
+        viewport_width: 800.0,
+        viewport_height: 600.0,
+    };
+    apply_declaration(&mut changed, ("color", "red"), context());
+    assert!(Arc::ptr_eq(&original.animation, &changed.animation));
+    apply_declaration(&mut changed, ("animation-name", "fade"), context());
+    assert!(!Arc::ptr_eq(&original.animation, &changed.animation));
+    assert_eq!(original.animation.names, [AnimationName::None]);
+    assert_eq!(
+        changed.animation.names,
+        [AnimationName::Named("fade".into())]
+    );
+}

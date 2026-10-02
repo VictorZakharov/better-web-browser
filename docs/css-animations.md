@@ -73,6 +73,10 @@ Timers and effects execute in the renderer's existing bounded runtime. This
 batch does not replace its scheduler or promise complete browser-equivalent
 frame pacing under heavy script or layout work.
 
+Computed styles share immutable initial animation lists. Editing an animation
+property copies those lists on demand; ordinary static properties do not.
+Regression tests cover both sharing and isolation after a write.
+
 ## Verification and provenance
 
 Behavior tests assert sampled native computed styles, lifecycle, ordering,

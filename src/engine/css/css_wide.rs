@@ -86,7 +86,12 @@ fn is_supported_property(property: &str) -> bool {
 }
 
 fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &str) -> bool {
-    if style.animation.copy_property(&source.animation, property) {
+    if property == "animation" {
+        style.animation = Arc::clone(&source.animation);
+        return true;
+    }
+    if values::animations::supported_property(property) {
+        Arc::make_mut(&mut style.animation).copy_property(&source.animation, property);
         return true;
     }
     match property {

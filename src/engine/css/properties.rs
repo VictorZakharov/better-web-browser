@@ -50,7 +50,7 @@ pub(super) fn apply_declaration(
         return;
     }
     if values::animations::supported_property(name) {
-        values::animations::apply(&mut style.animation, name, value);
+        values::animations::apply(Arc::make_mut(&mut style.animation), name, value);
         return;
     }
     if values::transitions::supported_property(name) {
