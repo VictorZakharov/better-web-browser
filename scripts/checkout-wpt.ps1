@@ -20,7 +20,22 @@ if ($destinationPath.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCa
 $configuration = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $repository = [string] $configuration.upstream.repository
 $revision = [string] $configuration.upstream.revision
-$requiredPaths = @('resources/testharness.js') + @($configuration.support) + @($configuration.tests.path)
+$officialRepositories = @('https://github.com/web-platform-tests/wpt.git', 'https://github.com/KhronosGroup/WebGL.git')
+if ($repository -notin $officialRepositories -or $revision -notmatch '^[0-9a-fA-F]{40}$') {
+    throw 'External tests require an official repository and a full pinned Git revision.'
+}
+$khronos = $repository -eq $officialRepositories[1]
+if ($khronos -and $configuration.upstream.license -ne 'MIT') {
+    throw 'The Khronos conformance suite must retain its MIT license.'
+}
+$harnessPaths = if ($khronos) { @('LICENSE.txt', 'sdk/tests/js/js-test-pre.js') } else { @('resources/testharness.js') }
+$requiredPaths = @($harnessPaths) + @($configuration.support) + @($configuration.tests.path)
+foreach ($requiredPath in $requiredPaths) {
+    if ($requiredPath -notmatch '^[a-zA-Z0-9/_\-.]+$' -or
+        $requiredPath.StartsWith('/') -or $requiredPath.Split('/') -contains '..') {
+        throw "Unsafe external fixture path: $requiredPath"
+    }
+}
 $sparsePatterns = @($requiredPaths | ForEach-Object { '/' + $_ })
 
 if (Test-Path -LiteralPath $destinationPath) {

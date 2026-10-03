@@ -1,6 +1,6 @@
     const webGlBindingTypes = new Map([[0x8894,'WebGLBuffer'], [0x8895,'WebGLBuffer'],
         [0x8b8d,'WebGLProgram'], [0x8ca6,'WebGLFramebuffer'], [0x8ca7,'WebGLRenderbuffer'],
-        [0x8069,'WebGLTexture'], [0x8514,'WebGLTexture']]);
+        [0x8069,'WebGLTexture'], [0x8514,'WebGLTexture'], [0x85b5,'WebGLVertexArrayObjectOES']]);
     const webGlFloatParameters = new Set([0x8005, 0x0c22, 0x0b70, 0x846d, 0x846e]);
     const webGlIntParameters = new Set([0x0ba2, 0x0c10, 0x0d3a]);
     webGlMethod('getParameter', function(pname) {
@@ -38,15 +38,9 @@
         if (p < 0 || l < 0) return null;
         const record = webGlObjects.get(location);
         if (record.program !== program) { webGlError(this, 0x0502); return null; }
-        const count = this.getProgramParameter(program, 0x8b86);
-        let kind = null;
-        for (let index = 0; index < count; index++) {
-            const active = this.getActiveUniform(program, index);
-            if (active && active.name.replace(/\[0\]$/, '') === record.name.replace(/\[\d+\]$/, '')) { kind = active.type; break; }
-        }
-        if (kind === null) { webGlError(this, 0x0502); return null; }
-        const result = webGlCall(this, 'getUniform', [p, l, kind]);
-        if (!result) return null;
+        const native = webGlCall(this, 'getUniform', [p, l]);
+        if (!native) return null;
+        const {kind, values:result} = native;
         const bool = [0x8b56, 0x8b57, 0x8b58, 0x8b59].includes(kind);
         if (result.length === 1) return bool ? Boolean(result[0]) : result[0];
         if (bool) return result.map(Boolean);

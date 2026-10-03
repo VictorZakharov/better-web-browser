@@ -14,6 +14,7 @@ pub(super) enum Kind {
     Texture,
     Framebuffer,
     Renderbuffer,
+    VertexArray,
 }
 pub(super) struct Object {
     pub kind: Kind,
@@ -24,6 +25,8 @@ pub(super) struct Object {
     pub owner: u32,
     pub generation: u32,
     pub pending_delete: bool,
+    pub shader_log: String,
+    pub uniform_type: u32,
     references: u32,
     attached: Vec<u32>,
 }
@@ -62,6 +65,8 @@ impl Objects {
                 owner: 0,
                 generation: 0,
                 pending_delete: false,
+                shader_log: String::new(),
+                uniform_type: 0,
                 references: 0,
                 attached: Vec::new(),
             },
@@ -92,7 +97,7 @@ impl Objects {
             return Ok(());
         }
         self.get(id, kind)?;
-        if matches!(kind, Kind::Shader | Kind::Program) {
+        if matches!(kind, Kind::Shader | Kind::Program | Kind::Buffer) {
             let object = self.get_mut(id, kind)?;
             if object.pending_delete {
                 return Ok(());
@@ -101,7 +106,7 @@ impl Objects {
             unsafe {
                 if kind == Kind::Shader {
                     gl::DeleteShader(object.native);
-                } else {
+                } else if kind == Kind::Program {
                     gl::DeleteProgram(object.native);
                 }
             }
@@ -143,6 +148,22 @@ impl Objects {
         }
         Ok(())
     }
+    pub fn switch_buffer(&mut self, old: u32, new: u32) -> Result<()> {
+        if old == new {
+            return Ok(());
+        }
+        if new != 0 {
+            self.get_mut(new, Kind::Buffer)?.references += 1;
+        }
+        if old != 0 {
+            self.release(old);
+        }
+        Ok(())
+    }
+    pub fn replace_native(&mut self, id: u32, kind: Kind, native: u32) -> Result<()> {
+        self.get_mut(id, kind)?.native = native;
+        Ok(())
+    }
     fn release(&mut self, id: u32) {
         if let Some(object) = self.entries.get_mut(&id) {
             object.references = object.references.saturating_sub(1);
@@ -158,6 +179,10 @@ impl Objects {
         {
             // GLES already received Delete*. Names are held only while attached/current;
             // once the last reference disappears they must never alias a recycled driver ID.
+            if object.kind == Kind::Buffer {
+                destroy(object);
+                return;
+            }
             for shader in object.attached {
                 self.release(shader);
             }
@@ -181,6 +206,7 @@ fn destroy(object: Object) {
             Kind::Texture => gl::DeleteTextures(1, &object.native),
             Kind::Framebuffer => gl::DeleteFramebuffers(1, &object.native),
             Kind::Renderbuffer => gl::DeleteRenderbuffers(1, &object.native),
+            Kind::VertexArray => super::extensions::delete_vertex_array(object.native),
         }
     }
 }

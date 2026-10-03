@@ -62,6 +62,9 @@
         });
         Object.defineProperty(prototype, name, { ...descriptor, value: wrapped });
     };
+    // Extension draws use private context brands and are not methods of the
+    // WebGLRenderingContext prototype. They still schedule the same paint checkpoint.
+    dirtyWebGlCanvas = context => dirtyCanvas(webGlState(context).canvas);
     for (const name of ['clearRect', 'fillRect', 'strokeRect', 'putImageData',
         'fill', 'stroke', 'drawImage', 'fillText', 'strokeText', 'drawFocusIfNeeded', 'reset'])
         paintMethod(CanvasRenderingContext2D.prototype, name);

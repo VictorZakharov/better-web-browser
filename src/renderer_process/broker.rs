@@ -321,6 +321,7 @@ impl RendererSession {
             .spawn(move || {
                 worker::run(worker::BrokerResources {
                     process: launched.process,
+                    diagnostics_thread: launched.diagnostics_thread,
                     job: Some(launched.job),
                     media: launched.media,
                     writer: outbound,

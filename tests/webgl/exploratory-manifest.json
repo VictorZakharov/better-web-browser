@@ -1,0 +1,45 @@
+{
+  "schema": 2,
+  "suite": "Breeze WebGL known conformance gaps (not the curated gate)",
+  "upstream": {
+    "repository": "https://github.com/KhronosGroup/WebGL.git",
+    "revision": "714857a28445e8f5d8d6ae1c78498578009534d8",
+    "license": "MIT"
+  },
+  "policy": {"minimum_subtests": 1, "expectations": "allowed"},
+  "support": [
+    "LICENSE.txt",
+    "sdk/tests/js/js-test-pre.js",
+    "sdk/tests/js/webgl-test-utils.js",
+    "sdk/tests/js/js-test-post.js",
+    "sdk/tests/js/desktop-gl-constants.js",
+    "sdk/tests/js/tests/invalid-vertex-attrib-test.js",
+    "sdk/tests/resources/js-test-style.css"
+  ],
+  "tests": [
+    {
+      "path": "sdk/tests/conformance/extensions/angle-instanced-arrays-out-of-bounds.html",
+      "area": "WebGL instancing bounds",
+      "expected": "fail",
+      "reason": "The upstream helper loads shaders using synchronous XMLHttpRequest, which Breeze does not implement. Native bounds have separate direct tests; the helper is not replaced.",
+      "harness": "khronos",
+      "required_extension": "ANGLE_instanced_arrays"
+    },
+    {
+      "path": "sdk/tests/conformance/extensions/oes-element-index-uint.html",
+      "area": "WebGL uint indices",
+      "expected": "fail",
+      "reason": "The upstream helper requires unsupported synchronous XMLHttpRequest. Real uint index draws and malformed ranges have separate direct tests.",
+      "harness": "khronos",
+      "required_extension": "OES_element_index_uint"
+    },
+    {
+      "path": "sdk/tests/conformance/extensions/ext-shader-texture-lod.html",
+      "area": "WebGL explicit texture LOD",
+      "expected": "fail",
+      "reason": "In a debug build this synchronous multi-shader test exceeds the unchanged two-second document task watchdog. Direct native mip/projection/gradient tests pass; full upstream conformance is not claimed.",
+      "harness": "khronos",
+      "required_extension": "EXT_shader_texture_lod"
+    }
+  ]
+}

@@ -4,6 +4,7 @@
     const canvasStates = new WeakMap();
     let synchronizeWebGlCanvas = () => {};
     let resetWebGlCanvas = () => {};
+    let dirtyWebGlCanvas = () => {};
 
     const canvasDimension = (element, name, fallback) => {
         const raw = element.getAttribute(name);

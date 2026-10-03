@@ -132,3 +132,24 @@ impl NativeContext {
 fn error(action: &str) -> String {
     format!("{action}: EGL error {:#x}", unsafe { egl::GetError() })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mozangle::gles::ffi as gl;
+    #[test]
+    fn webgl_native_context_enables_compiler_restrictions() {
+        let _context = NativeContext::new().unwrap();
+        let pointer = unsafe { gl::GetString(gl::EXTENSIONS) };
+        assert!(!pointer.is_null());
+        let extensions = unsafe { std::ffi::CStr::from_ptr(pointer.cast()) }
+            .to_str()
+            .unwrap();
+        assert!(
+            extensions
+                .split_ascii_whitespace()
+                .any(|value| value == "GL_ANGLE_webgl_compatibility"),
+            "native WebGL compatibility is not enabled"
+        );
+    }
+}

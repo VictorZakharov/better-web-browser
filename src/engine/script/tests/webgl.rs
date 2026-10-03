@@ -38,7 +38,7 @@ fn webgl_clear_readback_canvas_copy_and_resize() {
             canvas.getContext('experimental-webgl') === gl, canvas.getContext('2d') === null,
             canvas.getContext('webgl2') === null, gl.drawingBufferWidth === 4,
             gl.getContextAttributes().antialias === false,
-            gl.getSupportedExtensions().length === 0, gl.getExtension('FAKE_extension') === null];
+            gl.getSupportedExtensions().includes('WEBGL_lose_context'), gl.getExtension('FAKE_extension') === null];
         let illegal = false; try { new WebGLRenderingContext(); } catch (e) { illegal = e instanceof TypeError; }
         checks.push(illegal);
         gl.clearColor(0, 1, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);

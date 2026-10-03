@@ -132,6 +132,7 @@
         host(operation, id, Math.max(0, Number(delay) || 0), repeat); return id;
     };
     globalThis.setTimeout = (callback, delay, ...args) => queueTimer(callback, delay, false, args);
+    globalThis.__webGlContextTask = callback => queueTimer(callback, 0, false, [], 'mediaCapabilitiesTaskSchedule');
     globalThis.setInterval = (callback, delay, ...args) => queueTimer(callback, delay, true, args);
     globalThis.clearTimeout = globalThis.clearInterval = id => {
         id = Number(id); if (timers.get(id)?.cancelable === false) return;

@@ -3,4 +3,7 @@
 (() => {
     'use strict';
     const host = (...args) => __hostCall(...args);
+    const queueWebGlContextTask = globalThis.__webGlContextTask;
+    delete globalThis.__webGlContextTask;
+    const markTrusted = globalThis.__markTrustedEvent;
     class HTMLElement {}

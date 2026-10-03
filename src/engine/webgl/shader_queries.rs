@@ -7,6 +7,9 @@ impl WebGl {
         let object = self
             .objects
             .get(c.u(0)?, if shader { Kind::Shader } else { Kind::Program })?;
+        if shader && !object.shader_log.is_empty() {
+            return Ok(json!(object.shader_log));
+        }
         let mut length = 0;
         unsafe {
             if shader {

@@ -3,6 +3,10 @@ use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
+#[cfg(test)]
+#[path = "manifest_webgl_tests.rs"]
+mod webgl_tests;
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct Upstream {
     pub(crate) repository: String,
@@ -49,6 +53,18 @@ pub(crate) struct TestCase {
     pub(crate) expected: ExpectedStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) reason: Option<String>,
+    #[serde(default)]
+    pub(crate) harness: HarnessKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) required_extension: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum HarnessKind {
+    #[default]
+    Testharness,
+    Khronos,
 }
 
 impl TestCase {
@@ -114,7 +130,15 @@ impl Manifest {
             ));
         }
 
-        let mut required = vec!["resources/testharness.js".to_string()];
+        let mut required =
+            if self.upstream.repository == "https://github.com/KhronosGroup/WebGL.git" {
+                vec![
+                    "LICENSE.txt".to_string(),
+                    "sdk/tests/js/js-test-pre.js".to_string(),
+                ]
+            } else {
+                vec!["resources/testharness.js".to_string()]
+            };
         required.extend(self.support.iter().cloned());
         required.extend(tests.iter().map(|test| test.path.clone()));
         required.sort();
@@ -149,8 +173,21 @@ impl Manifest {
         if self.suite.trim().is_empty() {
             return Err("manifest suite must not be empty".to_string());
         }
-        if self.upstream.repository != "https://github.com/web-platform-tests/wpt.git" {
-            return Err("manifest must identify the official WPT repository".to_string());
+        let khronos = self.upstream.repository == "https://github.com/KhronosGroup/WebGL.git";
+        if !khronos && self.upstream.repository != "https://github.com/web-platform-tests/wpt.git" {
+            return Err(
+                "manifest must identify the official WPT or Khronos WebGL repository".to_string(),
+            );
+        }
+        if khronos && self.upstream.license != "MIT" {
+            return Err("Khronos WebGL fixtures require their MIT license".into());
+        }
+        if self
+            .tests
+            .iter()
+            .any(|test| (test.harness == HarnessKind::Khronos) != khronos)
+        {
+            return Err("fixture harness must match its official upstream repository".into());
         }
         if self.upstream.revision.len() != 40
             || !self
@@ -211,6 +248,19 @@ fn validate_fixture_path(value: &str) -> Result<(), String> {
 
 fn validate_test(test: &TestCase) -> Result<(), String> {
     validate_fixture_path(&test.path)?;
+    if test.harness == HarnessKind::Khronos && !test.path.ends_with(".html") {
+        return Err("Khronos adapter requires an HTML fixture".into());
+    }
+    if let Some(extension) = &test.required_extension
+        && (test.harness != HarnessKind::Khronos
+            || extension.is_empty()
+            || extension.len() > 128
+            || !extension
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'))
+    {
+        return Err("required_extension must be a bounded Khronos extension name".into());
+    }
     if !(test.path.ends_with(".html") || test.path.ends_with(".htm") || test.path.ends_with(".js"))
     {
         return Err(format!("unsupported WPT test type: {}", test.path));
@@ -271,6 +321,8 @@ mod tests {
             area: "DOM".to_string(),
             expected,
             reason: reason.map(str::to_string),
+            harness: HarnessKind::Testharness,
+            required_extension: None,
         }
     }
 
@@ -285,6 +337,33 @@ mod tests {
         assert!(case("url/a.any.js", ExpectedStatus::Pass, None).needs_wrapper());
         assert!(case("fetch/cloned-any.js", ExpectedStatus::Pass, None).needs_wrapper());
         assert!(!case("dom/a.html", ExpectedStatus::Pass, None).needs_wrapper());
+    }
+
+    #[test]
+    fn extension_metadata_cannot_inject_html_or_change_wpt_tests() {
+        let mut test = case("sdk/tests/a.html", ExpectedStatus::Pass, None);
+        test.harness = HarnessKind::Khronos;
+        test.required_extension = Some("ANGLE_instanced_arrays".into());
+        validate_test(&test).unwrap();
+        for name in [
+            "",
+            "</script>",
+            "window.alert(1)",
+            "extension-name",
+            "has space",
+            "é",
+        ] {
+            test.required_extension = Some(name.into());
+            assert!(validate_test(&test).is_err(), "accepted {name}");
+        }
+        test.required_extension = Some("x".repeat(129));
+        assert!(validate_test(&test).is_err());
+        test.required_extension = Some("OES_vertex_array_object".into());
+        test.harness = HarnessKind::Testharness;
+        assert!(validate_test(&test).is_err());
+        test.harness = HarnessKind::Khronos;
+        test.path = "sdk/tests/a.js".into();
+        assert!(validate_test(&test).is_err());
     }
 
     #[test]

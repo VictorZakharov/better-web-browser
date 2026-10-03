@@ -62,6 +62,7 @@ pub(super) enum LifecycleCommand {
 }
 
 pub(super) struct BrokerResources {
+    pub(super) diagnostics_thread: JoinHandle<()>,
     pub(super) process: OwnedHandle,
     pub(super) job: Option<OwnedHandle>,
     pub(super) media: Option<crate::media_process::launcher::MediaWorkerOwner>,
@@ -280,6 +281,7 @@ impl Broker {
         drop(resources.process);
         let _ = resources.writer_thread.join();
         let _ = resources.reader_thread.join();
+        let _ = resources.diagnostics_thread.join();
     }
 
     fn resources(&self) -> &BrokerResources {

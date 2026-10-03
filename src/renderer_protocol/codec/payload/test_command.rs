@@ -4,6 +4,7 @@ pub(super) fn decode(payload: &[u8]) -> Result<TestCommand, ProtocolError> {
     match payload {
         [10] => Ok(TestCommand::InternalError),
         [11] => Ok(TestCommand::DocumentError),
+        [12] => Ok(TestCommand::NativeDiagnostics),
         [1] => Ok(TestCommand::Crash),
         [2] => Ok(TestCommand::Hang),
         [3] => Ok(TestCommand::WriteMalformedFrame),

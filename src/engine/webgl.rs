@@ -8,7 +8,11 @@ mod buffers;
 mod commands;
 mod context;
 mod copy_texture;
+mod extensions;
+mod float_values;
 mod framebuffers;
+mod index_ranges;
+mod instancing;
 mod object_queries;
 mod objects;
 mod parameters;
@@ -16,14 +20,21 @@ mod presentation;
 mod queries;
 mod resize;
 mod session;
+mod shader_commands;
 mod shader_queries;
+mod shader_validation;
+mod stencil_masks;
 mod surface;
 #[cfg(test)]
 mod tests;
 mod textures;
+mod uniform_queries;
+#[cfg(test)]
+mod uniform_validation_tests;
 mod uniforms;
 #[cfg(test)]
 mod validation_tests;
+mod vertex_arrays;
 pub(crate) use session::Contexts;
 
 use context::NativeContext;
@@ -151,7 +162,7 @@ struct Command {
     op: String,
     #[serde(default)]
     i: Vec<i64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "float_values::deserialize")]
     f: Vec<f64>,
     #[serde(default)]
     text: String,
@@ -175,7 +186,6 @@ impl Command {
         self.f
             .get(index)
             .copied()
-            .filter(|n| n.is_finite() && (*n as f32).is_finite())
             .map(|n| n as f32)
             .ok_or(gl::INVALID_VALUE)
     }
@@ -188,12 +198,15 @@ struct WebGl {
     objects: Objects,
     errors: VecDeque<u32>,
     options: Options,
+    stencil_masks: stencil_masks::StencilMasks,
     resource_bytes: usize,
     resource_limit: usize,
     array_buffer: u32,
     element_buffer: u32,
     program: u32,
     attributes: Vec<buffers::Attribute>,
+    extensions: extensions::Extensions,
+    vertex_arrays: vertex_arrays::VertexArrays,
     framebuffer: u32,
     renderbuffer: u32,
     texture_unit: usize,
@@ -222,6 +235,7 @@ impl WebGl {
             objects: Objects::default(),
             errors: VecDeque::new(),
             options,
+            stencil_masks: stencil_masks::StencilMasks::default(),
             resource_bytes: width as usize
                 * height as usize
                 * if options.depth || options.stencil {
@@ -234,6 +248,8 @@ impl WebGl {
             element_buffer: 0,
             program: 0,
             attributes: vec![buffers::Attribute::default(); count as usize],
+            extensions: extensions::Extensions::new(),
+            vertex_arrays: vertex_arrays::VertexArrays::default(),
             framebuffer: 0,
             renderbuffer: 0,
             texture_unit: 0,
@@ -277,6 +293,11 @@ impl WebGl {
 impl Drop for WebGl {
     fn drop(&mut self) {
         if self.native.make_current().is_ok() {
+            if self.vertex_arrays.default_native != 0 {
+                unsafe {
+                    extensions::delete_vertex_array(self.vertex_arrays.default_native);
+                }
+            }
             self.objects.delete_all();
             self.surface.destroy();
         }

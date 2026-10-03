@@ -167,6 +167,27 @@ jobs:
       - name: Run curated WPT suite headlessly
         shell: pwsh
         run: ./scripts/run-wpt.ps1 -WptRoot (Join-Path $env:RUNNER_TEMP 'wpt') -BuildProfile debug -Jobs 8
+      - name: Restore pinned Khronos WebGL fixtures
+        id: webgl-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}\webgl-conformance
+          key: windows-khronos-webgl-${{ hashFiles('tests/webgl/khronos-manifest.json') }}
+      - name: Prepare licensed Khronos WebGL fixtures
+        shell: pwsh
+        run: >-
+          ./scripts/checkout-wpt.ps1
+          -Destination (Join-Path $env:RUNNER_TEMP 'webgl-conformance')
+          -Manifest tests/webgl/khronos-manifest.json
+          -VerifyOnly:('${{ steps.webgl-cache.outputs.cache-hit }}' -eq 'true')
+      - name: Run native WebGL conformance headlessly
+        shell: pwsh
+        run: >-
+          ./scripts/run-wpt.ps1
+          -WptRoot (Join-Path $env:RUNNER_TEMP 'webgl-conformance')
+          -Manifest tests/webgl/khronos-manifest.json
+          -Output target/wpt/webgl-report.json
+          -BuildProfile debug -SkipBuild -Jobs 2
 
   harness:
     name: Chromium harness self-tests

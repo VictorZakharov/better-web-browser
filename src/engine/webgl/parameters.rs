@@ -3,6 +3,26 @@ use super::{Result, WebGl, gl, json};
 use serde_json::Value;
 impl WebGl {
     pub(super) fn parameter(&mut self, pname: u32) -> Result<Value> {
+        if let Some(mask) = self.stencil_masks.query(pname) {
+            return Ok(json!(mask));
+        }
+        if pname == 0x8b8b {
+            if !self.extensions.derivatives {
+                return Err(gl::INVALID_ENUM);
+            }
+            let mut hint = 0;
+            unsafe {
+                gl::GetIntegerv(pname, &mut hint);
+            }
+            self.driver_result()?;
+            return Ok(json!(hint));
+        }
+        if pname == 0x85b5 {
+            if self.vertex_arrays.default_native == 0 {
+                return Err(gl::INVALID_ENUM);
+            }
+            return Ok(json!(self.vertex_arrays.bound));
+        }
         // The bridge implements the mandatory RGBA/UNSIGNED_BYTE read path for every
         // admitted color surface, independent of a driver's optional packed read format.
         if pname == 0x8b9b {
@@ -79,9 +99,15 @@ impl WebGl {
             }
             self.driver_result()?;
             return Ok(if floats == 1 {
-                json!(values[0])
+                super::float_values::encode(values[0])
             } else {
-                json!(&values[..floats])
+                json!(
+                    values[..floats]
+                        .iter()
+                        .copied()
+                        .map(super::float_values::encode)
+                        .collect::<Vec<_>>()
+                )
             });
         }
         let count = match pname {
@@ -147,6 +173,15 @@ impl WebGl {
             json!(values.map(|n| n != 0))
         } else if [gl::DEPTH_WRITEMASK, gl::SAMPLE_COVERAGE_INVERT].contains(&pname) {
             json!(values[0] != 0)
+        } else if [
+            gl::STENCIL_VALUE_MASK,
+            gl::STENCIL_WRITEMASK,
+            gl::STENCIL_BACK_VALUE_MASK,
+            gl::STENCIL_BACK_WRITEMASK,
+        ]
+        .contains(&pname)
+        {
+            json!(values[0] as u32)
         } else if count == 1 {
             json!(values[0])
         } else {

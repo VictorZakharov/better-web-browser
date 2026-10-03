@@ -38,6 +38,7 @@ fn browser_messages_round_trip() {
         BrowserMessage::Shutdown,
         BrowserMessage::ProtocolFailure("bad frame".into()),
         BrowserMessage::Test(TestCommand::InternalError),
+        BrowserMessage::Test(TestCommand::NativeDiagnostics),
         BrowserMessage::Test(TestCommand::DocumentError),
         BrowserMessage::Test(TestCommand::Crash),
         BrowserMessage::Test(TestCommand::AccessViolation),

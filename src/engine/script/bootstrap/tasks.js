@@ -17,6 +17,8 @@
         return id;
     };
     const queueMediaTask = callback => queueTimer(callback, 0, false, [], 'media element task', 'mediaTaskSchedule');
+    const queueWebGlContextTask = callback =>
+        queueTimer(callback, 0, false, [], 'WebGL context lifecycle', 'mediaTaskSchedule');
     // Hand off private scheduling and host calls to the Web Audio bootstrap.
     // web_audio_base.js consumes and deletes both hooks before author scripts run.
     windowObject.__webAudioRenderTask = (callback, delay = 0) =>

@@ -28,7 +28,7 @@ fn unrecognized_query_sizes_cannot_write_native_memory() {
     for text in [
         r#"{"op":"getParameter","i":[-1]}"#,
         r#"{"op":"getParameter","i":[4294967296]}"#,
-        r#"{"op":"clearColor","f":[1e308,0,0,1]}"#,
+        r#"{"op":"clearColor","f":["infinity",0,0,1]}"#,
         r#"{"op":"readPixels","i":[0,0,2147483648,1,6408,5121,16]}"#,
         r#"{"op":"clear","i":[0],"native_pointer":1234}"#,
     ] {

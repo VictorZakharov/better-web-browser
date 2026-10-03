@@ -78,7 +78,11 @@ impl WebGl {
                     return Err(gl::INVALID_ENUM);
                 }
                 unsafe {
-                    gl::TexParameteri(target, pname, c.n(2)?);
+                    if c.op == "texParameterf" {
+                        gl::TexParameterf(target, pname, c.float(0)?);
+                    } else {
+                        gl::TexParameteri(target, pname, c.n(2)?);
+                    }
                 }
             }
             "getTexParameter" => {

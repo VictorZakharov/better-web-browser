@@ -11,7 +11,13 @@ impl WebGl {
             "isShader" => Kind::Shader,
             _ => Kind::Program,
         };
-        let Some(native) = self.objects.get(c.u(0)?, kind).ok().map(|o| o.native) else {
+        let Some(native) = self
+            .objects
+            .get(c.u(0)?, kind)
+            .ok()
+            .filter(|o| kind != Kind::Buffer || !o.pending_delete)
+            .map(|o| o.native)
+        else {
             return Ok(json!(false));
         };
         let value = unsafe {
@@ -22,7 +28,7 @@ impl WebGl {
                 Kind::Renderbuffer => gl::IsRenderbuffer(native),
                 Kind::Shader => gl::IsShader(native),
                 Kind::Program => gl::IsProgram(native),
-                Kind::Uniform => 0,
+                Kind::Uniform | Kind::VertexArray => 0,
             }
         };
         Ok(json!(value != 0))

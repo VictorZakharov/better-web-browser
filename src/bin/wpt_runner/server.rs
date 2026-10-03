@@ -1,5 +1,6 @@
 use crate::manifest::TestCase;
 mod connection;
+mod khronos;
 mod metadata;
 use connection::handle_connection;
 use std::io::ErrorKind;
@@ -179,15 +180,21 @@ fn route(root: &Path, tests: &[TestCase], request_path: &str) -> Response {
         _ => return error_response(404, "fixture not found"),
     };
     match std::fs::read(&canonical) {
-        Ok(body) => match metadata::content_type(root, &canonical) {
-            Ok(Some(content_type)) => Response {
-                status: 200,
-                content_type,
-                body,
-            },
-            Ok(None) => ok(content_type(&canonical), body),
-            Err(message) => error_response(500, &message),
-        },
+        Ok(body) => {
+            let body = match khronos::adapt(tests, request_path, body) {
+                Ok(body) => body,
+                Err(message) => return error_response(500, &message),
+            };
+            match metadata::content_type(root, &canonical) {
+                Ok(Some(content_type)) => Response {
+                    status: 200,
+                    content_type,
+                    body,
+                },
+                Ok(None) => ok(content_type(&canonical), body),
+                Err(message) => error_response(500, &message),
+            }
+        }
         Err(_) => error_response(500, "fixture could not be read"),
     }
 }
