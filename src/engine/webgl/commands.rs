@@ -5,6 +5,17 @@ use serde_json::Value;
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
+            "getUniformIndices"
+            | "getActiveUniforms"
+            | "getUniformBlockIndex"
+            | "getActiveUniformBlockParameter"
+            | "getActiveUniformBlockName"
+            | "uniformBlockBinding" => {
+                return self.uniform_block_command(c);
+            }
+            "bindBufferBase" | "bindBufferRange" | "getIndexedParameter" => {
+                return self.indexed_uniform_command(c);
+            }
             "createSampler"
             | "bindSampler"
             | "deleteSampler"

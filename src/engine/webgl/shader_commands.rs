@@ -112,7 +112,9 @@ impl WebGl {
                     ]
                     .contains(&pname)
                 };
-                if !allowed {
+                let core_blocks =
+                    !shader && self.options.api == super::ApiVersion::Two && pname == 0x8a36;
+                if !allowed && !core_blocks {
                     return Err(gl::INVALID_ENUM);
                 }
                 let object = self

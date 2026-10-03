@@ -57,6 +57,7 @@ mod framebuffer_guard_tests;
 mod framebuffer_queries;
 mod framebuffers;
 mod index_ranges;
+mod indexed_uniform_buffers;
 mod instancing;
 mod multisample;
 #[cfg(test)]
@@ -92,6 +93,12 @@ mod textures;
 #[cfg(test)]
 mod typed_framebuffer_tests;
 mod typed_framebuffers;
+mod uniform_block_queries;
+#[cfg(test)]
+mod uniform_block_tests;
+#[cfg(test)]
+mod uniform_block_validation_tests;
+mod uniform_blocks;
 mod uniform_queries;
 #[cfg(test)]
 mod uniform_validation_tests;
@@ -295,6 +302,7 @@ struct WebGl {
     texture_unit: usize,
     textures: Vec<[u32; 4]>,
     samplers: Vec<u32>,
+    indexed_uniforms: indexed_uniform_buffers::Bindings,
     default_draw_buffer: u32,
 }
 impl WebGl {

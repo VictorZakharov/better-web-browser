@@ -59,6 +59,7 @@ impl WebGl {
             texture_unit: 0,
             textures: vec![[0; 4]; units as usize],
             samplers: vec![0; units as usize],
+            indexed_uniforms: indexed_uniform_buffers::Bindings::new(options.api)?,
         };
         if let Some(core) = &context.core {
             context.extensions.admit_core(core);

@@ -84,6 +84,11 @@ WebGL1's shader rules or extension admission.
   filter/wrap/LOD/compare state. Native pixel tests verify sampler overrides do
   not mutate texture parameters and deletion restores texture sampling on every
   previously bound unit. Cross-context handles and invalid shapes are rejected.
+- Uniform blocks reflect actual std140 member offsets, matrix strides, shader
+  references and active indices. Indexed uniform base/range bindings retain
+  buffers, validate alignment and bounds, and preserve unrelated generic state
+  during deletion. Base sizes track reallocation; explicit ranges do not. Native
+  draw validation rejects missing/undersized block storage before changing pixels.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
@@ -92,7 +97,7 @@ presence is not a complete WebGL2 conformance result or a new HTML5test score.
 ## Remaining admission work
 
 GLES3 pixel-store layouts,
-uniform blocks, queries, sync and transform feedback need their own
+queries, sync and transform feedback need their own
 bounded native contracts and realm bindings. Public core entry points need
 versioned realm bindings, not WebGL1 extension objects under new names.
 

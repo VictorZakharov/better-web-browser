@@ -25,6 +25,14 @@ pub(super) type SamplerInteger = unsafe extern "system" fn(u32, u32, i32);
 pub(super) type SamplerFloat = unsafe extern "system" fn(u32, u32, f32);
 pub(super) type SamplerIntegerQuery = unsafe extern "system" fn(u32, u32, *mut i32);
 pub(super) type SamplerFloatQuery = unsafe extern "system" fn(u32, u32, *mut f32);
+pub(super) type UniformIndices = unsafe extern "system" fn(u32, i32, *const *const i8, *mut u32);
+pub(super) type ActiveUniforms = unsafe extern "system" fn(u32, i32, *const u32, u32, *mut i32);
+pub(super) type UniformBlockIndex = unsafe extern "system" fn(u32, *const i8) -> u32;
+pub(super) type UniformBlockQuery = unsafe extern "system" fn(u32, u32, u32, *mut i32);
+pub(super) type UniformBlockName = unsafe extern "system" fn(u32, u32, i32, *mut i32, *mut i8);
+pub(super) type UniformBlockBinding = unsafe extern "system" fn(u32, u32, u32);
+pub(super) type IndexedBufferBase = unsafe extern "system" fn(u32, u32, u32);
+pub(super) type IndexedBufferRange = unsafe extern "system" fn(u32, u32, u32, isize, isize);
 pub(super) type RenderbufferMultisample = unsafe extern "system" fn(u32, i32, u32, i32, i32);
 pub(super) type InternalformatQuery = unsafe extern "system" fn(u32, u32, u32, i32, *mut i32);
 pub(super) type Blit = unsafe extern "system" fn(i32, i32, i32, i32, i32, i32, i32, i32, u32, u32);
@@ -37,6 +45,14 @@ pub(super) type TextureSubImage3D =
     unsafe extern "system" fn(u32, i32, i32, i32, i32, i32, i32, i32, u32, u32, *const c_void);
 
 pub(super) struct CoreEntries {
+    pub uniform_indices: UniformIndices,
+    pub active_uniforms: ActiveUniforms,
+    pub uniform_block_index: UniformBlockIndex,
+    pub uniform_block_query: UniformBlockQuery,
+    pub uniform_block_name: UniformBlockName,
+    pub uniform_block_binding: UniformBlockBinding,
+    pub indexed_buffer_base: IndexedBufferBase,
+    pub indexed_buffer_range: IndexedBufferRange,
     pub gen_samplers: super::extensions::GenArrays,
     pub bind_sampler: BindSampler,
     pub sampler_integer: SamplerInteger,
@@ -119,6 +135,14 @@ impl CoreEntries {
             return Err("ANGLE MAX_ELEMENT_INDEX does not meet the admitted WebGL2 minimum".into());
         }
         Ok(Self {
+            uniform_indices: entry!(c"glGetUniformIndices", UniformIndices),
+            active_uniforms: entry!(c"glGetActiveUniformsiv", ActiveUniforms),
+            uniform_block_index: entry!(c"glGetUniformBlockIndex", UniformBlockIndex),
+            uniform_block_query: entry!(c"glGetActiveUniformBlockiv", UniformBlockQuery),
+            uniform_block_name: entry!(c"glGetActiveUniformBlockName", UniformBlockName),
+            uniform_block_binding: entry!(c"glUniformBlockBinding", UniformBlockBinding),
+            indexed_buffer_base: entry!(c"glBindBufferBase", IndexedBufferBase),
+            indexed_buffer_range: entry!(c"glBindBufferRange", IndexedBufferRange),
             gen_samplers: entry!(c"glGenSamplers", super::extensions::GenArrays),
             bind_sampler: entry!(c"glBindSampler", BindSampler),
             sampler_integer: entry!(c"glSamplerParameteri", SamplerInteger),
