@@ -58,6 +58,11 @@ impl WebGl {
             self.surface = surface;
             self.resource_bytes = self.resource_bytes - previous_bytes + next_bytes;
             self.clear_default_surface();
+            if self.options.api == super::ApiVersion::Two && self.default_read_buffer == gl::NONE {
+                unsafe {
+                    (self.core.as_ref().ok_or(gl::INVALID_OPERATION)?.read_buffer)(gl::NONE);
+                }
+            }
         }
         let binding = if self.framebuffer == 0 {
             self.surface.framebuffer

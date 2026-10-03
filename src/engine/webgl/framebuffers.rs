@@ -4,6 +4,22 @@ use serde_json::Value;
 const DEPTH_STENCIL: u32 = 0x84f9;
 impl WebGl {
     pub(super) fn framebuffer_command(&mut self, c: &Command) -> Result<Value> {
+        if self.options.api == super::ApiVersion::Two {
+            match c.op.as_str() {
+                "bindFramebuffer" => return self.core_bind_framebuffer(c),
+                "deleteFramebuffer" => return self.core_delete_framebuffer(c),
+                "renderbufferStorage" => return self.core_renderbuffer_storage(c),
+                "getFramebufferAttachmentParameter" => return self.core_attachment_parameter(c),
+                "framebufferTexture2D" | "framebufferRenderbuffer" => {
+                    self.core_attach_framebuffer(c)?;
+                    return Ok(Value::Null);
+                }
+                "checkFramebufferStatus" => {
+                    return Ok(json!(self.core_framebuffer_status(c.u(0)?)?));
+                }
+                _ => {}
+            }
+        }
         match c.op.as_str() {
             "createFramebuffer" | "createRenderbuffer" => {
                 let framebuffer = c.op == "createFramebuffer";
@@ -139,7 +155,7 @@ impl WebGl {
                 }
                 self.objects.get(self.renderbuffer, Kind::Renderbuffer)?;
                 let pname = c.u(1)?;
-                if ![
+                if !([
                     gl::RENDERBUFFER_WIDTH,
                     gl::RENDERBUFFER_HEIGHT,
                     gl::RENDERBUFFER_INTERNAL_FORMAT,
@@ -151,6 +167,7 @@ impl WebGl {
                     gl::RENDERBUFFER_STENCIL_SIZE,
                 ]
                 .contains(&pname)
+                    || self.options.api == super::ApiVersion::Two && pname == 0x8cab)
                 {
                     return Err(gl::INVALID_ENUM);
                 }
@@ -159,13 +176,14 @@ impl WebGl {
                     gl::GetRenderbufferParameteriv(gl::RENDERBUFFER, pname, &mut value);
                 }
                 self.driver_result()?;
-                return Ok(json!(
-                    if pname == gl::RENDERBUFFER_INTERNAL_FORMAT && value == 0x88F0 {
-                        DEPTH_STENCIL as i32
-                    } else {
-                        value
-                    }
-                ));
+                return Ok(json!(if self.options.api == super::ApiVersion::One
+                    && pname == gl::RENDERBUFFER_INTERNAL_FORMAT
+                    && value == 0x88F0
+                {
+                    DEPTH_STENCIL as i32
+                } else {
+                    value
+                }));
             }
             "getFramebufferAttachmentParameter" => {
                 return self.attachment_parameter(c);

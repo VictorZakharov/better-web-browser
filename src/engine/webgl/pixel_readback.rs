@@ -5,6 +5,10 @@ use super::{Command, MAX_UPLOAD_BYTES, Result, WebGl, gl};
 
 impl WebGl {
     pub(super) fn color_read_type(&mut self) -> Result<u32> {
+        if self.options.api == super::ApiVersion::Two {
+            self.validate_read_framebuffer()?;
+            return Ok(gl::UNSIGNED_BYTE);
+        }
         self.validate_framebuffer()?;
         let color_float = self.extensions.textures.enabled(Capability::ColorFloat)
             || self.extensions.textures.enabled(Capability::ColorHalfFloat);
@@ -102,7 +106,12 @@ impl WebGl {
             );
         }
         self.driver_result()?;
-        if self.framebuffer == 0 && !self.options.alpha {
+        let default_read = if self.options.api == super::ApiVersion::Two {
+            self.read_framebuffer == 0
+        } else {
+            self.framebuffer == 0
+        };
+        if default_read && !self.options.alpha {
             let stride = (width as usize * 4).div_ceil(alignment as usize) * alignment as usize;
             let x = c.n(0)?;
             let y = c.n(1)?;

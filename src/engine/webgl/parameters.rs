@@ -15,6 +15,9 @@ impl WebGl {
     }
 
     pub(super) fn parameter(&mut self, pname: u32) -> Result<Value> {
+        if let Some(value) = self.core_framebuffer_parameter(pname)? {
+            return Ok(value);
+        }
         if [0x806a, 0x8c1d].contains(&pname) {
             if self.options.api != super::ApiVersion::Two {
                 return Err(gl::INVALID_ENUM);

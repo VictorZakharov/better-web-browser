@@ -120,6 +120,18 @@ impl WebGl {
         }
         self.driver_result()?;
         if !sub {
+            if bytes.is_none() {
+                self.initialize_volume(
+                    target,
+                    level,
+                    Image {
+                        internal,
+                        width: width as u32,
+                        height: height as u32,
+                        depth: depth as u32,
+                    },
+                )?;
+            }
             let object = self.objects.get_mut(id, Kind::Texture)?;
             object.capacity = object.capacity.max(allocation);
             object.core_images.insert(
@@ -192,6 +204,9 @@ impl WebGl {
             function(target, levels, internal, width, height, depth);
         }
         self.driver_result()?;
+        for ((_, level), image) in &images {
+            self.initialize_volume(target, *level, *image)?;
+        }
         let object = self.objects.get_mut(id, Kind::Texture)?;
         object.capacity = total;
         object.immutable_levels = levels as u32;

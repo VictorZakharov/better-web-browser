@@ -4,6 +4,9 @@ use super::{Kind, Result, WebGl, gl};
 
 impl WebGl {
     pub(super) fn framebuffer_status(&self) -> Result<u32> {
+        if self.options.api == super::ApiVersion::Two {
+            return self.core_framebuffer_status(super::framebuffer_guard::DRAW);
+        }
         if self.framebuffer != 0 {
             let entries = &self
                 .objects

@@ -13,6 +13,10 @@ mod construction;
 mod context;
 mod copy_texture;
 mod copy_texture_conversion;
+mod core_attachment_queries;
+#[cfg(test)]
+mod core_attachment_tests;
+mod core_attachments;
 #[cfg(test)]
 mod core_buffer_tests;
 mod core_buffers;
@@ -22,8 +26,12 @@ mod core_draws;
 mod core_entries;
 mod core_extensions;
 #[cfg(test)]
+mod core_framebuffer_tests;
+mod core_framebuffers;
+#[cfg(test)]
 mod core_parameter_tests;
 mod core_parameters;
+mod core_renderbuffers;
 #[cfg(test)]
 mod core_texture_format_tests;
 mod core_texture_formats;
@@ -86,6 +94,7 @@ mod vertex_attribute_queries;
 #[cfg(test)]
 mod vertex_attribute_tests;
 mod vertex_attributes;
+mod volume_initialization;
 #[cfg(test)]
 mod volume_mip_tests;
 #[cfg(test)]
@@ -271,6 +280,8 @@ struct WebGl {
     extensions: extensions::Extensions,
     vertex_arrays: vertex_arrays::VertexArrays,
     framebuffer: u32,
+    read_framebuffer: u32,
+    default_read_buffer: u32,
     renderbuffer: u32,
     texture_unit: usize,
     textures: Vec<[u32; 4]>,

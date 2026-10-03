@@ -6,12 +6,14 @@ use std::collections::HashMap;
 
 pub(super) const DEPTH_STENCIL_ATTACHMENT: u32 = 0x821a;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub(super) struct Attachment {
     pub id: u32,
     pub native: u32,
     pub kind: Kind,
     pub target: u32,
+    pub level: i32,
+    pub layer: Option<i32>,
 }
 
 impl WebGl {
@@ -66,6 +68,8 @@ impl WebGl {
                 native: object.native,
                 kind,
                 target,
+                level: 0,
+                layer: None,
             })
         };
         let previous = self
@@ -98,6 +102,9 @@ impl WebGl {
     }
 
     pub(super) fn detach_current_resource(&mut self, id: u32, kind: Kind) -> Result<()> {
+        if self.options.api == super::ApiVersion::Two {
+            return self.core_detach_resource(id, kind);
+        }
         if self.framebuffer == 0 || id == 0 {
             return Ok(());
         }

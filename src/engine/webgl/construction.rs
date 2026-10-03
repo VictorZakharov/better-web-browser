@@ -53,6 +53,8 @@ impl WebGl {
             extensions: extensions::Extensions::new(),
             vertex_arrays: vertex_arrays::VertexArrays::default(),
             framebuffer: 0,
+            read_framebuffer: 0,
+            default_read_buffer: gl::BACK,
             renderbuffer: 0,
             texture_unit: 0,
             textures: vec![[0; 4]; units as usize],

@@ -62,7 +62,14 @@ WebGL1's shader rules or extension admission.
 - Private capture and compositor clears preserve independent native read/draw
   framebuffer bindings. Capture restores the private read route even when it was
   `NONE`; resize remaps the retired private read surface without changing an
-  author read framebuffer. Public read/draw operations remain a subsequent slice.
+  author read framebuffer.
+- Core read/draw framebuffer bindings, per-framebuffer read routes and deletion
+  detach resources from both bound objects. Layered attachments report real mip
+  and layer identity; depth/stencil alias writes replace both logical slots.
+- Every uninitialized array/volume slice is explicitly zeroed using bounded
+  reusable upload tiles. A native test caught the pinned ANGLE backend treating
+  a clear of one attached layer as initialization of the whole image; the browser
+  must not expose the remaining layers' native allocation bytes.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
@@ -70,7 +77,7 @@ presence is not a complete WebGL2 conformance result or a new HTML5test score.
 
 ## Remaining admission work
 
-GLES3 pixel-store layouts, separate read/draw framebuffer state, multisample storage and resolves,
+GLES3 pixel-store layouts, multisample storage and resolves,
 samplers, uniform blocks, queries, sync and transform feedback need their own
 bounded native contracts and realm bindings. Public core entry points need
 versioned realm bindings, not WebGL1 extension objects under new names.

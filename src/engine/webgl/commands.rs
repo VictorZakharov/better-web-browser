@@ -5,6 +5,11 @@ use serde_json::Value;
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
+            "framebufferTextureLayer" => {
+                self.core_attach_framebuffer(c)?;
+                return Ok(Value::Null);
+            }
+            "readBuffer" => return self.core_read_buffer(c),
             "texStorage3D" | "texImage3D" | "texSubImage3D" => {
                 return self.volume_texture_command(c, bytes);
             }
