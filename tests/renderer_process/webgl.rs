@@ -91,3 +91,171 @@ fn native_webgl_restore_instancing_and_canvas_pixels_cross_the_containment_bound
     assert_eq!(session.snapshot().state, RendererState::Running);
     session.shutdown().expect("clean WebGL renderer shutdown");
 }
+
+#[test]
+fn native_webgl_hdr_copies_and_depth_interpolation_survive_appcontainer_transport() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut session = RendererSession::launch(options()).expect("launch hidden texture renderer");
+    let page = load_html_document(
+        &session,
+        803,
+        include_str!("../webgl/texture-depth-hdr.html"),
+    );
+    assert!(page.runtime.errors.is_empty(), "{:?}", page.runtime.errors);
+    assert_eq!(
+        page.title, "ready:71",
+        "all native pixel assertions must run"
+    );
+    let url = page
+        .layout
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::Image { url, .. } if url.starts_with("breeze-internal:canvas:") => {
+                Some(url)
+            }
+            _ => None,
+        })
+        .expect("native depth image participates in contained presentation");
+    let image = page
+        .images
+        .iter()
+        .find(|image| &image.url == url)
+        .expect("owned native pixels cross the renderer protocol");
+    let interpolated = image
+        .image
+        .bgra
+        .chunks_exact(4)
+        .filter(|pixel| {
+            pixel[..3].iter().all(|value| (127..=129).contains(value)) && pixel[3] == 255
+        })
+        .count();
+    assert!(
+        interpolated >= 16,
+        "interpolated depth pixels missing: {interpolated}"
+    );
+    session
+        .ping(Duration::from_secs(3))
+        .expect("renderer remains responsive after native readbacks");
+    assert_eq!(session.snapshot().state, RendererState::Running);
+    session
+        .shutdown()
+        .expect("clean contained texture shutdown");
+}
+
+#[test]
+fn native_webgl_multiple_outputs_survive_appcontainer_transport() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut session = RendererSession::launch(options()).expect("launch hidden MRT renderer");
+    let page = load_html_document(
+        &session,
+        804,
+        include_str!("../webgl/multiple-render-targets.html"),
+    );
+    assert!(page.runtime.errors.is_empty(), "{:?}", page.runtime.errors);
+    assert_eq!(
+        page.title, "ready:28",
+        "all four native outputs must be read"
+    );
+    let image = page
+        .images
+        .iter()
+        .find(|image| image.url.starts_with("breeze-internal:canvas:"))
+        .expect("owned default framebuffer pixels cross the containment boundary");
+    assert_eq!(image.image.bgra.len(), 8 * 4 * 4);
+    assert!(
+        image
+            .image
+            .bgra
+            .chunks_exact(4)
+            .all(|pixel| pixel == [0, 255, 0, 255])
+    );
+    session
+        .ping(Duration::from_secs(3))
+        .expect("MRT renderer remains responsive");
+    assert_eq!(session.snapshot().state, RendererState::Running);
+    session.shutdown().expect("clean contained MRT shutdown");
+}
+
+#[test]
+fn native_webgl_compressed_decoding_survives_appcontainer_transport() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut session =
+        RendererSession::launch(options()).expect("launch hidden compressed renderer");
+    let page = load_html_document(
+        &session,
+        805,
+        include_str!("../webgl/compressed-textures.html"),
+    );
+    assert!(page.runtime.errors.is_empty(), "{:?}", page.runtime.errors);
+    assert!(page.title.starts_with("ready:"), "{}", page.title);
+    let assertions: usize = page.title.trim_start_matches("ready:").parse().unwrap();
+    assert!(
+        assertions >= 100,
+        "all format and error assertions must execute"
+    );
+    let image = page
+        .images
+        .iter()
+        .find(|image| image.url.starts_with("breeze-internal:canvas:"))
+        .expect("owned decoded pixels");
+    assert_eq!(image.image.bgra.len(), 4 * 4 * 4);
+    assert!(
+        image
+            .image
+            .bgra
+            .chunks_exact(4)
+            .all(|pixel| (55..=61).contains(&pixel[0])
+                && (54..=60).contains(&pixel[1])
+                && pixel[3] == 255)
+    );
+    session
+        .ping(Duration::from_secs(3))
+        .expect("compressed renderer remains responsive");
+    assert_eq!(session.snapshot().state, RendererState::Running);
+    session
+        .shutdown()
+        .expect("clean contained compressed shutdown");
+}
+
+#[test]
+fn native_webgl_repeated_storage_keeps_renderer_alive_and_pixels_intact() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut session =
+        RendererSession::launch(options()).expect("launch hidden texture repetition renderer");
+    let presentation = load_html_document(
+        &session,
+        806,
+        include_str!("../webgl/texture-lifetime.html"),
+    );
+    assert!(
+        presentation.title.starts_with("ready:"),
+        "{}",
+        presentation.title
+    );
+    assert!(
+        presentation.runtime.errors.is_empty(),
+        "{:?}",
+        presentation.runtime.errors
+    );
+    let image = presentation
+        .images
+        .iter()
+        .find(|image| image.url.starts_with("breeze-internal:canvas:"))
+        .expect("sampled texture crosses renderer containment");
+    assert_eq!(image.image.bgra.len(), 4 * 4 * 4);
+    assert!(
+        image
+            .image
+            .bgra
+            .chunks_exact(4)
+            .all(|pixel| pixel == [0, 255, 0, 255])
+    );
+    session
+        .ping(Duration::from_secs(3))
+        .expect("renderer responsive after texture repetitions");
+    assert_eq!(session.snapshot().state, RendererState::Running);
+    session
+        .shutdown()
+        .expect("clean storage repetition shutdown");
+}

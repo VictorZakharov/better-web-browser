@@ -62,10 +62,12 @@
     webGlMethod('readPixels', function(x, y, width, height, format, type, pixels) {
         webGlState(this);
         if (pixels === null) { webGlError(this, 0x0501); return; }
-        if (!(pixels instanceof Uint8Array) && !(pixels instanceof Uint8ClampedArray)) {
+        const kind=webGlUnsigned(type);
+        if (kind===0x1406 ? !(pixels instanceof Float32Array) :
+            !(pixels instanceof Uint8Array) && !(pixels instanceof Uint8ClampedArray)) {
             webGlError(this, 0x0502); return;
         }
         const bytes = webGlCall(this, 'readPixels', [webGlInteger(x), webGlInteger(y),
             webGlInteger(width), webGlInteger(height), webGlUnsigned(format), webGlUnsigned(type), pixels.byteLength], [], '', webGlBytes(pixels));
-        if (bytes) pixels.set(bytes);
+        if (bytes) new Uint8Array(pixels.buffer,pixels.byteOffset,pixels.byteLength).set(bytes);
     });

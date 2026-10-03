@@ -1,5 +1,7 @@
 //! One native owner thread. Realm callers never move ANGLE contexts across threads.
-use super::{BackendContexts, MAX_CONTEXTS, MAX_SHADER_BYTES, MAX_UPLOAD_BYTES, gl, json};
+use super::{
+    BackendContexts, MAX_CONTEXTS, MAX_SHADER_BYTES, MAX_UPLOAD_BYTES, PixelReply, gl, json,
+};
 use serde_json::Value;
 use std::{
     collections::{HashMap, HashSet},
@@ -14,12 +16,18 @@ type Bitmap = (u32, u32, Vec<u8>);
 enum Operation {
     Create(u32, u32, String, Weak<()>),
     Command(u32, String, Option<Vec<u8>>),
+    Pixels(u32, String, Option<Vec<u8>>),
     Snapshot(u32),
+    #[cfg(test)]
+    NativeTest(fn()),
 }
 enum Reply {
     Created(Option<u32>),
     Command(Value),
+    Pixels(PixelReply),
     Snapshot(Option<Bitmap>),
+    #[cfg(test)]
+    NativeTest(Option<String>),
 }
 struct Request {
     operation: Operation,
@@ -81,6 +89,28 @@ impl Contexts {
         match request(Operation::Command(id, command, bytes)) {
             Some(Reply::Command(value)) => value,
             _ => json!({"lost":true}),
+        }
+    }
+    pub(crate) fn read_pixels(
+        &mut self,
+        id: u32,
+        command: &str,
+        bytes: Option<&[u8]>,
+    ) -> PixelReply {
+        if !self.live.contains(&id) {
+            return PixelReply::Lost;
+        }
+        if command.len() > 1024 || bytes.is_some_and(|b| b.len() > MAX_UPLOAD_BYTES) {
+            self.execute(id, r#"{"op":"bridgeError","i":[1285]}"#, None);
+            return PixelReply::Error;
+        }
+        match request(Operation::Pixels(
+            id,
+            command.into(),
+            bytes.map(<[u8]>::to_vec),
+        )) {
+            Some(Reply::Pixels(value)) => value,
+            _ => PixelReply::Lost,
         }
     }
     pub(crate) fn snapshot(&mut self, id: u32) -> Option<Bitmap> {
@@ -178,6 +208,21 @@ fn run(incoming: mpsc::Receiver<Request>) {
                 Some(id),
             ),
             Operation::Snapshot(id) => (Reply::Snapshot(backend.snapshot(id)), Some(id)),
+            Operation::Pixels(id, command, bytes) => (
+                Reply::Pixels(backend.read_pixels(id, &command, bytes.as_deref())),
+                Some(id),
+            ),
+            #[cfg(test)]
+            Operation::NativeTest(probe) => {
+                let error = std::panic::catch_unwind(probe).err().map(|payload| {
+                    payload
+                        .downcast_ref::<String>()
+                        .cloned()
+                        .or_else(|| payload.downcast_ref::<&str>().map(|text| (*text).into()))
+                        .unwrap_or_else(|| "native test panicked".into())
+                });
+                (Reply::NativeTest(error), None)
+            }
         };
         // A timed-out creation/command cannot leave an unowned native context alive.
         if reply.send(response).is_err()
@@ -195,4 +240,17 @@ fn retire(ids: impl Iterator<Item = u32>) {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .extend(ids);
+}
+
+#[cfg(test)]
+pub(super) fn run_native_test(probe: fn()) {
+    // Direct capability probes must obey the production single-owner contract.
+    // Parallel Rust test threads must not drive the shared ANGLE display while
+    // other contexts are executing on the owner. Preserve failures on the caller
+    // rather than unwinding and permanently killing the shared owner thread.
+    match request(Operation::NativeTest(probe)) {
+        Some(Reply::NativeTest(None)) => {}
+        Some(Reply::NativeTest(Some(error))) => panic!("{error}"),
+        _ => panic!("native test owner did not reply"),
+    }
 }

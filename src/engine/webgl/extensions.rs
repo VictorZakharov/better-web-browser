@@ -1,9 +1,9 @@
 //! Whitelisted extension entry points from the existing ANGLE backend.
 //! Signatures follow ANGLE's pinned GLES2/gl2ext.h and gl2ext_angle.h. No author
 //! supplied name, native pointer or extension outside our implemented set is loaded.
-use super::{Command, Result, WebGl, gl, json};
+use super::gl;
+use super::texture_capabilities::TextureCapabilities;
 use mozangle::egl::ffi as egl;
-use serde_json::Value;
 use std::ffi::{CStr, c_void};
 
 pub(super) type DrawArrays = unsafe extern "system" fn(u32, i32, i32, i32);
@@ -14,27 +14,37 @@ pub(super) type GenArrays = unsafe extern "system" fn(i32, *mut u32);
 pub(super) type DeleteArrays = unsafe extern "system" fn(i32, *const u32);
 pub(super) type BindArray = unsafe extern "system" fn(u32);
 pub(super) type IsArray = unsafe extern "system" fn(u32) -> u8;
+pub(super) type DrawBuffers = unsafe extern "system" fn(i32, *const u32);
 
 pub(super) struct Extensions {
+    pub available_core_color_float: bool,
+    pub core_color_float: bool,
+    pub textures: TextureCapabilities,
+    pub compressed: super::compressed_capabilities::Capabilities,
     pub arrays: Option<DrawArrays>,
     pub elements: Option<DrawElements>,
     pub divisor: Option<Divisor>,
     request: Option<RequestExtension>,
-    available_instancing: bool,
+    pub available_instancing: bool,
     pub instancing: bool,
     pub gen_arrays: Option<GenArrays>,
     pub bind_array: Option<BindArray>,
     pub is_array: Option<IsArray>,
-    available_vertex_arrays: bool,
+    pub available_vertex_arrays: bool,
     pub vertex_arrays: bool,
-    available_uint_indices: bool,
-    available_derivatives: bool,
+    pub available_uint_indices: bool,
+    pub available_derivatives: bool,
     pub uint_indices: bool,
     pub derivatives: bool,
-    available_frag_depth: bool,
-    available_texture_lod: bool,
+    pub available_frag_depth: bool,
+    pub available_texture_lod: bool,
     pub frag_depth: bool,
     pub texture_lod: bool,
+    pub available_draw_buffers: bool,
+    pub draw_buffers: bool,
+    pub draw_buffers_entry: Option<DrawBuffers>,
+    pub max_draw_buffers: u32,
+    pub max_color_attachments: u32,
 }
 
 macro_rules! entry {
@@ -98,7 +108,35 @@ impl Extensions {
             .iter()
             .chain(&requestable)
             .any(|name| name == "GL_EXT_shader_texture_lod");
+        let draw_buffers_entry = entry!(c"glDrawBuffersEXT", DrawBuffers);
+        let advertised_draw_buffers = enabled
+            .iter()
+            .chain(&requestable)
+            .any(|name| name == "GL_EXT_draw_buffers");
+        let mut max_draw_buffers = 0;
+        let mut max_color_attachments = 0;
+        // Private draw-buffers admission supplies scalar capability queries;
+        // public queries still require explicit author extension admission.
+        unsafe {
+            gl::GetIntegerv(0x8824, &mut max_draw_buffers);
+            gl::GetIntegerv(0x8cdf, &mut max_color_attachments);
+        }
+        let available_draw_buffers = advertised_draw_buffers
+            && draw_buffers_entry.is_some()
+            && max_draw_buffers >= 4
+            && max_color_attachments >= max_draw_buffers;
         Self {
+            available_core_color_float: enabled
+                .iter()
+                .chain(&requestable)
+                .any(|name| name == "GL_EXT_color_buffer_float"),
+            core_color_float: false,
+            textures: TextureCapabilities::discover(
+                enabled.iter().chain(&requestable).map(String::as_str),
+            ),
+            compressed: super::compressed_capabilities::Capabilities::discover(
+                enabled.iter().chain(&requestable).map(String::as_str),
+            ),
             available_instancing: advertised
                 && arrays.is_some()
                 && elements.is_some()
@@ -125,9 +163,17 @@ impl Extensions {
             available_texture_lod,
             frag_depth: false,
             texture_lod: false,
+            available_draw_buffers,
+            draw_buffers: false,
+            draw_buffers_entry,
+            max_draw_buffers: max_draw_buffers.clamp(0, 16) as u32,
+            max_color_attachments: max_color_attachments.clamp(0, 16) as u32,
         }
     }
     pub(super) fn enable_vertex_arrays(&mut self) -> bool {
+        if self.vertex_arrays {
+            return true;
+        }
         if !self.available_vertex_arrays {
             return false;
         }
@@ -143,7 +189,10 @@ impl Extensions {
         }
         self.vertex_arrays
     }
-    fn enable_instancing(&mut self) -> bool {
+    pub(super) fn enable_instancing(&mut self) -> bool {
+        if self.instancing {
+            return true;
+        }
         if !self.available_instancing {
             return false;
         }
@@ -159,9 +208,17 @@ impl Extensions {
         }
         self.instancing
     }
-    fn enable_simple(&mut self, name: &CStr, available: bool) -> bool {
+    pub(super) fn enable_simple(&mut self, name: &CStr, available: bool) -> bool {
         if !available {
             return false;
+        }
+        // Some baseline extensions (notably ANGLE_depth_texture) are already
+        // enabled and not requestable. Re-requesting them generates an error.
+        if extension_string(gl::EXTENSIONS)
+            .iter()
+            .any(|value| value.as_bytes() == name.to_bytes())
+        {
+            return true;
         }
         if let Some(request) = self.request {
             unsafe {
@@ -190,77 +247,96 @@ fn extension_string(pname: u32) -> Vec<String> {
         .map(str::to_owned)
         .collect()
 }
-pub(super) unsafe fn delete_vertex_array(name: u32) {
-    if let Some(delete) = entry!(c"glDeleteVertexArraysOES", DeleteArrays) {
+
+pub(super) fn initialize_storage() -> std::result::Result<(), String> {
+    // These private native format dependencies do not expose any author API.
+    // Request fixed private format dependencies before surface allocation.
+    // Native availability never grants the corresponding author extension.
+    let enabled = extension_string(gl::EXTENSIONS);
+    let request = entry!(c"glRequestExtensionANGLE", RequestExtension)
+        .ok_or_else(|| "ANGLE extension request entry point unavailable".to_owned())?;
+    let available = extension_string(0x93a8);
+    for name in [
+        c"GL_OES_rgb8_rgba8",
+        c"GL_EXT_texture_storage",
+        c"GL_OES_depth24",
+        c"GL_EXT_draw_buffers",
+    ] {
+        if enabled
+            .iter()
+            .any(|value| value.as_bytes() == name.to_bytes())
+        {
+            continue;
+        }
+        if !available
+            .iter()
+            .any(|value| value.as_bytes() == name.to_bytes())
+        {
+            return Err(format!(
+                "ANGLE native storage capability unavailable: {}",
+                name.to_string_lossy()
+            ));
+        }
+        unsafe {
+            request(name.as_ptr());
+        }
+        if unsafe { gl::GetError() } != gl::NO_ERROR
+            || !extension_string(gl::EXTENSIONS)
+                .iter()
+                .any(|value| value.as_bytes() == name.to_bytes())
+        {
+            return Err(format!(
+                "ANGLE native storage capability request failed: {}",
+                name.to_string_lossy()
+            ));
+        }
+    }
+    Ok(())
+}
+pub(super) unsafe fn delete_vertex_array(name: u32, api: super::ApiVersion) {
+    let entry = match api {
+        super::ApiVersion::One => entry!(c"glDeleteVertexArraysOES", DeleteArrays),
+        super::ApiVersion::Two => entry!(c"glDeleteVertexArrays", DeleteArrays),
+    };
+    if let Some(delete) = entry {
         unsafe {
             delete(1, &name);
         }
     }
 }
+pub(super) unsafe fn delete_sampler(name: u32) {
+    if let Some(delete) = entry!(c"glDeleteSamplers", DeleteArrays) {
+        unsafe { delete(1, &name) };
+    }
+}
 
-impl WebGl {
-    pub(super) fn extension_command(&mut self, c: &Command) -> Result<Value> {
-        match c.op.as_str() {
-            "supportedExtensions" => {
-                let mut names = Vec::new();
-                if self.extensions.available_instancing {
-                    names.push("ANGLE_instanced_arrays");
-                }
-                if self.extensions.available_vertex_arrays {
-                    names.push("OES_vertex_array_object");
-                }
-                if self.extensions.available_uint_indices {
-                    names.push("OES_element_index_uint");
-                }
-                if self.extensions.available_derivatives {
-                    names.push("OES_standard_derivatives");
-                }
-                if self.extensions.available_frag_depth {
-                    names.push("EXT_frag_depth");
-                }
-                if self.extensions.available_texture_lod {
-                    names.push("EXT_shader_texture_lod");
-                }
-                Ok(json!(names))
+#[cfg(test)]
+mod texture_tests {
+    use super::super::texture_capabilities::TextureCapability;
+    use super::*;
+
+    #[test]
+    fn pinned_warp_supports_the_texture_render_target_foundations() {
+        super::super::session::run_native_test(|| {
+            let _context = super::super::context::NativeContext::new().unwrap();
+            let mut extensions = Extensions::new();
+            let mut names = extension_string(gl::EXTENSIONS);
+            names.extend(extension_string(0x93a8));
+            for capability in TextureCapability::ALL {
+                assert!(!extensions.textures.enabled(capability));
             }
-            "enableExtension" => {
-                let enabled = match c.text.as_str() {
-                    "ANGLE_instanced_arrays" => self.extensions.enable_instancing(),
-                    "OES_vertex_array_object" => self.enable_vertex_arrays()?,
-                    "OES_element_index_uint" => {
-                        self.extensions.uint_indices = self.extensions.enable_simple(
-                            c"GL_OES_element_index_uint",
-                            self.extensions.available_uint_indices,
-                        );
-                        self.extensions.uint_indices
-                    }
-                    "OES_standard_derivatives" => {
-                        self.extensions.derivatives = self.extensions.enable_simple(
-                            c"GL_OES_standard_derivatives",
-                            self.extensions.available_derivatives,
-                        );
-                        self.extensions.derivatives
-                    }
-                    "EXT_frag_depth" => {
-                        self.extensions.frag_depth = self.extensions.enable_simple(
-                            c"GL_EXT_frag_depth",
-                            self.extensions.available_frag_depth,
-                        );
-                        self.extensions.frag_depth
-                    }
-                    "EXT_shader_texture_lod" => {
-                        self.extensions.texture_lod = self.extensions.enable_simple(
-                            c"GL_EXT_shader_texture_lod",
-                            self.extensions.available_texture_lod,
-                        );
-                        self.extensions.texture_lod
-                    }
-                    _ => false,
-                };
-                self.driver_result()?;
-                Ok(json!(enabled))
+            for capability in TextureCapability::ALL {
+                assert!(
+                    extensions.textures.available(capability),
+                    "missing {capability:?}; native capabilities: {names:?}"
+                );
+                assert!(
+                    extensions.enable_texture(capability),
+                    "request failed {capability:?}"
+                );
+                assert!(extensions.textures.enabled(capability));
+                assert_eq!(unsafe { gl::GetError() }, gl::NO_ERROR, "{capability:?}");
             }
-            _ => Err(gl::INVALID_OPERATION),
-        }
+        });
     }
 }

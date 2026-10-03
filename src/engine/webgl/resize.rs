@@ -8,6 +8,14 @@ impl WebGl {
         if width > 4096 || height > 4096 || u64::from(width) * u64::from(height) > 4 * 1024 * 1024 {
             return Err(gl::OUT_OF_MEMORY);
         }
+        if width == self.surface.width && height == self.surface.height {
+            // Assigning an unchanged canvas dimension still resets its bitmap,
+            // but need not allocate overlapping native attachments. Preserve
+            // author GL state while performing the mandatory default clear.
+            self.clear_default_surface();
+            self.driver_result()?;
+            return Ok(Value::Null);
+        }
         let bpp = if self.options.depth || self.options.stencil {
             8
         } else {
@@ -29,11 +37,19 @@ impl WebGl {
         let mut clear = [0.0; 4];
         let mut texture = 0;
         let mut renderbuffer = 0;
+        let mut read_framebuffer = 0;
+        let previous_surface = self.surface.framebuffer;
         unsafe {
             gl::GetIntegerv(gl::VIEWPORT, viewport.as_mut_ptr());
             gl::GetFloatv(gl::COLOR_CLEAR_VALUE, clear.as_mut_ptr());
             gl::GetIntegerv(gl::TEXTURE_BINDING_2D, &mut texture);
             gl::GetIntegerv(gl::RENDERBUFFER_BINDING, &mut renderbuffer);
+            if self.options.api == super::ApiVersion::Two {
+                gl::GetIntegerv(
+                    super::framebuffer_guard::READ_BINDING,
+                    &mut read_framebuffer,
+                );
+            }
         }
         // Newly allocated surfaces are zero-initialized by ANGLE even with author masks or
         // scissor enabled. Surface::new's explicit clear is redundant in that case.
@@ -50,6 +66,11 @@ impl WebGl {
             self.surface = surface;
             self.resource_bytes = self.resource_bytes - previous_bytes + next_bytes;
             self.clear_default_surface();
+            if self.options.api == super::ApiVersion::Two && self.default_read_buffer == gl::NONE {
+                unsafe {
+                    (self.core.as_ref().ok_or(gl::INVALID_OPERATION)?.read_buffer)(gl::NONE);
+                }
+            }
         }
         let binding = if self.framebuffer == 0 {
             self.surface.framebuffer
@@ -59,7 +80,19 @@ impl WebGl {
                 .native
         };
         unsafe {
-            gl::BindFramebuffer(gl::FRAMEBUFFER, binding);
+            if self.options.api == super::ApiVersion::Two {
+                gl::BindFramebuffer(super::framebuffer_guard::DRAW, binding);
+                gl::BindFramebuffer(
+                    super::framebuffer_guard::READ,
+                    if read_framebuffer as u32 == previous_surface {
+                        self.surface.framebuffer
+                    } else {
+                        read_framebuffer as u32
+                    },
+                );
+            } else {
+                gl::BindFramebuffer(gl::FRAMEBUFFER, binding);
+            }
         }
         if !allocated {
             return Err(gl::OUT_OF_MEMORY);

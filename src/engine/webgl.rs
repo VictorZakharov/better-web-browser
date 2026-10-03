@@ -4,30 +4,153 @@ use mozangle::gles::ffi as gl;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 
+mod api_version;
+#[cfg(test)]
+mod api_version_tests;
+#[cfg(test)]
+mod array_copy_boundary_tests;
 mod buffers;
 mod commands;
+#[cfg(test)]
+mod compressed_buffer_tests;
+mod compressed_capabilities;
+#[cfg(test)]
+mod compressed_core_tests;
+#[cfg(test)]
+mod compressed_core_validation_tests;
+mod compressed_formats;
+mod compressed_initialization;
+mod compressed_storage;
+#[cfg(test)]
+mod compressed_texture_tests;
+mod compressed_textures;
+#[cfg(test)]
+mod compressed_validation_tests;
+mod compressed_volumes;
+mod construction;
 mod context;
 mod copy_texture;
+mod copy_texture_conversion;
+mod core_attachment_queries;
+#[cfg(test)]
+mod core_attachment_tests;
+mod core_attachments;
+#[cfg(test)]
+mod core_buffer_tests;
+mod core_buffers;
+#[cfg(test)]
+mod core_draw_tests;
+mod core_draws;
+mod core_entries;
+#[cfg(test)]
+mod core_extension_tests;
+mod core_extensions;
+#[cfg(test)]
+mod core_framebuffer_tests;
+mod core_framebuffers;
+#[cfg(test)]
+mod core_parameter_tests;
+mod core_parameters;
+mod core_renderbuffers;
+#[cfg(test)]
+mod core_texture_format_tests;
+mod core_texture_formats;
+#[cfg(test)]
+mod core_texture_mip_tests;
+mod core_texture_mips;
+#[cfg(test)]
+mod core_texture_tests;
+mod core_textures;
+#[cfg(test)]
+mod core_uniform_tests;
+mod core_uniforms;
+mod default_attachment_queries;
+#[cfg(test)]
+mod default_attachment_tests;
+mod depth_textures;
+mod draw_buffers;
+mod extension_commands;
 mod extensions;
 mod float_values;
+mod framebuffer_attachments;
+mod framebuffer_completeness;
+mod framebuffer_guard;
+#[cfg(test)]
+mod framebuffer_guard_tests;
+mod framebuffer_queries;
 mod framebuffers;
 mod index_ranges;
+mod indexed_uniform_buffers;
 mod instancing;
+mod legacy_mip_allocations;
+mod multisample;
+#[cfg(test)]
+mod multisample_tests;
 mod object_queries;
 mod objects;
 mod parameters;
+mod pixel_buffer_guard;
+#[cfg(test)]
+mod pixel_buffer_tests;
+mod pixel_buffers;
+mod pixel_layout;
+#[cfg(test)]
+mod pixel_layout_tests;
+mod pixel_readback;
+mod pixel_store_guard;
+#[cfg(test)]
+mod pixel_transfer_tests;
+mod pixel_transport;
 mod presentation;
 mod queries;
+#[cfg(test)]
+mod query_object_tests;
+mod query_objects;
 mod resize;
+#[cfg(test)]
+mod same_size_resize_tests;
+#[cfg(test)]
+mod sampler_tests;
+mod samplers;
 mod session;
 mod shader_commands;
 mod shader_queries;
 mod shader_validation;
 mod stencil_masks;
 mod surface;
+mod sync_entries;
+#[cfg(test)]
+mod sync_object_tests;
+mod sync_objects;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod texture_allocation_tests;
+mod texture_allocations;
+mod texture_capabilities;
+mod texture_color_space;
+mod texture_formats;
+mod texture_sampling;
+mod texture_targets;
 mod textures;
+mod transform_buffers;
+mod transform_entries;
+mod transform_feedback;
+#[cfg(test)]
+mod transform_feedback_tests;
+mod transform_safety;
+#[cfg(test)]
+mod transform_validation_tests;
+mod transform_varyings;
+#[cfg(test)]
+mod typed_framebuffer_tests;
+mod typed_framebuffers;
+mod uniform_block_queries;
+#[cfg(test)]
+mod uniform_block_tests;
+#[cfg(test)]
+mod uniform_block_validation_tests;
+mod uniform_blocks;
 mod uniform_queries;
 #[cfg(test)]
 mod uniform_validation_tests;
@@ -35,8 +158,23 @@ mod uniforms;
 #[cfg(test)]
 mod validation_tests;
 mod vertex_arrays;
+mod vertex_attribute_queries;
+#[cfg(test)]
+mod vertex_attribute_tests;
+mod vertex_attributes;
+mod volume_copy;
+#[cfg(test)]
+mod volume_copy_tests;
+mod volume_initialization;
+#[cfg(test)]
+mod volume_mip_tests;
+#[cfg(test)]
+mod volume_texture_tests;
+mod volume_textures;
+pub(crate) use pixel_transport::PixelReply;
 pub(crate) use session::Contexts;
 
+use api_version::ApiVersion;
 use context::NativeContext;
 use objects::{Kind, Objects};
 use surface::Surface;
@@ -140,6 +278,7 @@ impl BackendContexts {
 #[derive(Clone, Copy, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct Options {
+    api: ApiVersion,
     alpha: bool,
     depth: bool,
     stencil: bool,
@@ -148,6 +287,7 @@ struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            api: ApiVersion::One,
             alpha: true,
             depth: true,
             stencil: false,
@@ -194,6 +334,8 @@ impl Command {
 struct WebGl {
     // Surface/resources must be deleted with their owning context current, before EGL teardown.
     native: NativeContext,
+    core: Option<core_entries::CoreEntries>,
+    core_buffer_bindings: HashMap<u32, u32>,
     surface: Surface,
     objects: Objects,
     errors: VecDeque<u32>,
@@ -205,57 +347,23 @@ struct WebGl {
     element_buffer: u32,
     program: u32,
     attributes: Vec<buffers::Attribute>,
+    attribute_values: Vec<vertex_attributes::ValueKind>,
     extensions: extensions::Extensions,
     vertex_arrays: vertex_arrays::VertexArrays,
     framebuffer: u32,
+    read_framebuffer: u32,
+    default_read_buffer: u32,
     renderbuffer: u32,
     texture_unit: usize,
-    textures: Vec<[u32; 2]>,
+    textures: Vec<[u32; 4]>,
+    samplers: Vec<u32>,
+    indexed_uniforms: indexed_uniform_buffers::Bindings,
+    query_objects: query_objects::State,
+    sync_objects: sync_objects::State,
+    transform_feedback: transform_feedback::State,
+    default_draw_buffer: u32,
 }
 impl WebGl {
-    fn new(width: u32, height: u32, options: Options) -> std::result::Result<Self, String> {
-        let native = NativeContext::new()?;
-        let surface = Surface::new(width, height, options)?;
-        unsafe {
-            gl::ClearColor(0.0, 0.0, 0.0, 0.0);
-        }
-        let mut count = 0;
-        let mut units = 0;
-        // SAFETY: a current GLES2 context and writable scalar out-parameters.
-        unsafe {
-            gl::GetIntegerv(gl::MAX_VERTEX_ATTRIBS, &mut count);
-            gl::GetIntegerv(gl::MAX_COMBINED_TEXTURE_IMAGE_UNITS, &mut units);
-        }
-        if !(8..=32).contains(&count) || !(8..=64).contains(&units) {
-            return Err("ANGLE resource limits are outside the admitted WebGL baseline".into());
-        }
-        Ok(Self {
-            native,
-            surface,
-            objects: Objects::default(),
-            errors: VecDeque::new(),
-            options,
-            stencil_masks: stencil_masks::StencilMasks::default(),
-            resource_bytes: width as usize
-                * height as usize
-                * if options.depth || options.stencil {
-                    8
-                } else {
-                    4
-                },
-            resource_limit: MAX_RESOURCE_BYTES,
-            array_buffer: 0,
-            element_buffer: 0,
-            program: 0,
-            attributes: vec![buffers::Attribute::default(); count as usize],
-            extensions: extensions::Extensions::new(),
-            vertex_arrays: vertex_arrays::VertexArrays::default(),
-            framebuffer: 0,
-            renderbuffer: 0,
-            texture_unit: 0,
-            textures: vec![[0; 2]; units as usize],
-        })
-    }
     fn error(&mut self, error: u32) {
         if error != gl::NO_ERROR && !self.errors.contains(&error) && self.errors.len() < 8 {
             self.errors.push_back(error);
@@ -288,19 +396,5 @@ impl WebGl {
             self.error(error);
         }
         first.map_or(Ok(()), Err)
-    }
-}
-impl Drop for WebGl {
-    fn drop(&mut self) {
-        if self.native.make_current().is_ok() {
-            if self.vertex_arrays.default_native != 0 {
-                unsafe {
-                    extensions::delete_vertex_array(self.vertex_arrays.default_native);
-                }
-            }
-            self.objects.delete_all();
-            self.surface.destroy();
-        }
-        self.native.destroy();
     }
 }

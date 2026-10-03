@@ -61,6 +61,17 @@
     class EXT_shader_texture_lod {
         constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
     }
+    class EXT_texture_filter_anisotropic {
+        constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
+    }
+    Object.defineProperties(EXT_texture_filter_anisotropic.prototype, {
+        [Symbol.toStringTag]:{value:'EXT_texture_filter_anisotropic'},
+        TEXTURE_MAX_ANISOTROPY_EXT:{value:0x84fe, enumerable:true},
+        MAX_TEXTURE_MAX_ANISOTROPY_EXT:{value:0x84ff, enumerable:true}
+    });
+    webGlExtensionFactories.set('ext_texture_filter_anisotropic', {
+        name:'EXT_texture_filter_anisotropic', create:() => new EXT_texture_filter_anisotropic(webGlToken)
+    });
     for (const constructor of [EXT_frag_depth, EXT_shader_texture_lod])
         Object.defineProperty(constructor.prototype, Symbol.toStringTag, {value:constructor.name});
     Object.defineProperty(OES_element_index_uint.prototype, Symbol.toStringTag, {value:'OES_element_index_uint'});

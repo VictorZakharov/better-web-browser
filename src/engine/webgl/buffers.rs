@@ -3,31 +3,7 @@ use super::{Command, Kind, MAX_DRAW_VERTICES, MAX_UPLOAD_BYTES, Result, WebGl, g
 use serde_json::Value;
 use std::ptr;
 
-#[derive(Clone)]
-pub(super) struct Attribute {
-    pub(super) buffer: u32,
-    pub(super) size: u32,
-    pub(super) stride: u32,
-    pub(super) offset: u32,
-    pub(super) enabled: bool,
-    pub(super) divisor: u32,
-    pub(super) kind: u32,
-    pub(super) normalized: bool,
-}
-impl Default for Attribute {
-    fn default() -> Self {
-        Self {
-            buffer: 0,
-            size: 16,
-            stride: 0,
-            offset: 0,
-            enabled: false,
-            divisor: 0,
-            kind: gl::FLOAT,
-            normalized: false,
-        }
-    }
-}
+pub(super) use super::vertex_attributes::Attribute;
 impl WebGl {
     pub(super) fn buffer_command(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
@@ -38,21 +14,29 @@ impl WebGl {
                 if id != 0 && self.objects.get(id, Kind::Buffer)?.pending_delete {
                     return Err(gl::INVALID_OPERATION);
                 }
-                if ![gl::ARRAY_BUFFER, gl::ELEMENT_ARRAY_BUFFER].contains(&target) {
+                let extra = self.options.api == super::ApiVersion::Two
+                    && super::core_buffers::extra_target(target);
+                if ![gl::ARRAY_BUFFER, gl::ELEMENT_ARRAY_BUFFER].contains(&target) && !extra {
                     return Err(gl::INVALID_ENUM);
                 }
                 if id != 0 {
                     let object = self.objects.get_mut(id, Kind::Buffer)?;
-                    if object.buffer_target != 0 && object.buffer_target != target {
+                    let class = super::core_buffers::classification(target);
+                    if object.buffer_target != 0 && class != 0 && object.buffer_target != class {
                         return Err(gl::INVALID_OPERATION);
                     }
-                    object.buffer_target = target;
+                    if class != 0 {
+                        object.buffer_target = class;
+                    }
                 }
                 match target {
                     gl::ARRAY_BUFFER => self.array_buffer = id,
                     gl::ELEMENT_ARRAY_BUFFER => {
                         self.objects.switch_buffer(self.element_buffer, id)?;
                         self.element_buffer = id;
+                    }
+                    _ if extra => {
+                        self.core_buffer_bindings.insert(target, id);
                     }
                     _ => return Err(gl::INVALID_ENUM),
                 }
@@ -63,9 +47,14 @@ impl WebGl {
             "bufferData" => {
                 let target = c.u(0)?;
                 let id = self.bound_buffer(target)?;
+                self.validate_transform_buffer_use(target, id)?;
                 let size = c.u(1)? as usize;
                 let usage = c.u(2)?;
-                if ![gl::STATIC_DRAW, gl::DYNAMIC_DRAW, gl::STREAM_DRAW].contains(&usage) {
+                let core_usage = self.options.api == super::ApiVersion::Two
+                    && [0x88e1, 0x88e2, 0x88e5, 0x88e6, 0x88e9, 0x88ea].contains(&usage);
+                if ![gl::STATIC_DRAW, gl::DYNAMIC_DRAW, gl::STREAM_DRAW].contains(&usage)
+                    && !core_usage
+                {
                     return Err(gl::INVALID_ENUM);
                 }
                 if size > MAX_UPLOAD_BYTES || bytes.is_some_and(|b| b.len() != size) {
@@ -86,6 +75,7 @@ impl WebGl {
             "bufferSubData" => {
                 let target = c.u(0)?;
                 let id = self.bound_buffer(target)?;
+                self.validate_transform_buffer_use(target, id)?;
                 let offset = c.u(1)? as usize;
                 let data = bytes.ok_or(gl::INVALID_VALUE)?;
                 let end = offset.checked_add(data.len()).ok_or(gl::INVALID_VALUE)?;
@@ -103,60 +93,7 @@ impl WebGl {
                 self.driver_result()?;
                 self.objects.get_mut(id, Kind::Buffer)?.bytes[offset..end].copy_from_slice(data);
             }
-            "vertexAttribPointer" => {
-                let index = c.u(0)? as usize;
-                let size = c.u(1)?;
-                let kind = c.u(2)?;
-                let normalized = c.u(3)?;
-                let stride = c.u(4)?;
-                let offset = c.u(5)?;
-                let component = match kind {
-                    gl::BYTE | gl::UNSIGNED_BYTE => 1,
-                    gl::SHORT | gl::UNSIGNED_SHORT => 2,
-                    gl::FLOAT => 4,
-                    _ => return Err(gl::INVALID_ENUM),
-                };
-                if !(1..=4).contains(&size) || stride > 255 || index >= self.attributes.len() {
-                    return Err(gl::INVALID_VALUE);
-                }
-                if offset % component != 0
-                    || stride % component != 0
-                    || (self.array_buffer == 0 && offset != 0)
-                {
-                    return Err(gl::INVALID_OPERATION);
-                }
-                if self.array_buffer != 0 {
-                    self.objects.get(self.array_buffer, Kind::Buffer)?;
-                    unsafe {
-                        gl::VertexAttribPointer(
-                            index as u32,
-                            size as i32,
-                            kind,
-                            u8::from(normalized != 0),
-                            stride as i32,
-                            offset as usize as *const _,
-                        );
-                    }
-                    self.driver_result()?;
-                }
-                // WebGL accepts a null buffer only at offset zero. This resets the
-                // browser-owned binding, not a client-memory pointer in GLES. Every
-                // enabled null binding is rejected before any native draw below.
-                let enabled = self.attributes[index].enabled;
-                let divisor = self.attributes[index].divisor;
-                self.objects
-                    .switch_buffer(self.attributes[index].buffer, self.array_buffer)?;
-                self.attributes[index] = Attribute {
-                    buffer: self.array_buffer,
-                    size: size * component,
-                    stride,
-                    offset,
-                    enabled,
-                    divisor,
-                    kind,
-                    normalized: normalized != 0,
-                };
-            }
+            "vertexAttribPointer" => return self.vertex_pointer(c),
             "enableVertexAttribArray" | "disableVertexAttribArray" => {
                 let index = c.u(0)? as usize;
                 let attribute = self.attributes.get_mut(index).ok_or(gl::INVALID_VALUE)?;
@@ -186,6 +123,8 @@ impl WebGl {
                     )?;
                 }
                 self.validate_program()?;
+                let _sampling = self.sampling_guard()?;
+                self.validate_framebuffer()?;
                 unsafe {
                     gl::DrawArrays(mode, first as i32, count as i32);
                 }
@@ -207,8 +146,12 @@ impl WebGl {
                     return Ok(Value::Null);
                 }
                 let maximum = self.maximum_index(count, size, offset)?;
-                self.validate_attributes(maximum)?;
+                if let Some(maximum) = maximum {
+                    self.validate_attributes(maximum)?;
+                }
                 self.validate_program()?;
+                let _sampling = self.sampling_guard()?;
+                self.validate_framebuffer()?;
                 unsafe {
                     gl::DrawElements(
                         mode,
@@ -227,10 +170,15 @@ impl WebGl {
         self.driver_result()?;
         Ok(Value::Null)
     }
-    fn bound_buffer(&self, target: u32) -> Result<u32> {
+    pub(super) fn bound_buffer(&self, target: u32) -> Result<u32> {
         let id = match target {
             gl::ARRAY_BUFFER => self.array_buffer,
             gl::ELEMENT_ARRAY_BUFFER => self.element_buffer,
+            _ if self.options.api == super::ApiVersion::Two
+                && super::core_buffers::extra_target(target) =>
+            {
+                *self.core_buffer_bindings.get(&target).unwrap_or(&0)
+            }
             _ => return Err(gl::INVALID_ENUM),
         };
         self.objects.get(id, Kind::Buffer)?;
@@ -273,6 +221,9 @@ impl WebGl {
                 gl::FLOAT_MAT2 => 2,
                 gl::FLOAT_MAT3 => 3,
                 gl::FLOAT_MAT4 => 4,
+                0x8b65 | 0x8b66 => 2,
+                0x8b67 | 0x8b68 => 3,
+                0x8b69 | 0x8b6a => 4,
                 _ => 1,
             };
             for offset in 0..columns * size.max(1) {
@@ -318,12 +269,13 @@ impl WebGl {
                 return Err(gl::INVALID_OPERATION);
             }
         }
-        if instanced && !per_vertex {
+        if instanced && !per_vertex && self.options.api == super::ApiVersion::One {
             return Err(gl::INVALID_OPERATION);
         }
         Ok(())
     }
     pub(super) fn validate_program(&self) -> Result<()> {
+        self.validate_transform_draw()?;
         let program = self.objects.get(self.program, Kind::Program)?;
         let mut linked = 0;
         unsafe {

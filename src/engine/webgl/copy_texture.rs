@@ -17,6 +17,18 @@ impl WebGl {
         self.objects.get(id, Kind::Texture)?;
         let level = c.n(1)?;
         let sub = c.op == "copyTexSubImage2D";
+        let mut reservation = None;
+        if sub
+            && self
+                .objects
+                .get(id, Kind::Texture)?
+                .texture_images
+                .get(&(target, level))
+                .is_some_and(|(format, _)| super::depth_textures::is_depth(*format))
+        {
+            return Err(gl::INVALID_OPERATION);
+        }
+        self.validate_framebuffer()?;
         let width = c.n(if sub { 6 } else { 5 })?;
         let height = c.n(if sub { 7 } else { 6 })?;
         if !(0..=12).contains(&level)
@@ -27,6 +39,14 @@ impl WebGl {
         }
         if !sub {
             let format = c.u(2)?;
+            if super::depth_textures::is_depth(format)
+                && self
+                    .extensions
+                    .textures
+                    .enabled(super::texture_capabilities::TextureCapability::Depth)
+            {
+                return Err(gl::INVALID_OPERATION);
+            }
             if ![
                 gl::ALPHA,
                 gl::RGB,
@@ -41,27 +61,79 @@ impl WebGl {
             if c.n(7)? != 0 || (slot == 1 && width != height) {
                 return Err(gl::INVALID_VALUE);
             }
-            self.charge(0, width as usize * height as usize * 4)?;
-            self.objects.get_mut(id, Kind::Texture)?.capacity =
-                width as usize * height as usize * 4;
-            unsafe {
-                gl::CopyTexImage2D(target, level, format, c.n(3)?, c.n(4)?, width, height, 0);
-            }
-        } else {
-            unsafe {
-                gl::CopyTexSubImage2D(
+            reservation = Some(self.prepare_texture_storage(
+                id,
+                vec![((target, level), width as usize * height as usize * 4)],
+            )?);
+            if self.color_read_type()? == gl::FLOAT {
+                self.copy_float_to_normalized(
                     target,
                     level,
-                    c.n(2)?,
-                    c.n(3)?,
-                    c.n(4)?,
-                    c.n(5)?,
-                    width,
-                    height,
-                );
+                    format,
+                    [c.n(3)?, c.n(4)?, width, height],
+                    None,
+                )?;
+            } else {
+                unsafe {
+                    gl::CopyTexImage2D(target, level, format, c.n(3)?, c.n(4)?, width, height, 0);
+                }
+            }
+        } else {
+            let (format, kind) = *self
+                .objects
+                .get(id, Kind::Texture)?
+                .texture_images
+                .get(&(target, level))
+                .ok_or(gl::INVALID_OPERATION)?;
+            let xoffset = c.n(2)?;
+            let yoffset = c.n(3)?;
+            if xoffset < 0 || yoffset < 0 {
+                return Err(gl::INVALID_VALUE);
+            }
+            if kind == gl::UNSIGNED_BYTE && self.color_read_type()? == gl::FLOAT {
+                // EXT_color_buffer_half_float issue 9 retains the GLES2
+                // float-to-normalized CopyTex(Sub)Image conversion contract.
+                self.copy_float_to_normalized(
+                    target,
+                    level,
+                    format,
+                    [c.n(4)?, c.n(5)?, width, height],
+                    Some([xoffset, yoffset]),
+                )?;
+            } else {
+                unsafe {
+                    gl::CopyTexSubImage2D(
+                        target,
+                        level,
+                        c.n(2)?,
+                        c.n(3)?,
+                        c.n(4)?,
+                        c.n(5)?,
+                        width,
+                        height,
+                    );
+                }
             }
         }
         self.driver_result()?;
+        if let Some(reservation) = reservation {
+            self.commit_texture_storage(reservation)?;
+        }
+        if !sub {
+            self.objects.get_mut(id, Kind::Texture)?.core_images.insert(
+                (target, level),
+                super::core_textures::Image {
+                    internal: c.u(2)?,
+                    width: width as u32,
+                    height: height as u32,
+                    depth: 1,
+                },
+            );
+            self.objects
+                .get_mut(id, Kind::Texture)?
+                .texture_images
+                .insert((target, level), (c.u(2)?, gl::UNSIGNED_BYTE));
+        }
         Ok(Value::Null)
     }
 }

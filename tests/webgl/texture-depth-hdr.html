@@ -1,0 +1,116 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>pending</title>
+<style>
+body { margin:24px; font:16px sans-serif; color:black; background:white }
+canvas { width:256px; height:128px; display:block; image-rendering:pixelated }
+pre { white-space:pre-wrap }
+</style>
+<canvas width="8" height="4"></canvas>
+<pre id="results">Running native texture, HDR and depth checks</pre>
+<script>
+(() => {
+    const results=document.querySelector('#results'), passed=[];
+    const assert=(value,label)=>{if(!value)throw Error(label);passed.push(label)};
+    try {
+        const gl=document.querySelector('canvas').getContext('webgl',{
+            preserveDrawingBuffer:true,antialias:false
+        });
+        assert(gl,'WebGL1 context');
+        const error=(code,label)=>assert(gl.getError()===code,label);
+        const near=(actual,expected)=>actual.every((v,i)=>Math.abs(v-expected[i])<=1);
+        const float=gl.getExtension('OES_texture_float');
+        const half=gl.getExtension('OES_texture_half_float');
+        const depth=gl.getExtension('WEBGL_depth_texture');
+        assert(float&&half&&depth,'floating and depth capabilities');
+        const shader=(kind,source)=>{
+            const s=gl.createShader(kind);gl.shaderSource(s,source);gl.compileShader(s);
+            assert(gl.getShaderParameter(s,gl.COMPILE_STATUS),'compiled shader');return s;
+        };
+        const program=gl.createProgram();
+        gl.attachShader(program,shader(gl.VERTEX_SHADER,
+            'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}'));
+        gl.attachShader(program,shader(gl.FRAGMENT_SHADER,
+            'precision highp float;uniform sampler2D image;uniform bool depthOnly;'+
+            'void main(){vec4 c=texture2D(image,vec2(.5));gl_FragColor=depthOnly?vec4(vec3(c.r),1.):c;}'));
+        gl.bindAttribLocation(program,0,'p');gl.linkProgram(program);
+        assert(gl.getProgramParameter(program,gl.LINK_STATUS),'linked program');gl.useProgram(program);
+        gl.uniform1i(gl.getUniformLocation(program,'image'),0);
+        const depthOnly=gl.getUniformLocation(program,'depthOnly');gl.uniform1i(depthOnly,0);
+        gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());
+        gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+        gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(0);
+        const texture=()=>{
+            const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);return t;
+        };
+        const draw=()=>{
+            gl.drawArrays(gl.TRIANGLE_STRIP,0,4);error(0,'native sample draw');
+            const bytes=new Uint8Array(4);gl.readPixels(1,1,1,1,gl.RGBA,gl.UNSIGNED_BYTE,bytes);
+            error(0,'sample read');return [...bytes];
+        };
+        const source=texture(), fbo=gl.createFramebuffer(), destination=texture();
+        for(const type of [gl.FLOAT,half.HALF_FLOAT_OES]) {
+            gl.bindTexture(gl.TEXTURE_2D,source);
+            const data=type===gl.FLOAT?new Float32Array([2,-1,.5,.25]):new Uint16Array([0x4000,0xbc00,0x3800,0x3400]);
+            gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,type,data);
+            gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,source,0);
+            assert(gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE,'HDR framebuffer complete');
+            // The implementation-chosen pair may be native half-float; the
+            // extension's portable RGBA/FLOAT read is tested below regardless.
+            const readType=gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_TYPE);
+            assert(readType===gl.FLOAT||(type===half.HALF_FLOAT_OES&&[half.HALF_FLOAT_OES,0x140b].includes(readType)),'floating implementation read type');
+            const read=new Float32Array(4);gl.readPixels(0,0,1,1,gl.RGBA,gl.FLOAT,read);
+            error(0,'HDR float read');assert([...read].every((v,i)=>Math.abs(v-dataValue(i))<.002),'unclamped HDR values');
+            for(const [format,expected] of [
+                [gl.RGBA,[255,0,128,64]],[gl.RGB,[255,0,128,255]],
+                [gl.ALPHA,[0,0,0,64]],[gl.LUMINANCE,[255,255,255,255]],
+                [gl.LUMINANCE_ALPHA,[255,255,255,64]]
+            ]) {
+                gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.bindTexture(gl.TEXTURE_2D,destination);
+                gl.pixelStorei(gl.PACK_ALIGNMENT,8);gl.pixelStorei(gl.UNPACK_ALIGNMENT,8);
+                gl.copyTexImage2D(gl.TEXTURE_2D,0,format,0,0,1,1,0);
+                error(0,'float to normalized copy');
+                assert(gl.getParameter(gl.PACK_ALIGNMENT)===8&&gl.getParameter(gl.UNPACK_ALIGNMENT)===8,'copy preserves alignment');
+                gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+                assert(near(draw(),expected),'legacy copy channel values');
+            }
+        }
+        function dataValue(i){return [2,-1,.5,.25][i]}
+        gl.deleteTexture(source);gl.deleteTexture(destination);gl.deleteFramebuffer(fbo);
+        const depthImage=texture(), depthFbo=gl.createFramebuffer(), color=gl.createRenderbuffer();
+        gl.bindRenderbuffer(gl.RENDERBUFFER,color);gl.renderbufferStorage(gl.RENDERBUFFER,gl.RGBA4,2,2);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.DEPTH_COMPONENT,2,2,0,gl.DEPTH_COMPONENT,gl.UNSIGNED_SHORT,null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER,depthFbo);
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.RENDERBUFFER,color);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.TEXTURE_2D,depthImage,0);
+        assert(gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE,'depth target complete');
+        gl.enable(gl.SCISSOR_TEST);
+        for(const [x,y,value] of [[0,0,.2],[1,0,.6],[0,1,.4],[1,1,.8]]) {
+            gl.scissor(x,y,1,1);gl.clearDepth(value);gl.clear(gl.DEPTH_BUFFER_BIT);
+        }
+        gl.disable(gl.SCISSOR_TEST);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+        gl.uniform1i(depthOnly,1);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+        assert(near(draw(),[128,128,128,255]),'four rendered depths interpolate');
+        gl.bindFramebuffer(gl.FRAMEBUFFER,gl.createFramebuffer());
+        gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_FORMAT);error(gl.INVALID_OPERATION,'incomplete format query');
+        gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_TYPE);error(gl.INVALID_OPERATION,'incomplete type query');
+        const guard=new Uint8Array([9,8,7,6]);
+        gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,guard);
+        error(gl.INVALID_FRAMEBUFFER_OPERATION,'incomplete read');
+        assert(String(guard)==='9,8,7,6','invalid read preserves bytes');
+        results.textContent=passed.join('\n');results.dataset.count=String(passed.length);
+        document.title='ready:'+passed.length;
+    } catch(error) {
+        document.title='failed:'+error.message;results.textContent=document.title;results.dataset.count='0';
+        results.dataset.error=error.message;
+    }
+    document.documentElement.dataset.fixtureReady='true';
+})();
+</script>

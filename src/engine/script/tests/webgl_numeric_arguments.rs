@@ -77,6 +77,44 @@ fn webgl_buffer_size_overload_uses_long_long_conversion() {
 }
 
 #[test]
+fn webgl_reply_fast_path_preserves_special_floats_and_quoted_shader_text() {
+    check(
+        r#"
+        const gl=document.querySelector('canvas').getContext('webgl');
+        const assert=(value,label)=>{if(!value)throw Error(label)};
+        const shader=(type,source)=>{
+            const shader=gl.createShader(type);
+            gl.shaderSource(shader,source);
+            gl.compileShader(shader);
+            assert(gl.getShaderParameter(shader,gl.COMPILE_STATUS),gl.getShaderInfoLog(shader));
+            return shader;
+        };
+        const source='// "webglFloat" is ordinary author text\nvoid main(){gl_Position=vec4(0,0,0,1);}';
+        const vertex=shader(gl.VERTEX_SHADER,source);
+        assert(gl.getShaderSource(vertex)===source,'quoted string reply is unchanged');
+        const fragment=shader(gl.FRAGMENT_SHADER,'precision highp float;uniform vec4 value;void main(){gl_FragColor=value;}');
+        const program=gl.createProgram();
+        gl.attachShader(program,vertex);gl.attachShader(program,fragment);gl.linkProgram(program);
+        assert(gl.getProgramParameter(program,gl.LINK_STATUS),gl.getProgramInfoLog(program));
+        gl.useProgram(program);
+        const location=gl.getUniformLocation(program,'value');
+        gl.uniform4f(location,-0,NaN,Infinity,-Infinity);
+        const special=gl.getUniform(program,location);
+        assert(special instanceof Float32Array,'typed vector reply');
+        assert(Object.is(special[0],-0),'negative zero');
+        assert(Number.isNaN(special[1]),'NaN');
+        assert(special[2]===Infinity&&special[3]===-Infinity,'infinities');
+        gl.uniform4f(location,1,2,3,4);
+        assert(String(gl.getUniform(program,location))==='1,2,3,4','ordinary vector');
+        assert(gl.getError()===0,'scalar zero reply');
+        assert(gl.isProgram(program)===true,'boolean reply');
+        assert(gl.getUniformLocation(program,'absent')===null,'null reply');
+        document.querySelector('output').textContent='pass';
+    "#,
+    );
+}
+
+#[test]
 fn webgl_lost_context_still_converts_scalar_and_extension_arguments() {
     check(
         r#"
