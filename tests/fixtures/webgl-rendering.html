@@ -1,0 +1,89 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WebGL 1 rendering contracts</title>
+<style>
+body { margin:24px; font:16px Arial,sans-serif; background:#f4f6fa; color:#182438 }
+canvas { width:256px; height:256px; display:inline-block; margin:12px; border:1px solid #8995a5 }
+#results { white-space:pre-wrap; line-height:1.5 }
+</style>
+<h1>Real WebGL shader and texture rendering</h1>
+<canvas id="native" width="32" height="32"></canvas>
+<canvas id="copy" width="32" height="32"></canvas>
+<pre id="results">waiting</pre>
+<script>
+(() => {
+    const results = [];
+    const check = (name, value) => { results.push(name + ': ' + (value ? 'PASS' : 'FAIL')); };
+    const canvas = document.getElementById('native');
+    try {
+        const gl = canvas.getContext('webgl', {preserveDrawingBuffer:true});
+        if (!gl) throw new Error('WebGL drawing backend unavailable');
+        check('identity', gl instanceof WebGLRenderingContext && gl.canvas === canvas);
+        check('exclusive context', canvas.getContext('2d') === null);
+        const shader = (type, source) => {
+            const value = gl.createShader(type);
+            gl.shaderSource(value, source); gl.compileShader(value);
+            if (!gl.getShaderParameter(value, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(value));
+            return value;
+        };
+        const vertex = shader(gl.VERTEX_SHADER,
+            'attribute vec2 position; attribute vec2 uv; varying vec2 coord; uniform mat4 transform;' +
+            'void main(){coord=uv;gl_Position=transform*vec4(position,0.0,1.0);}');
+        const fragment = shader(gl.FRAGMENT_SHADER,
+            'precision mediump float; varying vec2 coord; uniform sampler2D image;' +
+            'void main(){gl_FragColor=texture2D(image,coord);}');
+        const program = gl.createProgram();
+        gl.attachShader(program, vertex); gl.attachShader(program, fragment); gl.linkProgram(program);
+        check('shader compiler and linker', gl.getProgramParameter(program, gl.LINK_STATUS));
+        gl.useProgram(program);
+        const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            -1,-1,0,0, 1,-1,1,0, 1,1,1,1, -1,1,0,1]), gl.STATIC_DRAW);
+        for (const [name, offset] of [['position',0],['uv',8]]) {
+            const location = gl.getAttribLocation(program, name);
+            gl.enableVertexAttribArray(location); gl.vertexAttribPointer(location,2,gl.FLOAT,false,16,offset);
+        }
+        const indices = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indices);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array([0,1,2,0,2,3]),gl.STATIC_DRAW);
+        gl.uniformMatrix4fv(gl.getUniformLocation(program,'transform'),false,
+            new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]));
+        const texture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,texture);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,2,2,0,gl.RGBA,gl.UNSIGNED_BYTE,
+            new Uint8Array([255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,0,255]));
+        gl.uniform1i(gl.getUniformLocation(program,'image'),0);
+        gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.enable(gl.DEPTH_TEST); gl.drawElements(gl.TRIANGLES,6,gl.UNSIGNED_SHORT,0);
+        const sample = (x,y) => {
+            const pixels = new Uint8Array(4); gl.readPixels(x,y,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+            return [...pixels].join();
+        };
+        check('indexed textured red quadrant',sample(8,8) === '255,0,0,255');
+        check('indexed textured green quadrant',sample(24,8) === '0,255,0,255');
+        check('indexed textured blue quadrant',sample(8,24) === '0,0,255,255');
+        check('indexed textured yellow quadrant',sample(24,24) === '255,255,0,255');
+        check('typed viewport',gl.getParameter(gl.VIEWPORT) instanceof Int32Array);
+        check('opaque texture binding',gl.getParameter(gl.TEXTURE_BINDING_2D) === texture);
+        gl.drawElements(gl.TRIANGLES,7,gl.UNSIGNED_SHORT,0);
+        check('out of range index rejection',gl.getError() === gl.INVALID_OPERATION);
+        const copy = document.getElementById('copy').getContext('2d'); copy.drawImage(canvas,0,0);
+        check('Canvas copy top-left orientation',[...copy.getImageData(8,8,1,1).data].join() === '0,0,255,255');
+        check('no remaining GL errors',gl.getError() === gl.NO_ERROR);
+        const bad = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(bad,'this is not GLSL'); gl.compileShader(bad);
+        check('genuine shader failure',!gl.getShaderParameter(bad,gl.COMPILE_STATUS) && gl.getShaderInfoLog(bad).length > 0);
+        const peer = new OffscreenCanvas(2,2).getContext('webgl'); peer.bindTexture(peer.TEXTURE_2D,texture);
+        check('cross context ownership',peer.getError() === peer.INVALID_OPERATION);
+        check('shader source round trip',gl.getShaderSource(vertex).includes('gl_Position'));
+        check('active uniform introspection',gl.getProgramParameter(program,gl.ACTIVE_UNIFORMS) === 2);
+        const pixels = new Uint8Array(1); pixels[0] = 91;
+        gl.readPixels(0,0,2,2,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+        check('short readback retains destination',gl.getError() === gl.INVALID_OPERATION && pixels[0] === 91);
+        check('real precision introspection',gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER,gl.MEDIUM_FLOAT).precision > 0);
+    } catch (error) { results.push('ERROR: ' + error.message); }
+    document.getElementById('results').textContent = results.join('\n');
+    document.getElementById('results').setAttribute('data-passes', results.filter(value => value.endsWith(': PASS')).length);
+    document.getElementById('results').setAttribute('data-failures', results.filter(value => !value.endsWith(': PASS')).length);
+    document.documentElement.setAttribute('data-fixture-ready','true');
+})();
+</script>

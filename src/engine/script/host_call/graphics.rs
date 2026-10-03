@@ -8,6 +8,11 @@ pub(super) fn dispatch(
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     if let Some(value) =
+        super::super::canvas_host::webgl::dispatch(operation, args, &mut state.webgl)?
+    {
+        return Ok(Some(value));
+    }
+    if let Some(value) =
         super::super::fullscreen_host::fullscreen_host_call(operation, args, state)?
     {
         return Ok(Some(value));

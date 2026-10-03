@@ -66,6 +66,8 @@
         'fill', 'stroke', 'drawImage', 'fillText', 'strokeText', 'drawFocusIfNeeded', 'reset'])
         paintMethod(CanvasRenderingContext2D.prototype, name);
     paintMethod(ImageBitmapRenderingContext.prototype, 'transferFromImageBitmap');
+    for (const name of ['clear', 'drawArrays', 'drawElements'])
+        paintMethod(WebGLRenderingContext.prototype, name);
     paintMethod(OffscreenCanvas.prototype, 'transferToImageBitmap', canvas => canvas);
 
     const originalGetContext = HTMLCanvasElement.prototype.getContext;
@@ -147,6 +149,7 @@
             // bitmaprenderer transfer. Preserve both it and the attribute-size
             // stamp, so native painting can reject stale post-resize assets.
             snapshots.push([nodeId(canvas), output.width, output.height, width, height, pixels]);
+            if (pixels && output.mode === 'webgl') webGlPresented(output);
             if (pixels) exportedBitmaps.add(canvas);
             presentedDimensions.set(canvas, [width, height]);
             dirtyCanvases.delete(canvas);

@@ -35,14 +35,16 @@
         }
         getContext(contextId, options = undefined) {
             if (this.__detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
-            const mode = String(contextId);
-            if (mode !== '2d' && mode !== 'bitmaprenderer') return null;
+            const requested = String(contextId);
+            const mode = requested === 'experimental-webgl' ? 'webgl' : requested;
+            if (!['2d', 'bitmaprenderer', 'webgl'].includes(mode)) return null;
             const state = stateForCanvas(this);
             if (state.mode !== 'none' && state.mode !== mode) return null;
             if (state.context) return state.context;
-            const context = mode === '2d' ?
+            const context = mode === 'webgl' ? createWebGlContext(this, options) : mode === '2d' ?
                 new OffscreenCanvasRenderingContext2D(offscreenContextToken, this) :
                 new ImageBitmapRenderingContext(canvasBitmapContextToken, this, options);
+            if (!context) return null;
             state.context = context;
             state.mode = mode;
             return context;
@@ -68,6 +70,7 @@
                 throw new DOMException('Canvas has no available bitmap', 'InvalidStateError');
             const result = makeImageBitmap(state.width, state.height, state.pixels);
             state.pixels = new Uint8ClampedArray(state.width * state.height * 4);
+            if (state.mode === 'webgl') resetWebGlCanvas(state);
             if (state.mode === 'bitmaprenderer') resetCanvasBitmapRenderer(state.context);
             return result;
         }
@@ -94,6 +97,7 @@
             if (value instanceof OffscreenCanvas) {
                 if (value.__detached) throw new DOMException('Canvas is detached', 'DataCloneError');
                 const state = stateForCanvas(value);
+                if (state.mode === 'webgl') throw new DOMException('A Canvas with an active WebGL context cannot be transferred', 'InvalidStateError');
                 if (!state.pixels) throw new DOMException('Canvas exceeds the bitmap budget', 'DataCloneError');
                 return { width: state.width, height: state.height, pixels: state.pixels,
                     canvasWidth: value.width, canvasHeight: value.height,

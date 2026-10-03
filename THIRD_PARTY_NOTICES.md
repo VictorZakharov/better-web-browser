@@ -3,8 +3,8 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `659185bce0390934607363d5f27f6cd5e74e7053dda8933f12a5c818a43a8190`
-- Third-party packages: 293
+- Cargo.lock SHA-256: `83964d6322cf07f6c5fb88e7f4c537a954b828360f2543786356b1e3f2de77a9`
+- Third-party packages: 303
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
@@ -90,6 +90,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `generic-array` | 0.14.7 | MIT | [upstream](https://github.com/fizyk20/generic-array.git) |
 | `getrandom` | 0.4.3 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-random/getrandom) |
 | `gif` | 0.14.2 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image-gif) |
+| `gl_generator` | 0.14.0 | Apache-2.0 | [upstream](https://github.com/brendanzab/gl-rs/) |
 | `glob` | 0.3.4 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/glob) |
 | `gzip-header` | 1.1.0 | MIT/Apache-2.0 | [upstream](https://github.com/oyvindln/gzip-header) |
 | `harfrust` | 0.5.2 | MIT | [upstream](https://github.com/harfbuzz/harfrust) |
@@ -133,6 +134,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `jxl-render` | 0.12.4 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
 | `jxl-threadpool` | 1.0.0 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
 | `jxl-vardct` | 0.11.1 | MIT OR Apache-2.0 | [upstream](https://github.com/tirr-c/jxl-oxide.git) |
+| `khronos_api` | 3.1.0 | Apache-2.0 | [upstream](https://github.com/brendanzab/gl-rs/) |
 | `kurbo` | 0.13.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/kurbo) |
 | `lazy_static` | 1.5.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang-nursery/lazy-static.rs) |
 | `leb128` | 0.2.7 | MIT OR Apache-2.0 | [upstream](https://github.com/gimli-rs/leb128) |
@@ -140,6 +142,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `libc` | 0.2.189 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/libc) |
 | `libloading` | 0.8.9 | ISC | [upstream](https://github.com/nagisa/rust_libloading/) |
 | `libm` | 0.2.16 | MIT | [upstream](https://github.com/rust-lang/compiler-builtins) |
+| `libz-sys` | 1.1.29 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/libz-sys) |
 | `linebender_resource_handle` | 0.1.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/raw_resource_handle) |
 | `litemap` | 0.8.2 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `lock_api` | 0.4.14 | MIT OR Apache-2.0 | [upstream](https://github.com/Amanieu/parking_lot) |
@@ -151,6 +154,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `minimal-lexical` | 0.2.1 | MIT/Apache-2.0 | [upstream](https://github.com/Alexhuszagh/minimal-lexical) |
 | `miniz_oxide` | 0.8.9 | MIT OR Zlib OR Apache-2.0 | [upstream](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide) |
 | `moxcms` | 0.8.1 | BSD-3-Clause OR Apache-2.0 | [upstream](https://github.com/awxkee/moxcms.git) |
+| `mozangle` | 0.7.1 | BSD-3-Clause | [upstream](https://github.com/servo/mozangle) |
 | `nasm-rs` | 0.3.2 | MIT OR Apache-2.0 | [upstream](https://github.com/medek/nasm-rs) |
 | `new_debug_unreachable` | 1.0.6 | MIT | [upstream](https://github.com/mbrubeck/rust-debug-unreachable) |
 | `nom` | 7.1.3 | MIT | [upstream](https://github.com/Geal/nom) |
@@ -173,6 +177,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `phf_shared` | 0.13.1 | MIT | [upstream](https://github.com/rust-phf/rust-phf) |
 | `pico-args` | 0.5.0 | MIT | [upstream](https://github.com/RazrFalcon/pico-args) |
 | `pin-project-lite` | 0.2.17 | Apache-2.0 OR MIT | [upstream](https://github.com/taiki-e/pin-project-lite) |
+| `pkg-config` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/pkg-config-rs) |
 | `png` | 0.18.1 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image-png) |
 | `polycool` | 0.4.0 | MIT OR Apache-2.0 | [upstream](https://github.com/linebender/kurbo) |
 | `potential_utf` | 0.1.5 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
@@ -198,6 +203,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `roxmltree` | 0.21.1 | MIT OR Apache-2.0 | [upstream](https://github.com/RazrFalcon/roxmltree) |
 | `rustc-hash` | 2.1.3 | Apache-2.0 OR MIT | [upstream](https://github.com/rust-lang/rustc-hash) |
 | `rustversion` | 1.0.23 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/rustversion) |
+| `same-file` | 1.0.6 | Unlicense/MIT | [upstream](https://github.com/BurntSushi/same-file) |
 | `scopeguard` | 1.2.0 | MIT OR Apache-2.0 | [upstream](https://github.com/bluss/scopeguard) |
 | `seq-macro` | 0.3.6 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/seq-macro) |
 | `serde` | 1.0.229 | MIT OR Apache-2.0 | [upstream](https://github.com/serde-rs/serde) |
@@ -262,12 +268,15 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `utf8_iter` | 1.0.4 | Apache-2.0 OR MIT | [upstream](https://github.com/hsivonen/utf8_iter) |
 | `uuid` | 1.25.0 | Apache-2.0 OR MIT | [upstream](https://github.com/uuid-rs/uuid) |
 | `v8` | 152.2.0 | MIT | [upstream](https://github.com/denoland/rusty_v8) |
+| `vcpkg` | 0.2.15 | MIT/Apache-2.0 | [upstream](https://github.com/mcgoo/vcpkg-rs) |
 | `version_check` | 0.9.5 | MIT/Apache-2.0 | [upstream](https://github.com/SergioBenitez/version_check) |
+| `walkdir` | 2.5.0 | Unlicense/MIT | [upstream](https://github.com/BurntSushi/walkdir) |
 | `web_atoms` | 0.2.6 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/html5ever) |
 | `webm-iterable` | 0.7.1 | MIT | [upstream](https://github.com/austinleroy/webm-iterable) |
 | `weezl` | 0.1.12 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/weezl) |
 | `which` | 6.0.3 | MIT | [upstream](https://github.com/harryfei/which-rs.git) |
 | `winapi` | 0.3.9 | MIT/Apache-2.0 | [upstream](https://github.com/retep998/winapi-rs) |
+| `winapi-util` | 0.1.11 | Unlicense OR MIT | [upstream](https://github.com/BurntSushi/winapi-util) |
 | `windows` | 0.62.2 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
 | `windows-collections` | 0.3.2 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
 | `windows-core` | 0.62.2 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
@@ -284,6 +293,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `writeable` | 0.6.4 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `wuff` | 0.2.9 | MIT | [upstream](https://github.com/nicoburns/wuff) |
 | `xml` | 1.4.0 | MIT | [upstream](https://github.com/kornelski/xml-rs) |
+| `xml-rs` | 0.8.29 | MIT | [upstream](https://github.com/kornelski/xml-rs) |
 | `xmlparser` | 0.13.6 | MIT/Apache-2.0 | [upstream](https://github.com/RazrFalcon/xmlparser) |
 | `yazi` | 0.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/dfrg/yazi) |
 | `yoke` | 0.8.3 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
@@ -304,6 +314,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 
 ## Bundled sources and data
 
+- `mozangle` 0.7.1 statically builds ANGLE GLES/EGL and its GLSL ES compiler from the published Mozilla/Servo package (BSD-3-Clause). Its pinned `UPSTREAM` revision, native ANGLE license, Chromium BSD notice, and original bundled third-party notice-bearing text are retained in release archives. `libz-sys` statically builds stock zlib (Zlib license), whose native notice is retained separately from its Rust wrapper. No native graphics implementation is copied into Breeze source. See `docs/webgl-backend.md` for scope, limits, build policy, and provenance.
 - `psl2` embeds a compact Mozilla Public Suffix List snapshot. The crate is MIT OR Apache-2.0; the list data is MPL-2.0. The crate and list versions are pinned by `Cargo.lock` and `psl2::psl_version()`.
 - The AccessKit crates are MIT OR Apache-2.0 and contain portions derived from Chromium under a BSD license. The required upstream notice is preserved at `third_party/accesskit/LICENSE.chromium` and copied beside every AccessKit package notice in release archives.
 - `opus` 0.4.0 is the MIT OR Apache-2.0 safe Rust API. `opusic-sys` 0.7.5 statically builds bundled libopus 1.6.1 (BSD-3-Clause), not a downloaded system codec. Its package `LICENSE` is the complete upstream libopus `COPYING` notice; release packaging verifies that equality and retains the notice beside the Rust wrapper licenses. Native decoder code executes only in contained audio jobs. See `docs/ogg-opus.md` for provenance, build policy, and supported formats.

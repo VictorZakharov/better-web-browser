@@ -11,6 +11,8 @@ pub(crate) mod pattern_eval;
 pub mod scheduler;
 pub mod script;
 mod stylesheet;
+#[cfg(windows)]
+pub(crate) mod webgl;
 
 pub use css::StyleRefreshStats;
 pub(crate) use css::media::MediaEnvironment;

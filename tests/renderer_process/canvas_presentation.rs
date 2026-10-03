@@ -8,6 +8,8 @@ use std::time::Duration;
 mod image_frames;
 #[path = "canvas_presentation/modern_images.rs"]
 mod modern_images;
+#[path = "canvas_presentation/webgl.rs"]
+mod webgl;
 
 fn canvas_image(presentation: &RendererPresentation) -> (&str, &[u8]) {
     let url = presentation
