@@ -132,7 +132,9 @@ impl WebGl {
             gl::SHADING_LANGUAGE_VERSION => {
                 return Ok(json!(self.options.api.shader_version_string()));
             }
-            gl::COMPRESSED_TEXTURE_FORMATS => return Ok(json!([])),
+            gl::COMPRESSED_TEXTURE_FORMATS => {
+                return Ok(json!(self.extensions.compressed.formats()));
+            }
             gl::BLEND
             | gl::CULL_FACE
             | gl::DEPTH_TEST

@@ -21,6 +21,7 @@
     "sdk/tests/js/tests/oes-texture-float-and-half-float-linear.js",
     "sdk/tests/js/tests/ext-texture-filter-anisotropic.js",
     "sdk/tests/js/tests/webgl-draw-buffers-utils.js",
+    "sdk/tests/js/tests/compressed-texture-utils.js",
     "sdk/tests/resources/gray-1024x1024.jpg"
   ],
   "tests": [
@@ -40,6 +41,9 @@
     {"path":"sdk/tests/conformance/extensions/webgl-draw-buffers.html","area":"WebGL multiple render targets","expected":"pass","harness":"khronos","required_extension":"WEBGL_draw_buffers"},
     {"path":"sdk/tests/conformance/extensions/webgl-draw-buffers-framebuffer-unsupported.html","area":"WebGL MRT attachment aliasing","expected":"pass","harness":"khronos","required_extension":"WEBGL_draw_buffers"},
     {"path":"sdk/tests/conformance/extensions/webgl-draw-buffers-max-draw-buffers.html","area":"WebGL frozen shader output limits","expected":"pass","harness":"khronos","required_extension":"WEBGL_draw_buffers"},
-    {"path":"sdk/tests/conformance/extensions/webgl-draw-buffers-broadcast-return.html","area":"WebGL MRT shader output control flow","expected":"pass","harness":"khronos","required_extension":"WEBGL_draw_buffers"}
+    {"path":"sdk/tests/conformance/extensions/webgl-draw-buffers-broadcast-return.html","area":"WebGL MRT shader output control flow","expected":"pass","harness":"khronos","required_extension":"WEBGL_draw_buffers"},
+    {"path":"sdk/tests/conformance/extensions/s3tc-and-rgtc.html","area":"WebGL native BC1 through BC5 decoding","expected":"pass","harness":"khronos","required_extension":"WEBGL_compressed_texture_s3tc"},
+    {"path":"sdk/tests/conformance/extensions/ext-texture-compression-rgtc.html","area":"WebGL RGTC block updates","expected":"pass","harness":"khronos","required_extension":"EXT_texture_compression_rgtc"},
+    {"path":"sdk/tests/conformance/extensions/webgl-compressed-texture-s3tc-srgb.html","area":"WebGL compressed sRGB decoding","expected":"pass","harness":"khronos","required_extension":"WEBGL_compressed_texture_s3tc_srgb"}
   ]
 }

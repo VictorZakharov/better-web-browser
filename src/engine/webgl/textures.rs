@@ -171,7 +171,8 @@ impl WebGl {
                     .any(|((_, level), (format, _))| {
                         *level == 0
                             && (super::depth_textures::is_depth(*format)
-                                || super::texture_color_space::is_srgb(*format))
+                                || super::texture_color_space::is_srgb(*format)
+                                || super::compressed_formats::format(*format).is_ok())
                     })
                 {
                     return Err(gl::INVALID_OPERATION);

@@ -7,6 +7,11 @@ impl WebGl {
         match c.op.as_str() {
             "supportedExtensions" => {
                 let mut names = Vec::new();
+                for family in super::compressed_capabilities::Family::ALL {
+                    if self.extensions.compressed.available(family) {
+                        names.push(family.public_name());
+                    }
+                }
                 if self.options.api == super::ApiVersion::Two
                     && self.extensions.available_core_color_float
                 {
@@ -41,6 +46,14 @@ impl WebGl {
                 Ok(json!(names))
             }
             "enableExtension" => {
+                if let Some(family) = super::compressed_capabilities::Family::ALL
+                    .into_iter()
+                    .find(|family| family.public_name() == c.text)
+                {
+                    let enabled = self.extensions.enable_compressed(family);
+                    self.driver_result()?;
+                    return Ok(json!(enabled));
+                }
                 if c.text == "EXT_color_buffer_float" {
                     if self.options.api != super::ApiVersion::Two {
                         return Ok(json!(false));

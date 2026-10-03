@@ -174,8 +174,6 @@
     for (const name of ['compressedTexImage2D', 'compressedTexSubImage2D'])
         webGlMethod(name, function(...args) {
             webGlState(this);
-            // No compressed texture extension is advertised, so every compressed format is
-            // unsupported. The core method exists but cannot silently accept extension data.
-            webGlBytes(args[args.length - 1]);
-            webGlError(this, 0x0500);
+            const pixels = webGlBytes(args[args.length - 1]);
+            webGlCall(this, name, args.slice(0, name === 'compressedTexImage2D' ? 6 : 7), [], '', pixels);
         });

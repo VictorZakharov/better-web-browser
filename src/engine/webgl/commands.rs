@@ -320,7 +320,9 @@ impl WebGl {
                     gl::Hint(c.u(0)?, c.u(1)?);
                 }
             }
-            "compressedTexImage2D" | "compressedTexSubImage2D" => return Err(gl::INVALID_ENUM),
+            "compressedTexImage2D" | "compressedTexSubImage2D" => {
+                return self.compressed_texture_command(c, bytes);
+            }
             "isBuffer" | "isTexture" | "isFramebuffer" | "isRenderbuffer" | "isShader"
             | "isProgram" => return self.object_query(c),
             "vertexAttrib1f" | "vertexAttrib2f" | "vertexAttrib3f" | "vertexAttrib4f" => {

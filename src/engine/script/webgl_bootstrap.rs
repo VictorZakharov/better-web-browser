@@ -9,6 +9,7 @@ macro_rules! webgl_bootstrap {
     include_str!("bootstrap/webgl_lifecycle.js"),
     include_str!("bootstrap/webgl_extensions.js"),
     include_str!("bootstrap/webgl_texture_extensions.js"),
+    include_str!("bootstrap/webgl_compressed_extensions.js"),
     include_str!("bootstrap/webgl_draw_buffers.js"),
     include_str!("bootstrap/webgl_vertex_arrays.js"),
     include_str!("bootstrap/webgl_methods.js"),

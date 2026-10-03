@@ -228,6 +228,7 @@ mod webgl;
 #[cfg(windows)]
 mod webgl_argument_brands;
 mod webgl_attributes;
+pub(super) mod webgl_compressed_textures;
 #[cfg(windows)]
 mod webgl_contracts;
 mod webgl_depth_textures;

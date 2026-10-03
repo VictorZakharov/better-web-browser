@@ -1,6 +1,35 @@
 use super::*;
 
 #[test]
+fn worker_webgl_compressed_texture_admission_and_typed_uploads_match_window() {
+    let loader: Arc<WorkerSourceLoader> = Arc::new(|url, _| Err(format!("unexpected {url}")));
+    let setup = crate::engine::script::tests::webgl_compressed_textures::SETUP.replace(
+        "document.querySelector('canvas').getContext('webgl',{preserveDrawingBuffer:true})",
+        "new OffscreenCanvas(4,4).getContext('webgl',{preserveDrawingBuffer:true})",
+    );
+    let code = format!(
+        r#"{setup}
+        gl.compressedTexImage2D(gl.TEXTURE_2D,0,0x83f1,4,4,0,red);error(0,'worker block upload');
+        gl.compressedTexSubImage2D(gl.TEXTURE_2D,0,0,0,4,4,0x83f1,red);error(0,'worker update');
+        for(const name of names){{assert(gl.getExtension(name),name)}}
+        assert(gl.getParameter(gl.COMPRESSED_TEXTURE_FORMATS).length===12,'worker format query');
+        postMessage('pass');close();
+    "#
+    );
+    let (runtime, initial) = WorkerRuntime::start(
+        "https://example.com/worker.js",
+        &code,
+        "",
+        ScriptKind::Classic,
+        loader,
+    );
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert_eq!(initial.messages, [r#""pass""#]);
+    assert!(initial.closed);
+    drop(runtime);
+}
+
+#[test]
 fn worker_webgl_mrt_shader_writes_four_independent_native_color_targets() {
     let loader: Arc<WorkerSourceLoader> = Arc::new(|url, _| Err(format!("unexpected {url}")));
     let setup = crate::engine::script::tests::webgl_draw_buffers::SETUP.replace(

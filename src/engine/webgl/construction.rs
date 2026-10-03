@@ -80,3 +80,23 @@ impl WebGl {
         Ok(context)
     }
 }
+impl Drop for WebGl {
+    fn drop(&mut self) {
+        if self.native.make_current().is_ok() {
+            if self.vertex_arrays.default_native != 0 {
+                unsafe {
+                    extensions::delete_vertex_array(
+                        self.vertex_arrays.default_native,
+                        self.options.api,
+                    );
+                }
+            }
+            self.objects.delete_all();
+            if let Some(core) = &self.core {
+                self.sync_objects.destroy(&core.sync);
+            }
+            self.surface.destroy();
+        }
+        self.native.destroy();
+    }
+}

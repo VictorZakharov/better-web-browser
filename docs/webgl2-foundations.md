@@ -108,6 +108,13 @@ WebGL1's shader rules or extension admission.
   outputs into retained object-local ranges, supports pause/resume and reflects
   linked names/types. Tests count real captured primitives, preserve untouched
   range bytes, and reject indexed capture aliases before GPU reads or writes.
+- BC1/2/3, compressed sRGB and signed/unsigned BC4/5 reuse ANGLE's existing
+  native storage and decoder. Extension availability is independent of browser
+  enablement; the linear S3TC extension requires every native DXT family.
+  Owned 2D/cube uploads enforce exact block footprints and family-specific mip
+  and subregion rules. These complete public WebGL1 slices also run through the
+  shared Window/Worker bindings and contained renderer. They do not depend on
+  admitting an incomplete WebGL2 canvas interface.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal

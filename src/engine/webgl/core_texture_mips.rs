@@ -32,6 +32,9 @@ impl WebGl {
             if image.width == 0 || image.height == 0 {
                 return Err(gl::INVALID_OPERATION);
             }
+            if super::compressed_formats::format(image.internal).is_ok() {
+                return Err(gl::INVALID_OPERATION);
+            }
             let dimension = if slot == 2 {
                 image.width.max(image.height).max(image.depth)
             } else {

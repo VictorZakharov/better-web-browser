@@ -20,6 +20,7 @@ pub(super) struct Extensions {
     pub available_core_color_float: bool,
     pub core_color_float: bool,
     pub textures: TextureCapabilities,
+    pub compressed: super::compressed_capabilities::Capabilities,
     pub arrays: Option<DrawArrays>,
     pub elements: Option<DrawElements>,
     pub divisor: Option<Divisor>,
@@ -131,6 +132,9 @@ impl Extensions {
                 .any(|name| name == "GL_EXT_color_buffer_float"),
             core_color_float: false,
             textures: TextureCapabilities::discover(
+                enabled.iter().chain(&requestable).map(String::as_str),
+            ),
+            compressed: super::compressed_capabilities::Capabilities::discover(
                 enabled.iter().chain(&requestable).map(String::as_str),
             ),
             available_instancing: advertised

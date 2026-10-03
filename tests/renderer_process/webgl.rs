@@ -176,3 +176,44 @@ fn native_webgl_multiple_outputs_survive_appcontainer_transport() {
     assert_eq!(session.snapshot().state, RendererState::Running);
     session.shutdown().expect("clean contained MRT shutdown");
 }
+
+#[test]
+fn native_webgl_compressed_decoding_survives_appcontainer_transport() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut session =
+        RendererSession::launch(options()).expect("launch hidden compressed renderer");
+    let page = load_html_document(
+        &session,
+        805,
+        include_str!("../webgl/compressed-textures.html"),
+    );
+    assert!(page.runtime.errors.is_empty(), "{:?}", page.runtime.errors);
+    assert!(page.title.starts_with("ready:"), "{}", page.title);
+    let assertions: usize = page.title.trim_start_matches("ready:").parse().unwrap();
+    assert!(
+        assertions >= 100,
+        "all format and error assertions must execute"
+    );
+    let image = page
+        .images
+        .iter()
+        .find(|image| image.url.starts_with("breeze-internal:canvas:"))
+        .expect("owned decoded pixels");
+    assert_eq!(image.image.bgra.len(), 4 * 4 * 4);
+    assert!(
+        image
+            .image
+            .bgra
+            .chunks_exact(4)
+            .all(|pixel| (55..=61).contains(&pixel[0])
+                && (54..=60).contains(&pixel[1])
+                && pixel[3] == 255)
+    );
+    session
+        .ping(Duration::from_secs(3))
+        .expect("compressed renderer remains responsive");
+    assert_eq!(session.snapshot().state, RendererState::Running);
+    session
+        .shutdown()
+        .expect("clean contained compressed shutdown");
+}
