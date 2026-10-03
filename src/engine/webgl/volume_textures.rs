@@ -77,15 +77,22 @@ impl WebGl {
             (c.u(2)?, [0; 3])
         };
         let (upload, storage) = formats::upload(internal, format, kind)?;
-        let mut alignment = 0;
-        unsafe {
-            gl::GetIntegerv(gl::UNPACK_ALIGNMENT, &mut alignment);
-        }
-        self.driver_result()?;
-        let rows = (height as usize)
-            .checked_mul(depth as usize)
-            .ok_or(gl::OUT_OF_MEMORY)?;
-        let size = super::textures::pixel_size(width as usize, rows, upload, alignment as usize)?;
+        let size = if bytes.is_none() && !sub {
+            0
+        } else {
+            super::pixel_layout::Store::native(
+                self.options.api,
+                super::pixel_layout::Direction::Unpack,
+            )?
+            .layout(
+                width as usize,
+                height as usize,
+                depth as usize,
+                upload,
+                true,
+            )?
+            .size
+        };
         if size > MAX_UPLOAD_BYTES {
             return Err(gl::OUT_OF_MEMORY);
         }
@@ -98,8 +105,7 @@ impl WebGl {
         }
         let core = self.core.as_ref().ok_or(gl::INVALID_OPERATION)?;
         let pointer = bytes.map_or(std::ptr::null(), |data| data.as_ptr().cast());
-        // Pixel-store row/image overrides remain unadmitted until their owned
-        // byte-layout validator is implemented. Default aligned slices are bounded.
+        // The validated footprint includes every skipped row/image and padding.
         unsafe {
             if sub {
                 (core.texture_sub_image_3d)(

@@ -83,12 +83,12 @@ impl WebGl {
         } else {
             4
         };
-        let mut alignment = 0;
-        unsafe {
-            gl::GetIntegerv(gl::PACK_ALIGNMENT, &mut alignment);
-        }
-        let size =
-            super::textures::pixel_size(width as usize, height as usize, bpp, alignment as usize)?;
+        let layout = super::pixel_layout::Store::native(
+            self.options.api,
+            super::pixel_layout::Direction::Pack,
+        )?
+        .layout(width as usize, height as usize, 1, bpp, false)?;
+        let size = layout.size;
         if size > MAX_UPLOAD_BYTES {
             return Err(gl::OUT_OF_MEMORY);
         }
@@ -120,7 +120,7 @@ impl WebGl {
             self.framebuffer == 0
         };
         if default_read && !self.options.alpha && format == gl::RGBA && kind == gl::UNSIGNED_BYTE {
-            let stride = (width as usize * 4).div_ceil(alignment as usize) * alignment as usize;
+            let stride = layout.row_stride;
             let x = c.n(0)?;
             let y = c.n(1)?;
             for row in 0..height as usize {
@@ -132,7 +132,7 @@ impl WebGl {
                         && sx < i64::from(self.surface.width)
                         && sy < i64::from(self.surface.height)
                     {
-                        bytes[row * stride + column * 4 + 3] = 255;
+                        bytes[layout.start + row * stride + column * 4 + 3] = 255;
                     }
                 }
             }

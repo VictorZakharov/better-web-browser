@@ -13,7 +13,8 @@ impl WebGl {
         }
         let integer64 = [0x8a30, 0x8a31, 0x8a33, 0x8d6b, 0x9111].contains(&pname);
         let integer = [
-            0x8073, 0x88ff, // 3D texture size, array texture layers
+            0x0d02, 0x0d03, 0x0d04, 0x0cf2, 0x0cf3, 0x0cf4, 0x806d, 0x806e, 0x8073,
+            0x88ff, // 3D texture size, array texture layers
             0x80e8, 0x80e9, // recommended element/vertex counts
             0x8b4a, 0x8b49, 0x8b4b, // vertex/fragment/varying components
             0x8a2b, 0x8a2d, 0x8a2e, 0x8a2f, 0x8a34, // uniform blocks/bindings/alignment

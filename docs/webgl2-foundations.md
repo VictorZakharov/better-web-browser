@@ -89,6 +89,10 @@ WebGL1's shader rules or extension admission.
   buffers, validate alignment and bounds, and preserve unrelated generic state
   during deletion. Base sizes track reallocation; explicit ranges do not. Native
   draw validation rejects missing/undersized block storage before changing pixels.
+- Owned pixel transfers account for aligned row lengths, skip rows/pixels and
+  volume image strides/skips with checked arithmetic and non-overlap constraints.
+  Readback preserves skipped destination bytes. Private surface captures and
+  zero initialization reset and restore all author pixel-store overrides.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
@@ -96,7 +100,7 @@ presence is not a complete WebGL2 conformance result or a new HTML5test score.
 
 ## Remaining admission work
 
-GLES3 pixel-store layouts,
+Pixel-buffer-offset transfers and coherent realm overloads,
 queries, sync and transform feedback need their own
 bounded native contracts and realm bindings. Public core entry points need
 versioned realm bindings, not WebGL1 extension objects under new names.

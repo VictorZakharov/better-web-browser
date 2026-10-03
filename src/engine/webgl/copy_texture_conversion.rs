@@ -12,6 +12,14 @@ impl WebGl {
         rectangle: [i32; 4],
         offset: Option<[i32; 2]>,
     ) -> Result<()> {
+        let _pack_store = super::pixel_store_guard::PixelStoreGuard::tight(
+            self.options.api,
+            super::pixel_layout::Direction::Pack,
+        );
+        let _unpack_store = super::pixel_store_guard::PixelStoreGuard::tight(
+            self.options.api,
+            super::pixel_layout::Direction::Unpack,
+        );
         let [x, y, width, height] = rectangle;
         let count = (width as usize)
             .checked_mul(height as usize)

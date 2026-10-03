@@ -38,13 +38,14 @@ impl WebGl {
         let row_bytes = image.width as usize * bytes;
         let rows = (262_144 / row_bytes).max(1).min(image.height as usize);
         let tile = vec![0u8; row_bytes * rows];
-        let mut alignment = 0;
-        unsafe { gl::GetIntegerv(gl::UNPACK_ALIGNMENT, &mut alignment) };
+        let _store = super::pixel_store_guard::PixelStoreGuard::tight(
+            self.options.api,
+            super::pixel_layout::Direction::Unpack,
+        );
         let _buffers = super::pixel_buffer_guard::PixelBufferGuard::unbind(
             self.options.api,
             super::pixel_buffer_guard::Direction::Unpack,
         );
-        unsafe { gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1) };
         let function = self
             .core
             .as_ref()
@@ -69,7 +70,6 @@ impl WebGl {
                 }
             }
         }
-        unsafe { gl::PixelStorei(gl::UNPACK_ALIGNMENT, alignment) };
         self.driver_result()
     }
 }

@@ -186,6 +186,18 @@ impl WebGl {
             }
             "pixelStorei" => {
                 let pname = c.u(0)?;
+                if super::pixel_layout::extended_parameter(pname) {
+                    if self.options.api != super::ApiVersion::Two {
+                        return Err(gl::INVALID_ENUM);
+                    }
+                    let value = c.n(1)?;
+                    if value < 0 {
+                        return Err(gl::INVALID_VALUE);
+                    }
+                    unsafe { gl::PixelStorei(pname, value) };
+                    self.driver_result()?;
+                    return Ok(Value::Null);
+                }
                 if ![gl::PACK_ALIGNMENT, gl::UNPACK_ALIGNMENT].contains(&pname) {
                     return Err(gl::INVALID_ENUM);
                 }

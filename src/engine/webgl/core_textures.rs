@@ -157,17 +157,16 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         let (upload, storage) = formats::upload(internal, format, kind)?;
-        let mut alignment = 0;
-        unsafe {
-            gl::GetIntegerv(gl::UNPACK_ALIGNMENT, &mut alignment);
-        }
-        self.driver_result()?;
-        let size = super::textures::pixel_size(
-            width as usize,
-            height as usize,
-            upload,
-            alignment as usize,
-        )?;
+        let size = if bytes.is_none() && !sub {
+            0
+        } else {
+            super::pixel_layout::Store::native(
+                self.options.api,
+                super::pixel_layout::Direction::Unpack,
+            )?
+            .layout(width as usize, height as usize, 1, upload, false)?
+            .size
+        };
         if size > MAX_UPLOAD_BYTES {
             return Err(gl::OUT_OF_MEMORY);
         }

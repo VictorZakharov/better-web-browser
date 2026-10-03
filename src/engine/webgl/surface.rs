@@ -38,6 +38,10 @@ impl Surface {
             options.api,
             super::pixel_buffer_guard::Direction::Unpack,
         );
+        let _store = super::pixel_store_guard::PixelStoreGuard::tight(
+            options.api,
+            super::pixel_layout::Direction::Unpack,
+        );
         // SAFETY: dimensions are bounded, null texture data allocates storage, and ANGLE's
         // robust resource initialization is enabled. Clear also initializes depth/stencil.
         unsafe {
@@ -127,6 +131,10 @@ impl Surface {
             super::pixel_buffer_guard::Direction::Pack,
         );
         let mut pixels = vec![0; self.width as usize * self.height as usize * 4];
+        let _store = super::pixel_store_guard::PixelStoreGuard::tight(
+            self.api,
+            super::pixel_layout::Direction::Pack,
+        );
         let mut alignment = 0;
         let _framebuffer = super::framebuffer_guard::FramebufferGuard::bind(
             self.api,
