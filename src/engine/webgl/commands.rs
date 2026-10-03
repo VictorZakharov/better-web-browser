@@ -1,11 +1,18 @@
 //! Strict command boundary. No arbitrary GL entry point or pointer-valued parameter is exposed.
-use super::{Command, Kind, MAX_SHADER_BYTES, Result, WebGl, gl, json};
+use super::{Command, Kind, Result, WebGl, gl, json};
 use serde_json::Value;
-use std::{ffi::CString, ptr};
 
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
+            "supportedExtensions" | "enableExtension" => return self.extension_command(c),
+            "createVertexArrayOES"
+            | "bindVertexArrayOES"
+            | "deleteVertexArrayOES"
+            | "isVertexArrayOES" => return self.vertex_array_command(c),
+            "vertexAttribDivisorANGLE"
+            | "drawArraysInstancedANGLE"
+            | "drawElementsInstancedANGLE" => return self.instanced_command(c),
             "bridgeError" => {
                 self.error(c.u(0)?);
                 return Ok(Value::Null);
@@ -59,142 +66,23 @@ impl WebGl {
                 };
                 let id = c.u(0)?;
                 if kind == Kind::Buffer {
-                    if self.array_buffer == id {
-                        self.array_buffer = 0;
-                    }
-                    if self.element_buffer == id {
-                        self.element_buffer = 0;
-                    }
+                    return self.delete_buffer(id);
                 }
                 self.objects.delete(id, kind)?;
             }
-            "shaderSource" => {
-                let shader = self.objects.get(c.u(0)?, Kind::Shader)?.native;
-                if c.text.len() > MAX_SHADER_BYTES || c.text.contains('\0') {
-                    return Err(gl::INVALID_VALUE);
-                }
-                let source = CString::new(c.text.as_str()).map_err(|_| gl::INVALID_VALUE)?;
-                let pointer = source.as_ptr();
-                unsafe {
-                    gl::ShaderSource(shader, 1, &pointer, ptr::null());
-                }
-            }
-            "compileShader" => {
-                let shader = self.objects.get(c.u(0)?, Kind::Shader)?.native;
-                unsafe {
-                    gl::CompileShader(shader);
-                }
-            }
-            "attachShader" | "detachShader" => {
-                let program_id = c.u(0)?;
-                let shader_id = c.u(1)?;
-                let program = self.objects.get(program_id, Kind::Program)?.native;
-                let shader = self.objects.get(shader_id, Kind::Shader)?.native;
-                unsafe {
-                    if c.op == "attachShader" {
-                        gl::AttachShader(program, shader);
-                    } else {
-                        gl::DetachShader(program, shader);
-                    }
-                }
-                self.driver_result()?;
-                if c.op == "attachShader" {
-                    self.objects.attach(program_id, shader_id)?;
-                } else {
-                    self.objects.detach(program_id, shader_id)?;
-                }
-            }
-            "linkProgram" | "validateProgram" => {
-                let object = self.objects.get_mut(c.u(0)?, Kind::Program)?;
-                if c.op == "linkProgram" {
-                    object.generation =
-                        object.generation.checked_add(1).ok_or(gl::OUT_OF_MEMORY)?;
-                }
-                let program = object.native;
-                unsafe {
-                    if c.op == "linkProgram" {
-                        gl::LinkProgram(program);
-                    } else {
-                        gl::ValidateProgram(program);
-                    }
-                }
-            }
-            "useProgram" => {
-                let id = c.u(0)?;
-                let program = self.objects.name(id, Kind::Program)?;
-                unsafe {
-                    gl::UseProgram(program);
-                }
-                self.driver_result()?;
-                self.objects.switch_program(self.program, id)?;
-                self.program = id;
-            }
-            "getShaderParameter" | "getProgramParameter" => {
-                let shader = c.op == "getShaderParameter";
-                let pname = c.u(1)?;
-                let allowed = if shader {
-                    [gl::SHADER_TYPE, gl::DELETE_STATUS, gl::COMPILE_STATUS].contains(&pname)
-                } else {
-                    [
-                        gl::DELETE_STATUS,
-                        gl::LINK_STATUS,
-                        gl::VALIDATE_STATUS,
-                        gl::ATTACHED_SHADERS,
-                        gl::ACTIVE_ATTRIBUTES,
-                        gl::ACTIVE_UNIFORMS,
-                    ]
-                    .contains(&pname)
-                };
-                if !allowed {
-                    return Err(gl::INVALID_ENUM);
-                }
-                let object = self
-                    .objects
-                    .get(c.u(0)?, if shader { Kind::Shader } else { Kind::Program })?;
-                let mut value = 0;
-                unsafe {
-                    if shader {
-                        gl::GetShaderiv(object.native, pname, &mut value);
-                    } else {
-                        gl::GetProgramiv(object.native, pname, &mut value);
-                    }
-                }
-                self.driver_result()?;
-                return Ok(
-                    if [
-                        gl::DELETE_STATUS,
-                        gl::COMPILE_STATUS,
-                        gl::LINK_STATUS,
-                        gl::VALIDATE_STATUS,
-                    ]
-                    .contains(&pname)
-                    {
-                        json!(value != 0)
-                    } else {
-                        json!(value)
-                    },
-                );
-            }
-            "getShaderInfoLog" | "getProgramInfoLog" => return self.shader_log(c),
-            "getAttribLocation" | "bindAttribLocation" => {
-                let program = self.objects.get(c.u(0)?, Kind::Program)?.native;
-                if c.text.len() > 256 || c.text.starts_with("gl_") {
-                    return Err(gl::INVALID_VALUE);
-                }
-                let name = CString::new(c.text.as_str()).map_err(|_| gl::INVALID_VALUE)?;
-                if c.op == "getAttribLocation" {
-                    return Ok(json!(unsafe {
-                        gl::GetAttribLocation(program, name.as_ptr())
-                    }));
-                }
-                let index = c.u(1)?;
-                if index as usize >= self.attributes.len() {
-                    return Err(gl::INVALID_VALUE);
-                }
-                unsafe {
-                    gl::BindAttribLocation(program, index, name.as_ptr());
-                }
-            }
+            "shaderSource"
+            | "compileShader"
+            | "attachShader"
+            | "detachShader"
+            | "linkProgram"
+            | "validateProgram"
+            | "useProgram"
+            | "getShaderParameter"
+            | "getProgramParameter"
+            | "getShaderInfoLog"
+            | "getProgramInfoLog"
+            | "getAttribLocation"
+            | "bindAttribLocation" => return self.shader_command(c),
             "clearColor" => unsafe {
                 gl::ClearColor(c.float(0)?, c.float(1)?, c.float(2)?, c.float(3)?);
             },
@@ -326,7 +214,9 @@ impl WebGl {
             "resize" => return self.resize(c),
             "copyTexImage2D" | "copyTexSubImage2D" => return self.copy_texture(c),
             "hint" => {
-                if c.u(0)? != gl::GENERATE_MIPMAP_HINT {
+                if c.u(0)? != gl::GENERATE_MIPMAP_HINT
+                    && !(c.u(0)? == 0x8b8b && self.extensions.derivatives)
+                {
                     return Err(gl::INVALID_ENUM);
                 }
                 unsafe {
@@ -371,18 +261,9 @@ impl WebGl {
             "lineWidth" => unsafe {
                 gl::LineWidth(c.float(0)?);
             },
-            "stencilFunc" => unsafe {
-                gl::StencilFunc(c.u(0)?, c.n(1)?, c.u(2)?);
-            },
-            "stencilFuncSeparate" => unsafe {
-                gl::StencilFuncSeparate(c.u(0)?, c.u(1)?, c.n(2)?, c.u(3)?);
-            },
-            "stencilMask" => unsafe {
-                gl::StencilMask(c.u(0)?);
-            },
-            "stencilMaskSeparate" => unsafe {
-                gl::StencilMaskSeparate(c.u(0)?, c.u(1)?);
-            },
+            "stencilFunc" | "stencilFuncSeparate" | "stencilMask" | "stencilMaskSeparate" => {
+                self.stencil_mask_command(c)?
+            }
             "stencilOp" => unsafe {
                 gl::StencilOp(c.u(0)?, c.u(1)?, c.u(2)?);
             },

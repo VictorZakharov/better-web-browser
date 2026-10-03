@@ -196,6 +196,7 @@ pub enum TestCommand {
     Hang,
     DelayCommandRead { millis: u16 },
     Padding { bytes: u16 },
+    NativeDiagnostics,
     WriteMalformedFrame,
     ProbeRestrictions { loopback_port: u16 },
 }

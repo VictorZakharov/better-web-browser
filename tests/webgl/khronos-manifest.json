@@ -1,0 +1,27 @@
+{
+  "schema": 2,
+  "suite": "Breeze WebGL 1 native extension conformance",
+  "upstream": {
+    "repository": "https://github.com/KhronosGroup/WebGL.git",
+    "revision": "714857a28445e8f5d8d6ae1c78498578009534d8",
+    "license": "MIT"
+  },
+  "policy": {"minimum_subtests": 350, "expectations": "forbidden"},
+  "support": [
+    "LICENSE.txt",
+    "sdk/tests/js/js-test-pre.js",
+    "sdk/tests/js/webgl-test-utils.js",
+    "sdk/tests/js/js-test-post.js",
+    "sdk/tests/js/desktop-gl-constants.js",
+    "sdk/tests/js/tests/compositing-test.js",
+    "sdk/tests/js/tests/invalid-vertex-attrib-test.js",
+    "sdk/tests/resources/js-test-style.css"
+  ],
+  "tests": [
+    {"path":"sdk/tests/conformance/extensions/angle-instanced-arrays.html","area":"WebGL instancing","expected":"pass","harness":"khronos","required_extension":"ANGLE_instanced_arrays"},
+    {"path":"sdk/tests/conformance/extensions/oes-vertex-array-object.html","area":"WebGL vertex arrays","expected":"pass","harness":"khronos","required_extension":"OES_vertex_array_object"},
+    {"path":"sdk/tests/conformance/extensions/oes-vertex-array-object-bufferData.html","area":"WebGL vertex array storage","expected":"pass","harness":"khronos","required_extension":"OES_vertex_array_object"},
+    {"path":"sdk/tests/conformance/extensions/oes-standard-derivatives.html","area":"WebGL derivatives","expected":"pass","harness":"khronos","required_extension":"OES_standard_derivatives"},
+    {"path":"sdk/tests/conformance/extensions/ext-frag-depth.html","area":"WebGL fragment depth","expected":"pass","harness":"khronos","required_extension":"EXT_frag_depth"}
+  ]
+}

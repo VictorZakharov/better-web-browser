@@ -149,7 +149,9 @@ impl WebGl {
                 }
                 self.driver_result()?;
                 name.truncate((written.max(0) as usize).min(name.len()));
-                Ok(json!({"name":String::from_utf8_lossy(&name), "size":size, "type":kind}))
+                Ok(
+                    json!({"name":super::shader_validation::public_name(&String::from_utf8_lossy(&name)), "size":size, "type":kind}),
+                )
             }
             "getShaderPrecisionFormat" => {
                 let shader = c.u(0)?;
@@ -176,20 +178,8 @@ impl WebGl {
                 Ok(json!({"rangeMin":range[0], "rangeMax":range[1], "precision":value}))
             }
             "getShaderSource" => {
-                let shader = self.objects.get(c.u(0)?, Kind::Shader)?.native;
-                let mut bytes = vec![0u8; MAX_SHADER_BYTES + 1];
-                let mut written = 0;
-                unsafe {
-                    gl::GetShaderSource(
-                        shader,
-                        bytes.len() as i32,
-                        &mut written,
-                        bytes.as_mut_ptr().cast(),
-                    );
-                }
-                self.driver_result()?;
-                bytes.truncate((written.max(0) as usize).min(bytes.len()));
-                Ok(json!(String::from_utf8_lossy(&bytes)))
+                let shader = self.objects.get(c.u(0)?, Kind::Shader)?;
+                Ok(json!(String::from_utf8_lossy(&shader.bytes)))
             }
             "getAttachedShaders" => {
                 let program = self.objects.get(c.u(0)?, Kind::Program)?.native;
@@ -212,6 +202,12 @@ impl WebGl {
                     return Err(gl::INVALID_VALUE);
                 }
                 let pname = c.u(1)?;
+                if c.op == "getVertexAttrib" && pname == 0x88fe {
+                    if !self.extensions.instancing {
+                        return Err(gl::INVALID_ENUM);
+                    }
+                    return Ok(json!(self.attributes[index as usize].divisor));
+                }
                 if c.op == "getVertexAttribOffset" {
                     if pname != gl::VERTEX_ATTRIB_ARRAY_POINTER {
                         return Err(gl::INVALID_ENUM);
@@ -223,7 +219,7 @@ impl WebGl {
                     unsafe {
                         gl::GetVertexAttribfv(index, pname, values.as_mut_ptr());
                     }
-                    return Ok(json!(values));
+                    return Ok(json!(values.map(super::float_values::encode)));
                 }
                 if ![
                     gl::VERTEX_ATTRIB_ARRAY_ENABLED,
@@ -239,6 +235,22 @@ impl WebGl {
                 }
                 if pname == gl::VERTEX_ATTRIB_ARRAY_BUFFER_BINDING {
                     return Ok(json!(self.attributes[index as usize].buffer));
+                }
+                // Keep detached attributes' format/stride even when their native
+                // array was rebuilt to release a deleted buffer safely in GLES2.
+                let attribute = &self.attributes[index as usize];
+                let component = match attribute.kind {
+                    gl::BYTE | gl::UNSIGNED_BYTE => 1,
+                    gl::SHORT | gl::UNSIGNED_SHORT => 2,
+                    _ => 4,
+                };
+                match pname {
+                    gl::VERTEX_ATTRIB_ARRAY_ENABLED => return Ok(json!(attribute.enabled)),
+                    gl::VERTEX_ATTRIB_ARRAY_SIZE => return Ok(json!(attribute.size / component)),
+                    gl::VERTEX_ATTRIB_ARRAY_STRIDE => return Ok(json!(attribute.stride)),
+                    gl::VERTEX_ATTRIB_ARRAY_TYPE => return Ok(json!(attribute.kind)),
+                    gl::VERTEX_ATTRIB_ARRAY_NORMALIZED => return Ok(json!(attribute.normalized)),
+                    _ => {}
                 }
                 let mut value = 0;
                 unsafe {
@@ -261,50 +273,5 @@ impl WebGl {
             "getUniform" => self.get_uniform(c),
             _ => Err(gl::INVALID_OPERATION),
         }
-    }
-    fn get_uniform(&mut self, c: &Command) -> Result<Value> {
-        let id = c.u(0)?;
-        let program = self.objects.get(id, Kind::Program)?;
-        let uniform = self.objects.get(c.u(1)?, Kind::Uniform)?;
-        if uniform.owner != id || uniform.generation != program.generation {
-            return Err(gl::INVALID_OPERATION);
-        }
-        // A fixed 16-component allocation covers every WebGL 1 uniform type. ANGLE validates
-        // the location; GLES writes one element, not the whole declared uniform array.
-        let mut floats = [0.0f32; 16];
-        let mut ints = [0i32; 16];
-        let kind = c.u(2)?;
-        let count = match kind {
-            gl::FLOAT | gl::INT | gl::BOOL | gl::SAMPLER_2D | gl::SAMPLER_CUBE => 1,
-            gl::FLOAT_VEC2 | gl::INT_VEC2 | gl::BOOL_VEC2 => 2,
-            gl::FLOAT_VEC3 | gl::INT_VEC3 | gl::BOOL_VEC3 => 3,
-            gl::FLOAT_VEC4 | gl::INT_VEC4 | gl::BOOL_VEC4 | gl::FLOAT_MAT2 => 4,
-            gl::FLOAT_MAT3 => 9,
-            gl::FLOAT_MAT4 => 16,
-            _ => return Err(gl::INVALID_ENUM),
-        };
-        let float = [
-            gl::FLOAT,
-            gl::FLOAT_VEC2,
-            gl::FLOAT_VEC3,
-            gl::FLOAT_VEC4,
-            gl::FLOAT_MAT2,
-            gl::FLOAT_MAT3,
-            gl::FLOAT_MAT4,
-        ]
-        .contains(&kind);
-        unsafe {
-            if float {
-                gl::GetUniformfv(program.native, uniform.native as i32, floats.as_mut_ptr());
-            } else {
-                gl::GetUniformiv(program.native, uniform.native as i32, ints.as_mut_ptr());
-            }
-        }
-        self.driver_result()?;
-        Ok(if float {
-            json!(&floats[..count])
-        } else {
-            json!(&ints[..count])
-        })
     }
 }

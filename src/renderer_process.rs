@@ -3,6 +3,7 @@
 mod broker;
 mod child;
 pub(crate) mod launcher;
+mod native_diagnostics;
 pub(crate) mod windows;
 
 pub use broker::stream::{SensorDeliveryGate, SensorSinkError};

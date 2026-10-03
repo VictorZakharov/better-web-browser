@@ -52,6 +52,8 @@ mod input;
 mod media;
 #[path = "renderer_process/media_devices.rs"]
 mod media_devices;
+#[path = "renderer_process/native_diagnostics.rs"]
+mod native_diagnostics;
 #[path = "renderer_process/notifications.rs"]
 mod notifications;
 #[path = "renderer_process/pointer_buttons.rs"]
@@ -92,6 +94,8 @@ mod user_agent;
 mod video_codecs;
 #[path = "renderer_process/viewport_observers.rs"]
 mod viewport_observers;
+#[path = "renderer_process/webgl.rs"]
+mod webgl;
 #[path = "renderer_process/xhr_reuse.rs"]
 mod xhr_reuse;
 

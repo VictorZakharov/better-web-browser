@@ -3,13 +3,30 @@ use super::{Command, Kind, MAX_DRAW_VERTICES, MAX_UPLOAD_BYTES, Result, WebGl, g
 use serde_json::Value;
 use std::ptr;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(super) struct Attribute {
     pub(super) buffer: u32,
-    size: u32,
-    stride: u32,
+    pub(super) size: u32,
+    pub(super) stride: u32,
     pub(super) offset: u32,
-    enabled: bool,
+    pub(super) enabled: bool,
+    pub(super) divisor: u32,
+    pub(super) kind: u32,
+    pub(super) normalized: bool,
+}
+impl Default for Attribute {
+    fn default() -> Self {
+        Self {
+            buffer: 0,
+            size: 16,
+            stride: 0,
+            offset: 0,
+            enabled: false,
+            divisor: 0,
+            kind: gl::FLOAT,
+            normalized: false,
+        }
+    }
 }
 impl WebGl {
     pub(super) fn buffer_command(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
@@ -18,6 +35,9 @@ impl WebGl {
                 let target = c.u(0)?;
                 let id = c.u(1)?;
                 let native = self.objects.name(id, Kind::Buffer)?;
+                if id != 0 && self.objects.get(id, Kind::Buffer)?.pending_delete {
+                    return Err(gl::INVALID_OPERATION);
+                }
                 if ![gl::ARRAY_BUFFER, gl::ELEMENT_ARRAY_BUFFER].contains(&target) {
                     return Err(gl::INVALID_ENUM);
                 }
@@ -30,7 +50,10 @@ impl WebGl {
                 }
                 match target {
                     gl::ARRAY_BUFFER => self.array_buffer = id,
-                    gl::ELEMENT_ARRAY_BUFFER => self.element_buffer = id,
+                    gl::ELEMENT_ARRAY_BUFFER => {
+                        self.objects.switch_buffer(self.element_buffer, id)?;
+                        self.element_buffer = id;
+                    }
                     _ => return Err(gl::INVALID_ENUM),
                 }
                 unsafe {
@@ -96,28 +119,42 @@ impl WebGl {
                 if !(1..=4).contains(&size) || stride > 255 || index >= self.attributes.len() {
                     return Err(gl::INVALID_VALUE);
                 }
-                if offset % component != 0 || stride % component != 0 || self.array_buffer == 0 {
+                if offset % component != 0
+                    || stride % component != 0
+                    || (self.array_buffer == 0 && offset != 0)
+                {
                     return Err(gl::INVALID_OPERATION);
                 }
-                self.objects.get(self.array_buffer, Kind::Buffer)?;
-                unsafe {
-                    gl::VertexAttribPointer(
-                        index as u32,
-                        size as i32,
-                        kind,
-                        u8::from(normalized != 0),
-                        stride as i32,
-                        offset as usize as *const _,
-                    );
+                if self.array_buffer != 0 {
+                    self.objects.get(self.array_buffer, Kind::Buffer)?;
+                    unsafe {
+                        gl::VertexAttribPointer(
+                            index as u32,
+                            size as i32,
+                            kind,
+                            u8::from(normalized != 0),
+                            stride as i32,
+                            offset as usize as *const _,
+                        );
+                    }
+                    self.driver_result()?;
                 }
-                self.driver_result()?;
+                // WebGL accepts a null buffer only at offset zero. This resets the
+                // browser-owned binding, not a client-memory pointer in GLES. Every
+                // enabled null binding is rejected before any native draw below.
                 let enabled = self.attributes[index].enabled;
+                let divisor = self.attributes[index].divisor;
+                self.objects
+                    .switch_buffer(self.attributes[index].buffer, self.array_buffer)?;
                 self.attributes[index] = Attribute {
                     buffer: self.array_buffer,
                     size: size * component,
                     stride,
                     offset,
                     enabled,
+                    divisor,
+                    kind,
+                    normalized: normalized != 0,
                 };
             }
             "enableVertexAttribArray" | "disableVertexAttribArray" => {
@@ -158,11 +195,7 @@ impl WebGl {
                 let count = c.u(1)? as usize;
                 let kind = c.u(2)?;
                 let offset = c.u(3)? as usize;
-                let size = match kind {
-                    gl::UNSIGNED_BYTE => 1,
-                    gl::UNSIGNED_SHORT => 2,
-                    _ => return Err(gl::INVALID_ENUM),
-                };
+                let size = self.index_size(kind)?;
                 if count > MAX_DRAW_VERTICES as usize {
                     return Err(gl::INVALID_VALUE);
                 }
@@ -173,22 +206,8 @@ impl WebGl {
                     self.validate_program()?;
                     return Ok(Value::Null);
                 }
-                let object = self.objects.get(self.element_buffer, Kind::Buffer)?;
-                let end = offset
-                    .checked_add(count.checked_mul(size).ok_or(gl::INVALID_OPERATION)?)
-                    .ok_or(gl::INVALID_OPERATION)?;
-                let indices = object.bytes.get(offset..end).ok_or(gl::INVALID_OPERATION)?;
-                let maximum = if size == 1 {
-                    indices.iter().copied().map(u32::from).max()
-                } else {
-                    indices
-                        .chunks_exact(2)
-                        .map(|v| u32::from(u16::from_ne_bytes([v[0], v[1]])))
-                        .max()
-                };
-                if let Some(maximum) = maximum {
-                    self.validate_attributes(maximum)?;
-                }
+                let maximum = self.maximum_index(count, size, offset)?;
+                self.validate_attributes(maximum)?;
                 self.validate_program()?;
                 unsafe {
                     gl::DrawElements(
@@ -217,7 +236,15 @@ impl WebGl {
         self.objects.get(id, Kind::Buffer)?;
         Ok(id)
     }
-    fn validate_attributes(&self, maximum: u32) -> Result<()> {
+    pub(super) fn validate_attributes(&self, maximum: u32) -> Result<()> {
+        self.validate_instance_attributes(maximum, 1, false)
+    }
+    pub(super) fn validate_instance_attributes(
+        &self,
+        maximum: u32,
+        instances: u32,
+        instanced: bool,
+    ) -> Result<()> {
         let program = self.objects.get(self.program, Kind::Program)?.native;
         let mut count = 0;
         unsafe {
@@ -257,6 +284,16 @@ impl WebGl {
                 }
             }
         }
+        let mut per_vertex = false;
+        // WebGL requires a buffer for *every* enabled array, even when the current
+        // shader does not consume it. Active attributes alone govern byte ranges.
+        if self
+            .attributes
+            .iter()
+            .any(|attribute| attribute.enabled && attribute.buffer == 0)
+        {
+            return Err(gl::INVALID_OPERATION);
+        }
         for (index, attribute) in self
             .attributes
             .iter()
@@ -264,6 +301,10 @@ impl WebGl {
             .filter(|(index, a)| a.enabled && active[*index])
         {
             let _ = index;
+            per_vertex |= attribute.divisor == 0;
+            let maximum = (instances - 1)
+                .checked_div(attribute.divisor)
+                .unwrap_or(maximum);
             let buffer = self.objects.get(attribute.buffer, Kind::Buffer)?;
             let stride = if attribute.stride == 0 {
                 attribute.size
@@ -277,9 +318,12 @@ impl WebGl {
                 return Err(gl::INVALID_OPERATION);
             }
         }
+        if instanced && !per_vertex {
+            return Err(gl::INVALID_OPERATION);
+        }
         Ok(())
     }
-    fn validate_program(&self) -> Result<()> {
+    pub(super) fn validate_program(&self) -> Result<()> {
         let program = self.objects.get(self.program, Kind::Program)?;
         let mut linked = 0;
         unsafe {
@@ -292,7 +336,7 @@ impl WebGl {
         }
     }
 }
-fn checked_mode(mode: u32) -> Result<u32> {
+pub(super) fn checked_mode(mode: u32) -> Result<u32> {
     if [
         gl::POINTS,
         gl::LINES,

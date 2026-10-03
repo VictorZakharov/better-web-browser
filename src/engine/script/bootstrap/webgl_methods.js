@@ -36,6 +36,15 @@
         const method = function(...args) {
             webGlState(this);
             if (args.length < arity) throw new TypeError(name + ' requires at least ' + arity + ' arguments');
+            webGlConvertArguments(name, args);
+            if (webGlState(this).lost) {
+                if (name === 'getAttribLocation') return -1;
+                if (name === 'checkFramebufferStatus') return 0x8cdd;
+                if (name === 'getVertexAttribOffset') return 0;
+                if (name.startsWith('is')) return false;
+                if (/^(create|get)/.test(name)) return null;
+                return undefined;
+            }
             const result = Reflect.apply(implementation, this, args);
             return /^(create|get|is)/.test(name) || webGlResultMethods.has(name) ? result : undefined;
         };
@@ -51,7 +60,7 @@
             if (value === null) { webGlState(this); return; }
             const object = webGlObjects.get(value);
             if (!object || object.type !== 'WebGL' + type) throw new TypeError('Expected WebGL' + type);
-            if (object.context !== this) { webGlError(this, 0x0502); return; }
+            if (object.context !== this || object.epoch !== webGlState(this).epoch) { webGlError(this, 0x0502); return; }
             if (object.deleted) return;
             webGlCall(this, 'delete' + type, [object.id]);
             object.deleted = true;
@@ -59,6 +68,7 @@
         webGlMethod('is' + type, function(value) {
             const state = webGlState(this), object = webGlObjects.get(value);
             return !state.lost && Boolean(object && object.context === this &&
+                object.epoch === state.epoch &&
                 object.type === 'WebGL' + type &&
                 webGlCall(this, 'is' + type, [object.id]));
         });
@@ -148,7 +158,9 @@
         'getVertexAttribOffset', 'hint', 'copyTexImage2D', 'copyTexSubImage2D'];
     // Framebuffer attachment methods below translate their object-valued arguments.
     for (const name of integerMethods.filter(name => !name.startsWith('framebuffer'))) webGlMethod(name, function(...args) {
-        const result = webGlCall(this, name, args.map(value => Math.trunc(Number(value))));
+        const result = name === 'texParameterf'
+            ? webGlCall(this, name, args.slice(0, 2), [args[2]])
+            : webGlCall(this, name, args);
         if (['clear', 'drawArrays', 'drawElements'].includes(name)) webGlState(this).dirty = true;
         return result;
     });

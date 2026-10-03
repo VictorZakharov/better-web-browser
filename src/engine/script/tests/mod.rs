@@ -226,9 +226,33 @@ mod web_audio_waveshaper_oversample;
 #[cfg(windows)]
 mod webgl;
 #[cfg(windows)]
+mod webgl_argument_brands;
+mod webgl_attributes;
+#[cfg(windows)]
 mod webgl_contracts;
 #[cfg(windows)]
+mod webgl_fragment_depth;
+#[cfg(windows)]
+mod webgl_instancing;
+mod webgl_khronos_reporter;
+#[cfg(windows)]
+mod webgl_lifecycle;
+#[cfg(windows)]
+mod webgl_numeric_arguments;
+#[cfg(windows)]
+mod webgl_numeric_lists;
+#[cfg(windows)]
 mod webgl_presentation;
+#[cfg(windows)]
+mod webgl_shader_extensions;
+#[cfg(windows)]
+mod webgl_shader_validation;
+mod webgl_stencil_masks;
+#[cfg(windows)]
+mod webgl_texture_lod;
+mod webgl_uniform_reflection;
+#[cfg(windows)]
+mod webgl_vertex_arrays;
 mod websocket;
 mod window_named_access;
 mod workers;

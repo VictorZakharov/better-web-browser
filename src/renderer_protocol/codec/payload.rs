@@ -146,6 +146,7 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
         BrowserMessage::Test(command) => {
             match command {
                 TestCommand::InternalError => payload.push(10),
+                TestCommand::NativeDiagnostics => payload.push(12),
                 TestCommand::DocumentError => payload.push(11),
                 TestCommand::Crash => payload.push(1),
                 TestCommand::Hang => payload.push(2),

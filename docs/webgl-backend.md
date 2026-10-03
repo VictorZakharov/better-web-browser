@@ -1,9 +1,11 @@
-# WebGL 1 native baseline
+# WebGL 1 native backend
 
 Windows Canvas and OffscreenCanvas expose real WebGL 1 rendering, including worker
 rendering and Canvas painting/export. This is a bounded baseline, not a full WebGL
 conformance certification. HTML5test is guidance, not an acceptance substitute.
-The fresh pre-change Windows baseline is **487/588**.
+The initial native baseline measured **502/588**, up from **487/588**.
+Subsequent extensions are judged by actual rendering and conformance assertions,
+not by an assumed HTML5test score increase.
 
 ## Backend and provenance
 
@@ -71,7 +73,8 @@ These are not a WebGL conformance claim.
 The bindings implement uniform queries, texture uploads/copies, framebuffer and
 renderbuffer attachments, typed parameter queries, branded IDL objects and
 receiver/arity checks. Shader/program deletion waits for retained native references;
-uniform locations track link generations. Drawing validates active attributes only.
+uniform locations track link generations. Drawing validates active attribute ranges
+and rejects every enabled null attribute buffer, including inactive attributes.
 Canvas resize preserves live objects and author state while reinitializing pixels.
 Readback preserves destination padding and out-of-bounds pixels.
 
@@ -85,12 +88,14 @@ ownership incorrectly.
 
 Texture sources reuse existing origin-clean decoded image, Canvas, ImageData and
 ImageBitmap paths. ImageBitmap creation options are not overridden by unpack flags.
-This does not establish complete TexImageSource/CORS/video coverage. Antialiasing,
-optional extensions and context restoration remain unavailable. Failed creation or
+This does not establish complete TexImageSource/CORS/video coverage. Antialiasing
+remains unavailable. Real context loss/restoration, instancing, vertex arrays,
+unsigned indices and three shader extensions are described in the
+[lifecycle and extension contract](webgl-lifecycle-and-extensions.md). Failed creation or
 loss produces actionable events instead of a fake context. Rendering is Windows-only
 software WARP; other platforms do not advertise a native WebGL backend.
 
-Twenty-eight focused unit tests cover real pixels, isolation, malformed requests, resize
+Focused unit tests cover real pixels, isolation, malformed requests, resize
 under author masks, deferred deletion, alpha, padding, presentation and worker export.
 The shared `tests/fixtures/webgl-rendering.html` checks eighteen rendering/API
 contracts against unified-headless Chrome, including indexed textured geometry

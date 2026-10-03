@@ -29,9 +29,9 @@ pub(super) fn run(arguments: &[String]) -> Result<(), String> {
     if !valid_handle(input_handle) || !valid_handle(output_handle) {
         return Err("renderer IPC standard handles are invalid".into());
     }
-    // SAFETY: renderer mode owns the two allowlisted inherited standard handles until exit.
+    // SAFETY: renderer mode owns the allowlisted input handle until exit.
     let input = unsafe { File::from_raw_handle(input_handle as RawHandle) };
-    let output = unsafe { File::from_raw_handle(output_handle as RawHandle) };
+    let output = stdio::isolate_protocol_output(output_handle)?;
     let media = options
         .media
         .take()
@@ -145,6 +145,7 @@ pub(super) fn handle_test(
             Ok(())
         }
         TestCommand::Padding { .. } => Ok(()),
+        TestCommand::NativeDiagnostics => stdio::test_native_diagnostics(),
         TestCommand::WriteMalformedFrame => {
             writer
                 .inner_mut()
@@ -400,3 +401,4 @@ impl ChildOptions {
 mod connection;
 mod document;
 mod media;
+mod stdio;

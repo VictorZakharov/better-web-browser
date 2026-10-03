@@ -1,6 +1,6 @@
 use super::windows::{
-    AppContainerSid, LaunchAttributes, PipeSet, create_renderer_job, last_error, random_nonce, raw,
-    set_handle_inheritance,
+    AppContainerSid, InheritedOutputPipe, LaunchAttributes, PipeSet, create_renderer_job,
+    last_error, random_nonce, raw, set_handle_inheritance,
 };
 use crate::branding::UserAgentMode;
 use crate::limits::{
@@ -88,6 +88,7 @@ pub(super) struct LaunchedRenderer {
     pub(super) session: RendererSessionId,
     pub(super) nonce: Nonce,
     pub(super) media: Option<MediaWorkerOwner>,
+    pub(super) diagnostics_thread: std::thread::JoinHandle<()>,
 }
 
 pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer, String> {
@@ -97,6 +98,7 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
     let session = RendererSessionId::new(session_value)
         .map_err(|error| format!("allocate renderer session: {error}"))?;
     let pipes = PipeSet::create()?;
+    let diagnostics = InheritedOutputPipe::create("renderer native diagnostics")?;
     let media = options
         .enable_media
         .then(|| {
@@ -115,10 +117,12 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
     }
     let job = create_renderer_job()?;
     let sid = AppContainerSid::create_renderer()?;
+    let mut inherited_handles = media_handles.clone();
+    inherited_handles.push(raw(&diagnostics.child_output));
     let attributes = LaunchAttributes::with_inherited(
         &pipes.child_input,
         &pipes.child_output,
-        &media_handles,
+        &inherited_handles,
         &job,
         &sid,
     )?;
@@ -131,9 +135,9 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
     startup.StartupInfo.hStdInput = raw(&pipes.child_input);
     startup.StartupInfo.hStdOutput = raw(&pipes.child_output);
-    // Reusing the protocol output keeps the allowlist at exactly two unique handles. Renderer mode
-    // suppresses panic output; fatal fault-injection paths terminate without writing diagnostics.
-    startup.StartupInfo.hStdError = raw(&pipes.child_output);
+    // Native libraries can write to stderr independently of Rust's panic hook. These bytes
+    // must never enter the authenticated, strictly framed renderer protocol.
+    startup.StartupInfo.hStdError = raw(&diagnostics.child_output);
     startup.lpAttributeList = attributes.as_ptr();
     let mut process = PROCESS_INFORMATION::default();
     let flags = CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT;
@@ -167,6 +171,15 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
     };
     drop(pipes.child_input);
     drop(pipes.child_output);
+    drop(diagnostics.child_output);
+    let diagnostics_thread =
+        match super::native_diagnostics::spawn(File::from(diagnostics.browser_input)) {
+            Ok(thread) => thread,
+            Err(error) => {
+                drop(job); // Kill the contained child if its diagnostics cannot be drained.
+                return Err(error);
+            }
+        };
     Ok(LaunchedRenderer {
         process: process_handle,
         job,
@@ -176,6 +189,7 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
         session,
         nonce,
         media: media.map(LaunchedMediaWorker::into_owner),
+        diagnostics_thread,
     })
 }
 

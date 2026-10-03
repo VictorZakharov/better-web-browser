@@ -360,7 +360,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | Canvas, media, and downloads | Bounded software Canvas 2D provides real sRGB pixels, SVG paths, fills/strokes, gradients/patterns, clipping, shadows, filters, compositing, shaped/rasterized text, Geometry Interfaces, `ImageData`, image drawing, `ImageBitmap`, `OffscreenCanvas` (including workers), and PNG/JPEG/WebP export. Dirty document and child-frame Canvas bitmaps participate in live image presentation. The contained media worker plays URL-backed PCM WAV, MP3, ordinary AAC/M4A, Ogg/Vorbis, native FLAC, ADTS AAC-LC, audio-only WebM/Vorbis, Ogg/FLAC, and mapping-family-0 Ogg/WebM Opus with bundled decoders, plus H.264/AAC MP4 and H.264-only MP4 with a video clock; it also supports synchronized XAudio2 output, progressive Media Source input, and play/pause/seek/volume/mute/fullscreen controls. Browser-owned [camera and microphone grants](docs/media-capture.md) provide a bounded `getUserMedia` path, with captured video presented through `<video srcObject>`. One granted microphone track can be recorded as actual FLAC or [Ogg/Opus](docs/ogg-opus.md) / [WebM/Opus](docs/webm-opus.md) with bounded [`MediaRecorder`](docs/audio-codecs-and-recording.md); Opus recording accepts native 8/12/16/24/48 kHz, not 44.1 kHz capture. [Window/Worker encoding and decoding queries](docs/media-capabilities.md) use the implemented codec matrices without claiming hardware efficiency. HTML `<source>` fallback and stale-response rejection are tested. Text tracks can load WebVTT and paint bounded captions; audio/video track lists expose the accepted decoder streams and allow disabling their output. [Container limits](docs/encoded-audio-containers.md) include WebM video/multiple tracks, and streaming the new complete-file formats. [Other remaining limits](docs/html-media-hints-csp.md) include DRM, detached `new Audio(src)` loading, multiple selectable decoded streams, full caption styling/regions, picture-in-picture, and mature downloads. |
 | ◩ | Web Audio | `OfflineAudioContext` renders bounded 128-frame `Float32` PCM graphs with buffer, oscillator, constant, gain, filter, delay, panning, channel-routing, WaveShaper, Analyser, DynamicsCompressor, and Convolver nodes. Shared [speaker/discrete mixing, channel modes, and legal delayed feedback](docs/web-audio-routing.md) preserve wide intermediate buses and pending tails. Deprecated `ScriptProcessorNode` supplies real author-produced PCM and asynchronous processing events; it is not AudioWorklet. A live `AudioContext` sends rendered PCM through the contained media worker to XAudio2 after user activation, with bounded backpressure and lifecycle handling. `decodeAudioData` asynchronously decodes supported PCM/float WAV, FLAC, Ogg/Vorbis, MP3, AAC/M4A, ADTS AAC-LC, audio-only WebM/Vorbis, Ogg/FLAC, and mapping-family-0 Ogg/WebM Opus into resampled `AudioBuffer` data with promise and callback completion. A [browser-granted captured microphone](docs/media-capture.md) can feed a live graph through `MediaStreamAudioSourceNode`, including an analyser-only branch. `AudioWorklet`, media-element sources, additional encoded formats, and full conformance remain unavailable; see the [supported scope and limits](docs/web-audio.md), [codec contracts](docs/audio-codecs-and-recording.md), and [new container boundaries](docs/encoded-audio-containers.md). |
 | ◩ | Web Animations, CSS Animations, and Transitions | Script-created and stylesheet keyframes sample through the native cascade/paint path, with timelines, effect inspection, lifecycle events, scoped/layered names, and live keyframe CSSOM editing. Attribute-driven transitions include ancestor changes, a dedicated cascade origin, and reversing-shortening. Pseudo-elements, additive compositing, and compositor offloading remain open; see the [CSS animation](docs/css-animations.md), [Web Animations](docs/html5test-animation-media-csp.md), and [transition](docs/css-transitions.md) contracts. |
-| ◩ | WebGL 1 | Windows Canvas/OffscreenCanvas use real ANGLE/GLES2 shader rendering through software D3D11 WARP, including textures, indexed geometry, uniforms, framebuffer/renderbuffer objects, readback and worker export. Native resource admission and origin-clean texture sources are bounded. Antialiasing, extensions, restoration, accelerated adapters, full conformance, WebGL 2 and WebGPU remain open; see the [backend contract](docs/webgl-backend.md). |
+| ◩ | WebGL 1 | Windows Canvas/OffscreenCanvas use real ANGLE/GLES2 shader rendering through software D3D11 WARP, including textures, instanced/indexed geometry, vertex arrays, uniforms, framebuffer/renderbuffer objects, readback, worker export and real loss/restoration. Six native geometry/shader extensions are capability-gated. Antialiasing, accelerated adapters, full conformance, WebGL 2 and WebGPU remain open; see the [backend contract](docs/webgl-backend.md) and [extension/lifecycle coverage](docs/webgl-lifecycle-and-extensions.md). |
 | ◩ | Accessibility | A bounded renderer semantic tree is validated and exposed with browser chrome through AccessKit and Windows UI Automation, including focus/invoke/value actions. Accessible-name/ARIA coverage, rich text patterns, live regions, and non-Windows adapters remain incomplete; see [Accessibility architecture](docs/accessibility.md). |
 | ◩ | Process and site isolation | Each tab has a capability-free AppContainer renderer that owns remote-document parsing, JavaScript/DOM, CSS/layout, image/font decoding, Workers, and immutable presentation construction. The browser reconstructs privileged Fetch requests and owns persistent state; bounded IPC/queues, Job limits, hang detection, and tab-local containment cover aborts, access violations, OOM termination, and native stack overflow. Cross-site frame isolation is not implemented. |
 | ☐ | Security-audited browsing | The browser has not received a security audit and is not suitable for sensitive authenticated browsing. |
@@ -875,6 +875,52 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
   -Output target/html5test/2026-10-02-webgl-reproduction.json `
   -Screenshot target/html5test/2026-10-02-webgl-reproduction.png
 ```
+
+The 2026-10-03 [WebGL lifecycle and extension batch](docs/webgl-lifecycle-and-extensions.md)
+adds native context restoration, instancing, vertex-array objects, uint indices,
+derivatives, fragment depth and explicit texture LOD. It reuses the existing
+pinned ANGLE WebGL shader validator rather than implementing a shader compiler.
+Only implemented, native-supported extensions are advertised. Trusted lifecycle
+events, stale resource isolation, WebIDL conversion, native uniform reflection
+and bounded diagnostic/IPC separation have dedicated regression tests.
+
+Three final alternating fresh-profile release samples show **502 / 588 before**,
+and **502, 502, 497 / 588 after**, with unified-headless Chrome **579 / 588**.
+No HTML5test points are
+claimed for this batch. The five required, unmodified upstream Khronos cases
+pass **379 checks** (374 upstream assertions plus five required-capability checks);
+the separate exploratory manifest records known gaps
+instead of hiding failures or replacing upstream shader helpers.
+
+| Measurement (three-run median unless stated) | Before (#221) | Lifecycle/extensions | Unified-headless Chrome 154.0.8037.97 |
+| --- | ---: | ---: | ---: |
+| HTML5test rendered score, three samples | 502 / 588 each | 502, 502, 497 / 588 | 579 / 588 each |
+| HTML5test window ready | 18.3 ms | 19.4 ms | 231.7 ms |
+| HTML5test page ready | 274.5 ms | 287.6 ms | 1,076.0 ms |
+| HTML5test accumulated JavaScript | 579.8 ms | 602.4 ms | 598.4 ms |
+| HTML5test combined working set | 220.4 MiB | 220.0 MiB | 639.3 MiB |
+| Shared lifecycle/instancing fixture contracts, all three samples | Extensions unavailable | 47/47 | 47/47 |
+| Shared fixture page ready | Not measured | 227.3 ms | 575.0 ms |
+| Shared fixture combined working set | Not measured | 95.3 MiB | 549.2 MiB |
+
+These are local observations, not a speed-up claim: working sets are similar,
+and page-ready samples overlap (before 245.2–335.2 ms; after 255.5–318.1 ms).
+The 497-point sample accumulated 2,302.0 ms of JavaScript, versus 572.6 and
+602.4 ms in the other after samples. Additional baseline/new diagnostic captures
+returned 502, but the original slow run lacked feature-row diagnostics: the
+specific five-point failure is not isolated, and score stability is not claimed.
+The outlier is retained, not discarded. Captures use the default Breeze
+identity, fresh profiles, `en-US`, 125% scale and a ten-second observation period,
+with no competing builds or tests. The content viewports approximately match
+(Breeze 1248.8×548 CSS pixels; Chrome 1249×548). Breeze page-ready measures its
+first owned paint; Chrome's ready endpoint follows load. Neither measures score
+completion, and accumulated JavaScript includes work after first paint. Separate
+browser identity, layout and process-tree differences prevent treating these
+figures as equivalent full-browser performance. WebGL 2, WebGPU, antialiasing and
+full Khronos conformance remain unimplemented; synchronous XHR and long-running
+shader test tasks in debug builds remain explicit conformance gaps. The upstream
+texture-LOD case passes in the final release sample, but remains outside the
+required gate until it also completes within the unchanged debug watchdog.
 
 New releases must refresh or explicitly date these observations using the
 [evidence checklist](docs/technical-alpha-release.md#reproduction-and-release-authority).
