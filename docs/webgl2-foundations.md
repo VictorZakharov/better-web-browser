@@ -56,6 +56,9 @@ WebGL1's shader rules or extension admission.
   redefined. Compatible subimage updates preserve unaffected levels. Mutable
   NPOT mip generation records dimensions and charges growth, not repeated
   regeneration; immutable generation does not allocate storage again.
+- Owned 3D/array uploads bound every aligned row and slice, reject PBO confusion,
+  and validate subregions before native reads. Immutable volume mips shrink depth;
+  array mip levels preserve layer counts. Target bindings/deletion remain separate.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
@@ -63,8 +66,7 @@ presence is not a complete WebGL2 conformance result or a new HTML5test score.
 
 ## Remaining admission work
 
-3D/array textures, GLES3 pixel-store
-layouts, separate read/draw framebuffer state, multisample storage and resolves,
+GLES3 pixel-store layouts, separate read/draw framebuffer state, multisample storage and resolves,
 samplers, uniform blocks, queries, sync and transform feedback need their own
 bounded native contracts and realm bindings. Public core entry points need
 versioned realm bindings, not WebGL1 extension objects under new names.

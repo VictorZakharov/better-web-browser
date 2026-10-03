@@ -8,6 +8,7 @@ pub(super) struct Image {
     pub internal: u32,
     pub width: u32,
     pub height: u32,
+    pub depth: u32,
 }
 
 impl WebGl {
@@ -60,6 +61,7 @@ impl WebGl {
                         internal,
                         width: w,
                         height: h,
+                        depth: 1,
                     },
                 ));
             }
@@ -213,6 +215,7 @@ impl WebGl {
                     internal,
                     width: width as u32,
                     height: height as u32,
+                    depth: 1,
                 },
             );
             object

@@ -16,8 +16,16 @@ pub(super) type GetIntegerAttribute = unsafe extern "system" fn(u32, u32, *mut i
 pub(super) type GetUnsignedAttribute = unsafe extern "system" fn(u32, u32, *mut u32);
 pub(super) type GetInteger64 = unsafe extern "system" fn(u32, *mut i64);
 pub(super) type TextureStorage2D = unsafe extern "system" fn(u32, i32, u32, i32, i32);
+pub(super) type TextureStorage3D = unsafe extern "system" fn(u32, i32, u32, i32, i32, i32);
+pub(super) type TextureImage3D =
+    unsafe extern "system" fn(u32, i32, i32, i32, i32, i32, i32, u32, u32, *const c_void);
+pub(super) type TextureSubImage3D =
+    unsafe extern "system" fn(u32, i32, i32, i32, i32, i32, i32, i32, u32, u32, *const c_void);
 
 pub(super) struct CoreEntries {
+    pub texture_storage_3d: TextureStorage3D,
+    pub texture_image_3d: TextureImage3D,
+    pub texture_sub_image_3d: TextureSubImage3D,
     pub texture_storage_2d: TextureStorage2D,
     pub get_integer64: GetInteger64,
     pub max_element_index: u32,
@@ -77,6 +85,9 @@ impl CoreEntries {
             return Err("ANGLE MAX_ELEMENT_INDEX does not meet the admitted WebGL2 minimum".into());
         }
         Ok(Self {
+            texture_storage_3d: entry!(c"glTexStorage3D", TextureStorage3D),
+            texture_image_3d: entry!(c"glTexImage3D", TextureImage3D),
+            texture_sub_image_3d: entry!(c"glTexSubImage3D", TextureSubImage3D),
             texture_storage_2d: entry!(c"glTexStorage2D", TextureStorage2D),
             get_integer64,
             max_element_index: max_element_index as u32,

@@ -69,6 +69,7 @@ mod texture_capabilities;
 mod texture_color_space;
 mod texture_formats;
 mod texture_sampling;
+mod texture_targets;
 mod textures;
 mod uniform_queries;
 #[cfg(test)]
@@ -81,6 +82,11 @@ mod vertex_attribute_queries;
 #[cfg(test)]
 mod vertex_attribute_tests;
 mod vertex_attributes;
+#[cfg(test)]
+mod volume_mip_tests;
+#[cfg(test)]
+mod volume_texture_tests;
+mod volume_textures;
 pub(crate) use pixel_transport::PixelReply;
 pub(crate) use session::Contexts;
 
@@ -263,7 +269,7 @@ struct WebGl {
     framebuffer: u32,
     renderbuffer: u32,
     texture_unit: usize,
-    textures: Vec<[u32; 2]>,
+    textures: Vec<[u32; 4]>,
     default_draw_buffer: u32,
 }
 impl WebGl {
@@ -316,7 +322,7 @@ impl WebGl {
             framebuffer: 0,
             renderbuffer: 0,
             texture_unit: 0,
-            textures: vec![[0; 2]; units as usize],
+            textures: vec![[0; 4]; units as usize],
         };
         if let Some(core) = &context.core {
             context.extensions.admit_core(core);

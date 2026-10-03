@@ -5,6 +5,9 @@ use serde_json::Value;
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
+            "texStorage3D" | "texImage3D" | "texSubImage3D" => {
+                return self.volume_texture_command(c, bytes);
+            }
             "texStorage2D" => return self.core_texture_storage(c),
             "drawRangeElements" => return self.draw_range_elements(c),
             "vertexAttribIPointer" => return self.vertex_pointer(c),

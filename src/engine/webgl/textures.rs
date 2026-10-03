@@ -34,14 +34,7 @@ impl WebGl {
                             *binding = 0;
                             unsafe {
                                 gl::ActiveTexture(gl::TEXTURE0 + index as u32);
-                                gl::BindTexture(
-                                    if slot == 0 {
-                                        gl::TEXTURE_2D
-                                    } else {
-                                        gl::TEXTURE_CUBE_MAP
-                                    },
-                                    0,
-                                );
+                                gl::BindTexture(super::texture_targets::target(slot), 0);
                             }
                         }
                     }
@@ -65,7 +58,7 @@ impl WebGl {
             }
             "bindTexture" => {
                 let target = c.u(0)?;
-                let slot = texture_slot(target)?;
+                let slot = self.texture_slot(target)?;
                 let id = c.u(1)?;
                 if id != 0 {
                     let object = self.objects.get_mut(id, Kind::Texture)?;
@@ -87,7 +80,7 @@ impl WebGl {
             "texImage2D" | "texSubImage2D" => return self.upload_texture(c, bytes),
             "texParameteri" | "texParameterf" => {
                 let target = c.u(0)?;
-                texture_slot(target)?;
+                self.texture_slot(target)?;
                 let pname = c.u(1)?;
                 if !self.texture_parameter_allowed(pname) {
                     return Err(gl::INVALID_ENUM);
@@ -123,7 +116,7 @@ impl WebGl {
             }
             "getTexParameter" => {
                 let target = c.u(0)?;
-                texture_slot(target)?;
+                self.texture_slot(target)?;
                 let pname = c.u(1)?;
                 if self.options.api == super::ApiVersion::Two && [0x912f, 0x82df].contains(&pname) {
                     let mut value = 0;

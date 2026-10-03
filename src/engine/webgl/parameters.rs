@@ -15,6 +15,13 @@ impl WebGl {
     }
 
     pub(super) fn parameter(&mut self, pname: u32) -> Result<Value> {
+        if [0x806a, 0x8c1d].contains(&pname) {
+            if self.options.api != super::ApiVersion::Two {
+                return Err(gl::INVALID_ENUM);
+            }
+            let id = self.textures[self.texture_unit][if pname == 0x806a { 2 } else { 3 }];
+            return Ok(if id == 0 { Value::Null } else { json!(id) });
+        }
         if let Some(value) = self.core_parameter(pname)? {
             return Ok(value);
         }
