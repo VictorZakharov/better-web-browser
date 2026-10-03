@@ -20,6 +20,14 @@ impl WebGl {
             self.options.api,
             super::pixel_layout::Direction::Unpack,
         );
+        let _pack_buffer = super::pixel_buffer_guard::PixelBufferGuard::unbind(
+            self.options.api,
+            super::pixel_buffer_guard::Direction::Pack,
+        );
+        let _unpack_buffer = super::pixel_buffer_guard::PixelBufferGuard::unbind(
+            self.options.api,
+            super::pixel_buffer_guard::Direction::Unpack,
+        );
         let [x, y, width, height] = rectangle;
         let count = (width as usize)
             .checked_mul(height as usize)

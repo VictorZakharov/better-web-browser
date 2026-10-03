@@ -96,10 +96,12 @@ impl WebGl {
         c: &Command,
         bytes: Option<&[u8]>,
     ) -> Result<Value> {
-        if self
-            .core_buffer_bindings
-            .get(&super::core_buffers::PIXEL_UNPACK)
-            .is_some_and(|id| *id != 0)
+        let from_buffer = c.op.ends_with("FromBuffer");
+        if !from_buffer
+            && self
+                .core_buffer_bindings
+                .get(&super::core_buffers::PIXEL_UNPACK)
+                .is_some_and(|id| *id != 0)
         {
             return Err(gl::INVALID_OPERATION);
         }
@@ -122,7 +124,7 @@ impl WebGl {
         {
             return Err(gl::INVALID_VALUE);
         }
-        let sub = c.op == "texSubImage2D";
+        let sub = c.op.starts_with("texSubImage2D");
         let internal = if sub {
             let image = object
                 .core_images
@@ -137,7 +139,7 @@ impl WebGl {
             {
                 return Err(gl::INVALID_VALUE);
             }
-            if bytes.is_none() {
+            if bytes.is_none() && !from_buffer {
                 return Err(gl::INVALID_VALUE);
             }
             image.internal
@@ -152,12 +154,12 @@ impl WebGl {
         };
         let format = c.u(6)?;
         let kind = c.u(7)?;
-        if kind == 0x8dad && bytes.is_some() {
+        if kind == 0x8dad && bytes.is_some() && !from_buffer {
             // WebGL2 permits FLOAT_32_UNSIGNED_INT_24_8_REV only with null CPU data.
             return Err(gl::INVALID_OPERATION);
         }
         let (upload, storage) = formats::upload(internal, format, kind)?;
-        let size = if bytes.is_none() && !sub {
+        let size = if bytes.is_none() && !sub && !from_buffer {
             0
         } else {
             super::pixel_layout::Store::native(
@@ -173,12 +175,11 @@ impl WebGl {
         if bytes.is_some_and(|data| data.len() < size) {
             return Err(gl::INVALID_OPERATION);
         }
+        let pointer = self.unpack_pointer(c, bytes, from_buffer, 8, size, kind)?;
         if !sub {
             self.charge(0, width as usize * height as usize * storage)?;
         }
-        let pointer = bytes.map_or(std::ptr::null(), |data| data.as_ptr().cast());
-        // The owned byte range includes aligned rows. PBO overloads are separate;
-        // only CPU-backed uploads reach this closed command.
+        // CPU pointers and PBO offsets reach distinct, validated overloads.
         unsafe {
             if sub {
                 gl::TexSubImage2D(

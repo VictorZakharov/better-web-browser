@@ -68,11 +68,14 @@ mod parameters;
 mod pixel_buffer_guard;
 #[cfg(test)]
 mod pixel_buffer_tests;
+mod pixel_buffers;
 mod pixel_layout;
 #[cfg(test)]
 mod pixel_layout_tests;
 mod pixel_readback;
 mod pixel_store_guard;
+#[cfg(test)]
+mod pixel_transfer_tests;
 mod pixel_transport;
 mod presentation;
 mod queries;

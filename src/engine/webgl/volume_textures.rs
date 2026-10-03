@@ -24,14 +24,16 @@ impl WebGl {
         if c.op == "texStorage3D" {
             return self.volume_storage(c, id);
         }
-        if self
-            .core_buffer_bindings
-            .get(&super::core_buffers::PIXEL_UNPACK)
-            .is_some_and(|id| *id != 0)
+        let from_buffer = c.op.ends_with("FromBuffer");
+        if !from_buffer
+            && self
+                .core_buffer_bindings
+                .get(&super::core_buffers::PIXEL_UNPACK)
+                .is_some_and(|id| *id != 0)
         {
             return Err(gl::INVALID_OPERATION);
         }
-        let sub = c.op == "texSubImage3D";
+        let sub = c.op.starts_with("texSubImage3D");
         let level = c.n(1)?;
         if !(0..=12).contains(&level) {
             return Err(gl::INVALID_VALUE);
@@ -44,7 +46,7 @@ impl WebGl {
         );
         dimensions(target, width, height, depth)?;
         let (format, kind) = (c.u(if sub { 8 } else { 7 })?, c.u(if sub { 9 } else { 8 })?);
-        if kind == 0x8dad && bytes.is_some() {
+        if kind == 0x8dad && bytes.is_some() && !from_buffer {
             return Err(gl::INVALID_OPERATION);
         }
         let object = self.objects.get(id, Kind::Texture)?;
@@ -63,7 +65,7 @@ impl WebGl {
                     return Err(gl::INVALID_VALUE);
                 }
             }
-            if bytes.is_none() {
+            if bytes.is_none() && !from_buffer {
                 return Err(gl::INVALID_VALUE);
             }
             (image.internal, offsets)
@@ -77,7 +79,7 @@ impl WebGl {
             (c.u(2)?, [0; 3])
         };
         let (upload, storage) = formats::upload(internal, format, kind)?;
-        let size = if bytes.is_none() && !sub {
+        let size = if bytes.is_none() && !sub && !from_buffer {
             0
         } else {
             super::pixel_layout::Store::native(
@@ -103,8 +105,9 @@ impl WebGl {
         if !sub {
             self.charge(0, allocation)?;
         }
+        let pointer =
+            self.unpack_pointer(c, bytes, from_buffer, if sub { 10 } else { 9 }, size, kind)?;
         let core = self.core.as_ref().ok_or(gl::INVALID_OPERATION)?;
-        let pointer = bytes.map_or(std::ptr::null(), |data| data.as_ptr().cast());
         // The validated footprint includes every skipped row/image and padding.
         unsafe {
             if sub {
@@ -129,7 +132,7 @@ impl WebGl {
         }
         self.driver_result()?;
         if !sub {
-            if bytes.is_none() {
+            if bytes.is_none() && !from_buffer {
                 self.initialize_volume(
                     target,
                     level,

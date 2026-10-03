@@ -5,6 +5,16 @@ use serde_json::Value;
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
+            "readPixelsToBuffer" => return self.read_pixels_to_buffer(c, bytes),
+            "texImage2DFromBuffer" | "texSubImage2DFromBuffer" => {
+                if self.options.api != super::ApiVersion::Two {
+                    return Err(gl::INVALID_OPERATION);
+                }
+                return self.core_texture_upload(c, bytes);
+            }
+            "texImage3DFromBuffer" | "texSubImage3DFromBuffer" => {
+                return self.volume_texture_command(c, bytes);
+            }
             "getUniformIndices"
             | "getActiveUniforms"
             | "getUniformBlockIndex"
