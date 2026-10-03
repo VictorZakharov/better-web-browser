@@ -6,7 +6,7 @@
     "revision": "714857a28445e8f5d8d6ae1c78498578009534d8",
     "license": "MIT"
   },
-  "policy": {"minimum_subtests": 350, "expectations": "forbidden"},
+  "policy": {"minimum_subtests": 1000, "expectations": "forbidden"},
   "support": [
     "LICENSE.txt",
     "sdk/tests/js/js-test-pre.js",
@@ -15,13 +15,26 @@
     "sdk/tests/js/desktop-gl-constants.js",
     "sdk/tests/js/tests/compositing-test.js",
     "sdk/tests/js/tests/invalid-vertex-attrib-test.js",
-    "sdk/tests/resources/js-test-style.css"
+    "sdk/tests/resources/js-test-style.css",
+    "sdk/tests/js/tests/ext-float-blend.js",
+    "sdk/tests/js/tests/ext-color-buffer-half-float.js",
+    "sdk/tests/js/tests/oes-texture-float-and-half-float-linear.js",
+    "sdk/tests/js/tests/ext-texture-filter-anisotropic.js",
+    "sdk/tests/resources/gray-1024x1024.jpg"
   ],
   "tests": [
     {"path":"sdk/tests/conformance/extensions/angle-instanced-arrays.html","area":"WebGL instancing","expected":"pass","harness":"khronos","required_extension":"ANGLE_instanced_arrays"},
     {"path":"sdk/tests/conformance/extensions/oes-vertex-array-object.html","area":"WebGL vertex arrays","expected":"pass","harness":"khronos","required_extension":"OES_vertex_array_object"},
     {"path":"sdk/tests/conformance/extensions/oes-vertex-array-object-bufferData.html","area":"WebGL vertex array storage","expected":"pass","harness":"khronos","required_extension":"OES_vertex_array_object"},
     {"path":"sdk/tests/conformance/extensions/oes-standard-derivatives.html","area":"WebGL derivatives","expected":"pass","harness":"khronos","required_extension":"OES_standard_derivatives"},
-    {"path":"sdk/tests/conformance/extensions/ext-frag-depth.html","area":"WebGL fragment depth","expected":"pass","harness":"khronos","required_extension":"EXT_frag_depth"}
+    {"path":"sdk/tests/conformance/extensions/ext-frag-depth.html","area":"WebGL fragment depth","expected":"pass","harness":"khronos","required_extension":"EXT_frag_depth"},
+    {"path":"sdk/tests/conformance/extensions/oes-texture-float.html","area":"WebGL float textures","expected":"pass","harness":"khronos","required_extension":"OES_texture_float"},
+    {"path":"sdk/tests/conformance/extensions/oes-texture-half-float.html","area":"WebGL half textures","expected":"pass","harness":"khronos","required_extension":"OES_texture_half_float"},
+    {"path":"sdk/tests/conformance/extensions/oes-texture-float-linear.html","area":"WebGL float filtering","expected":"pass","harness":"khronos","required_extension":"OES_texture_float_linear"},
+    {"path":"sdk/tests/conformance/extensions/oes-texture-half-float-linear.html","area":"WebGL half filtering","expected":"pass","harness":"khronos","required_extension":"OES_texture_half_float_linear"},
+    {"path":"sdk/tests/conformance/extensions/ext-color-buffer-half-float.html","area":"WebGL half color targets","expected":"pass","harness":"khronos","required_extension":"EXT_color_buffer_half_float"},
+    {"path":"sdk/tests/conformance/extensions/webgl-depth-texture.html","area":"WebGL depth textures","expected":"pass","harness":"khronos","required_extension":"WEBGL_depth_texture"},
+    {"path":"sdk/tests/conformance/extensions/ext-texture-filter-anisotropic.html","area":"WebGL anisotropy","expected":"pass","harness":"khronos","required_extension":"EXT_texture_filter_anisotropic"},
+    {"path":"sdk/tests/conformance/extensions/ext-sRGB.html","area":"WebGL sRGB color pipeline","expected":"pass","harness":"khronos","required_extension":"EXT_sRGB"}
   ]
 }

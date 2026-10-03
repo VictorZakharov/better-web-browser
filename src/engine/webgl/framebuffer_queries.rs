@@ -40,7 +40,9 @@ impl WebGl {
             gl::FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE,
         ]
         .contains(&pname)
-            || pname == super::texture_formats::COMPONENT_TYPE && color_types)
+            || pname == super::texture_formats::COMPONENT_TYPE && color_types
+            || pname == super::texture_color_space::COLOR_ENCODING
+                && self.extensions.textures.enabled(TextureCapability::Srgb))
         {
             return Err(gl::INVALID_ENUM);
         }
@@ -82,6 +84,22 @@ impl WebGl {
                     0
                 } else {
                     entry.target
+                }))
+            }
+            super::texture_color_space::COLOR_ENCODING => {
+                let object = self.objects.get(entry.id, entry.kind)?;
+                let format = if entry.kind == Kind::Texture {
+                    object
+                        .texture_images
+                        .get(&(entry.target, 0))
+                        .map_or(0, |image| image.0)
+                } else {
+                    object.renderbuffer_format
+                };
+                Ok(json!(if super::texture_color_space::is_srgb(format) {
+                    super::texture_color_space::SRGB
+                } else {
+                    gl::LINEAR
                 }))
             }
             _ => {

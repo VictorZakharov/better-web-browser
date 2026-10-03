@@ -1,5 +1,7 @@
 // core.js through tasks.js share one root IIFE, with nested private helpers. The DOMException
 // prefix and subsequent network/worker extensions own independent IIFEs. V8 compiles the result.
+include!("webgl_bootstrap.rs");
+
 pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     // The browser's native bridge is captured only by bootstrap closures. A
     // page-global bridge would let author code guess node IDs and inspect
@@ -102,18 +104,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/canvas_filter.js"),
     include_str!("bootstrap/canvas_composite_surface.js"),
     include_str!("bootstrap/canvas_text.js"),
-    include_str!("bootstrap/webgl_attributes.js"),
-    include_str!("bootstrap/webgl_context.js"),
-    include_str!("bootstrap/webgl_argument_brands.js"),
-    include_str!("bootstrap/webgl_numeric_arguments.js"),
-    include_str!("bootstrap/webgl_lifecycle.js"),
-    include_str!("bootstrap/webgl_extensions.js"),
-    include_str!("bootstrap/webgl_texture_extensions.js"),
-    include_str!("bootstrap/webgl_vertex_arrays.js"),
-    include_str!("bootstrap/webgl_methods.js"),
-    include_str!("bootstrap/webgl_queries.js"),
-    include_str!("bootstrap/webgl_textures.js"),
-    include_str!("bootstrap/webgl_constants.js"),
+    webgl_bootstrap!(),
     include_str!("bootstrap/canvas_presentation.js"),
     include_str!("bootstrap/traversal.js"),
     include_str!("bootstrap/traversal_iterator.js"),

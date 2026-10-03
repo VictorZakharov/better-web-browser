@@ -7,6 +7,8 @@
         ['OES_texture_float_linear', {}],
         ['OES_texture_half_float_linear', {}],
         ['WEBGL_depth_texture', {UNSIGNED_INT_24_8_WEBGL:0x84fa}],
+        ['EXT_sRGB', {SRGB_EXT:0x8c40, SRGB_ALPHA_EXT:0x8c42,
+            SRGB8_ALPHA8_EXT:0x8c43, FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING_EXT:0x8210}],
         ['WEBGL_color_buffer_float', {
             RGBA32F_EXT:0x8814,
             FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE_EXT:0x8211,

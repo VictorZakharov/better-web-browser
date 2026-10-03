@@ -13,7 +13,7 @@ Merely finding a native GLES capability never admits a new public enum or type.
 Implemented contracts in this batch are `OES_texture_float`,
 `OES_texture_half_float`, their two linear-filter extensions,
 `WEBGL_color_buffer_float`, `EXT_color_buffer_half_float`, and
-`EXT_texture_filter_anisotropic` and `WEBGL_depth_texture`. sRGB is not yet advertised.
+`EXT_texture_filter_anisotropic`, `WEBGL_depth_texture`, and `EXT_sRGB`.
 Availability depends on the actual native provider, not a hard-coded browser list.
 
 Requesting float/half-float textures implicitly enables the corresponding color
@@ -106,6 +106,29 @@ the watchdog or a claim of complete WebGL conformance. The shared
 unified-headless Chrome 154, including actual HDR readback, converted copy pixels
 and interpolation of four separately rendered depth values.
 
+## sRGB and realm registration
+
+`EXT_sRGB` admits only unsigned-byte `SRGB_EXT`/`SRGB_ALPHA_EXT` texture images
+and `SRGB8_ALPHA8_EXT` renderbuffers. ANGLE owns sRGB decoding, encoded writes,
+and linear-space blending; the browser does not approximate these in shaders or
+CPU pixel conversions. Alpha is not gamma converted. RGB-only sRGB images are
+not color-renderable in this WebGL1 extension, even if the private GLES3 provider
+could render to its sized format. Framebuffer encoding queries remain extension
+gated, and generated sRGB mipmaps remain forbidden by the WebGL1 contract.
+
+Window and Worker include the same WebGL bootstrap block. Worker tests exercise
+real HDR renderbuffers, binary destination subviews, sRGB/depth attachments,
+independent capability state and shutdown. Restoration tests verify fresh
+extension identities, disabled author capability admission and invalidated old
+resources. The shared native-pixel fixture also passes inside the hidden Windows
+AppContainer and transports the interpolated image through the renderer protocol.
+
+With sRGB, the unchanged pinned Khronos gate expands to thirteen required cases
+and 1,414 observed assertions. Its minimum assertion floor rises from 350 to
+1,000; expectation overrides and unsupported-required-extension skips remain
+forbidden. These are capability-specific conformance results, not a complete
+WebGL2 or game-readiness claim.
+
 ## Primary contracts
 
 - [OES_texture_float](https://registry.khronos.org/webgl/extensions/OES_texture_float/)
@@ -116,5 +139,6 @@ and interpolation of four separately rendered depth values.
 - [EXT_color_buffer_half_float](https://registry.khronos.org/webgl/extensions/EXT_color_buffer_half_float/)
 - [EXT_texture_filter_anisotropic](https://registry.khronos.org/webgl/extensions/EXT_texture_filter_anisotropic/)
 - [WEBGL_depth_texture](https://registry.khronos.org/webgl/extensions/WEBGL_depth_texture/)
+- [EXT_sRGB](https://registry.khronos.org/webgl/extensions/EXT_sRGB/)
 - [WebGL1 framebuffer constraints](https://registry.khronos.org/webgl/specs/latest/1.0/#6.5)
 - [ANGLE explicit context version](https://github.com/google/angle/blob/main/extensions/EGL_ANGLE_create_context_backwards_compatible.txt)

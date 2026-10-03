@@ -15,13 +15,13 @@
         // Canvas imageSourceSnapshot admits only decoded same-origin/CORS-readable images.
         // WebGL never obtains opaque network pixels through a separate native decoding path.
         const snapshot = imageSourceSnapshot(source, true);
-        if (![0x1401,0x1406,0x8d61].includes(type) || ![0x1908, 0x1907, 0x1906, 0x1909, 0x190a].includes(format)) {
+        if (![0x1401,0x1406,0x8d61].includes(type) || ![0x1908, 0x1907, 0x1906, 0x1909, 0x190a,0x8c40,0x8c42].includes(format)) {
             webGlError(context, 0x0502); return null;
         }
         const state = webGlState(context);
         const bitmap = imageBitmapStates.get(source);
         if (bitmap) snapshot.pixels = new Uint8ClampedArray(bitmap.pixels);
-        const components = format === 0x1908 ? 4 : format === 0x1907 ? 3 : format === 0x190a ? 2 : 1;
+        const components = [0x1908,0x8c42].includes(format) ? 4 : [0x1907,0x8c40].includes(format) ? 3 : format === 0x190a ? 2 : 1;
         const alignment = context.getParameter(0x0cf5);
         const componentBytes = type===0x1406 ? 4 : type===0x8d61 ? 2 : 1;
         const rowBytes = snapshot.width * components * componentBytes;

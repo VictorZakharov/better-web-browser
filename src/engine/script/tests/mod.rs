@@ -252,9 +252,11 @@ mod webgl_presentation;
 mod webgl_shader_extensions;
 #[cfg(windows)]
 mod webgl_shader_validation;
+mod webgl_srgb;
 mod webgl_stencil_masks;
 #[cfg(windows)]
 mod webgl_texture_lod;
+mod webgl_texture_restoration;
 mod webgl_uniform_reflection;
 #[cfg(windows)]
 mod webgl_vertex_arrays;

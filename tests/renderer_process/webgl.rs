@@ -91,3 +91,54 @@ fn native_webgl_restore_instancing_and_canvas_pixels_cross_the_containment_bound
     assert_eq!(session.snapshot().state, RendererState::Running);
     session.shutdown().expect("clean WebGL renderer shutdown");
 }
+
+#[test]
+fn native_webgl_hdr_copies_and_depth_interpolation_survive_appcontainer_transport() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut session = RendererSession::launch(options()).expect("launch hidden texture renderer");
+    let page = load_html_document(
+        &session,
+        803,
+        include_str!("../webgl/texture-depth-hdr.html"),
+    );
+    assert!(page.runtime.errors.is_empty(), "{:?}", page.runtime.errors);
+    assert_eq!(
+        page.title, "ready:71",
+        "all native pixel assertions must run"
+    );
+    let url = page
+        .layout
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::Image { url, .. } if url.starts_with("breeze-internal:canvas:") => {
+                Some(url)
+            }
+            _ => None,
+        })
+        .expect("native depth image participates in contained presentation");
+    let image = page
+        .images
+        .iter()
+        .find(|image| &image.url == url)
+        .expect("owned native pixels cross the renderer protocol");
+    let interpolated = image
+        .image
+        .bgra
+        .chunks_exact(4)
+        .filter(|pixel| {
+            pixel[..3].iter().all(|value| (127..=129).contains(value)) && pixel[3] == 255
+        })
+        .count();
+    assert!(
+        interpolated >= 16,
+        "interpolated depth pixels missing: {interpolated}"
+    );
+    session
+        .ping(Duration::from_secs(3))
+        .expect("renderer remains responsive after native readbacks");
+    assert_eq!(session.snapshot().state, RendererState::Running);
+    session
+        .shutdown()
+        .expect("clean contained texture shutdown");
+}

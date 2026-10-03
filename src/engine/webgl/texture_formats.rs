@@ -14,6 +14,9 @@ const GREEN: u32 = 0x1904;
 const BLUE: u32 = 0x1905;
 
 pub(super) fn native_format(format: u32, kind: u32) -> (u32, u32, u32) {
+    if let Some(native) = super::texture_color_space::native_format(format) {
+        return native;
+    }
     if super::depth_textures::is_depth(format) {
         // Keep WebGL1's unsized depth definition. ANGLE deliberately permits
         // legacy non-comparison LINEAR sampling for these formats; sized GLES3
@@ -58,6 +61,9 @@ pub(super) fn texture_format(
     kind: u32,
     capabilities: &TextureCapabilities,
 ) -> Result<PixelFormat> {
+    if let Some(pixel) = super::texture_color_space::texture_format(format, kind, capabilities) {
+        return pixel;
+    }
     if super::depth_textures::is_depth(format) {
         if !capabilities.enabled(Capability::Depth) {
             return Err(gl::INVALID_ENUM);
@@ -115,6 +121,7 @@ pub(super) fn texture_format(
 
 pub(super) fn renderbuffer_bytes(format: u32, capabilities: &TextureCapabilities) -> Result<usize> {
     match format {
+        super::texture_color_space::SRGB8_ALPHA8 if capabilities.enabled(Capability::Srgb) => Ok(4),
         gl::RGBA4
         | gl::RGB565
         | gl::RGB5_A1

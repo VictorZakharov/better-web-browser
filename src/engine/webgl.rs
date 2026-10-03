@@ -35,6 +35,7 @@ mod surface;
 #[cfg(test)]
 mod tests;
 mod texture_capabilities;
+mod texture_color_space;
 mod texture_formats;
 mod texture_sampling;
 mod textures;

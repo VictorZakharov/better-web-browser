@@ -20,6 +20,9 @@ mod storage_manager;
 #[cfg(windows)]
 #[path = "worker_runtime_tests/webgl.rs"]
 mod webgl;
+#[cfg(windows)]
+#[path = "worker_runtime_tests/webgl_textures.rs"]
+mod webgl_textures;
 #[path = "worker_runtime_tests/websocket.rs"]
 mod websocket;
 

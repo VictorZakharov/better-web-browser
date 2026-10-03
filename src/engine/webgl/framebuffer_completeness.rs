@@ -73,7 +73,9 @@ impl WebGl {
             .get(entry.id, Kind::Texture)?
             .texture_images
             .get(&(entry.target, 0));
-        if image.is_some_and(|(format, _)| ![gl::RGBA, gl::RGB].contains(format)) {
+        if image.is_some_and(|(format, _)| {
+            ![gl::RGBA, gl::RGB, super::texture_color_space::SRGB_ALPHA].contains(format)
+        }) {
             return Ok(gl::FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
         }
         Ok(status)

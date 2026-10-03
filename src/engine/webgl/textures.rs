@@ -153,7 +153,9 @@ impl WebGl {
                     .texture_images
                     .iter()
                     .any(|((_, level), (format, _))| {
-                        *level == 0 && super::depth_textures::is_depth(*format)
+                        *level == 0
+                            && (super::depth_textures::is_depth(*format)
+                                || super::texture_color_space::is_srgb(*format))
                     })
                 {
                     return Err(gl::INVALID_OPERATION);

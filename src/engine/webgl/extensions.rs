@@ -277,10 +277,6 @@ impl WebGl {
                     names.push("EXT_shader_texture_lod");
                 }
                 for capability in TextureCapability::ALL {
-                    // sRGB remains private until its API contract is implemented.
-                    if capability == TextureCapability::Srgb {
-                        continue;
-                    }
                     if self.extensions.textures.available(capability) {
                         names.push(capability.public_name());
                     }
@@ -288,9 +284,9 @@ impl WebGl {
                 Ok(json!(names))
             }
             "enableExtension" => {
-                let texture = TextureCapability::ALL.into_iter().find(|capability| {
-                    *capability != TextureCapability::Srgb && capability.public_name() == c.text
-                });
+                let texture = TextureCapability::ALL
+                    .into_iter()
+                    .find(|capability| capability.public_name() == c.text);
                 let enabled = if let Some(capability) = texture {
                     self.extensions.enable_texture(capability)
                 } else {
