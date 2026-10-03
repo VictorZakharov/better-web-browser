@@ -9,13 +9,20 @@ mod api_version;
 mod api_version_tests;
 mod buffers;
 mod commands;
+#[cfg(test)]
+mod compressed_buffer_tests;
 mod compressed_capabilities;
+#[cfg(test)]
+mod compressed_core_tests;
 mod compressed_formats;
+mod compressed_initialization;
+mod compressed_storage;
 #[cfg(test)]
 mod compressed_texture_tests;
 mod compressed_textures;
 #[cfg(test)]
 mod compressed_validation_tests;
+mod compressed_volumes;
 mod construction;
 mod context;
 mod copy_texture;
@@ -31,6 +38,8 @@ mod core_buffers;
 mod core_draw_tests;
 mod core_draws;
 mod core_entries;
+#[cfg(test)]
+mod core_extension_tests;
 mod core_extensions;
 #[cfg(test)]
 mod core_framebuffer_tests;
@@ -51,6 +60,9 @@ mod core_textures;
 #[cfg(test)]
 mod core_uniform_tests;
 mod core_uniforms;
+mod default_attachment_queries;
+#[cfg(test)]
+mod default_attachment_tests;
 mod depth_textures;
 mod draw_buffers;
 mod extension_commands;

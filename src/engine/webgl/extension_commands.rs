@@ -39,7 +39,9 @@ impl WebGl {
                     names.push("EXT_shader_texture_lod");
                 }
                 for capability in TextureCapability::ALL {
-                    if self.extensions.textures.available(capability) {
+                    if capability.exposed_in(self.options.api)
+                        && self.extensions.textures.available(capability)
+                    {
                         names.push(capability.public_name());
                     }
                 }
@@ -69,7 +71,23 @@ impl WebGl {
                     .into_iter()
                     .find(|capability| capability.public_name() == c.text);
                 let enabled = if let Some(capability) = texture {
-                    self.extensions.enable_texture(capability)
+                    if !capability.exposed_in(self.options.api) {
+                        return Ok(json!(false));
+                    }
+                    if self.options.api == super::ApiVersion::Two
+                        && capability == TextureCapability::ColorHalfFloat
+                    {
+                        // Half texture uploads are core in WebGL2. The optional
+                        // color extension must not request a WebGL1 OES dependency.
+                        let enabled = self.extensions.enable_simple(
+                            capability.native_name(),
+                            self.extensions.textures.available(capability),
+                        );
+                        self.extensions.textures.confirm(capability, enabled);
+                        enabled
+                    } else {
+                        self.extensions.enable_texture(capability)
+                    }
                 } else {
                     match c.text.as_str() {
                         "WEBGL_draw_buffers" => {

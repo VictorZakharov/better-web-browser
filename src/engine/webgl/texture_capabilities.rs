@@ -58,6 +58,19 @@ impl TextureCapability {
         }
     }
 
+    pub(super) fn exposed_in(self, api: super::ApiVersion) -> bool {
+        api == super::ApiVersion::One
+            || !matches!(
+                self,
+                Self::Float
+                    | Self::HalfFloat
+                    | Self::HalfFloatLinear
+                    | Self::ColorFloat
+                    | Self::Depth
+                    | Self::Srgb
+            )
+    }
+
     fn index(self) -> usize {
         Self::ALL.iter().position(|value| *value == self).unwrap()
     }

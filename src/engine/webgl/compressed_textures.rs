@@ -7,7 +7,11 @@ impl WebGl {
         c: &Command,
         bytes: Option<&[u8]>,
     ) -> Result<Value> {
-        let sub = c.op == "compressedTexSubImage2D";
+        let sub = c.op.starts_with("compressedTexSubImage2D");
+        let from_buffer = c.op.ends_with("FromBuffer");
+        if from_buffer && self.options.api != super::ApiVersion::Two {
+            return Err(gl::INVALID_OPERATION);
+        }
         let target = c.u(0)?;
         let cube =
             (gl::TEXTURE_CUBE_MAP_POSITIVE_X..=gl::TEXTURE_CUBE_MAP_NEGATIVE_Z).contains(&target);
@@ -31,14 +35,14 @@ impl WebGl {
         if !self.extensions.compressed.enabled(format.family) {
             return Err(gl::INVALID_ENUM);
         }
-        let bytes = bytes.ok_or(gl::INVALID_VALUE)?;
         let expected = format.byte_size(width as u32, height as u32)?;
         if expected > MAX_UPLOAD_BYTES {
             return Err(gl::INVALID_VALUE);
         }
         // CPU overloads must not let an owned pointer be interpreted as an
         // offset into an author's unpack buffer, even for a zero-byte image.
-        if self.options.api == super::ApiVersion::Two
+        if !from_buffer
+            && self.options.api == super::ApiVersion::Two
             && *self
                 .core_buffer_bindings
                 .get(&super::core_buffers::PIXEL_UNPACK)
@@ -59,9 +63,7 @@ impl WebGl {
             }
             // A mismatched allocated format is INVALID_OPERATION even when
             // the same payload has a different footprint in the new format.
-            if bytes.len() != expected {
-                return Err(gl::INVALID_VALUE);
-            }
+            let pointer = self.compressed_pointer(c, bytes, from_buffer, 7, expected)?;
             let (x, y) = (c.n(2)?, c.n(3)?);
             if x < 0 || y < 0 {
                 return Err(gl::INVALID_VALUE);
@@ -81,7 +83,7 @@ impl WebGl {
                     height,
                     internal,
                     expected as i32,
-                    bytes.as_ptr().cast(),
+                    pointer,
                 )
             };
         } else {
@@ -92,9 +94,7 @@ impl WebGl {
                 return Err(gl::INVALID_OPERATION);
             }
             format.image_dimensions(width as u32, height as u32, level as u32)?;
-            if bytes.len() != expected {
-                return Err(gl::INVALID_VALUE);
-            }
+            let pointer = self.compressed_pointer(c, bytes, from_buffer, 6, expected)?;
             // Charge against uncompressed residency, not just tiny transport
             // blocks: a provider may decompress before storing the texture.
             let size = (width as usize)
@@ -119,7 +119,7 @@ impl WebGl {
                     height,
                     0,
                     expected as i32,
-                    bytes.as_ptr().cast(),
+                    pointer,
                 )
             };
             self.driver_result()?;
@@ -140,5 +140,29 @@ impl WebGl {
         }
         self.driver_result()?;
         Ok(Value::Null)
+    }
+    pub(super) fn compressed_pointer(
+        &self,
+        c: &Command,
+        bytes: Option<&[u8]>,
+        from_buffer: bool,
+        size_index: usize,
+        expected: usize,
+    ) -> Result<*const std::ffi::c_void> {
+        if from_buffer {
+            if c.n(size_index)? < 0 {
+                return Err(gl::INVALID_VALUE);
+            }
+            if c.n(size_index)? as usize != expected {
+                return Err(gl::INVALID_VALUE);
+            }
+            self.unpack_pointer(c, bytes, true, size_index + 1, expected, gl::UNSIGNED_BYTE)
+        } else {
+            let bytes = bytes.ok_or(gl::INVALID_VALUE)?;
+            if bytes.len() != expected {
+                return Err(gl::INVALID_VALUE);
+            }
+            Ok(bytes.as_ptr().cast())
+        }
     }
 }

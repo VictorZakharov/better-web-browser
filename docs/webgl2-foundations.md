@@ -115,6 +115,19 @@ WebGL1's shader rules or extension admission.
   and subregion rules. These complete public WebGL1 slices also run through the
   shared Window/Worker bindings and contained renderer. They do not depend on
   admitting an incomplete WebGL2 canvas interface.
+- Staged core compressed storage covers immutable 2D/cube mip chains and array
+  layers. Every level/layer is explicitly initialized in bounded encoded tiles;
+  BC1 RGBA uses transparent blocks rather than treating opaque zero blocks as
+  transparent. Owned array uploads and distinct pixel-unpack-buffer offsets
+  preserve neighboring layers, reject unsafe ranges, and do not expose addresses.
+- Core texture facilities no longer advertise obsolete WebGL1 extension names.
+  `EXT_color_buffer_half_float` independently admits R16F, RG16F and RGBA16F,
+  without requesting an obsolete OES upload extension or granting RGB16F/full
+  float rendering. Native HDR readback verifies missing-channel defaults.
+- Default framebuffer attachment queries translate BACK/DEPTH/STENCIL into the
+  actual private storage, reflect granted alpha/depth/stencil bits, and report
+  logical default ownership instead of leaking native texture/renderbuffer names.
+  Independent read/draw bindings and read routes remain untouched.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal

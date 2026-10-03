@@ -8,9 +8,12 @@ impl WebGl {
         let target = c.u(0)?;
         let framebuffer = self.core_framebuffer_id(target)?;
         if framebuffer == 0 {
-            return Err(gl::INVALID_OPERATION);
+            return self.default_attachment_parameter(c);
         }
         let point = c.u(1)?;
+        if [gl::BACK, 0x1801, 0x1802].contains(&point) {
+            return Err(gl::INVALID_OPERATION);
+        }
         if !self.color_attachment_allowed(point)
             && ![
                 gl::DEPTH_ATTACHMENT,

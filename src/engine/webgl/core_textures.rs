@@ -16,6 +16,9 @@ impl WebGl {
         if self.options.api != ApiVersion::Two {
             return Err(gl::INVALID_OPERATION);
         }
+        if super::compressed_formats::format(c.u(2)?).is_ok() {
+            return self.compressed_texture_storage(c);
+        }
         let target = c.u(0)?;
         let slot = super::textures::texture_slot(target)?;
         let id = self.textures[self.texture_unit][slot];

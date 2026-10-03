@@ -45,6 +45,10 @@ pub(super) type TextureImage3D =
     unsafe extern "system" fn(u32, i32, i32, i32, i32, i32, i32, u32, u32, *const c_void);
 pub(super) type TextureSubImage3D =
     unsafe extern "system" fn(u32, i32, i32, i32, i32, i32, i32, i32, u32, u32, *const c_void);
+pub(super) type CompressedSubImage3D =
+    unsafe extern "system" fn(u32, i32, i32, i32, i32, i32, i32, i32, u32, i32, *const c_void);
+pub(super) type CompressedImage3D =
+    unsafe extern "system" fn(u32, i32, u32, i32, i32, i32, i32, i32, *const c_void);
 
 pub(super) struct CoreEntries {
     pub transform: super::transform_entries::Entries,
@@ -79,6 +83,8 @@ pub(super) struct CoreEntries {
     pub texture_storage_3d: TextureStorage3D,
     pub texture_image_3d: TextureImage3D,
     pub texture_sub_image_3d: TextureSubImage3D,
+    pub compressed_sub_image_3d: CompressedSubImage3D,
+    pub compressed_image_3d: CompressedImage3D,
     pub texture_storage_2d: TextureStorage2D,
     pub get_integer64: GetInteger64,
     pub max_element_index: u32,
@@ -180,6 +186,8 @@ impl CoreEntries {
             texture_storage_3d: entry!(c"glTexStorage3D", TextureStorage3D),
             texture_image_3d: entry!(c"glTexImage3D", TextureImage3D),
             texture_sub_image_3d: entry!(c"glTexSubImage3D", TextureSubImage3D),
+            compressed_sub_image_3d: entry!(c"glCompressedTexSubImage3D", CompressedSubImage3D),
+            compressed_image_3d: entry!(c"glCompressedTexImage3D", CompressedImage3D),
             texture_storage_2d: entry!(c"glTexStorage2D", TextureStorage2D),
             get_integer64,
             max_element_index: max_element_index as u32,

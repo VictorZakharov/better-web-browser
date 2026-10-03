@@ -25,6 +25,15 @@ impl WebGl {
                 return self.query_object_command(c);
             }
             "readPixelsToBuffer" => return self.read_pixels_to_buffer(c, bytes),
+            "compressedTexImage2DFromBuffer" | "compressedTexSubImage2DFromBuffer" => {
+                return self.compressed_texture_command(c, bytes);
+            }
+            "compressedTexImage3D"
+            | "compressedTexSubImage3D"
+            | "compressedTexImage3DFromBuffer"
+            | "compressedTexSubImage3DFromBuffer" => {
+                return self.compressed_volume_command(c, bytes);
+            }
             "texImage2DFromBuffer" | "texSubImage2DFromBuffer" => {
                 if self.options.api != super::ApiVersion::Two {
                     return Err(gl::INVALID_OPERATION);

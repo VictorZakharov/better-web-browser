@@ -163,6 +163,9 @@ impl WebGl {
     }
 
     fn volume_storage(&mut self, c: &Command, id: u32) -> Result<Value> {
+        if super::compressed_formats::format(c.u(2)?).is_ok() {
+            return self.compressed_texture_storage(c);
+        }
         let target = c.u(0)?;
         if self.objects.get(id, Kind::Texture)?.immutable_levels != 0 {
             return Err(gl::INVALID_OPERATION);

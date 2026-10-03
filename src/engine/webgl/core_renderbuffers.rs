@@ -20,7 +20,12 @@ pub(super) fn storage_bytes(format: u32) -> Result<usize> {
 impl WebGl {
     pub(super) fn core_renderbuffer_bytes(&self, format: u32) -> Result<usize> {
         if [0x822d, 0x822e, 0x822f, 0x8230, 0x881a, 0x8814, 0x8c3a].contains(&format) {
-            if !self.extensions.core_color_float {
+            let half = [0x822d, 0x822f, 0x881a].contains(&format)
+                && self
+                    .extensions
+                    .textures
+                    .enabled(super::texture_capabilities::TextureCapability::ColorHalfFloat);
+            if !self.extensions.core_color_float && !half {
                 return Err(gl::INVALID_ENUM);
             }
             return Ok(super::core_texture_formats::storage(format)?.bytes);
