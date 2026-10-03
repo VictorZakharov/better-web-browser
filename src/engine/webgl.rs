@@ -10,12 +10,14 @@ mod context;
 mod copy_texture;
 mod extensions;
 mod float_values;
+mod framebuffer_completeness;
 mod framebuffers;
 mod index_ranges;
 mod instancing;
 mod object_queries;
 mod objects;
 mod parameters;
+mod pixel_readback;
 mod presentation;
 mod queries;
 mod resize;
@@ -27,6 +29,9 @@ mod stencil_masks;
 mod surface;
 #[cfg(test)]
 mod tests;
+mod texture_capabilities;
+mod texture_formats;
+mod texture_sampling;
 mod textures;
 mod uniform_queries;
 #[cfg(test)]

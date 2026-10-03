@@ -1,4 +1,5 @@
 //! Bounded texture uploads: no author pointer is ever passed to ANGLE.
+use super::texture_capabilities::TextureCapability;
 use super::{Command, Kind, MAX_UPLOAD_BYTES, Result, WebGl, gl, json};
 use serde_json::Value;
 use std::ptr;
@@ -67,15 +68,29 @@ impl WebGl {
                 let target = c.u(0)?;
                 texture_slot(target)?;
                 let pname = c.u(1)?;
-                if ![
-                    gl::TEXTURE_MIN_FILTER,
-                    gl::TEXTURE_MAG_FILTER,
-                    gl::TEXTURE_WRAP_S,
-                    gl::TEXTURE_WRAP_T,
-                ]
-                .contains(&pname)
-                {
+                if !self.texture_parameter_allowed(pname) {
                     return Err(gl::INVALID_ENUM);
+                }
+                if pname == 0x84fe {
+                    let value = if c.op == "texParameterf" {
+                        c.float(0)?
+                    } else {
+                        c.n(2)? as f32
+                    };
+                    let mut maximum = 0.0;
+                    unsafe {
+                        gl::GetFloatv(0x84ff, &mut maximum);
+                    }
+                    self.driver_result()?;
+                    // EXT permits implementation clamping. ANGLE's WebGL mode
+                    // rejects values above its limit, so clamp at our boundary
+                    // without changing the specified error for values below 1.
+                    let value = if value > maximum { maximum } else { value };
+                    unsafe {
+                        gl::TexParameterf(target, pname, value);
+                    }
+                    self.driver_result()?;
+                    return Ok(Value::Null);
                 }
                 unsafe {
                     if c.op == "texParameterf" {
@@ -89,15 +104,16 @@ impl WebGl {
                 let target = c.u(0)?;
                 texture_slot(target)?;
                 let pname = c.u(1)?;
-                if ![
-                    gl::TEXTURE_MIN_FILTER,
-                    gl::TEXTURE_MAG_FILTER,
-                    gl::TEXTURE_WRAP_S,
-                    gl::TEXTURE_WRAP_T,
-                ]
-                .contains(&pname)
-                {
+                if !self.texture_parameter_allowed(pname) {
                     return Err(gl::INVALID_ENUM);
+                }
+                if pname == 0x84fe {
+                    let mut value = 0.0;
+                    unsafe {
+                        gl::GetTexParameterfv(target, pname, &mut value);
+                    }
+                    self.driver_result()?;
+                    return Ok(json!(value));
                 }
                 let mut value = 0;
                 unsafe {
@@ -136,6 +152,20 @@ impl WebGl {
         self.driver_result()?;
         Ok(Value::Null)
     }
+    fn texture_parameter_allowed(&self, pname: u32) -> bool {
+        [
+            gl::TEXTURE_MIN_FILTER,
+            gl::TEXTURE_MAG_FILTER,
+            gl::TEXTURE_WRAP_S,
+            gl::TEXTURE_WRAP_T,
+        ]
+        .contains(&pname)
+            || pname == 0x84fe
+                && self
+                    .extensions
+                    .textures
+                    .enabled(TextureCapability::Anisotropy)
+    }
     fn upload_texture(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         let target = c.u(0)?;
         let slot = if target == gl::TEXTURE_2D {
@@ -163,24 +193,18 @@ impl WebGl {
         if slot == 1 && width != height {
             return Err(gl::INVALID_VALUE);
         }
-        let components = match format {
-            gl::RGBA => 4,
-            gl::RGB => 3,
-            gl::LUMINANCE_ALPHA => 2,
-            gl::ALPHA | gl::LUMINANCE => 1,
-            _ => return Err(gl::INVALID_ENUM),
-        };
-        let bpp = match kind {
-            gl::UNSIGNED_BYTE => components,
-            gl::UNSIGNED_SHORT_5_6_5 if format == gl::RGB => 2,
-            gl::UNSIGNED_SHORT_4_4_4_4 | gl::UNSIGNED_SHORT_5_5_5_1 if format == gl::RGBA => 2,
-            _ => return Err(gl::INVALID_OPERATION),
-        };
+        let pixel =
+            super::texture_formats::texture_format(format, kind, &self.extensions.textures)?;
         let mut alignment = 0;
         unsafe {
             gl::GetIntegerv(gl::UNPACK_ALIGNMENT, &mut alignment);
         }
-        let size = pixel_size(width as usize, height as usize, bpp, alignment as usize)?;
+        let size = pixel_size(
+            width as usize,
+            height as usize,
+            pixel.upload_bytes,
+            alignment as usize,
+        )?;
         if size > MAX_UPLOAD_BYTES {
             return Err(gl::OUT_OF_MEMORY);
         }
@@ -188,6 +212,18 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         let sub = c.op == "texSubImage2D";
+        if sub
+            && self
+                .objects
+                .get(id, Kind::Texture)?
+                .texture_images
+                .get(&(target, level))
+                != Some(&(format, kind))
+        {
+            // GLES3 permits conversions that WebGL1's same-format/type upload
+            // contract does not. Preserve the public image definition boundary.
+            return Err(gl::INVALID_OPERATION);
+        }
         if sub && bytes.is_none() && size != 0 {
             return Err(gl::INVALID_VALUE);
         }
@@ -196,11 +232,16 @@ impl WebGl {
                 return Err(gl::INVALID_OPERATION);
             }
             // Charge every new level allocation; this deliberately overestimates replacement.
-            self.charge(0, (width as usize * height as usize * 4).max(size))?;
+            let storage = (width as usize * height as usize * pixel.storage_bytes).max(size);
+            self.charge(0, storage)?;
             let object = self.objects.get_mut(id, Kind::Texture)?;
-            object.capacity = object.capacity.max(width as usize * height as usize * 4);
+            object.capacity = object.capacity.max(storage);
         }
         let pointer = bytes.map_or(ptr::null(), |b| b.as_ptr().cast());
+        // WebGL1's OES half-float token is not accepted by native GLES3. Map
+        // validated author formats to the provider's sized storage/type pair.
+        let (native_internal, native_format, native_kind) =
+            super::texture_formats::native_format(format, kind);
         unsafe {
             if sub {
                 gl::TexSubImage2D(
@@ -210,25 +251,49 @@ impl WebGl {
                     c.n(5)?,
                     width,
                     height,
-                    format,
-                    kind,
+                    native_format,
+                    native_kind,
                     pointer,
                 );
             } else {
                 gl::TexImage2D(
                     target,
                     level,
-                    format as i32,
+                    native_internal as i32,
                     width,
                     height,
                     0,
-                    format,
-                    kind,
+                    native_format,
+                    native_kind,
                     pointer,
                 );
             }
         }
         self.driver_result()?;
+        if !sub {
+            if level == 0 {
+                let target = if slot == 0 {
+                    gl::TEXTURE_2D
+                } else {
+                    gl::TEXTURE_CUBE_MAP
+                };
+                // GLES3 lacks legacy floating alpha/luminance storage. Red/RG
+                // storage plus private swizzle reproduces WebGL1 channel rules.
+                for (offset, value) in super::texture_formats::native_swizzle(format, kind)
+                    .into_iter()
+                    .enumerate()
+                {
+                    unsafe {
+                        gl::TexParameteri(target, 0x8e42 + offset as u32, value as i32);
+                    }
+                }
+                self.driver_result()?;
+            }
+            self.objects
+                .get_mut(id, Kind::Texture)?
+                .texture_images
+                .insert((target, level), (format, kind));
+        }
         Ok(Value::Null)
     }
 }

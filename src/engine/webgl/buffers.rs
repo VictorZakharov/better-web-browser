@@ -186,6 +186,8 @@ impl WebGl {
                     )?;
                 }
                 self.validate_program()?;
+                let _sampling = self.sampling_guard()?;
+                self.validate_framebuffer()?;
                 unsafe {
                     gl::DrawArrays(mode, first as i32, count as i32);
                 }
@@ -209,6 +211,8 @@ impl WebGl {
                 let maximum = self.maximum_index(count, size, offset)?;
                 self.validate_attributes(maximum)?;
                 self.validate_program()?;
+                let _sampling = self.sampling_guard()?;
+                self.validate_framebuffer()?;
                 unsafe {
                     gl::DrawElements(
                         mode,

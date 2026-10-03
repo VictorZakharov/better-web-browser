@@ -108,6 +108,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/webgl_numeric_arguments.js"),
     include_str!("bootstrap/webgl_lifecycle.js"),
     include_str!("bootstrap/webgl_extensions.js"),
+    include_str!("bootstrap/webgl_texture_extensions.js"),
     include_str!("bootstrap/webgl_vertex_arrays.js"),
     include_str!("bootstrap/webgl_methods.js"),
     include_str!("bootstrap/webgl_queries.js"),

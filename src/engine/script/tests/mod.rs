@@ -230,6 +230,8 @@ mod webgl_argument_brands;
 mod webgl_attributes;
 #[cfg(windows)]
 mod webgl_contracts;
+mod webgl_float_sampling;
+mod webgl_float_textures;
 #[cfg(windows)]
 mod webgl_fragment_depth;
 #[cfg(windows)]

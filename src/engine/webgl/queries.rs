@@ -1,5 +1,5 @@
 //! Read-only GLES queries use a closed list with statically sized out-parameters.
-use super::{Command, Kind, MAX_SHADER_BYTES, MAX_UPLOAD_BYTES, Result, WebGl, gl, json};
+use super::{Command, Kind, MAX_SHADER_BYTES, Result, WebGl, gl, json};
 use serde_json::Value;
 impl WebGl {
     pub(super) fn query_command(&mut self, c: &Command, input: Option<&[u8]>) -> Result<Value> {
@@ -40,69 +40,7 @@ impl WebGl {
                 self.driver_result()?;
                 Ok(json!(value))
             }
-            "readPixels" => {
-                let width = c.n(2)?;
-                let height = c.n(3)?;
-                if width < 0 || height < 0 {
-                    return Err(gl::INVALID_VALUE);
-                }
-                if c.u(4)? != gl::RGBA || c.u(5)? != gl::UNSIGNED_BYTE {
-                    return Err(gl::INVALID_OPERATION);
-                }
-                let mut alignment = 0;
-                unsafe {
-                    gl::GetIntegerv(gl::PACK_ALIGNMENT, &mut alignment);
-                }
-                let size = super::textures::pixel_size(
-                    width as usize,
-                    height as usize,
-                    4,
-                    alignment as usize,
-                )?;
-                if size > MAX_UPLOAD_BYTES {
-                    return Err(gl::OUT_OF_MEMORY);
-                }
-                if (c.u(6)? as usize) < size {
-                    return Err(gl::INVALID_OPERATION);
-                }
-                let mut bytes = match input {
-                    Some(data) if data.len() >= size => data[..size].to_vec(),
-                    Some(_) => return Err(gl::INVALID_OPERATION),
-                    None => vec![0u8; size],
-                };
-                unsafe {
-                    gl::ReadPixels(
-                        c.n(0)?,
-                        c.n(1)?,
-                        width,
-                        height,
-                        gl::RGBA,
-                        gl::UNSIGNED_BYTE,
-                        bytes.as_mut_ptr().cast(),
-                    );
-                }
-                self.driver_result()?;
-                if self.framebuffer == 0 && !self.options.alpha {
-                    let stride =
-                        (width as usize * 4).div_ceil(alignment as usize) * alignment as usize;
-                    let x = c.n(0)?;
-                    let y = c.n(1)?;
-                    for row in 0..height as usize {
-                        for column in 0..width as usize {
-                            let sx = i64::from(x) + column as i64;
-                            let sy = i64::from(y) + row as i64;
-                            if sx >= 0
-                                && sy >= 0
-                                && sx < i64::from(self.surface.width)
-                                && sy < i64::from(self.surface.height)
-                            {
-                                bytes[row * stride + column * 4 + 3] = 255;
-                            }
-                        }
-                    }
-                }
-                Ok(json!(bytes))
-            }
+            "readPixels" => self.read_pixels(c, input),
             "getActiveUniform" | "getActiveAttrib" => {
                 let program = self.objects.get(c.u(0)?, Kind::Program)?.native;
                 let index = c.u(1)?;

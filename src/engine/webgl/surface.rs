@@ -57,8 +57,17 @@ impl Surface {
             if options.depth || options.stencil {
                 gl::GenRenderbuffers(1, &mut result.depth_stencil);
                 gl::BindRenderbuffer(gl::RENDERBUFFER, result.depth_stencil);
-                // Packed depth/stencil is a core ANGLE-supported GLES2 drawing-buffer format.
-                gl::RenderbufferStorage(gl::RENDERBUFFER, 0x88F0, width as i32, height as i32);
+                // Match physical storage to the granted attributes: hidden
+                // stencil bits must not make STENCIL_TEST affect a depth-only
+                // default surface, and vice versa.
+                let storage = if options.depth && options.stencil {
+                    0x88f0
+                } else if options.depth {
+                    0x81a6 // DEPTH_COMPONENT24 on the private GLES3 provider.
+                } else {
+                    gl::STENCIL_INDEX8
+                };
+                gl::RenderbufferStorage(gl::RENDERBUFFER, storage, width as i32, height as i32);
                 if options.depth {
                     gl::FramebufferRenderbuffer(
                         gl::FRAMEBUFFER,
@@ -76,12 +85,13 @@ impl Surface {
                     );
                 }
             }
-            let complete = gl::CheckFramebufferStatus(gl::FRAMEBUFFER) == gl::FRAMEBUFFER_COMPLETE;
+            let status = gl::CheckFramebufferStatus(gl::FRAMEBUFFER);
+            let complete = status == gl::FRAMEBUFFER_COMPLETE;
             let error = gl::GetError();
             if !complete || error != gl::NO_ERROR {
                 result.destroy();
                 return Err(format!(
-                    "WebGL drawing-buffer allocation failed: GL {error:#x}"
+                    "WebGL drawing-buffer allocation failed: framebuffer {status:#x}, GL {error:#x}"
                 ));
             }
             gl::Viewport(0, 0, width as i32, height as i32);

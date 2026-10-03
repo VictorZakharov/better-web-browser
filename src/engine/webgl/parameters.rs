@@ -3,6 +3,21 @@ use super::{Result, WebGl, gl, json};
 use serde_json::Value;
 impl WebGl {
     pub(super) fn parameter(&mut self, pname: u32) -> Result<Value> {
+        if pname == 0x84ff {
+            if !self
+                .extensions
+                .textures
+                .enabled(super::texture_capabilities::TextureCapability::Anisotropy)
+            {
+                return Err(gl::INVALID_ENUM);
+            }
+            let mut value = 0.0;
+            unsafe {
+                gl::GetFloatv(pname, &mut value);
+            }
+            self.driver_result()?;
+            return Ok(json!(value));
+        }
         if let Some(mask) = self.stencil_masks.query(pname) {
             return Ok(json!(mask));
         }
@@ -23,13 +38,14 @@ impl WebGl {
             }
             return Ok(json!(self.vertex_arrays.bound));
         }
-        // The bridge implements the mandatory RGBA/UNSIGNED_BYTE read path for every
-        // admitted color surface, independent of a driver's optional packed read format.
+        // Report the supported read pair for the currently bound color surface,
+        // not a native optional packed format that the bridge cannot transport.
         if pname == 0x8b9b {
+            self.color_read_type()?;
             return Ok(json!(gl::RGBA));
         }
         if pname == 0x8b9a {
-            return Ok(json!(gl::UNSIGNED_BYTE));
+            return Ok(json!(self.color_read_type()?));
         }
         if [
             gl::MAX_TEXTURE_SIZE,
@@ -68,7 +84,7 @@ impl WebGl {
         match pname {
             gl::VENDOR => return Ok(json!("Breeze")),
             gl::RENDERER => return Ok(json!("ANGLE WebGL renderer")),
-            gl::VERSION => return Ok(json!("WebGL 1.0 (OpenGL ES 2.0 ANGLE)")),
+            gl::VERSION => return Ok(json!("WebGL 1.0 (ANGLE)")),
             gl::SHADING_LANGUAGE_VERSION => return Ok(json!("WebGL GLSL ES 1.0 (ANGLE)")),
             gl::COMPRESSED_TEXTURE_FORMATS => return Ok(json!([])),
             gl::BLEND

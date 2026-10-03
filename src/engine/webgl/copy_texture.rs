@@ -17,6 +17,7 @@ impl WebGl {
         self.objects.get(id, Kind::Texture)?;
         let level = c.n(1)?;
         let sub = c.op == "copyTexSubImage2D";
+        self.validate_framebuffer()?;
         let width = c.n(if sub { 6 } else { 5 })?;
         let height = c.n(if sub { 7 } else { 6 })?;
         if !(0..=12).contains(&level)
@@ -62,6 +63,12 @@ impl WebGl {
             }
         }
         self.driver_result()?;
+        if !sub {
+            self.objects
+                .get_mut(id, Kind::Texture)?
+                .texture_images
+                .insert((target, level), (c.u(2)?, gl::UNSIGNED_BYTE));
+        }
         Ok(Value::Null)
     }
 }

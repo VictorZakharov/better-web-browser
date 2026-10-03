@@ -37,6 +37,7 @@ impl WebGl {
             return Err(gl::INVALID_VALUE);
         }
         self.validate_program()?;
+        self.validate_framebuffer()?;
         if indexed {
             let kind = c.u(2)?;
             let offset = c.u(3)? as usize;
@@ -50,6 +51,7 @@ impl WebGl {
             let maximum = self.maximum_index(count as usize, size, offset)?;
             self.validate_instance_attributes(maximum, instances, true)?;
             let function = self.extensions.elements.ok_or(gl::INVALID_OPERATION)?;
+            let _sampling = self.sampling_guard()?;
             unsafe {
                 function(
                     mode,
@@ -70,6 +72,7 @@ impl WebGl {
             }
             self.validate_instance_attributes(end - 1, instances, true)?;
             let function = self.extensions.arrays.ok_or(gl::INVALID_OPERATION)?;
+            let _sampling = self.sampling_guard()?;
             unsafe {
                 function(mode, first as i32, count as i32, instances as i32);
             }

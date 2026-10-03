@@ -27,6 +27,7 @@ pub(super) struct Object {
     pub pending_delete: bool,
     pub shader_log: String,
     pub uniform_type: u32,
+    pub texture_images: HashMap<(u32, i32), (u32, u32)>,
     references: u32,
     attached: Vec<u32>,
 }
@@ -67,6 +68,7 @@ impl Objects {
                 pending_delete: false,
                 shader_log: String::new(),
                 uniform_type: 0,
+                texture_images: HashMap::new(),
                 references: 0,
                 attached: Vec::new(),
             },

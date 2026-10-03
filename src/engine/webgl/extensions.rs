@@ -1,6 +1,7 @@
 //! Whitelisted extension entry points from the existing ANGLE backend.
 //! Signatures follow ANGLE's pinned GLES2/gl2ext.h and gl2ext_angle.h. No author
 //! supplied name, native pointer or extension outside our implemented set is loaded.
+use super::texture_capabilities::{TextureCapabilities, TextureCapability};
 use super::{Command, Result, WebGl, gl, json};
 use mozangle::egl::ffi as egl;
 use serde_json::Value;
@@ -16,6 +17,7 @@ pub(super) type BindArray = unsafe extern "system" fn(u32);
 pub(super) type IsArray = unsafe extern "system" fn(u32) -> u8;
 
 pub(super) struct Extensions {
+    pub textures: TextureCapabilities,
     pub arrays: Option<DrawArrays>,
     pub elements: Option<DrawElements>,
     pub divisor: Option<Divisor>,
@@ -99,6 +101,9 @@ impl Extensions {
             .chain(&requestable)
             .any(|name| name == "GL_EXT_shader_texture_lod");
         Self {
+            textures: TextureCapabilities::discover(
+                enabled.iter().chain(&requestable).map(String::as_str),
+            ),
             available_instancing: advertised
                 && arrays.is_some()
                 && elements.is_some()
@@ -159,9 +164,17 @@ impl Extensions {
         }
         self.instancing
     }
-    fn enable_simple(&mut self, name: &CStr, available: bool) -> bool {
+    pub(super) fn enable_simple(&mut self, name: &CStr, available: bool) -> bool {
         if !available {
             return false;
+        }
+        // Some baseline extensions (notably ANGLE_depth_texture) are already
+        // enabled and not requestable. Re-requesting them generates an error.
+        if extension_string(gl::EXTENSIONS)
+            .iter()
+            .any(|value| value.as_bytes() == name.to_bytes())
+        {
+            return true;
         }
         if let Some(request) = self.request {
             unsafe {
@@ -189,6 +202,48 @@ fn extension_string(pname: u32) -> Vec<String> {
         .split_ascii_whitespace()
         .map(str::to_owned)
         .collect()
+}
+
+pub(super) fn initialize_storage() -> std::result::Result<(), String> {
+    // These private native format dependencies do not expose any author API.
+    // Request the provider's format capabilities explicitly even though GLES3
+    // supplies sized storage. This keeps request-disabled ANGLE configurations
+    // consistent without granting the corresponding WebGL author extensions.
+    let enabled = extension_string(gl::EXTENSIONS);
+    let request = entry!(c"glRequestExtensionANGLE", RequestExtension)
+        .ok_or_else(|| "ANGLE extension request entry point unavailable".to_owned())?;
+    let available = extension_string(0x93a8);
+    for name in [c"GL_OES_rgb8_rgba8", c"GL_EXT_texture_storage"] {
+        if enabled
+            .iter()
+            .any(|value| value.as_bytes() == name.to_bytes())
+        {
+            continue;
+        }
+        if !available
+            .iter()
+            .any(|value| value.as_bytes() == name.to_bytes())
+        {
+            return Err(format!(
+                "ANGLE native storage capability unavailable: {}",
+                name.to_string_lossy()
+            ));
+        }
+        unsafe {
+            request(name.as_ptr());
+        }
+        if unsafe { gl::GetError() } != gl::NO_ERROR
+            || !extension_string(gl::EXTENSIONS)
+                .iter()
+                .any(|value| value.as_bytes() == name.to_bytes())
+        {
+            return Err(format!(
+                "ANGLE native storage capability request failed: {}",
+                name.to_string_lossy()
+            ));
+        }
+    }
+    Ok(())
 }
 pub(super) unsafe fn delete_vertex_array(name: u32) {
     if let Some(delete) = entry!(c"glDeleteVertexArraysOES", DeleteArrays) {
@@ -221,46 +276,97 @@ impl WebGl {
                 if self.extensions.available_texture_lod {
                     names.push("EXT_shader_texture_lod");
                 }
+                for capability in TextureCapability::ALL {
+                    // Depth and sRGB remain private until their API contracts
+                    // and conformance fixtures are implemented in this batch.
+                    if matches!(
+                        capability,
+                        TextureCapability::Depth | TextureCapability::Srgb
+                    ) {
+                        continue;
+                    }
+                    if self.extensions.textures.available(capability) {
+                        names.push(capability.public_name());
+                    }
+                }
                 Ok(json!(names))
             }
             "enableExtension" => {
-                let enabled = match c.text.as_str() {
-                    "ANGLE_instanced_arrays" => self.extensions.enable_instancing(),
-                    "OES_vertex_array_object" => self.enable_vertex_arrays()?,
-                    "OES_element_index_uint" => {
-                        self.extensions.uint_indices = self.extensions.enable_simple(
-                            c"GL_OES_element_index_uint",
-                            self.extensions.available_uint_indices,
-                        );
-                        self.extensions.uint_indices
+                let texture = TextureCapability::ALL.into_iter().find(|capability| {
+                    !matches!(
+                        capability,
+                        TextureCapability::Depth | TextureCapability::Srgb
+                    ) && capability.public_name() == c.text
+                });
+                let enabled = if let Some(capability) = texture {
+                    self.extensions.enable_texture(capability)
+                } else {
+                    match c.text.as_str() {
+                        "ANGLE_instanced_arrays" => self.extensions.enable_instancing(),
+                        "OES_vertex_array_object" => self.enable_vertex_arrays()?,
+                        "OES_element_index_uint" => {
+                            self.extensions.uint_indices = self.extensions.enable_simple(
+                                c"GL_OES_element_index_uint",
+                                self.extensions.available_uint_indices,
+                            );
+                            self.extensions.uint_indices
+                        }
+                        "OES_standard_derivatives" => {
+                            self.extensions.derivatives = self.extensions.enable_simple(
+                                c"GL_OES_standard_derivatives",
+                                self.extensions.available_derivatives,
+                            );
+                            self.extensions.derivatives
+                        }
+                        "EXT_frag_depth" => {
+                            self.extensions.frag_depth = self.extensions.enable_simple(
+                                c"GL_EXT_frag_depth",
+                                self.extensions.available_frag_depth,
+                            );
+                            self.extensions.frag_depth
+                        }
+                        "EXT_shader_texture_lod" => {
+                            self.extensions.texture_lod = self.extensions.enable_simple(
+                                c"GL_EXT_shader_texture_lod",
+                                self.extensions.available_texture_lod,
+                            );
+                            self.extensions.texture_lod
+                        }
+                        _ => false,
                     }
-                    "OES_standard_derivatives" => {
-                        self.extensions.derivatives = self.extensions.enable_simple(
-                            c"GL_OES_standard_derivatives",
-                            self.extensions.available_derivatives,
-                        );
-                        self.extensions.derivatives
-                    }
-                    "EXT_frag_depth" => {
-                        self.extensions.frag_depth = self.extensions.enable_simple(
-                            c"GL_EXT_frag_depth",
-                            self.extensions.available_frag_depth,
-                        );
-                        self.extensions.frag_depth
-                    }
-                    "EXT_shader_texture_lod" => {
-                        self.extensions.texture_lod = self.extensions.enable_simple(
-                            c"GL_EXT_shader_texture_lod",
-                            self.extensions.available_texture_lod,
-                        );
-                        self.extensions.texture_lod
-                    }
-                    _ => false,
                 };
                 self.driver_result()?;
                 Ok(json!(enabled))
             }
             _ => Err(gl::INVALID_OPERATION),
+        }
+    }
+}
+
+#[cfg(test)]
+mod texture_tests {
+    use super::*;
+
+    #[test]
+    fn pinned_warp_supports_the_texture_render_target_foundations() {
+        let _context = super::super::context::NativeContext::new().unwrap();
+        let mut extensions = Extensions::new();
+        let mut names = extension_string(gl::EXTENSIONS);
+        names.extend(extension_string(0x93a8));
+        for capability in TextureCapability::ALL {
+            assert!(!extensions.textures.enabled(capability));
+        }
+        for capability in TextureCapability::ALL {
+            assert!(
+                extensions.textures.available(capability),
+                "missing {capability:?}; native capabilities: {names:?}"
+            );
+            assert!(
+                extensions.enable_texture(capability),
+                "request failed {capability:?}"
+            );
+            assert!(extensions.textures.enabled(capability));
+            assert_eq!(unsafe { gl::GetError() }, gl::NO_ERROR, "{capability:?}");
         }
     }
 }

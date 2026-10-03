@@ -99,6 +99,7 @@ impl WebGl {
                 {
                     return Err(gl::INVALID_VALUE);
                 }
+                self.validate_framebuffer()?;
                 unsafe {
                     gl::Clear(mask);
                 }

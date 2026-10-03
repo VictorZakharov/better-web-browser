@@ -35,13 +35,13 @@ impl NativeContext {
                 return Err(error("initialize ANGLE"));
             }
             if egl::BindAPI(egl::OPENGL_ES_API) == 0 {
-                return Err(error("bind GLES2"));
+                return Err(error("bind OpenGL ES API"));
             }
             let attributes = [
                 egl::SURFACE_TYPE as i32,
                 egl::PBUFFER_BIT as i32,
                 egl::RENDERABLE_TYPE as i32,
-                egl::OPENGL_ES2_BIT as i32,
+                0x0040, // EGL_OPENGL_ES3_BIT_KHR, exact native provider capability.
                 egl::RED_SIZE as i32,
                 8,
                 egl::GREEN_SIZE as i32,
@@ -57,7 +57,7 @@ impl NativeContext {
             if egl::ChooseConfig(display, attributes.as_ptr(), &mut config, 1, &mut count) == 0
                 || count != 1
             {
-                return Err(error("choose GLES2 pbuffer format"));
+                return Err(error("choose GLES3 pbuffer format"));
             }
             let attributes = [
                 egl::WIDTH as i32,
@@ -68,12 +68,18 @@ impl NativeContext {
             ];
             result.surface = egl::CreatePbufferSurface(display, config, attributes.as_ptr());
             if result.surface.is_null() {
-                return Err(error("create GLES2 pbuffer"));
+                return Err(error("create GLES3 pbuffer"));
             }
             // WebGL shader restrictions, zero-initialized resources, and buffer-only attributes.
             let attributes = [
                 egl::CONTEXT_CLIENT_VERSION as i32,
-                2,
+                3,
+                // The native provider uses GLES3 explicitly; WebGL1's closed API
+                // table and separate WebGL shader validator remain authoritative.
+                // Do not rely on ANGLE silently upgrading a requested GLES2 context.
+                // EGL_ANGLE_create_context_backwards_compatible.
+                0x3483,
+                0,
                 0x33AC,
                 1,
                 0x3453,
@@ -84,10 +90,11 @@ impl NativeContext {
             ];
             result.context = egl::CreateContext(display, config, ptr::null(), attributes.as_ptr());
             if result.context.is_null() {
-                return Err(error("create WebGL-compatible GLES2 context"));
+                return Err(error("create WebGL-compatible GLES3 backend"));
             }
         }
         result.make_current()?;
+        super::extensions::initialize_storage()?;
         Ok(result)
     }
     pub(super) fn make_current(&self) -> Result<(), String> {
@@ -138,8 +145,20 @@ mod tests {
     use super::*;
     use mozangle::gles::ffi as gl;
     #[test]
+    fn webgl_exact_native_version_allocates_private_default_surface() {
+        let _context = super::super::WebGl::new(8, 4, super::super::Options::default())
+            .expect("exact native WebGL provider and private framebuffer");
+    }
+    #[test]
     fn webgl_native_context_enables_compiler_restrictions() {
         let _context = NativeContext::new().unwrap();
+        let version = unsafe { std::ffi::CStr::from_ptr(gl::GetString(gl::VERSION).cast()) }
+            .to_str()
+            .unwrap();
+        assert!(
+            version.starts_with("OpenGL ES 3.0"),
+            "requested exact GLES3 backend but received {version}"
+        );
         let pointer = unsafe { gl::GetString(gl::EXTENSIONS) };
         assert!(!pointer.is_null());
         let extensions = unsafe { std::ffi::CStr::from_ptr(pointer.cast()) }

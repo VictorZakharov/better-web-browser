@@ -10,7 +10,7 @@ not by an assumed HTML5test score increase.
 ## Backend and provenance
 
 The Windows backend uses exactly pinned [`mozangle` 0.7.1](https://github.com/servo/mozangle),
-a BSD-3-Clause packaging of Mozilla's ANGLE fork. EGL and GLES2 are compiled from
+a BSD-3-Clause packaging of Mozilla's ANGLE fork. EGL and GLES are compiled from
 the locked Cargo source; there is no downloaded browser DLL, author-provided native
 library, custom GLSL parser, or validation-only NULL renderer. ANGLE provides the
 GLSL compiler and D3D11 renderer. The initial policy uses D3D11 WARP, which performs
@@ -33,6 +33,13 @@ conflict with the pinned static V8 archive. It does not disable shader validatio
 rewrite third-party headers, or suppress linker diagnostics. The actual EGL context
 requests WebGL compatibility, robust resource initialization and disabled client
 arrays. Backend failure must produce context-creation failure, not a fake context.
+
+The private provider requests **exact GLES 3.0**, with ANGLE's backwards-compatible
+context upgrade disabled. ANGLE previously upgraded a GLES 2 request implicitly;
+that difference matters for half-float tokens and sized floating-point storage.
+This does not expose WebGL 2: WebGL 1's closed enum/type table and ANGLE's explicit
+WebGL 1 shader validator remain the author contract. See the
+[texture/HDR contract](webgl-texture-formats.md) for the native mapping boundary.
 
 ## Implemented native boundary
 
@@ -105,6 +112,10 @@ Full upstream WebGL conformance, accelerated adapters
 and wider resource limits remain follow-up work. No WebGL 2, WebGPU, WebVR, WebXR
 or unsupported extension is advertised. Measurements are recorded in the README
 and PR; there is no score-specific browser behavior.
+
+The long-term application target is the sibling Last Stand game; its real
+WebGL 2, HDR and rendering-budget requirements are tracked in the
+[gd-clone compatibility roadmap](gd-clone-compatibility.md).
 
 The binding-parser preflight is `./scripts/prepare-angle.ps1`. It accepts an
 explicit LLVM directory or discovers the installed LLVM `bin` directory, requires

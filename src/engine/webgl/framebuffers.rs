@@ -92,23 +92,13 @@ impl WebGl {
                 let format = c.u(1)?;
                 let width = c.n(2)?;
                 let height = c.n(3)?;
-                if ![
-                    gl::RGBA4,
-                    gl::RGB565,
-                    gl::RGB5_A1,
-                    gl::DEPTH_COMPONENT16,
-                    gl::STENCIL_INDEX8,
-                    DEPTH_STENCIL,
-                ]
-                .contains(&format)
-                {
-                    return Err(gl::INVALID_ENUM);
-                }
+                let bytes =
+                    super::texture_formats::renderbuffer_bytes(format, &self.extensions.textures)?;
                 if !(0..=4096).contains(&width) || !(0..=4096).contains(&height) {
                     return Err(gl::INVALID_VALUE);
                 }
                 self.objects.get(self.renderbuffer, Kind::Renderbuffer)?;
-                self.charge(0, width as usize * height as usize * 4)?;
+                self.charge(0, width as usize * height as usize * bytes)?;
                 unsafe {
                     gl::RenderbufferStorage(
                         gl::RENDERBUFFER,
@@ -183,9 +173,7 @@ impl WebGl {
                 if c.u(0)? != gl::FRAMEBUFFER {
                     return Err(gl::INVALID_ENUM);
                 }
-                return Ok(json!(unsafe {
-                    gl::CheckFramebufferStatus(gl::FRAMEBUFFER)
-                }));
+                return Ok(json!(self.framebuffer_status()?));
             }
             "getRenderbufferParameter" => {
                 if c.u(0)? != gl::RENDERBUFFER {
@@ -229,6 +217,20 @@ impl WebGl {
                     return Err(gl::INVALID_OPERATION);
                 }
                 let attachment = c.u(1)?;
+                let pname = c.u(2)?;
+                let color_types =
+                    self.extensions
+                        .textures
+                        .enabled(super::texture_capabilities::TextureCapability::ColorFloat)
+                        || self.extensions.textures.enabled(
+                            super::texture_capabilities::TextureCapability::ColorHalfFloat,
+                        );
+                if attachment == DEPTH_STENCIL_ATTACHMENT
+                    && pname == super::texture_formats::COMPONENT_TYPE
+                    && color_types
+                {
+                    return Err(gl::INVALID_OPERATION);
+                }
                 if ![
                     gl::COLOR_ATTACHMENT0,
                     gl::DEPTH_ATTACHMENT,
@@ -238,14 +240,14 @@ impl WebGl {
                 {
                     return Err(gl::INVALID_ENUM);
                 }
-                let pname = c.u(2)?;
-                if ![
+                if !([
                     gl::FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
                     gl::FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,
                     gl::FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL,
                     gl::FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE,
                 ]
                 .contains(&pname)
+                    || pname == super::texture_formats::COMPONENT_TYPE && color_types)
                 {
                     return Err(gl::INVALID_ENUM);
                 }
