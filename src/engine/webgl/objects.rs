@@ -5,6 +5,14 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 static NEXT_OBJECT: AtomicU32 = AtomicU32::new(1);
 
+pub(super) fn next_browser_name() -> Result<u32> {
+    NEXT_OBJECT
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+            next.checked_add(1)
+        })
+        .map_err(|_| gl::OUT_OF_MEMORY)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Kind {
     Buffer,
@@ -16,6 +24,7 @@ pub(super) enum Kind {
     Renderbuffer,
     VertexArray,
     Sampler,
+    Query,
 }
 pub(super) struct Object {
     pub kind: Kind,
@@ -64,11 +73,7 @@ impl Objects {
             return Err(gl::OUT_OF_MEMORY);
         }
         // Names must not alias in peer contexts or after a context is restored.
-        let id = NEXT_OBJECT
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
-                next.checked_add(1)
-            })
-            .map_err(|_| gl::OUT_OF_MEMORY)?;
+        let id = next_browser_name()?;
         self.entries.insert(
             id,
             Object {
@@ -249,6 +254,7 @@ fn destroy(object: Object, api: super::ApiVersion) {
             Kind::Renderbuffer => gl::DeleteRenderbuffers(1, &object.native),
             Kind::VertexArray => super::extensions::delete_vertex_array(object.native, api),
             Kind::Sampler => super::extensions::delete_sampler(object.native),
+            Kind::Query => super::query_objects::delete_native(object.native),
         }
     }
 }

@@ -16,6 +16,8 @@ pub(super) type GetIntegerAttribute = unsafe extern "system" fn(u32, u32, *mut i
 pub(super) type GetUnsignedAttribute = unsafe extern "system" fn(u32, u32, *mut u32);
 pub(super) type GetInteger64 = unsafe extern "system" fn(u32, *mut i64);
 pub(super) type ReadBuffer = unsafe extern "system" fn(u32);
+pub(super) type BeginQuery = unsafe extern "system" fn(u32, u32);
+pub(super) type QueryResult = unsafe extern "system" fn(u32, u32, *mut u32);
 pub(super) type ClearSigned = unsafe extern "system" fn(u32, i32, *const i32);
 pub(super) type ClearUnsigned = unsafe extern "system" fn(u32, i32, *const u32);
 pub(super) type ClearFloat = unsafe extern "system" fn(u32, i32, *const f32);
@@ -45,6 +47,11 @@ pub(super) type TextureSubImage3D =
     unsafe extern "system" fn(u32, i32, i32, i32, i32, i32, i32, i32, u32, u32, *const c_void);
 
 pub(super) struct CoreEntries {
+    pub sync: super::sync_entries::Entries,
+    pub gen_queries: super::extensions::GenArrays,
+    pub begin_query: BeginQuery,
+    pub end_query: ReadBuffer,
+    pub query_result: QueryResult,
     pub uniform_indices: UniformIndices,
     pub active_uniforms: ActiveUniforms,
     pub uniform_block_index: UniformBlockIndex,
@@ -123,6 +130,8 @@ impl CoreEntries {
             entry!(c"glDeleteVertexArrays", super::extensions::DeleteArrays);
         let _: super::extensions::DeleteArrays =
             entry!(c"glDeleteSamplers", super::extensions::DeleteArrays);
+        let _: super::extensions::DeleteArrays =
+            entry!(c"glDeleteQueries", super::extensions::DeleteArrays);
         let get_integer64 = entry!(c"glGetInteger64v", GetInteger64);
         let mut max_element_index = 0;
         // SAFETY: exact scalar GLint64 output for the fixed GLES3 capability.
@@ -135,6 +144,11 @@ impl CoreEntries {
             return Err("ANGLE MAX_ELEMENT_INDEX does not meet the admitted WebGL2 minimum".into());
         }
         Ok(Self {
+            sync: super::sync_entries::Entries::load()?,
+            gen_queries: entry!(c"glGenQueries", super::extensions::GenArrays),
+            begin_query: entry!(c"glBeginQuery", BeginQuery),
+            end_query: entry!(c"glEndQuery", ReadBuffer),
+            query_result: entry!(c"glGetQueryObjectuiv", QueryResult),
             uniform_indices: entry!(c"glGetUniformIndices", UniformIndices),
             active_uniforms: entry!(c"glGetActiveUniformsiv", ActiveUniforms),
             uniform_block_index: entry!(c"glGetUniformBlockIndex", UniformBlockIndex),

@@ -79,6 +79,9 @@ mod pixel_transfer_tests;
 mod pixel_transport;
 mod presentation;
 mod queries;
+#[cfg(test)]
+mod query_object_tests;
+mod query_objects;
 mod resize;
 #[cfg(test)]
 mod sampler_tests;
@@ -89,6 +92,10 @@ mod shader_queries;
 mod shader_validation;
 mod stencil_masks;
 mod surface;
+mod sync_entries;
+#[cfg(test)]
+mod sync_object_tests;
+mod sync_objects;
 #[cfg(test)]
 mod tests;
 mod texture_capabilities;
@@ -310,6 +317,8 @@ struct WebGl {
     textures: Vec<[u32; 4]>,
     samplers: Vec<u32>,
     indexed_uniforms: indexed_uniform_buffers::Bindings,
+    query_objects: query_objects::State,
+    sync_objects: sync_objects::State,
     default_draw_buffer: u32,
 }
 impl WebGl {
@@ -359,6 +368,9 @@ impl Drop for WebGl {
                 }
             }
             self.objects.delete_all();
+            if let Some(core) = &self.core {
+                self.sync_objects.destroy(&core.sync);
+            }
             self.surface.destroy();
         }
         self.native.destroy();

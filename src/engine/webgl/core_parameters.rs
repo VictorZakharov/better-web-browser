@@ -4,6 +4,13 @@ use serde_json::Value;
 
 impl WebGl {
     pub(super) fn core_parameter(&mut self, pname: u32) -> Result<Option<Value>> {
+        if pname == 0x9247 {
+            if self.options.api != ApiVersion::Two {
+                return Err(gl::INVALID_ENUM);
+            }
+            // WebGL explicitly permits zero to protect the main-thread budget.
+            return Ok(Some(json!(0)));
+        }
         if pname == 0x8919 {
             if self.options.api != ApiVersion::Two {
                 return Err(gl::INVALID_ENUM);

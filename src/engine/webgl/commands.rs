@@ -5,6 +5,12 @@ use serde_json::Value;
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
+            "fenceSync" | "deleteSync" | "isSync" | "clientWaitSync" | "waitSync"
+            | "getSyncParameter" => return self.sync_command(c),
+            "createQuery" | "deleteQuery" | "isQuery" | "beginQuery" | "endQuery" | "getQuery"
+            | "getQueryParameter" | "completeGpuTask" => {
+                return self.query_object_command(c);
+            }
             "readPixelsToBuffer" => return self.read_pixels_to_buffer(c, bytes),
             "texImage2DFromBuffer" | "texSubImage2DFromBuffer" => {
                 if self.options.api != super::ApiVersion::Two {

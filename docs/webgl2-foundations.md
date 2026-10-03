@@ -97,6 +97,13 @@ WebGL1's shader rules or extension admission.
   and storage bounds. A zero offset is a GPU buffer address, not a null CPU
   upload. GPU readback can feed a subsequent texture upload without synchronous
   mapping; native readback preserves skipped bytes and rejects invalid writes.
+- Occlusion and primitive query objects use native GPU counters, exact target
+  identity, shared occlusion-target exclusion and implicit end on deletion.
+  A cached result cannot change during the creating task, even after `finish`.
+- Pointer-sized native fence handles never leave the owner thread. Browser names
+  are globally distinct from buffer/query names. Zero-time waits preserve the
+  interactivity budget, native completion is cached between tasks, and teardown
+  destroys fences before EGL. Fixed scalar sync queries never return a pointer.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
@@ -104,7 +111,13 @@ presence is not a complete WebGL2 conformance result or a new HTML5test score.
 
 ## Remaining admission work
 
-Coherent realm overloads, queries, sync and transform feedback need their own
+Queries and sync currently use an internal simulated task-completion opcode in
+native tests. No realm forwards that opcode. Public admission needs a trusted
+host completion hook after the task and its microtask checkpoint; `finish`,
+capture and compositor presentation must not stand in for event-loop completion.
+Error replies from `clientWaitSync` must become `WAIT_FAILED` at the realm boundary.
+
+Coherent realm overloads and transform feedback need their own
 bounded native contracts and realm bindings. Public core entry points need
 versioned realm bindings, not WebGL1 extension objects under new names.
 
