@@ -2,6 +2,17 @@
 use super::texture_capabilities::TextureCapability;
 use super::{Command, Result, WebGl, gl, json};
 use serde_json::Value;
+// WebGL2 incorporates these contracts as core, rather than returning a
+// WebGL1 extension object. See the WebGL2 specification's extension changes.
+const PROMOTED: [&str; 7] = [
+    "WEBGL_draw_buffers",
+    "ANGLE_instanced_arrays",
+    "OES_vertex_array_object",
+    "OES_element_index_uint",
+    "OES_standard_derivatives",
+    "EXT_frag_depth",
+    "EXT_shader_texture_lod",
+];
 impl WebGl {
     pub(super) fn extension_command(&mut self, c: &Command) -> Result<Value> {
         match c.op.as_str() {
@@ -45,9 +56,16 @@ impl WebGl {
                         names.push(capability.public_name());
                     }
                 }
+                if self.options.api == super::ApiVersion::Two {
+                    names.retain(|name| !PROMOTED.contains(name));
+                }
                 Ok(json!(names))
             }
             "enableExtension" => {
+                if self.options.api == super::ApiVersion::Two && PROMOTED.contains(&c.text.as_str())
+                {
+                    return Ok(json!(false));
+                }
                 if let Some(family) = super::compressed_capabilities::Family::ALL
                     .into_iter()
                     .find(|family| family.public_name() == c.text)

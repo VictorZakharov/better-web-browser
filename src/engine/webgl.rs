@@ -108,6 +108,8 @@ mod query_object_tests;
 mod query_objects;
 mod resize;
 #[cfg(test)]
+mod same_size_resize_tests;
+#[cfg(test)]
 mod sampler_tests;
 mod samplers;
 mod session;

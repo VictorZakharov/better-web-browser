@@ -43,6 +43,56 @@ fn webgl2_obsolete_texture_extension_names_are_not_advertised_or_admitted() {
     });
 }
 
+#[test]
+fn webgl2_promoted_geometry_and_shader_contracts_do_not_return_legacy_extensions() {
+    session::run_native_test(|| {
+        let mut context = version_two();
+        let names = call(&mut context, "supportedExtensions", &[], "");
+        for name in [
+            "WEBGL_draw_buffers",
+            "ANGLE_instanced_arrays",
+            "OES_vertex_array_object",
+            "OES_element_index_uint",
+            "OES_standard_derivatives",
+            "EXT_frag_depth",
+            "EXT_shader_texture_lod",
+        ] {
+            assert!(!names.as_array().unwrap().iter().any(|entry| entry == name));
+            assert_eq!(
+                call(&mut context, "enableExtension", &[], name),
+                json!(false)
+            );
+        }
+        assert!(context.extensions.draw_buffers);
+        assert!(context.extensions.instancing);
+        assert!(context.extensions.vertex_arrays);
+        assert!(context.extensions.uint_indices);
+        assert!(context.extensions.derivatives);
+        assert!(context.extensions.frag_depth);
+        assert!(context.extensions.texture_lod);
+        // Rejecting obsolete object names must not disable their core shader
+        // functionality, which is validated and executed by the GLES3 compiler.
+        super::core_uniform_tests::program(
+            &mut context,
+            super::core_uniform_tests::VERTEX,
+            "#version 300 es\nprecision highp float;out vec4 color;void main(){gl_FragDepth=0.5;color=vec4(dFdx(gl_FragCoord.x),dFdy(gl_FragCoord.y),1,1);}",
+        );
+        call(
+            &mut context,
+            "drawArrays",
+            &[gl::TRIANGLES as i64, 0, 3],
+            "",
+        );
+        assert_eq!(call(&mut context, "getError", &[], ""), json!(0));
+        let pixels = context.surface.snapshot().unwrap();
+        assert!(
+            pixels
+                .chunks_exact(4)
+                .all(|pixel| pixel == [255, 255, 255, 255])
+        );
+    });
+}
+
 fn enable_half(context: &mut WebGl) {
     assert_eq!(
         call(

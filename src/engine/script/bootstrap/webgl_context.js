@@ -48,11 +48,13 @@
         const encoded = f.map(value => Object.is(value, -0) ? '-0' : Number.isFinite(value) ? value : Number.isNaN(value) ? 'nan' : value > 0 ? 'inf' : '-inf');
         const raw = host(op==='readPixels'?'webglReadPixels':'webglCommand', state.id, JSON.stringify({op, i, f:encoded, text}), bytes);
         if (raw instanceof Uint8Array) return raw;
-        const value = raw ? JSON.parse(raw, (key, entry) => {
+        // Ordinary scalar/array replies do not need a recursive reviver walk.
+        // Only native non-JSON float sentinels require the special conversion.
+        const value = raw ? JSON.parse(raw, raw.includes('"webglFloat"') ? (key, entry) => {
             if (entry && typeof entry === 'object' && Object.keys(entry).length === 1 && 'webglFloat' in entry)
                 return entry.webglFloat === '-0' ? -0 : entry.webglFloat === 'nan' ? NaN : entry.webglFloat === 'inf' ? Infinity : -Infinity;
             return entry;
-        }) : null;
+        } : undefined) : null;
         if (value?.lost) {
             loseWebGlContext(context, false);
             return null;

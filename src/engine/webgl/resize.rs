@@ -8,6 +8,14 @@ impl WebGl {
         if width > 4096 || height > 4096 || u64::from(width) * u64::from(height) > 4 * 1024 * 1024 {
             return Err(gl::OUT_OF_MEMORY);
         }
+        if width == self.surface.width && height == self.surface.height {
+            // Assigning an unchanged canvas dimension still resets its bitmap,
+            // but need not allocate overlapping native attachments. Preserve
+            // author GL state while performing the mandatory default clear.
+            self.clear_default_surface();
+            self.driver_result()?;
+            return Ok(Value::Null);
+        }
         let bpp = if self.options.depth || self.options.stencil {
             8
         } else {

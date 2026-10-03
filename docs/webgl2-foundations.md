@@ -141,6 +141,16 @@ WebGL1's shader rules or extension admission.
   True 3D copies are deliberately rejected by this internal opcode: the pinned
   provider can overwrite untouched slices with stale native debug-fill bytes.
   This restriction must be removed before coherent public WebGL2 admission.
+- Requesting a promoted WebGL1 extension cannot disable its GLES3 core facility.
+  Geometry/shader names are neither advertised nor admitted as legacy objects;
+  core derivatives, fragment depth and other operations remain enabled.
+- Same-size canvas dimension assignment clears the drawing buffer without
+  reallocating its attachments or requiring a temporary resource-budget overlap.
+  Scissor/write masks, clear values, viewport and author framebuffer bindings
+  survive the mandatory reset. Native activation checks EGL's authoritative
+  thread-local context/display/surface bindings before avoiding a redundant bind.
+  Ordinary JSON replies avoid a recursive reviver unless special floating-point
+  markers are present; tests preserve NaN, infinities, negative zero and strings.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal

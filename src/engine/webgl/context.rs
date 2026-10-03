@@ -105,6 +105,17 @@ impl NativeContext {
         Ok(result)
     }
     pub(super) fn make_current(&self) -> Result<(), String> {
+        // EGL's thread-local getters are authoritative even after a peer's
+        // creation or destruction. Do not use a browser-side cached identity:
+        // teardown can change the current binding outside the command path.
+        if unsafe {
+            egl::GetCurrentContext() == self.context
+                && egl::GetCurrentDisplay() == self.display
+                && egl::GetCurrentSurface(egl::DRAW as i32) == self.surface
+                && egl::GetCurrentSurface(egl::READ as i32) == self.surface
+        } {
+            return Ok(());
+        }
         // SAFETY: all handles belong to this live, thread-affine owner.
         if unsafe { egl::MakeCurrent(self.display, self.surface, self.surface, self.context) } == 0
         {
@@ -151,6 +162,39 @@ fn error(action: &str) -> String {
 mod tests {
     use super::*;
     use mozangle::gles::ffi as gl;
+    #[test]
+    fn repeated_activation_observes_native_peer_binding_and_unbinding() {
+        super::super::session::run_native_test(|| {
+            let first = NativeContext::new().unwrap();
+            let second = NativeContext::new().unwrap();
+            assert_eq!(unsafe { egl::GetCurrentContext() }, second.context);
+            first.make_current().unwrap();
+            for _ in 0..32 {
+                first.make_current().unwrap();
+            }
+            assert_eq!(unsafe { egl::GetCurrentContext() }, first.context);
+            assert_eq!(unsafe { egl::GetCurrentDisplay() }, first.display);
+            assert_eq!(
+                unsafe { egl::GetCurrentSurface(egl::DRAW as i32) },
+                first.surface
+            );
+            assert_eq!(
+                unsafe { egl::GetCurrentSurface(egl::READ as i32) },
+                first.surface
+            );
+            // Native unbinding is not visible in a browser-side identity cache.
+            assert_ne!(
+                unsafe { egl::MakeCurrent(first.display, ptr::null(), ptr::null(), ptr::null()) },
+                0
+            );
+            first.make_current().unwrap();
+            assert_eq!(unsafe { egl::GetCurrentContext() }, first.context);
+            second.make_current().unwrap();
+            drop(second);
+            first.make_current().unwrap();
+            assert_eq!(unsafe { egl::GetCurrentContext() }, first.context);
+        });
+    }
     #[test]
     fn webgl_exact_native_version_allocates_private_default_surface() {
         super::super::session::run_native_test(|| {
