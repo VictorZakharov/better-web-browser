@@ -29,11 +29,19 @@ impl WebGl {
         let mut clear = [0.0; 4];
         let mut texture = 0;
         let mut renderbuffer = 0;
+        let mut read_framebuffer = 0;
+        let previous_surface = self.surface.framebuffer;
         unsafe {
             gl::GetIntegerv(gl::VIEWPORT, viewport.as_mut_ptr());
             gl::GetFloatv(gl::COLOR_CLEAR_VALUE, clear.as_mut_ptr());
             gl::GetIntegerv(gl::TEXTURE_BINDING_2D, &mut texture);
             gl::GetIntegerv(gl::RENDERBUFFER_BINDING, &mut renderbuffer);
+            if self.options.api == super::ApiVersion::Two {
+                gl::GetIntegerv(
+                    super::framebuffer_guard::READ_BINDING,
+                    &mut read_framebuffer,
+                );
+            }
         }
         // Newly allocated surfaces are zero-initialized by ANGLE even with author masks or
         // scissor enabled. Surface::new's explicit clear is redundant in that case.
@@ -59,7 +67,19 @@ impl WebGl {
                 .native
         };
         unsafe {
-            gl::BindFramebuffer(gl::FRAMEBUFFER, binding);
+            if self.options.api == super::ApiVersion::Two {
+                gl::BindFramebuffer(super::framebuffer_guard::DRAW, binding);
+                gl::BindFramebuffer(
+                    super::framebuffer_guard::READ,
+                    if read_framebuffer as u32 == previous_surface {
+                        self.surface.framebuffer
+                    } else {
+                        read_framebuffer as u32
+                    },
+                );
+            } else {
+                gl::BindFramebuffer(gl::FRAMEBUFFER, binding);
+            }
         }
         if !allocated {
             return Err(gl::OUT_OF_MEMORY);

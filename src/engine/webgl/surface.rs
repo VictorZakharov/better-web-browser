@@ -9,6 +9,7 @@ pub(super) struct Surface {
     pub framebuffer: u32,
     texture: u32,
     depth_stencil: u32,
+    read_buffer: Option<super::core_entries::ReadBuffer>,
 }
 impl Surface {
     pub fn new(width: u32, height: u32, options: Options) -> Result<Self, String> {
@@ -27,6 +28,11 @@ impl Surface {
             framebuffer: 0,
             texture: 0,
             depth_stencil: 0,
+            read_buffer: if options.api == super::ApiVersion::Two {
+                Some(super::core_entries::CoreEntries::read_buffer_entry()?)
+            } else {
+                None
+            },
         };
         let _unpack = super::pixel_buffer_guard::PixelBufferGuard::unbind(
             options.api,
@@ -121,14 +127,21 @@ impl Surface {
             super::pixel_buffer_guard::Direction::Pack,
         );
         let mut pixels = vec![0; self.width as usize * self.height as usize * 4];
-        let mut binding = 0;
         let mut alignment = 0;
+        let _framebuffer = super::framebuffer_guard::FramebufferGuard::bind(
+            self.api,
+            super::framebuffer_guard::Direction::Read,
+            self.framebuffer,
+        );
+        let mut route = 0;
         // SAFETY: a bounded, exactly sized RGBA destination. Private state is restored even
         // on readback failure; pixels cannot expose driver memory outside this allocation.
         let error = unsafe {
-            gl::GetIntegerv(gl::FRAMEBUFFER_BINDING, &mut binding);
             gl::GetIntegerv(gl::PACK_ALIGNMENT, &mut alignment);
-            gl::BindFramebuffer(gl::FRAMEBUFFER, self.framebuffer);
+            if let Some(read_buffer) = self.read_buffer {
+                gl::GetIntegerv(0x0c02, &mut route);
+                read_buffer(gl::COLOR_ATTACHMENT0);
+            }
             gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
             gl::ReadPixels(
                 0,
@@ -141,7 +154,9 @@ impl Surface {
             );
             let error = gl::GetError();
             gl::PixelStorei(gl::PACK_ALIGNMENT, alignment);
-            gl::BindFramebuffer(gl::FRAMEBUFFER, binding as u32);
+            if let Some(read_buffer) = self.read_buffer {
+                read_buffer(route as u32);
+            }
             error
         };
         if error != gl::NO_ERROR {

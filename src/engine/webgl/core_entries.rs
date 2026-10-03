@@ -15,6 +15,7 @@ pub(super) type UnsignedAttribute = unsafe extern "system" fn(u32, *const u32);
 pub(super) type GetIntegerAttribute = unsafe extern "system" fn(u32, u32, *mut i32);
 pub(super) type GetUnsignedAttribute = unsafe extern "system" fn(u32, u32, *mut u32);
 pub(super) type GetInteger64 = unsafe extern "system" fn(u32, *mut i64);
+pub(super) type ReadBuffer = unsafe extern "system" fn(u32);
 pub(super) type TextureStorage2D = unsafe extern "system" fn(u32, i32, u32, i32, i32);
 pub(super) type TextureStorage3D = unsafe extern "system" fn(u32, i32, u32, i32, i32, i32);
 pub(super) type TextureImage3D =
@@ -69,6 +70,9 @@ macro_rules! entry {
 }
 
 impl CoreEntries {
+    pub(super) fn read_buffer_entry() -> Result<ReadBuffer, String> {
+        Ok(entry!(c"glReadBuffer", ReadBuffer))
+    }
     pub(super) fn load() -> Result<Self, String> {
         // Teardown resolves this same fixed symbol; fail creation if it is absent.
         let _: super::extensions::DeleteArrays =

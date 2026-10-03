@@ -9,7 +9,11 @@ impl WebGl {
         self.clear_default_surface();
     }
     pub(super) fn clear_default_surface(&mut self) {
-        let mut framebuffer = 0;
+        let _framebuffer = super::framebuffer_guard::FramebufferGuard::bind(
+            self.options.api,
+            super::framebuffer_guard::Direction::Draw,
+            self.surface.framebuffer,
+        );
         let mut color = [0.0; 4];
         let mut depth = 0.0;
         let mut stencil = 0;
@@ -18,14 +22,12 @@ impl WebGl {
         // SAFETY: all get calls use their exact scalar/vector types and lengths. Clearing
         // the private drawing buffer is independent of the author's scissor and write masks.
         unsafe {
-            gl::GetIntegerv(gl::FRAMEBUFFER_BINDING, &mut framebuffer);
             gl::GetFloatv(gl::COLOR_CLEAR_VALUE, color.as_mut_ptr());
             gl::GetFloatv(gl::DEPTH_CLEAR_VALUE, &mut depth);
             gl::GetIntegerv(gl::STENCIL_CLEAR_VALUE, &mut stencil);
             gl::GetBooleanv(gl::COLOR_WRITEMASK, color_mask.as_mut_ptr());
             gl::GetBooleanv(gl::DEPTH_WRITEMASK, &mut depth_mask);
             let scissor = gl::IsEnabled(gl::SCISSOR_TEST);
-            gl::BindFramebuffer(gl::FRAMEBUFFER, self.surface.framebuffer);
             if self.default_draw_buffer == gl::NONE
                 && let Some(entry) = self.extensions.draw_buffers_entry
             {
@@ -54,7 +56,6 @@ impl WebGl {
             if scissor != 0 {
                 gl::Enable(gl::SCISSOR_TEST);
             }
-            gl::BindFramebuffer(gl::FRAMEBUFFER, framebuffer as u32);
         }
     }
 }

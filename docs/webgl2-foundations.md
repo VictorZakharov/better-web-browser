@@ -59,6 +59,10 @@ WebGL1's shader rules or extension admission.
 - Owned 3D/array uploads bound every aligned row and slice, reject PBO confusion,
   and validate subregions before native reads. Immutable volume mips shrink depth;
   array mip levels preserve layer counts. Target bindings/deletion remain separate.
+- Private capture and compositor clears preserve independent native read/draw
+  framebuffer bindings. Capture restores the private read route even when it was
+  `NONE`; resize remaps the retired private read surface without changing an
+  author read framebuffer. Public read/draw operations remain a subsequent slice.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
