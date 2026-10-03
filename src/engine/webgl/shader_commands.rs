@@ -72,6 +72,9 @@ impl WebGl {
                 }
             }
             "linkProgram" | "validateProgram" => {
+                if c.op == "linkProgram" {
+                    self.validate_transform_program_link(c.u(0)?)?;
+                }
                 let object = self.objects.get_mut(c.u(0)?, Kind::Program)?;
                 if c.op == "linkProgram" {
                     object.generation =
@@ -87,6 +90,10 @@ impl WebGl {
                 }
             }
             "useProgram" => {
+                let feedback = &self.transform_feedback.records[&self.transform_feedback.bound];
+                if feedback.active && !feedback.paused {
+                    return Err(gl::INVALID_OPERATION);
+                }
                 let id = c.u(0)?;
                 let program = self.objects.name(id, Kind::Program)?;
                 unsafe {
@@ -112,8 +119,9 @@ impl WebGl {
                     ]
                     .contains(&pname)
                 };
-                let core_blocks =
-                    !shader && self.options.api == super::ApiVersion::Two && pname == 0x8a36;
+                let core_blocks = !shader
+                    && self.options.api == super::ApiVersion::Two
+                    && [0x8a36, 0x8c7f, 0x8c83].contains(&pname);
                 if !allowed && !core_blocks {
                     return Err(gl::INVALID_ENUM);
                 }

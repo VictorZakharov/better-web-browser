@@ -141,6 +141,7 @@ impl WebGl {
         if self.objects.get(id, Kind::Buffer)?.pending_delete {
             return Ok(Value::Null);
         }
+        self.detach_transform_buffer(id)?;
         // Mark deletion only after detaching current-array references. Inactive
         // arrays keep both driver storage and the matching CPU validation mirror.
         self.detach_core_buffer(id);

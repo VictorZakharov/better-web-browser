@@ -25,6 +25,7 @@ pub(super) enum Kind {
     VertexArray,
     Sampler,
     Query,
+    TransformFeedback,
 }
 pub(super) struct Object {
     pub kind: Kind,
@@ -255,6 +256,7 @@ fn destroy(object: Object, api: super::ApiVersion) {
             Kind::VertexArray => super::extensions::delete_vertex_array(object.native, api),
             Kind::Sampler => super::extensions::delete_sampler(object.native),
             Kind::Query => super::query_objects::delete_native(object.native),
+            Kind::TransformFeedback => super::transform_entries::delete_native(object.native),
         }
     }
 }

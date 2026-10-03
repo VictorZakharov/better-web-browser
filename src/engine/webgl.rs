@@ -104,6 +104,15 @@ mod texture_formats;
 mod texture_sampling;
 mod texture_targets;
 mod textures;
+mod transform_buffers;
+mod transform_entries;
+mod transform_feedback;
+#[cfg(test)]
+mod transform_feedback_tests;
+mod transform_safety;
+#[cfg(test)]
+mod transform_validation_tests;
+mod transform_varyings;
 #[cfg(test)]
 mod typed_framebuffer_tests;
 mod typed_framebuffers;
@@ -319,6 +328,7 @@ struct WebGl {
     indexed_uniforms: indexed_uniform_buffers::Bindings,
     query_objects: query_objects::State,
     sync_objects: sync_objects::State,
+    transform_feedback: transform_feedback::State,
     default_draw_buffer: u32,
 }
 impl WebGl {

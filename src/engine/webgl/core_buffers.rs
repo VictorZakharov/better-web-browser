@@ -57,6 +57,8 @@ impl WebGl {
                 let write = command.u(1)?;
                 let source = self.bound_buffer(read)?;
                 let destination = self.bound_buffer(write)?;
+                self.validate_transform_buffer_use(read, source)?;
+                self.validate_transform_buffer_use(write, destination)?;
                 let source_offset = nonnegative(command, 2)?;
                 let destination_offset = nonnegative(command, 3)?;
                 let size = nonnegative(command, 4)?;
@@ -118,6 +120,10 @@ impl WebGl {
         }
         let target = command.u(0)?;
         let id = self.bound_buffer(target)?;
+        if target == TRANSFORM_FEEDBACK && self.transform_feedback.any_active() {
+            return Err(gl::INVALID_OPERATION);
+        }
+        self.validate_transform_buffer_use(target, id)?;
         let offset = nonnegative(command, 1)?;
         let size = nonnegative(command, 2)?;
         range_end(

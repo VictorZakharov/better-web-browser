@@ -5,6 +5,19 @@ use serde_json::Value;
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
+            "createTransformFeedback"
+            | "deleteTransformFeedback"
+            | "isTransformFeedback"
+            | "bindTransformFeedback"
+            | "beginTransformFeedback"
+            | "endTransformFeedback"
+            | "pauseTransformFeedback"
+            | "resumeTransformFeedback" => {
+                return self.transform_command(c);
+            }
+            "transformFeedbackVaryings" | "getTransformFeedbackVarying" => {
+                return self.transform_varyings(c);
+            }
             "fenceSync" | "deleteSync" | "isSync" | "clientWaitSync" | "waitSync"
             | "getSyncParameter" => return self.sync_command(c),
             "createQuery" | "deleteQuery" | "isQuery" | "beginQuery" | "endQuery" | "getQuery"

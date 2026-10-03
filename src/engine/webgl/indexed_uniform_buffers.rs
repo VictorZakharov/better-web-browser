@@ -31,6 +31,11 @@ impl WebGl {
         }
         let target = c.u(0)?;
         let index = c.u(1)? as usize;
+        if target == super::core_buffers::TRANSFORM_FEEDBACK
+            || (c.op == "getIndexedParameter" && [0x8c8f, 0x8c84, 0x8c85].contains(&target))
+        {
+            return self.transform_buffer_command(c);
+        }
         if c.op == "getIndexedParameter" {
             if ![0x8a28, 0x8a29, 0x8a2a].contains(&target) {
                 return Err(gl::INVALID_ENUM);

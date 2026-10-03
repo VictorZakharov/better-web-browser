@@ -104,6 +104,10 @@ WebGL1's shader rules or extension admission.
   are globally distinct from buffer/query names. Zero-time waits preserve the
   interactivity budget, native completion is cached between tasks, and teardown
   destroys fences before EGL. Fixed scalar sync queries never return a pointer.
+- Native transform feedback captures interleaved/separate float and unsigned
+  outputs into retained object-local ranges, supports pause/resume and reflects
+  linked names/types. Tests count real captured primitives, preserve untouched
+  range bytes, and reject indexed capture aliases before GPU reads or writes.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
@@ -117,8 +121,13 @@ host completion hook after the task and its microtask checkpoint; `finish`,
 capture and compositor presentation must not stand in for event-loop completion.
 Error replies from `clientWaitSync` must become `WAIT_FAILED` at the realm boundary.
 
-Coherent realm overloads and transform feedback need their own
-bounded native contracts and realm bindings. Public core entry points need
+Transform feedback still rejects deletion of a buffer attached to an active
+capture: the retained native-name model needs a deletion path which preserves
+other objects while allowing native active detachment. The exact GLES3.0 provider
+also rejects array capture at link time; no CPU-generated capture result conceals
+that limitation. These require further admission tests and provider decisions.
+
+Coherent realm overloads need their own bindings. Public core entry points need
 versioned realm bindings, not WebGL1 extension objects under new names.
 
 Only after the coherent interface is admitted should shared Window/Worker tests,

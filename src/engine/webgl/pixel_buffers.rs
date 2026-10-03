@@ -24,6 +24,7 @@ impl WebGl {
         kind: u32,
     ) -> Result<usize> {
         let id = *self.core_buffer_bindings.get(&target).unwrap_or(&0);
+        self.validate_transform_buffer_use(target, id)?;
         let buffer = self.objects.get(id, Kind::Buffer)?;
         let offset =
             c.i.get(index)

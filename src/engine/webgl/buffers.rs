@@ -47,6 +47,7 @@ impl WebGl {
             "bufferData" => {
                 let target = c.u(0)?;
                 let id = self.bound_buffer(target)?;
+                self.validate_transform_buffer_use(target, id)?;
                 let size = c.u(1)? as usize;
                 let usage = c.u(2)?;
                 let core_usage = self.options.api == super::ApiVersion::Two
@@ -74,6 +75,7 @@ impl WebGl {
             "bufferSubData" => {
                 let target = c.u(0)?;
                 let id = self.bound_buffer(target)?;
+                self.validate_transform_buffer_use(target, id)?;
                 let offset = c.u(1)? as usize;
                 let data = bytes.ok_or(gl::INVALID_VALUE)?;
                 let end = offset.checked_add(data.len()).ok_or(gl::INVALID_VALUE)?;
@@ -273,6 +275,7 @@ impl WebGl {
         Ok(())
     }
     pub(super) fn validate_program(&self) -> Result<()> {
+        self.validate_transform_draw()?;
         let program = self.objects.get(self.program, Kind::Program)?;
         let mut linked = 0;
         unsafe {

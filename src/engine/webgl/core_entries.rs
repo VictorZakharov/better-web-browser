@@ -47,6 +47,7 @@ pub(super) type TextureSubImage3D =
     unsafe extern "system" fn(u32, i32, i32, i32, i32, i32, i32, i32, u32, u32, *const c_void);
 
 pub(super) struct CoreEntries {
+    pub transform: super::transform_entries::Entries,
     pub sync: super::sync_entries::Entries,
     pub gen_queries: super::extensions::GenArrays,
     pub begin_query: BeginQuery,
@@ -144,6 +145,7 @@ impl CoreEntries {
             return Err("ANGLE MAX_ELEMENT_INDEX does not meet the admitted WebGL2 minimum".into());
         }
         Ok(Self {
+            transform: super::transform_entries::Entries::load()?,
             sync: super::sync_entries::Entries::load()?,
             gen_queries: entry!(c"glGenQueries", super::extensions::GenArrays),
             begin_query: entry!(c"glBeginQuery", BeginQuery),

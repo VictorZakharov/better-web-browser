@@ -4,6 +4,24 @@ use serde_json::Value;
 
 impl WebGl {
     pub(super) fn core_parameter(&mut self, pname: u32) -> Result<Option<Value>> {
+        if [0x8e25, 0x8e24, 0x8e23].contains(&pname) {
+            if self.options.api != ApiVersion::Two {
+                return Err(gl::INVALID_ENUM);
+            }
+            let id = self.transform_feedback.bound;
+            let record = &self.transform_feedback.records[&id];
+            return Ok(Some(match pname {
+                0x8e25 => {
+                    if id == 0 {
+                        Value::Null
+                    } else {
+                        json!(id)
+                    }
+                }
+                0x8e24 => json!(record.active),
+                _ => json!(record.paused),
+            }));
+        }
         if pname == 0x9247 {
             if self.options.api != ApiVersion::Two {
                 return Err(gl::INVALID_ENUM);

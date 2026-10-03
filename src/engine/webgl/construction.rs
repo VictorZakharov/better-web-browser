@@ -62,6 +62,7 @@ impl WebGl {
             indexed_uniforms: indexed_uniform_buffers::Bindings::new(options.api)?,
             query_objects: query_objects::State::default(),
             sync_objects: sync_objects::State::default(),
+            transform_feedback: transform_feedback::State::new(options.api)?,
         };
         if let Some(core) = &context.core {
             context.extensions.admit_core(core);
