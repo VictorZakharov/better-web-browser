@@ -135,12 +135,23 @@ WebGL1's shader rules or extension admission.
   and commit only after successful allocation. Failed native mip generation
   does not reserve nonexistent levels. Deleted object names intentionally do not
   reclaim the context-lifetime budget while native objects may remain referenced.
+- GPU framebuffer copies update checked array-layer subregions without changing
+  immutable definitions, charging new image storage, or interpreting author
+  pixel-store/PBO state. Read and draw framebuffer identities remain separate.
+  True 3D copies are deliberately rejected by this internal opcode: the pinned
+  provider can overwrite untouched slices with stale native debug-fill bytes.
+  This restriction must be removed before coherent public WebGL2 admission.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
 presence is not a complete WebGL2 conformance result or a new HTML5test score.
 
 ## Remaining admission work
+
+The pinned provider also permits undefined contents after framebuffer
+invalidation, which WebGL forbids. No native discard opcode is admitted here.
+Resolve provider initialization/synchronization for both discard and true 3D
+framebuffer copies, and retain the neighboring-slice pixel tests as acceptance.
 
 Queries and sync currently use an internal simulated task-completion opcode in
 native tests. No realm forwards that opcode. Public admission needs a trusted

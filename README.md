@@ -925,6 +925,50 @@ required gate until it also completes within the unchanged debug watchdog.
 New releases must refresh or explicitly date these observations using the
 [evidence checklist](docs/technical-alpha-release.md#reproduction-and-release-authority).
 
+### 2026-10-03 texture and staged GLES3 batch
+
+The next 3D batch extends real native rendering rather than changing feature
+probes. It reuses the locked ANGLE backend; it adds no graphics dependency or
+copied renderer implementation. New public WebGL1 contracts include independent
+S3TC, compressed sRGB and RGTC extension families, exact block-byte validation,
+native signed/unsigned decoding and shared Window/Worker bindings. HDR, depth,
+sRGB and multiple-render-target fixtures compare actual pixels with Chromium.
+
+The [internal GLES3 foundation](docs/webgl2-foundations.md) covers shaders,
+unsigned and non-square uniforms, integer/instanced attributes, primitive restart,
+immutable sized textures, volume/array storage, layered attachments, multisample
+resolve, typed framebuffer clears, samplers, uniform blocks, pixel-buffer
+transfers, native queries/fences and transform feedback. Array framebuffer
+copies preserve untouched regions and independent read/draw identities.
+Texture storage now uses transactional per-image high-water accounting: repeated
+definitions, shrinking/regrowing and mip regeneration do not repeatedly consume
+the context budget. Malformed operations preserve existing image contents.
+
+| Contract | Before this batch | Implemented in this batch |
+| --- | --- | --- |
+| Compressed native texture families | Not exposed | BC1/2/3, sRGB BC1/2/3, signed/unsigned BC4/5 |
+| Compressed format admission | No public format set | Capability-gated, per-context enablement and typed queries |
+| Texture lifetime accounting | Full-image charge repeated on redefinition | Transactional growth-only per-image high-water mark |
+| Sized/immutable core storage | No staged core contract | Checked 2D/cube/volume/array mip definitions |
+| GPU buffer/texture transfers | Owned CPU uploads/readback | Separate checked PBO-offset operations |
+| Core shader data transport | WebGL1 uniforms | Typed uniforms, std140 blocks and native transform feedback |
+| Array framebuffer copies | No core copy path | Native slice/subregion copies and neighbor preservation |
+| Public `getContext('webgl2')` | `null` | Still `null` until coherent admission |
+
+This is not a WebGL2 conformance claim. Remaining admission work includes
+versioned JavaScript overloads and trusted event-loop completion for query/sync
+visibility. The pinned provider has specific limitations in transform-feedback
+array capture, true 3D framebuffer copies and framebuffer invalidation safety.
+Unsafe operations remain unexposed or fail closed; tests do not substitute CPU
+answers for unsupported GPU behavior. The [gd-clone roadmap](docs/gd-clone-compatibility.md)
+tracks the unchanged sibling game's eventual end-to-end acceptance separately.
+
+The shared repetition fixture exercises thousands of texture operations and
+checks sampled pixels, error atomicity and renderer responsiveness. It is not a
+performance benchmark. Required Khronos cases remain unmodified, with no failure
+expectation overrides or relaxed JavaScript watchdog. HTML5test remains a guide
+to missing functionality; this internal foundation does not earn WebGL2 points.
+
 YouTube remains work in progress: non-DRM video/audio can play, but startup, seeking/recovery,
 video frame cadence, layout fidelity, and memory use are not an accepted browser baseline.
 Passing media fixtures does not establish usable live-site playback. Wikipedia has dedicated

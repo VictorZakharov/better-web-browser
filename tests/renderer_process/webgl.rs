@@ -217,3 +217,45 @@ fn native_webgl_compressed_decoding_survives_appcontainer_transport() {
         .shutdown()
         .expect("clean contained compressed shutdown");
 }
+
+#[test]
+fn native_webgl_repeated_storage_keeps_renderer_alive_and_pixels_intact() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut session =
+        RendererSession::launch(options()).expect("launch hidden texture repetition renderer");
+    let presentation = load_html_document(
+        &session,
+        806,
+        include_str!("../webgl/texture-lifetime.html"),
+    );
+    assert!(
+        presentation.title.starts_with("ready:"),
+        "{}",
+        presentation.title
+    );
+    assert!(
+        presentation.runtime.errors.is_empty(),
+        "{:?}",
+        presentation.runtime.errors
+    );
+    let image = presentation
+        .images
+        .iter()
+        .find(|image| image.url.starts_with("breeze-internal:canvas:"))
+        .expect("sampled texture crosses renderer containment");
+    assert_eq!(image.image.bgra.len(), 4 * 4 * 4);
+    assert!(
+        image
+            .image
+            .bgra
+            .chunks_exact(4)
+            .all(|pixel| pixel == [0, 255, 0, 255])
+    );
+    session
+        .ping(Duration::from_secs(3))
+        .expect("renderer responsive after texture repetitions");
+    assert_eq!(session.snapshot().state, RendererState::Running);
+    session
+        .shutdown()
+        .expect("clean storage repetition shutdown");
+}

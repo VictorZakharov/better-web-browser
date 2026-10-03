@@ -74,6 +74,7 @@ impl WebGl {
                 return Ok(Value::Null);
             }
             "readBuffer" => return self.core_read_buffer(c),
+            "copyTexSubImage3D" => return self.copy_volume_texture(c),
             "texStorage3D" | "texImage3D" | "texSubImage3D" => {
                 return self.volume_texture_command(c, bytes);
             }

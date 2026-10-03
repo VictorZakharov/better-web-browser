@@ -7,6 +7,8 @@ use std::collections::{HashMap, VecDeque};
 mod api_version;
 #[cfg(test)]
 mod api_version_tests;
+#[cfg(test)]
+mod array_copy_boundary_tests;
 mod buffers;
 mod commands;
 #[cfg(test)]
@@ -14,6 +16,8 @@ mod compressed_buffer_tests;
 mod compressed_capabilities;
 #[cfg(test)]
 mod compressed_core_tests;
+#[cfg(test)]
+mod compressed_core_validation_tests;
 mod compressed_formats;
 mod compressed_initialization;
 mod compressed_storage;
@@ -156,6 +160,9 @@ mod vertex_attribute_queries;
 #[cfg(test)]
 mod vertex_attribute_tests;
 mod vertex_attributes;
+mod volume_copy;
+#[cfg(test)]
+mod volume_copy_tests;
 mod volume_initialization;
 #[cfg(test)]
 mod volume_mip_tests;
