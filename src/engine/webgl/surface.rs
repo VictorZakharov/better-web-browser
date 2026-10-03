@@ -3,6 +3,7 @@ use super::{Options, gl};
 use std::ptr;
 
 pub(super) struct Surface {
+    api: super::ApiVersion,
     pub width: u32,
     pub height: u32,
     pub framebuffer: u32,
@@ -20,12 +21,17 @@ impl Surface {
             return Err("WebGL drawing buffer exceeds the admitted bitmap size".into());
         }
         let mut result = Self {
+            api: options.api,
             width,
             height,
             framebuffer: 0,
             texture: 0,
             depth_stencil: 0,
         };
+        let _unpack = super::pixel_buffer_guard::PixelBufferGuard::unbind(
+            options.api,
+            super::pixel_buffer_guard::Direction::Unpack,
+        );
         // SAFETY: dimensions are bounded, null texture data allocates storage, and ANGLE's
         // robust resource initialization is enabled. Clear also initializes depth/stencil.
         unsafe {
@@ -110,6 +116,10 @@ impl Surface {
         Ok(result)
     }
     pub fn snapshot(&self) -> Result<Vec<u8>, String> {
+        let _pack = super::pixel_buffer_guard::PixelBufferGuard::unbind(
+            self.api,
+            super::pixel_buffer_guard::Direction::Pack,
+        );
         let mut pixels = vec![0; self.width as usize * self.height as usize * 4];
         let mut binding = 0;
         let mut alignment = 0;

@@ -5,6 +5,11 @@ use serde_json::Value;
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
+            "uniform1ui" | "uniform2ui" | "uniform3ui" | "uniform4ui" | "uniform1uiv"
+            | "uniform2uiv" | "uniform3uiv" | "uniform4uiv" | "uniformMatrix2x3fv"
+            | "uniformMatrix2x4fv" | "uniformMatrix3x2fv" | "uniformMatrix3x4fv"
+            | "uniformMatrix4x2fv" | "uniformMatrix4x3fv" => return self.core_uniform_command(c),
+            "copyBufferSubData" | "getBufferSubData" => return self.core_buffer_command(c),
             "drawBuffersWEBGL" => return self.draw_buffers_command(c),
             "supportedExtensions" | "enableExtension" => return self.extension_command(c),
             "createVertexArrayOES"

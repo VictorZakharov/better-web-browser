@@ -8,7 +8,10 @@ impl WebGl {
         if c.op == "getUniformLocation" {
             let owner = c.u(0)?;
             let object = self.objects.get(owner, Kind::Program)?;
-            if c.text.len() > 256 || !c.text.is_ascii() || c.text.starts_with("gl_") {
+            if c.text.len() > self.options.api.query_name_budget()
+                || !c.text.is_ascii()
+                || c.text.starts_with("gl_")
+            {
                 return Err(gl::INVALID_VALUE);
             }
             let mut linked = 0;

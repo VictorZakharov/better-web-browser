@@ -11,7 +11,12 @@ pub(super) struct NativeContext {
 }
 
 impl NativeContext {
+    #[cfg(test)]
     pub(super) fn new() -> Result<Self, String> {
+        Self::for_api(super::ApiVersion::One)
+    }
+
+    pub(super) fn for_api(api: super::ApiVersion) -> Result<Self, String> {
         // WARP is an actual D3D11 software renderer and works on headless CI. Do not
         // use ANGLE's NULL backend (which validates commands but cannot produce pixels).
         // https://github.com/google/angle/blob/main/extensions/EGL_ANGLE_platform_angle.txt
@@ -41,7 +46,7 @@ impl NativeContext {
                 egl::SURFACE_TYPE as i32,
                 egl::PBUFFER_BIT as i32,
                 egl::RENDERABLE_TYPE as i32,
-                0x0004, // EGL_OPENGL_ES2_BIT, matches the public WebGL1 shader contract.
+                api.renderable_bit(),
                 egl::RED_SIZE as i32,
                 8,
                 egl::GREEN_SIZE as i32,
@@ -57,7 +62,7 @@ impl NativeContext {
             if egl::ChooseConfig(display, attributes.as_ptr(), &mut config, 1, &mut count) == 0
                 || count != 1
             {
-                return Err(error("choose GLES2 pbuffer format"));
+                return Err(error("choose versioned GLES pbuffer format"));
             }
             let attributes = [
                 egl::WIDTH as i32,
@@ -68,12 +73,12 @@ impl NativeContext {
             ];
             result.surface = egl::CreatePbufferSurface(display, config, attributes.as_ptr());
             if result.surface.is_null() {
-                return Err(error("create GLES2 pbuffer"));
+                return Err(error("create versioned GLES pbuffer"));
             }
             // WebGL shader restrictions, zero-initialized resources, and buffer-only attributes.
             let attributes = [
                 egl::CONTEXT_CLIENT_VERSION as i32,
-                2,
+                api.client_version(),
                 // Match WebGL1's native shader rules, including EXT_draw_buffers.
                 // A silently upgraded GLES3 compatibility context instead uses
                 // WebGL2's one-element gl_FragData rule for ESSL100.
@@ -90,11 +95,13 @@ impl NativeContext {
             ];
             result.context = egl::CreateContext(display, config, ptr::null(), attributes.as_ptr());
             if result.context.is_null() {
-                return Err(error("create WebGL-compatible GLES2 backend"));
+                return Err(error("create versioned WebGL-compatible GLES backend"));
             }
         }
         result.make_current()?;
-        super::extensions::initialize_storage()?;
+        if api == super::ApiVersion::One {
+            super::extensions::initialize_storage()?;
+        }
         Ok(result)
     }
     pub(super) fn make_current(&self) -> Result<(), String> {

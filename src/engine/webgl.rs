@@ -4,11 +4,21 @@ use mozangle::gles::ffi as gl;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 
+mod api_version;
+#[cfg(test)]
+mod api_version_tests;
 mod buffers;
 mod commands;
 mod context;
 mod copy_texture;
 mod copy_texture_conversion;
+#[cfg(test)]
+mod core_buffer_tests;
+mod core_buffers;
+mod core_entries;
+#[cfg(test)]
+mod core_uniform_tests;
+mod core_uniforms;
 mod depth_textures;
 mod draw_buffers;
 mod extension_commands;
@@ -23,6 +33,9 @@ mod instancing;
 mod object_queries;
 mod objects;
 mod parameters;
+mod pixel_buffer_guard;
+#[cfg(test)]
+mod pixel_buffer_tests;
 mod pixel_readback;
 mod pixel_transport;
 mod presentation;
@@ -51,6 +64,7 @@ mod vertex_arrays;
 pub(crate) use pixel_transport::PixelReply;
 pub(crate) use session::Contexts;
 
+use api_version::ApiVersion;
 use context::NativeContext;
 use objects::{Kind, Objects};
 use surface::Surface;
@@ -154,6 +168,7 @@ impl BackendContexts {
 #[derive(Clone, Copy, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct Options {
+    api: ApiVersion,
     alpha: bool,
     depth: bool,
     stencil: bool,
@@ -162,6 +177,7 @@ struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            api: ApiVersion::One,
             alpha: true,
             depth: true,
             stencil: false,
@@ -208,6 +224,8 @@ impl Command {
 struct WebGl {
     // Surface/resources must be deleted with their owning context current, before EGL teardown.
     native: NativeContext,
+    core: Option<core_entries::CoreEntries>,
+    core_buffer_bindings: HashMap<u32, u32>,
     surface: Surface,
     objects: Objects,
     errors: VecDeque<u32>,
@@ -229,7 +247,12 @@ struct WebGl {
 }
 impl WebGl {
     fn new(width: u32, height: u32, options: Options) -> std::result::Result<Self, String> {
-        let native = NativeContext::new()?;
+        let native = NativeContext::for_api(options.api)?;
+        let core = if options.api == ApiVersion::Two {
+            Some(core_entries::CoreEntries::load()?)
+        } else {
+            None
+        };
         let surface = Surface::new(width, height, options)?;
         unsafe {
             gl::ClearColor(0.0, 0.0, 0.0, 0.0);
@@ -246,6 +269,8 @@ impl WebGl {
         }
         Ok(Self {
             native,
+            core,
+            core_buffer_bindings: HashMap::new(),
             surface,
             objects: Objects::default(),
             default_draw_buffer: gl::BACK,

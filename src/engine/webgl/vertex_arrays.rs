@@ -143,6 +143,7 @@ impl WebGl {
         }
         // Mark deletion only after detaching current-array references. Inactive
         // arrays keep both driver storage and the matching CPU validation mirror.
+        self.detach_core_buffer(id);
         if self.array_buffer == id {
             self.array_buffer = 0;
             unsafe {

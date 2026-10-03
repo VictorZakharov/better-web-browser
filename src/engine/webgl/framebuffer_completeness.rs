@@ -1,6 +1,5 @@
-//! Private GLES3 storage does not broaden WebGL1's color attachment formats.
-//! In particular, red/RG images used to emulate legacy alpha/luminance sampling
-//! must not acquire GLES3 red/RG renderability through that implementation detail.
+//! Native capability does not broaden WebGL1's color attachment format contract.
+//! Legacy alpha/luminance images are sampleable but not color-renderable.
 use super::{Kind, Result, WebGl, gl};
 
 impl WebGl {

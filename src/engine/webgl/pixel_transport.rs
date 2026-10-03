@@ -31,14 +31,19 @@ impl BackendContexts {
             }
         };
         // This host operation can never dispatch an arbitrary native command.
-        if command.op != "readPixels" {
+        if !["readPixels", "getBufferSubData"].contains(&command.op.as_str()) {
             context.error(gl::INVALID_OPERATION);
             return PixelReply::Error;
         }
         if context.native.make_current().is_err() {
             return PixelReply::Lost;
         }
-        match context.read_pixels(&command, input) {
+        let result = if command.op == "getBufferSubData" {
+            context.read_buffer(&command)
+        } else {
+            context.read_pixels(&command, input)
+        };
+        match result {
             Ok(bytes) => PixelReply::Bytes(bytes),
             Err(error) => {
                 context.error(error);

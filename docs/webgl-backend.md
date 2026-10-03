@@ -47,7 +47,9 @@ float/half-float and sRGB formats use their GLES2 extension tokens directly.
 The separate WebGL1 validator enforces author extension admission. Its reversible
 name prefix is removed from validated ESSL before native recompilation, preserving
 legal 256-byte identifiers and public reflection without doubling their length.
-WebGL2 remains unavailable pending its separate API and backend contract. See the
+WebGL2 remains unavailable pending its separate API and backend contract. Its
+[internal GLES3 foundations](webgl2-foundations.md) are tested without advertising
+a partial context. See the
 [texture/HDR contract](webgl-texture-formats.md) for storage and validation details.
 
 ## Implemented native boundary

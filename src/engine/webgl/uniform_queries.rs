@@ -48,21 +48,43 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         let kind = uniform.uniform_type;
-        let count = components(kind)?;
+        let count = if self.options.api == super::ApiVersion::Two {
+            super::core_uniforms::components(kind)
+                .map(Ok)
+                .unwrap_or_else(|| components(kind))?
+        } else {
+            components(kind)?
+        };
+        if self.options.api == super::ApiVersion::Two && super::core_uniforms::is_unsigned(kind) {
+            let mut values = [0u32; 4];
+            let entry = self
+                .core
+                .as_ref()
+                .ok_or(gl::INVALID_OPERATION)?
+                .get_unsigned_uniform;
+            // SAFETY: one reflected uint uniform element, at most four components;
+            // typed ownership and generation were checked before accessing its native location.
+            unsafe {
+                entry(program.native, uniform.native as i32, values.as_mut_ptr());
+            }
+            self.driver_result()?;
+            return Ok(json!({"kind":kind,"values":&values[..count]}));
+        }
         // GLES writes one element, not the entire declared uniform array.
         // A fixed 16-component allocation covers every WebGL 1 uniform type.
         let mut floats = [0.0f32; 16];
         let mut integers = [0i32; 16];
-        let float = [
-            gl::FLOAT,
-            gl::FLOAT_VEC2,
-            gl::FLOAT_VEC3,
-            gl::FLOAT_VEC4,
-            gl::FLOAT_MAT2,
-            gl::FLOAT_MAT3,
-            gl::FLOAT_MAT4,
-        ]
-        .contains(&kind);
+        let float = super::core_uniforms::MATRIX_TYPES.contains(&kind)
+            || [
+                gl::FLOAT,
+                gl::FLOAT_VEC2,
+                gl::FLOAT_VEC3,
+                gl::FLOAT_VEC4,
+                gl::FLOAT_MAT2,
+                gl::FLOAT_MAT3,
+                gl::FLOAT_MAT4,
+            ]
+            .contains(&kind);
         unsafe {
             if float {
                 gl::GetUniformfv(program.native, uniform.native as i32, floats.as_mut_ptr());

@@ -26,9 +26,7 @@ impl WebGl {
             }
             "getBufferParameter" => {
                 let target = c.u(0)?;
-                if ![gl::ARRAY_BUFFER, gl::ELEMENT_ARRAY_BUFFER].contains(&target) {
-                    return Err(gl::INVALID_ENUM);
-                }
+                self.bound_buffer(target)?;
                 let pname = c.u(1)?;
                 if ![gl::BUFFER_SIZE, gl::BUFFER_USAGE].contains(&pname) {
                     return Err(gl::INVALID_ENUM);

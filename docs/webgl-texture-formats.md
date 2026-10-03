@@ -115,7 +115,8 @@ incomplete read surface return `INVALID_OPERATION`; an actual read still returns
 
 The script/native boundary returns pixel data as owned bytes, using the existing
 typed-array host adapter rather than serializing a JSON number for each byte.
-Only the closed `readPixels` operation is admitted on this path. Context ownership,
+Only closed pixel/readback operations are admitted on this path (`readPixels`,
+and internal WebGL2 `getBufferSubData`). Context ownership,
 payload limits, framebuffer/type validation, view offsets and destination guards
 are unchanged. A failed read returns no bytes; a lost owner/context follows the
 existing context-loss lifecycle. Worker realms use the same native owner path.

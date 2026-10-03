@@ -43,6 +43,15 @@ impl WebGl {
     }
 
     pub(super) fn read_pixels(&mut self, c: &Command, input: Option<&[u8]>) -> Result<Vec<u8>> {
+        if self.options.api == super::ApiVersion::Two
+            && self
+                .core_buffer_bindings
+                .get(&super::core_buffers::PIXEL_PACK)
+                .is_some_and(|id| *id != 0)
+        {
+            // A client-memory read and a pixel-pack-buffer offset are distinct overloads.
+            return Err(gl::INVALID_OPERATION);
+        }
         let width = c.n(2)?;
         let height = c.n(3)?;
         if width < 0 || height < 0 {

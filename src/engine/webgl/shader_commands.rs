@@ -145,7 +145,10 @@ impl WebGl {
             "getShaderInfoLog" | "getProgramInfoLog" => return self.shader_log(c),
             "getAttribLocation" | "bindAttribLocation" => {
                 let program = self.objects.get(c.u(0)?, Kind::Program)?.native;
-                if c.text.len() > 256 || !c.text.is_ascii() || c.text.starts_with("gl_") {
+                if c.text.len() > self.options.api.query_name_budget()
+                    || !c.text.is_ascii()
+                    || c.text.starts_with("gl_")
+                {
                     return Err(gl::INVALID_VALUE);
                 }
                 let name = CString::new(super::shader_validation::driver_name(&c.text))

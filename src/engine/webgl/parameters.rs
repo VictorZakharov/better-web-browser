@@ -15,6 +15,9 @@ impl WebGl {
     }
 
     pub(super) fn parameter(&mut self, pname: u32) -> Result<Value> {
+        if let Some(value) = self.core_buffer_parameter(pname)? {
+            return Ok(value);
+        }
         if let Some(value) = self.draw_buffer_parameter(pname)? {
             return Ok(value);
         }
@@ -99,8 +102,10 @@ impl WebGl {
         match pname {
             gl::VENDOR => return Ok(json!("Breeze")),
             gl::RENDERER => return Ok(json!("ANGLE WebGL renderer")),
-            gl::VERSION => return Ok(json!("WebGL 1.0 (ANGLE)")),
-            gl::SHADING_LANGUAGE_VERSION => return Ok(json!("WebGL GLSL ES 1.0 (ANGLE)")),
+            gl::VERSION => return Ok(json!(self.options.api.version_string())),
+            gl::SHADING_LANGUAGE_VERSION => {
+                return Ok(json!(self.options.api.shader_version_string()));
+            }
             gl::COMPRESSED_TEXTURE_FORMATS => return Ok(json!([])),
             gl::BLEND
             | gl::CULL_FACE

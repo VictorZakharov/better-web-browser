@@ -19,7 +19,7 @@ impl WebGl {
                 &mut precision,
             );
         }
-        let resources = BuiltInResources {
+        let mut resources = BuiltInResources {
             MaxVertexAttribs: limit(gl::MAX_VERTEX_ATTRIBS),
             MaxVertexUniformVectors: limit(gl::MAX_VERTEX_UNIFORM_VECTORS),
             MaxVaryingVectors: limit(gl::MAX_VARYING_VECTORS),
@@ -40,10 +40,32 @@ impl WebGl {
             HashFunction: None,
             ..BuiltInResources::default()
         };
-        let validator = ShaderValidator::for_webgl(kind, Output::Essl, &resources)
-            .ok_or_else(|| "Could not construct the WebGL shader validator".to_owned())?;
+        let version_two = self.options.api == super::ApiVersion::Two;
+        if version_two {
+            // ESSL300 limits are native scalar capabilities, not WebGL1's extension defaults.
+            resources.MaxVertexOutputVectors = limit(0x9122) / 4;
+            resources.MaxFragmentInputVectors = limit(0x9125) / 4;
+            resources.MinProgramTexelOffset = limit(0x8904);
+            resources.MaxProgramTexelOffset = limit(0x8905);
+            resources.MaxFragmentUniformBlocks = limit(0x8a2d);
+            resources.MaxVertexUniformBlocks = limit(0x8a2b);
+            resources.MaxDrawBuffers = limit(0x8824);
+        }
+        let validator = if version_two {
+            ShaderValidator::for_webgl2(kind, Output::Essl, &resources)
+        } else {
+            ShaderValidator::for_webgl(kind, Output::Essl, &resources)
+        }
+        .ok_or_else(|| "Could not construct the WebGL shader validator".to_owned())?;
         match validator.compile_and_translate(&[source]) {
             Ok(translated) if translated.len() <= MAX_SHADER_BYTES * 8 => {
+                if version_two {
+                    // Both validators enforce WebGL2 restrictions. Feed the native
+                    // WebGL2 compiler the validated original names: unlike WebGL1,
+                    // 1024-byte identifiers reach ANGLE's no-prefix boundary and
+                    // cannot be safely decoded by stripping a textual prefix.
+                    return Ok(source.to_owned());
+                }
                 // Both compiler stages now use WebGL1's 256-byte token limit.
                 // Undo only the translator's reversible author-name prefix
                 // before the native compiler remangles names internally.

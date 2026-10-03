@@ -201,6 +201,15 @@ impl WebGl {
                     .enabled(TextureCapability::Anisotropy)
     }
     fn upload_texture(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
+        if self.options.api == super::ApiVersion::Two
+            && self
+                .core_buffer_bindings
+                .get(&super::core_buffers::PIXEL_UNPACK)
+                .is_some_and(|id| *id != 0)
+        {
+            // This opcode carries owned CPU bytes, never a PBO-offset overload.
+            return Err(gl::INVALID_OPERATION);
+        }
         let target = c.u(0)?;
         let slot = if target == gl::TEXTURE_2D {
             0

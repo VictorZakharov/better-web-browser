@@ -1,0 +1,69 @@
+# Internal WebGL2 foundation
+
+This is a staged native implementation, not an advertised canvas context.
+`canvas.getContext('webgl2')` still returns null. The ordinary WebGL1 creation
+dictionary does not forward arbitrary author options into the native creation
+protocol. Do not add an interface merely to satisfy a feature probe.
+
+The closed internal `api` value selects an exact GLES2 or GLES3 provider through
+the existing pinned ANGLE dependency. Both retain WebGL compatibility, robust
+resource initialization, disabled client arrays, thread affinity, ownership
+budgets and hidden execution. A newer native driver must not silently change
+WebGL1's shader rules or extension admission.
+
+## Completed native contracts
+
+- Exact GLES3 construction, private initialized drawing buffer and versioned
+  state strings. Failed/unknown creation versions consume no public context.
+- WebGL2 front-end shader validation with actual GLES3 limits, followed by
+  ANGLE's native WebGL2 compiler. ESSL300 `gl_VertexID`, integer operations,
+  explicit fragment outputs and `isnan`/`isinf` produce real pixels. ESSL310 is
+  rejected, and the WebGL1 provider still rejects ESSL300.
+- Original names are passed to the native WebGL2 compiler after successful
+  validation. WebGL2's 1024-byte token boundary reaches ANGLE's hash-name
+  no-prefix threshold, so WebGL1's textual prefix decoder is not applicable.
+  Tests resolve uniforms at 1022, 1023 and 1024 bytes and reject 1025-byte tokens.
+- Core copy, uniform, pixel-pack, pixel-unpack and transform-feedback buffer
+  targets, additional usage enums, and neutral copy-target classification.
+  Element/non-element classification and cross-context ownership remain strict.
+- Native buffer copies check both ranges and same-buffer overlap before writing;
+  successful copies also update the browser-owned index-validation mirror.
+- `getBufferSubData` reads actual mapped native storage into bounded owned bytes.
+  It never exposes a native address. Zero-length and invalid-range behavior is
+  checked; the binary host reply path avoids per-byte JSON serialization.
+- Unsigned scalar/vector uniform uploads and queries preserve the complete u32
+  range. All six non-square matrix shapes use native column-major storage.
+  Reflection determines reply sizes; locations retain their owner/link generation.
+- Private surface allocation and capture temporarily unbind pixel buffers and
+  restore them on exit. Owned CPU pixel opcodes cannot be confused with future
+  PBO-offset overloads. Resize/capture preserve author buffer contents and bindings.
+
+These features are tested with native byte/pixel assertions, malformed commands,
+failed-update atomicity, stale locations and peer-context handles. Their internal
+presence is not a complete WebGL2 conformance result or a new HTML5test score.
+
+## Remaining admission work
+
+Sized texture formats and immutable storage, 3D/array textures, GLES3 pixel-store
+layouts, separate read/draw framebuffer state, multisample storage and resolves,
+samplers, uniform blocks, integer vertex attributes, queries, sync and transform
+feedback need their own bounded native contracts and realm bindings. Core vertex
+arrays, instancing and multiple outputs must use their versioned GLES3 semantics,
+not simply expose WebGL1 extension objects under new names.
+
+Only after the coherent interface is admitted should shared Window/Worker tests,
+unchanged upstream WebGL2 cases and hidden Chromium fixtures establish public
+availability. Running the unchanged sibling game remains a separate end-to-end
+acceptance milestone; see [the game roadmap](gd-clone-compatibility.md).
+
+## Primary contracts and reuse
+
+- [WebGL2 specification](https://registry.khronos.org/webgl/specs/latest/2.0/)
+- [OpenGL ES API registry](https://registry.khronos.org/OpenGL/index_es.php)
+- [ANGLE explicit context version](https://github.com/google/angle/blob/main/extensions/EGL_ANGLE_create_context_backwards_compatible.txt)
+
+All native operations reuse the existing locked `mozangle` 0.7.1 provider and
+shader compiler. The small typed entry-point adapters use the pinned Khronos
+GLES3 header ABIs; they do not resolve author-supplied symbols, add dependencies,
+copy a third-party renderer, or weaken native WebGL validation. Provenance and
+licensing are recorded in [the backend documentation](webgl-backend.md).

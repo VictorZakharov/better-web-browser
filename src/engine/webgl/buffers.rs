@@ -38,21 +38,29 @@ impl WebGl {
                 if id != 0 && self.objects.get(id, Kind::Buffer)?.pending_delete {
                     return Err(gl::INVALID_OPERATION);
                 }
-                if ![gl::ARRAY_BUFFER, gl::ELEMENT_ARRAY_BUFFER].contains(&target) {
+                let extra = self.options.api == super::ApiVersion::Two
+                    && super::core_buffers::extra_target(target);
+                if ![gl::ARRAY_BUFFER, gl::ELEMENT_ARRAY_BUFFER].contains(&target) && !extra {
                     return Err(gl::INVALID_ENUM);
                 }
                 if id != 0 {
                     let object = self.objects.get_mut(id, Kind::Buffer)?;
-                    if object.buffer_target != 0 && object.buffer_target != target {
+                    let class = super::core_buffers::classification(target);
+                    if object.buffer_target != 0 && class != 0 && object.buffer_target != class {
                         return Err(gl::INVALID_OPERATION);
                     }
-                    object.buffer_target = target;
+                    if class != 0 {
+                        object.buffer_target = class;
+                    }
                 }
                 match target {
                     gl::ARRAY_BUFFER => self.array_buffer = id,
                     gl::ELEMENT_ARRAY_BUFFER => {
                         self.objects.switch_buffer(self.element_buffer, id)?;
                         self.element_buffer = id;
+                    }
+                    _ if extra => {
+                        self.core_buffer_bindings.insert(target, id);
                     }
                     _ => return Err(gl::INVALID_ENUM),
                 }
@@ -65,7 +73,11 @@ impl WebGl {
                 let id = self.bound_buffer(target)?;
                 let size = c.u(1)? as usize;
                 let usage = c.u(2)?;
-                if ![gl::STATIC_DRAW, gl::DYNAMIC_DRAW, gl::STREAM_DRAW].contains(&usage) {
+                let core_usage = self.options.api == super::ApiVersion::Two
+                    && [0x88e1, 0x88e2, 0x88e5, 0x88e6, 0x88e9, 0x88ea].contains(&usage);
+                if ![gl::STATIC_DRAW, gl::DYNAMIC_DRAW, gl::STREAM_DRAW].contains(&usage)
+                    && !core_usage
+                {
                     return Err(gl::INVALID_ENUM);
                 }
                 if size > MAX_UPLOAD_BYTES || bytes.is_some_and(|b| b.len() != size) {
@@ -231,10 +243,15 @@ impl WebGl {
         self.driver_result()?;
         Ok(Value::Null)
     }
-    fn bound_buffer(&self, target: u32) -> Result<u32> {
+    pub(super) fn bound_buffer(&self, target: u32) -> Result<u32> {
         let id = match target {
             gl::ARRAY_BUFFER => self.array_buffer,
             gl::ELEMENT_ARRAY_BUFFER => self.element_buffer,
+            _ if self.options.api == super::ApiVersion::Two
+                && super::core_buffers::extra_target(target) =>
+            {
+                *self.core_buffer_bindings.get(&target).unwrap_or(&0)
+            }
             _ => return Err(gl::INVALID_ENUM),
         };
         self.objects.get(id, Kind::Buffer)?;
