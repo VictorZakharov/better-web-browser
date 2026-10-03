@@ -15,6 +15,19 @@ impl WebGl {
     }
 
     pub(super) fn parameter(&mut self, pname: u32) -> Result<Value> {
+        if self.options.api == super::ApiVersion::Two && [0x8b9a, 0x8b9b].contains(&pname) {
+            self.validate_read_framebuffer().map_err(|error| {
+                if error == gl::INVALID_FRAMEBUFFER_OPERATION {
+                    gl::INVALID_OPERATION
+                } else {
+                    error
+                }
+            })?;
+            let mut value = 0;
+            unsafe { gl::GetIntegerv(pname, &mut value) };
+            self.driver_result()?;
+            return Ok(json!(value));
+        }
         if let Some(value) = self.core_framebuffer_parameter(pname)? {
             return Ok(value);
         }

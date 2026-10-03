@@ -5,6 +5,21 @@ use serde_json::Value;
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
+            "createSampler"
+            | "bindSampler"
+            | "deleteSampler"
+            | "isSampler"
+            | "samplerParameteri"
+            | "samplerParameterf"
+            | "getSamplerParameter" => {
+                return self.sampler_command(c);
+            }
+            "clearBufferfv" | "clearBufferiv" | "clearBufferuiv" | "clearBufferfi" => {
+                return self.typed_clear(c);
+            }
+            "renderbufferStorageMultisample" | "getInternalformatParameter" | "blitFramebuffer" => {
+                return self.multisample_command(c);
+            }
             "framebufferTextureLayer" => {
                 self.core_attach_framebuffer(c)?;
                 return Ok(Value::Null);

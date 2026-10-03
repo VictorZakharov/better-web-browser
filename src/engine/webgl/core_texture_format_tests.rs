@@ -45,8 +45,14 @@ fn webgl2_each_sized_format_allocates_native_storage_with_every_legal_upload_typ
                     f: vec![],
                     text: String::new(),
                 };
+                if kind == 0x8dad {
+                    assert_eq!(
+                        context.dispatch(&command, Some(&[0; 16])),
+                        Err(gl::INVALID_OPERATION)
+                    );
+                }
                 assert_eq!(
-                    context.dispatch(&command, Some(&[0; 16])),
+                    context.dispatch(&command, if kind == 0x8dad { None } else { Some(&[0; 16]) }),
                     Ok(Value::Null),
                     "internal {internal:x}, type {kind:x}"
                 );

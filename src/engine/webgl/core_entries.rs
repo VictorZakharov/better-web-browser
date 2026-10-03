@@ -16,6 +16,18 @@ pub(super) type GetIntegerAttribute = unsafe extern "system" fn(u32, u32, *mut i
 pub(super) type GetUnsignedAttribute = unsafe extern "system" fn(u32, u32, *mut u32);
 pub(super) type GetInteger64 = unsafe extern "system" fn(u32, *mut i64);
 pub(super) type ReadBuffer = unsafe extern "system" fn(u32);
+pub(super) type ClearSigned = unsafe extern "system" fn(u32, i32, *const i32);
+pub(super) type ClearUnsigned = unsafe extern "system" fn(u32, i32, *const u32);
+pub(super) type ClearFloat = unsafe extern "system" fn(u32, i32, *const f32);
+pub(super) type ClearDepthStencil = unsafe extern "system" fn(u32, i32, f32, i32);
+pub(super) type BindSampler = unsafe extern "system" fn(u32, u32);
+pub(super) type SamplerInteger = unsafe extern "system" fn(u32, u32, i32);
+pub(super) type SamplerFloat = unsafe extern "system" fn(u32, u32, f32);
+pub(super) type SamplerIntegerQuery = unsafe extern "system" fn(u32, u32, *mut i32);
+pub(super) type SamplerFloatQuery = unsafe extern "system" fn(u32, u32, *mut f32);
+pub(super) type RenderbufferMultisample = unsafe extern "system" fn(u32, i32, u32, i32, i32);
+pub(super) type InternalformatQuery = unsafe extern "system" fn(u32, u32, u32, i32, *mut i32);
+pub(super) type Blit = unsafe extern "system" fn(i32, i32, i32, i32, i32, i32, i32, i32, u32, u32);
 pub(super) type FramebufferLayer = unsafe extern "system" fn(u32, u32, u32, i32, i32);
 pub(super) type TextureStorage2D = unsafe extern "system" fn(u32, i32, u32, i32, i32);
 pub(super) type TextureStorage3D = unsafe extern "system" fn(u32, i32, u32, i32, i32, i32);
@@ -25,6 +37,19 @@ pub(super) type TextureSubImage3D =
     unsafe extern "system" fn(u32, i32, i32, i32, i32, i32, i32, i32, u32, u32, *const c_void);
 
 pub(super) struct CoreEntries {
+    pub gen_samplers: super::extensions::GenArrays,
+    pub bind_sampler: BindSampler,
+    pub sampler_integer: SamplerInteger,
+    pub sampler_float: SamplerFloat,
+    pub sampler_integer_query: SamplerIntegerQuery,
+    pub sampler_float_query: SamplerFloatQuery,
+    pub clear_signed: ClearSigned,
+    pub clear_unsigned: ClearUnsigned,
+    pub clear_float: ClearFloat,
+    pub clear_depth_stencil: ClearDepthStencil,
+    pub renderbuffer_multisample: RenderbufferMultisample,
+    pub internalformat_query: InternalformatQuery,
+    pub blit: Blit,
     pub framebuffer_layer: FramebufferLayer,
     pub read_buffer: ReadBuffer,
     pub texture_storage_3d: TextureStorage3D,
@@ -80,6 +105,8 @@ impl CoreEntries {
         // Teardown resolves this same fixed symbol; fail creation if it is absent.
         let _: super::extensions::DeleteArrays =
             entry!(c"glDeleteVertexArrays", super::extensions::DeleteArrays);
+        let _: super::extensions::DeleteArrays =
+            entry!(c"glDeleteSamplers", super::extensions::DeleteArrays);
         let get_integer64 = entry!(c"glGetInteger64v", GetInteger64);
         let mut max_element_index = 0;
         // SAFETY: exact scalar GLint64 output for the fixed GLES3 capability.
@@ -92,6 +119,22 @@ impl CoreEntries {
             return Err("ANGLE MAX_ELEMENT_INDEX does not meet the admitted WebGL2 minimum".into());
         }
         Ok(Self {
+            gen_samplers: entry!(c"glGenSamplers", super::extensions::GenArrays),
+            bind_sampler: entry!(c"glBindSampler", BindSampler),
+            sampler_integer: entry!(c"glSamplerParameteri", SamplerInteger),
+            sampler_float: entry!(c"glSamplerParameterf", SamplerFloat),
+            sampler_integer_query: entry!(c"glGetSamplerParameteriv", SamplerIntegerQuery),
+            sampler_float_query: entry!(c"glGetSamplerParameterfv", SamplerFloatQuery),
+            clear_signed: entry!(c"glClearBufferiv", ClearSigned),
+            clear_unsigned: entry!(c"glClearBufferuiv", ClearUnsigned),
+            clear_float: entry!(c"glClearBufferfv", ClearFloat),
+            clear_depth_stencil: entry!(c"glClearBufferfi", ClearDepthStencil),
+            renderbuffer_multisample: entry!(
+                c"glRenderbufferStorageMultisample",
+                RenderbufferMultisample
+            ),
+            internalformat_query: entry!(c"glGetInternalformativ", InternalformatQuery),
+            blit: entry!(c"glBlitFramebuffer", Blit),
             framebuffer_layer: entry!(c"glFramebufferTextureLayer", FramebufferLayer),
             read_buffer: Self::read_buffer_entry()?,
             texture_storage_3d: entry!(c"glTexStorage3D", TextureStorage3D),

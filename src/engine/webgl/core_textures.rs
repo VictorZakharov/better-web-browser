@@ -152,6 +152,10 @@ impl WebGl {
         };
         let format = c.u(6)?;
         let kind = c.u(7)?;
+        if kind == 0x8dad && bytes.is_some() {
+            // WebGL2 permits FLOAT_32_UNSIGNED_INT_24_8_REV only with null CPU data.
+            return Err(gl::INVALID_OPERATION);
+        }
         let (upload, storage) = formats::upload(internal, format, kind)?;
         let mut alignment = 0;
         unsafe {

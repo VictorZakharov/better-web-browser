@@ -4,6 +4,13 @@ use serde_json::Value;
 
 impl WebGl {
     pub(super) fn core_parameter(&mut self, pname: u32) -> Result<Option<Value>> {
+        if pname == 0x8919 {
+            if self.options.api != ApiVersion::Two {
+                return Err(gl::INVALID_ENUM);
+            }
+            let id = self.samplers[self.texture_unit];
+            return Ok(Some(if id == 0 { Value::Null } else { json!(id) }));
+        }
         let integer64 = [0x8a30, 0x8a31, 0x8a33, 0x8d6b, 0x9111].contains(&pname);
         let integer = [
             0x8073, 0x88ff, // 3D texture size, array texture layers

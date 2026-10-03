@@ -7,6 +7,11 @@ impl WebGl {
         match c.op.as_str() {
             "supportedExtensions" => {
                 let mut names = Vec::new();
+                if self.options.api == super::ApiVersion::Two
+                    && self.extensions.available_core_color_float
+                {
+                    names.push("EXT_color_buffer_float");
+                }
                 if self.extensions.available_draw_buffers {
                     names.push("WEBGL_draw_buffers");
                 }
@@ -36,6 +41,17 @@ impl WebGl {
                 Ok(json!(names))
             }
             "enableExtension" => {
+                if c.text == "EXT_color_buffer_float" {
+                    if self.options.api != super::ApiVersion::Two {
+                        return Ok(json!(false));
+                    }
+                    self.extensions.core_color_float = self.extensions.enable_simple(
+                        c"GL_EXT_color_buffer_float",
+                        self.extensions.available_core_color_float,
+                    );
+                    self.driver_result()?;
+                    return Ok(json!(self.extensions.core_color_float));
+                }
                 let texture = TextureCapability::ALL
                     .into_iter()
                     .find(|capability| capability.public_name() == c.text);

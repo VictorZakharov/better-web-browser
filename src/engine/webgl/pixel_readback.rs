@@ -62,19 +62,27 @@ impl WebGl {
             return Err(gl::INVALID_VALUE);
         }
         let kind = c.u(5)?;
-        if c.u(4)? != gl::RGBA || ![gl::UNSIGNED_BYTE, gl::FLOAT].contains(&kind) {
+        let format = c.u(4)?;
+        let core = self.options.api == super::ApiVersion::Two;
+        if !core && (format != gl::RGBA || ![gl::UNSIGNED_BYTE, gl::FLOAT].contains(&kind)) {
             return Err(gl::INVALID_OPERATION);
         }
         let color_float = self.extensions.textures.enabled(Capability::ColorFloat)
             || self.extensions.textures.enabled(Capability::ColorHalfFloat);
-        if kind == gl::FLOAT && !color_float {
+        if !core && kind == gl::FLOAT && !color_float {
             return Err(gl::INVALID_OPERATION);
         }
-        let floating = self.color_read_type()? == gl::FLOAT;
-        if floating != (kind == gl::FLOAT) {
+        let floating = !core && self.color_read_type()? == gl::FLOAT;
+        if !core && floating != (kind == gl::FLOAT) {
             return Err(gl::INVALID_OPERATION);
         }
-        let bpp = if floating { 16 } else { 4 };
+        let bpp = if core {
+            self.core_read_pair(format, kind)?
+        } else if floating {
+            16
+        } else {
+            4
+        };
         let mut alignment = 0;
         unsafe {
             gl::GetIntegerv(gl::PACK_ALIGNMENT, &mut alignment);
@@ -100,7 +108,7 @@ impl WebGl {
                 c.n(1)?,
                 width,
                 height,
-                gl::RGBA,
+                format,
                 kind,
                 bytes.as_mut_ptr().cast(),
             );
@@ -111,7 +119,7 @@ impl WebGl {
         } else {
             self.framebuffer == 0
         };
-        if default_read && !self.options.alpha {
+        if default_read && !self.options.alpha && format == gl::RGBA && kind == gl::UNSIGNED_BYTE {
             let stride = (width as usize * 4).div_ceil(alignment as usize) * alignment as usize;
             let x = c.n(0)?;
             let y = c.n(1)?;

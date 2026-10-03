@@ -58,6 +58,7 @@ impl WebGl {
             renderbuffer: 0,
             texture_unit: 0,
             textures: vec![[0; 4]; units as usize],
+            samplers: vec![0; units as usize],
         };
         if let Some(core) = &context.core {
             context.extensions.admit_core(core);

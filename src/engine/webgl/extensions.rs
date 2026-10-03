@@ -17,6 +17,8 @@ pub(super) type IsArray = unsafe extern "system" fn(u32) -> u8;
 pub(super) type DrawBuffers = unsafe extern "system" fn(i32, *const u32);
 
 pub(super) struct Extensions {
+    pub available_core_color_float: bool,
+    pub core_color_float: bool,
     pub textures: TextureCapabilities,
     pub arrays: Option<DrawArrays>,
     pub elements: Option<DrawElements>,
@@ -123,6 +125,11 @@ impl Extensions {
             && max_draw_buffers >= 4
             && max_color_attachments >= max_draw_buffers;
         Self {
+            available_core_color_float: enabled
+                .iter()
+                .chain(&requestable)
+                .any(|name| name == "GL_EXT_color_buffer_float"),
+            core_color_float: false,
             textures: TextureCapabilities::discover(
                 enabled.iter().chain(&requestable).map(String::as_str),
             ),
@@ -291,6 +298,11 @@ pub(super) unsafe fn delete_vertex_array(name: u32, api: super::ApiVersion) {
         unsafe {
             delete(1, &name);
         }
+    }
+}
+pub(super) unsafe fn delete_sampler(name: u32) {
+    if let Some(delete) = entry!(c"glDeleteSamplers", DeleteArrays) {
+        unsafe { delete(1, &name) };
     }
 }
 

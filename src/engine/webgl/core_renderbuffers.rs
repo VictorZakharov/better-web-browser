@@ -18,13 +18,22 @@ pub(super) fn storage_bytes(format: u32) -> Result<usize> {
     Ok(super::core_texture_formats::storage(format)?.bytes)
 }
 impl WebGl {
+    pub(super) fn core_renderbuffer_bytes(&self, format: u32) -> Result<usize> {
+        if [0x822d, 0x822e, 0x822f, 0x8230, 0x881a, 0x8814, 0x8c3a].contains(&format) {
+            if !self.extensions.core_color_float {
+                return Err(gl::INVALID_ENUM);
+            }
+            return Ok(super::core_texture_formats::storage(format)?.bytes);
+        }
+        storage_bytes(format)
+    }
     pub(super) fn core_renderbuffer_storage(&mut self, c: &Command) -> Result<Value> {
         if c.u(0)? != gl::RENDERBUFFER {
             return Err(gl::INVALID_ENUM);
         }
         let format = c.u(1)?;
         let native_format = if format == 0x84f9 { 0x88f0 } else { format };
-        let bytes = storage_bytes(native_format)?;
+        let bytes = self.core_renderbuffer_bytes(native_format)?;
         let (width, height) = (c.n(2)?, c.n(3)?);
         if !(0..=4096).contains(&width) || !(0..=4096).contains(&height) {
             return Err(gl::INVALID_VALUE);

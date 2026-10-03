@@ -70,6 +70,20 @@ WebGL1's shader rules or extension admission.
   reusable upload tiles. A native test caught the pinned ANGLE backend treating
   a clear of one attached layer as initialization of the whole image; the browser
   must not expose the remaining layers' native allocation bytes.
+- Native multisample renderbuffer allocation selects supported sample counts,
+  charges actual rounded-up storage, and exposes bounded format-specific sample
+  queries. Four-sample resolves copy GPU pixels into a separate texture while
+  preserving framebuffer bindings. Invalid extents, aliases, formats and sample
+  requests do not alter existing storage; blit rectangle arithmetic is widened
+  before applying WebGL2's signed-width overflow rule.
+- Typed color/depth/stencil clears and integer/float readback preserve native
+  component types, negative values, u32 maxima and HDR values. The WebGL2-only
+  `EXT_color_buffer_float` admission enables its seven specified renderbuffer
+  formats without leaking WebGL1's narrower color-extension contract.
+- Opaque sampler objects maintain independent texture-unit bindings and scalar
+  filter/wrap/LOD/compare state. Native pixel tests verify sampler overrides do
+  not mutate texture parameters and deletion restores texture sampling on every
+  previously bound unit. Cross-context handles and invalid shapes are rejected.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
@@ -77,8 +91,8 @@ presence is not a complete WebGL2 conformance result or a new HTML5test score.
 
 ## Remaining admission work
 
-GLES3 pixel-store layouts, multisample storage and resolves,
-samplers, uniform blocks, queries, sync and transform feedback need their own
+GLES3 pixel-store layouts,
+uniform blocks, queries, sync and transform feedback need their own
 bounded native contracts and realm bindings. Public core entry points need
 versioned realm bindings, not WebGL1 extension objects under new names.
 

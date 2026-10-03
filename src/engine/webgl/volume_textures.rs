@@ -44,6 +44,9 @@ impl WebGl {
         );
         dimensions(target, width, height, depth)?;
         let (format, kind) = (c.u(if sub { 8 } else { 7 })?, c.u(if sub { 9 } else { 8 })?);
+        if kind == 0x8dad && bytes.is_some() {
+            return Err(gl::INVALID_OPERATION);
+        }
         let object = self.objects.get(id, Kind::Texture)?;
         let (internal, offsets) = if sub {
             let image = object

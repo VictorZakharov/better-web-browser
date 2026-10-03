@@ -140,3 +140,7 @@ fn upload_bytes(format: u32, kind: u32) -> Result<usize> {
         _ => return Err(gl::INVALID_ENUM),
     })
 }
+
+pub(super) fn read_bytes(format: u32, kind: u32) -> Result<usize> {
+    upload_bytes(format, kind)
+}

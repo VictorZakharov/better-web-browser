@@ -15,6 +15,7 @@ pub(super) enum Kind {
     Framebuffer,
     Renderbuffer,
     VertexArray,
+    Sampler,
 }
 pub(super) struct Object {
     pub kind: Kind,
@@ -247,6 +248,7 @@ fn destroy(object: Object, api: super::ApiVersion) {
             Kind::Framebuffer => gl::DeleteFramebuffers(1, &object.native),
             Kind::Renderbuffer => gl::DeleteRenderbuffers(1, &object.native),
             Kind::VertexArray => super::extensions::delete_vertex_array(object.native, api),
+            Kind::Sampler => super::extensions::delete_sampler(object.native),
         }
     }
 }
