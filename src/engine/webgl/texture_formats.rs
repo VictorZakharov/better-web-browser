@@ -9,45 +9,20 @@ pub(super) const RGBA32F: u32 = 0x8814;
 pub(super) const RGBA16F: u32 = 0x881a;
 pub(super) const RGB16F: u32 = 0x881b;
 pub(super) const COMPONENT_TYPE: u32 = 0x8211;
-const RED: u32 = 0x1903;
-const GREEN: u32 = 0x1904;
-const BLUE: u32 = 0x1905;
 
 pub(super) fn native_format(format: u32, kind: u32) -> (u32, u32, u32) {
     if let Some(native) = super::texture_color_space::native_format(format) {
         return native;
     }
-    if super::depth_textures::is_depth(format) {
-        // Keep WebGL1's unsized depth definition. ANGLE deliberately permits
-        // legacy non-comparison LINEAR sampling for these formats; sized GLES3
-        // depth definitions instead require NEAREST (crbug.com/649200).
-        return (format, format, kind);
-    }
-    let native_kind = if kind == HALF_FLOAT { 0x140b } else { kind };
-    if ![gl::FLOAT, HALF_FLOAT].contains(&kind) {
-        return (format, format, native_kind);
-    }
-    let half = kind == HALF_FLOAT;
-    let (internal, base) = match format {
-        gl::RGBA => (if half { RGBA16F } else { RGBA32F }, gl::RGBA),
-        gl::RGB => (if half { RGB16F } else { 0x8815 }, gl::RGB),
-        gl::ALPHA | gl::LUMINANCE => (if half { 0x822d } else { 0x822e }, RED),
-        gl::LUMINANCE_ALPHA => (if half { 0x822f } else { 0x8230 }, 0x8227),
-        _ => (format, format),
-    };
-    (internal, base, native_kind)
-}
-
-pub(super) fn native_swizzle(format: u32, kind: u32) -> [u32; 4] {
-    if [gl::FLOAT, HALF_FLOAT].contains(&kind) {
-        match format {
-            gl::ALPHA => return [gl::ZERO, gl::ZERO, gl::ZERO, RED],
-            gl::LUMINANCE => return [RED, RED, RED, gl::ONE],
-            gl::LUMINANCE_ALPHA => return [RED, RED, RED, GREEN],
-            _ => {}
-        }
-    }
-    [RED, GREEN, BLUE, gl::ALPHA]
+    (
+        if format == gl::RGBA && kind == gl::FLOAT {
+            RGBA32F
+        } else {
+            format
+        },
+        format,
+        kind,
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

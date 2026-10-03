@@ -10,6 +10,8 @@ mod context;
 mod copy_texture;
 mod copy_texture_conversion;
 mod depth_textures;
+mod draw_buffers;
+mod extension_commands;
 mod extensions;
 mod float_values;
 mod framebuffer_attachments;
@@ -223,6 +225,7 @@ struct WebGl {
     renderbuffer: u32,
     texture_unit: usize,
     textures: Vec<[u32; 2]>,
+    default_draw_buffer: u32,
 }
 impl WebGl {
     fn new(width: u32, height: u32, options: Options) -> std::result::Result<Self, String> {
@@ -245,6 +248,7 @@ impl WebGl {
             native,
             surface,
             objects: Objects::default(),
+            default_draw_buffer: gl::BACK,
             errors: VecDeque::new(),
             options,
             stencil_masks: stencil_masks::StencilMasks::default(),

@@ -34,12 +34,21 @@ rewrite third-party headers, or suppress linker diagnostics. The actual EGL cont
 requests WebGL compatibility, robust resource initialization and disabled client
 arrays. Backend failure must produce context-creation failure, not a fake context.
 
-The private provider requests **exact GLES 3.0**, with ANGLE's backwards-compatible
-context upgrade disabled. ANGLE previously upgraded a GLES 2 request implicitly;
-that difference matters for half-float tokens and sized floating-point storage.
-This does not expose WebGL 2: WebGL 1's closed enum/type table and ANGLE's explicit
-WebGL 1 shader validator remain the author contract. See the
-[texture/HDR contract](webgl-texture-formats.md) for the native mapping boundary.
+The WebGL1 provider requests **exact GLES 2.0**, with ANGLE's backwards-compatible
+context upgrade disabled. A GLES3 WebGL-compatible provider applies WebGL2 shader
+rules even to ESSL100: its `gl_FragData` array has one element, breaking valid
+`WEBGL_draw_buffers` programs. The backend version must match the author contract;
+turning off native WebGL validation is not an acceptable workaround.
+
+Private format dependencies (`OES_rgb8_rgba8`, `EXT_texture_storage`, `OES_depth24`
+and `EXT_draw_buffers`) are enabled internally without granting author APIs.
+RGBA32F uses ANGLE's `CHROMIUM_color_buffer_float_rgba` storage contract; legacy
+float/half-float and sRGB formats use their GLES2 extension tokens directly.
+The separate WebGL1 validator enforces author extension admission. Its reversible
+name prefix is removed from validated ESSL before native recompilation, preserving
+legal 256-byte identifiers and public reflection without doubling their length.
+WebGL2 remains unavailable pending its separate API and backend contract. See the
+[texture/HDR contract](webgl-texture-formats.md) for storage and validation details.
 
 ## Implemented native boundary
 

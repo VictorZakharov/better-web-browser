@@ -36,8 +36,8 @@ pub(super) fn texture_format(
 
 pub(super) fn native_format(format: u32) -> Option<(u32, u32, u32)> {
     match format {
-        SRGB => Some((0x8c41 /* SRGB8 */, gl::RGB, gl::UNSIGNED_BYTE)),
-        SRGB_ALPHA => Some((SRGB8_ALPHA8, gl::RGBA, gl::UNSIGNED_BYTE)),
+        SRGB => Some((SRGB, SRGB, gl::UNSIGNED_BYTE)),
+        SRGB_ALPHA => Some((SRGB_ALPHA, SRGB_ALPHA, gl::UNSIGNED_BYTE)),
         _ => None,
     }
 }

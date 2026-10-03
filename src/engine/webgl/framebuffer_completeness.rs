@@ -62,21 +62,29 @@ impl WebGl {
             .objects
             .get(self.framebuffer, Kind::Framebuffer)?
             .framebuffer_attachments;
-        let Some(entry) = entries
-            .get(&gl::COLOR_ATTACHMENT0)
-            .filter(|entry| entry.kind == Kind::Texture)
-        else {
-            return Ok(status);
-        };
-        let image = self
-            .objects
-            .get(entry.id, Kind::Texture)?
-            .texture_images
-            .get(&(entry.target, 0));
-        if image.is_some_and(|(format, _)| {
-            ![gl::RGBA, gl::RGB, super::texture_color_space::SRGB_ALPHA].contains(format)
-        }) {
-            return Ok(gl::FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+        let mut images = std::collections::HashSet::new();
+        for (&point, entry) in entries {
+            if !self.color_attachment_allowed(point) {
+                continue;
+            }
+            if !images.insert((entry.id, entry.target)) {
+                // WebGL rejects aliasing one image through multiple color slots,
+                // even if the GLES provider considers that physical FBO complete.
+                return Ok(gl::FRAMEBUFFER_UNSUPPORTED);
+            }
+            if entry.kind != Kind::Texture {
+                continue;
+            }
+            let image = self
+                .objects
+                .get(entry.id, Kind::Texture)?
+                .texture_images
+                .get(&(entry.target, 0));
+            if image.is_some_and(|(format, _)| {
+                ![gl::RGBA, gl::RGB, super::texture_color_space::SRGB_ALPHA].contains(format)
+            }) {
+                return Ok(gl::FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+            }
         }
         Ok(status)
     }

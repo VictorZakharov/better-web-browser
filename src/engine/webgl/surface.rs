@@ -63,12 +63,19 @@ impl Surface {
                 let storage = if options.depth && options.stencil {
                     0x88f0
                 } else if options.depth {
-                    0x81a6 // DEPTH_COMPONENT24 on the private GLES3 provider.
+                    0x81a6 // DEPTH_COMPONENT24 via the private OES_depth24 dependency.
                 } else {
                     gl::STENCIL_INDEX8
                 };
                 gl::RenderbufferStorage(gl::RENDERBUFFER, storage, width as i32, height as i32);
-                if options.depth {
+                if options.depth && options.stencil {
+                    gl::FramebufferRenderbuffer(
+                        gl::FRAMEBUFFER,
+                        0x821a,
+                        gl::RENDERBUFFER,
+                        result.depth_stencil,
+                    );
+                } else if options.depth {
                     gl::FramebufferRenderbuffer(
                         gl::FRAMEBUFFER,
                         gl::DEPTH_ATTACHMENT,
@@ -76,7 +83,7 @@ impl Surface {
                         result.depth_stencil,
                     );
                 }
-                if options.stencil {
+                if options.stencil && !options.depth {
                     gl::FramebufferRenderbuffer(
                         gl::FRAMEBUFFER,
                         gl::STENCIL_ATTACHMENT,

@@ -142,3 +142,37 @@ fn native_webgl_hdr_copies_and_depth_interpolation_survive_appcontainer_transpor
         .shutdown()
         .expect("clean contained texture shutdown");
 }
+
+#[test]
+fn native_webgl_multiple_outputs_survive_appcontainer_transport() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut session = RendererSession::launch(options()).expect("launch hidden MRT renderer");
+    let page = load_html_document(
+        &session,
+        804,
+        include_str!("../webgl/multiple-render-targets.html"),
+    );
+    assert!(page.runtime.errors.is_empty(), "{:?}", page.runtime.errors);
+    assert_eq!(
+        page.title, "ready:28",
+        "all four native outputs must be read"
+    );
+    let image = page
+        .images
+        .iter()
+        .find(|image| image.url.starts_with("breeze-internal:canvas:"))
+        .expect("owned default framebuffer pixels cross the containment boundary");
+    assert_eq!(image.image.bgra.len(), 8 * 4 * 4);
+    assert!(
+        image
+            .image
+            .bgra
+            .chunks_exact(4)
+            .all(|pixel| pixel == [0, 255, 0, 255])
+    );
+    session
+        .ping(Duration::from_secs(3))
+        .expect("MRT renderer remains responsive");
+    assert_eq!(session.snapshot().state, RendererState::Running);
+    session.shutdown().expect("clean contained MRT shutdown");
+}

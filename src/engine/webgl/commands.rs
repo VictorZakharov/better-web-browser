@@ -5,6 +5,7 @@ use serde_json::Value;
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
+            "drawBuffersWEBGL" => return self.draw_buffers_command(c),
             "supportedExtensions" | "enableExtension" => return self.extension_command(c),
             "createVertexArrayOES"
             | "bindVertexArrayOES"

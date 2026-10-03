@@ -67,3 +67,41 @@ fn webgl_upload_border_and_zero_sized_null_subupload_are_validated() {
     "#
     ));
 }
+
+#[test]
+fn webgl_float_subcopies_preserve_destination_border_and_pixel_store() {
+    check(&format!(
+        r#"{DRAW}
+        gl.getExtension('OES_texture_float');
+        const source=gl.createTexture(), framebuffer=gl.createFramebuffer();
+        const destination=gl.getParameter(gl.TEXTURE_BINDING_2D);
+        gl.bindTexture(gl.TEXTURE_2D,source);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.FLOAT,new Float32Array([2,-1,.5,.25]));
+        gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,source,0);
+        assert(gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE,'float source');
+        const cases=[
+            [gl.RGBA,[255,0,128,64]], [gl.RGB,[255,0,128,255]],
+            [gl.ALPHA,[0,0,0,64]], [gl.LUMINANCE,[255,255,255,255]],
+            [gl.LUMINANCE_ALPHA,[255,255,255,64]]
+        ];
+        for(const [format,expected] of cases){{
+            gl.bindTexture(gl.TEXTURE_2D,destination);
+            gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
+            gl.texImage2D(gl.TEXTURE_2D,0,format,1,1,0,format,gl.UNSIGNED_BYTE,null);
+            gl.pixelStorei(gl.PACK_ALIGNMENT,8);gl.pixelStorei(gl.UNPACK_ALIGNMENT,8);
+            gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer);
+            gl.copyTexSubImage2D(gl.TEXTURE_2D,0,0,0,0,0,1,1);
+            error(0,'floating subcopy '+format);
+            assert(gl.getParameter(gl.PACK_ALIGNMENT)===8,'pack preserved');
+            assert(gl.getParameter(gl.UNPACK_ALIGNMENT)===8,'unpack preserved');
+            gl.copyTexSubImage2D(gl.TEXTURE_2D,0,1,0,0,0,1,1);
+            error(gl.INVALID_VALUE,'outside destination');
+            assert(gl.getParameter(gl.UNPACK_ALIGNMENT)===8,'failed copy unpack preserved');
+            gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+            assert(near(draw(),expected),'subcopy channels '+format);
+        }}
+        document.querySelector('output').textContent='pass';
+    "#
+    ));
+}

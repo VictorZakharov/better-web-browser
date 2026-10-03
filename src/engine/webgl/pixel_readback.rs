@@ -11,17 +11,31 @@ impl WebGl {
         if self.framebuffer == 0 || !color_float {
             return Ok(gl::UNSIGNED_BYTE);
         }
-        let mut component = 0;
-        unsafe {
-            gl::GetFramebufferAttachmentParameteriv(
-                gl::FRAMEBUFFER,
-                gl::COLOR_ATTACHMENT0,
-                super::texture_formats::COMPONENT_TYPE,
-                &mut component,
-            );
-        }
-        self.driver_result()?;
-        Ok(if component as u32 == gl::FLOAT {
+        let entries = &self
+            .objects
+            .get(self.framebuffer, super::Kind::Framebuffer)?
+            .framebuffer_attachments;
+        let floating = if let Some(entry) = entries.get(&gl::COLOR_ATTACHMENT0) {
+            let object = self.objects.get(entry.id, entry.kind)?;
+            if entry.kind == super::Kind::Texture {
+                object
+                    .texture_images
+                    .get(&(entry.target, 0))
+                    .is_some_and(|(_, kind)| {
+                        [gl::FLOAT, super::texture_formats::HALF_FLOAT].contains(kind)
+                    })
+            } else {
+                [
+                    super::texture_formats::RGBA32F,
+                    super::texture_formats::RGBA16F,
+                    super::texture_formats::RGB16F,
+                ]
+                .contains(&object.renderbuffer_format)
+            }
+        } else {
+            false
+        };
+        Ok(if floating {
             gl::FLOAT
         } else {
             gl::UNSIGNED_BYTE

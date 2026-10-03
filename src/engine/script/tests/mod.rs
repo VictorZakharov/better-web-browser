@@ -231,6 +231,7 @@ mod webgl_attributes;
 #[cfg(windows)]
 mod webgl_contracts;
 mod webgl_depth_textures;
+pub(super) mod webgl_draw_buffers;
 mod webgl_float_copy;
 mod webgl_float_sampling;
 mod webgl_float_textures;

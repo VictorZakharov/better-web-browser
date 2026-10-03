@@ -34,9 +34,9 @@ impl TextureCapability {
             Self::HalfFloat => c"GL_OES_texture_half_float",
             Self::FloatLinear => c"GL_OES_texture_float_linear",
             Self::HalfFloatLinear => c"GL_OES_texture_half_float_linear",
-            // Native GLES3 supports this; the WebGL1 wrapper still exposes only
-            // WEBGL_color_buffer_float's narrower RGBA32F author contract.
-            Self::ColorFloat => c"GL_EXT_color_buffer_float",
+            // ANGLE's GLES2 RGBA32F extension implements the narrower WebGL1
+            // contract without exposing RGB32F storage.
+            Self::ColorFloat => c"GL_CHROMIUM_color_buffer_float_rgba",
             Self::ColorHalfFloat => c"GL_EXT_color_buffer_half_float",
             Self::Depth => c"GL_ANGLE_depth_texture",
             Self::Srgb => c"GL_EXT_sRGB",
@@ -158,7 +158,7 @@ mod tests {
         assert!(capabilities.available(TextureCapability::HalfFloatLinear));
         assert!(capabilities.available(TextureCapability::Srgb));
         assert!(!capabilities.available(TextureCapability::HalfFloat));
-        assert!(!capabilities.available(TextureCapability::ColorFloat));
+        assert!(capabilities.available(TextureCapability::ColorFloat));
         for capability in TextureCapability::ALL {
             assert!(!capabilities.enabled(capability));
         }

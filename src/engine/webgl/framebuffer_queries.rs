@@ -15,13 +15,13 @@ impl WebGl {
         }
         let point = c.u(1)?;
         let pname = c.u(2)?;
-        if ![
-            gl::COLOR_ATTACHMENT0,
-            gl::DEPTH_ATTACHMENT,
-            gl::STENCIL_ATTACHMENT,
-            DEPTH_STENCIL_ATTACHMENT,
-        ]
-        .contains(&point)
+        if !self.color_attachment_allowed(point)
+            && ![
+                gl::DEPTH_ATTACHMENT,
+                gl::STENCIL_ATTACHMENT,
+                DEPTH_STENCIL_ATTACHMENT,
+            ]
+            .contains(&point)
         {
             return Err(gl::INVALID_ENUM);
         }

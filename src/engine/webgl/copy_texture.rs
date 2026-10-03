@@ -69,6 +69,7 @@ impl WebGl {
                     level,
                     format,
                     [c.n(3)?, c.n(4)?, width, height],
+                    None,
                 )?;
             } else {
                 unsafe {
@@ -76,38 +77,44 @@ impl WebGl {
                 }
             }
         } else {
-            unsafe {
-                gl::CopyTexSubImage2D(
+            let (format, kind) = *self
+                .objects
+                .get(id, Kind::Texture)?
+                .texture_images
+                .get(&(target, level))
+                .ok_or(gl::INVALID_OPERATION)?;
+            let xoffset = c.n(2)?;
+            let yoffset = c.n(3)?;
+            if xoffset < 0 || yoffset < 0 {
+                return Err(gl::INVALID_VALUE);
+            }
+            if kind == gl::UNSIGNED_BYTE && self.color_read_type()? == gl::FLOAT {
+                // EXT_color_buffer_half_float issue 9 retains the GLES2
+                // float-to-normalized CopyTex(Sub)Image conversion contract.
+                self.copy_float_to_normalized(
                     target,
                     level,
-                    c.n(2)?,
-                    c.n(3)?,
-                    c.n(4)?,
-                    c.n(5)?,
-                    width,
-                    height,
-                );
+                    format,
+                    [c.n(4)?, c.n(5)?, width, height],
+                    Some([xoffset, yoffset]),
+                )?;
+            } else {
+                unsafe {
+                    gl::CopyTexSubImage2D(
+                        target,
+                        level,
+                        c.n(2)?,
+                        c.n(3)?,
+                        c.n(4)?,
+                        c.n(5)?,
+                        width,
+                        height,
+                    );
+                }
             }
         }
         self.driver_result()?;
         if !sub {
-            if level == 0 {
-                let binding_target = if slot == 0 {
-                    gl::TEXTURE_2D
-                } else {
-                    gl::TEXTURE_CUBE_MAP
-                };
-                for (offset, value) in
-                    super::texture_formats::native_swizzle(c.u(2)?, gl::UNSIGNED_BYTE)
-                        .into_iter()
-                        .enumerate()
-                {
-                    unsafe {
-                        gl::TexParameteri(binding_target, 0x8e42 + offset as u32, value as i32);
-                    }
-                }
-                self.driver_result()?;
-            }
             self.objects
                 .get_mut(id, Kind::Texture)?
                 .texture_images

@@ -26,6 +26,11 @@ impl WebGl {
             gl::GetBooleanv(gl::DEPTH_WRITEMASK, &mut depth_mask);
             let scissor = gl::IsEnabled(gl::SCISSOR_TEST);
             gl::BindFramebuffer(gl::FRAMEBUFFER, self.surface.framebuffer);
+            if self.default_draw_buffer == gl::NONE
+                && let Some(entry) = self.extensions.draw_buffers_entry
+            {
+                entry(1, &gl::COLOR_ATTACHMENT0);
+            }
             gl::Disable(gl::SCISSOR_TEST);
             gl::ColorMask(1, 1, 1, 1);
             gl::DepthMask(1);
@@ -34,6 +39,11 @@ impl WebGl {
             gl::ClearDepthf(1.0);
             gl::ClearStencil(0);
             gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT);
+            if self.default_draw_buffer == gl::NONE
+                && let Some(entry) = self.extensions.draw_buffers_entry
+            {
+                entry(1, &gl::NONE);
+            }
             gl::ClearColor(color[0], color[1], color[2], color[3]);
             gl::ClearDepthf(depth);
             gl::ClearStencil(stencil);

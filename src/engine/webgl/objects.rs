@@ -30,6 +30,7 @@ pub(super) struct Object {
     pub texture_images: HashMap<(u32, i32), (u32, u32)>,
     pub renderbuffer_format: u32,
     pub framebuffer_attachments: HashMap<u32, super::framebuffer_attachments::Attachment>,
+    pub draw_buffers: Vec<u32>,
     references: u32,
     attached: Vec<u32>,
 }
@@ -73,6 +74,7 @@ impl Objects {
                 texture_images: HashMap::new(),
                 renderbuffer_format: 0,
                 framebuffer_attachments: HashMap::new(),
+                draw_buffers: vec![gl::COLOR_ATTACHMENT0],
                 references: 0,
                 attached: Vec::new(),
             },

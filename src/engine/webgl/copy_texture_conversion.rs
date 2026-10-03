@@ -1,5 +1,5 @@
-//! GLES3 rejects float-to-normalized CopyTexImage2D, but WebGL1's floating
-//! color-buffer extensions retain the GLES2 conversion contract. Read through
+//! WebGL1's floating color-buffer extensions permit normalized full/subcopies.
+//! Apply the same closed conversion across native providers. Read through
 //! bounded, owned RGBA floats, then convert only the destination's channels.
 use super::{MAX_UPLOAD_BYTES, Result, WebGl, gl};
 
@@ -10,6 +10,7 @@ impl WebGl {
         level: i32,
         format: u32,
         rectangle: [i32; 4],
+        offset: Option<[i32; 2]>,
     ) -> Result<()> {
         let [x, y, width, height] = rectangle;
         let count = (width as usize)
@@ -53,17 +54,31 @@ impl WebGl {
         let bytes = normalized_channels(&pixels, format);
         unsafe {
             gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
-            gl::TexImage2D(
-                target,
-                level,
-                format as i32,
-                width,
-                height,
-                0,
-                format,
-                gl::UNSIGNED_BYTE,
-                bytes.as_ptr().cast(),
-            );
+            if let Some([xoffset, yoffset]) = offset {
+                gl::TexSubImage2D(
+                    target,
+                    level,
+                    xoffset,
+                    yoffset,
+                    width,
+                    height,
+                    format,
+                    gl::UNSIGNED_BYTE,
+                    bytes.as_ptr().cast(),
+                );
+            } else {
+                gl::TexImage2D(
+                    target,
+                    level,
+                    format as i32,
+                    width,
+                    height,
+                    0,
+                    format,
+                    gl::UNSIGNED_BYTE,
+                    bytes.as_ptr().cast(),
+                );
+            }
         }
         let upload = self.driver_result();
         unsafe {

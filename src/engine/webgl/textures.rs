@@ -276,8 +276,8 @@ impl WebGl {
             object.capacity = object.capacity.max(storage);
         }
         let pointer = bytes.map_or(ptr::null(), |b| b.as_ptr().cast());
-        // WebGL1's OES half-float token is not accepted by native GLES3. Map
-        // validated author formats to the provider's sized storage/type pair.
+        // Preserve GLES2 extension tokens; floating RGBA32F allocation uses
+        // ANGLE's sized color-buffer extension internal format.
         let (native_internal, native_format, native_kind) =
             super::texture_formats::native_format(format, kind);
         unsafe {
@@ -309,24 +309,6 @@ impl WebGl {
         }
         self.driver_result()?;
         if !sub {
-            if level == 0 {
-                let target = if slot == 0 {
-                    gl::TEXTURE_2D
-                } else {
-                    gl::TEXTURE_CUBE_MAP
-                };
-                // GLES3 lacks legacy floating alpha/luminance storage. Red/RG
-                // storage plus private swizzle reproduces WebGL1 channel rules.
-                for (offset, value) in super::texture_formats::native_swizzle(format, kind)
-                    .into_iter()
-                    .enumerate()
-                {
-                    unsafe {
-                        gl::TexParameteri(target, 0x8e42 + offset as u32, value as i32);
-                    }
-                }
-                self.driver_result()?;
-            }
             self.objects
                 .get_mut(id, Kind::Texture)?
                 .texture_images

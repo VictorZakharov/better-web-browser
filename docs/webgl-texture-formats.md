@@ -13,7 +13,8 @@ Merely finding a native GLES capability never admits a new public enum or type.
 Implemented contracts in this batch are `OES_texture_float`,
 `OES_texture_half_float`, their two linear-filter extensions,
 `WEBGL_color_buffer_float`, `EXT_color_buffer_half_float`, and
-`EXT_texture_filter_anisotropic`, `WEBGL_depth_texture`, and `EXT_sRGB`.
+`EXT_texture_filter_anisotropic`, `WEBGL_depth_texture`, `EXT_sRGB`, and
+`WEBGL_draw_buffers`.
 Availability depends on the actual native provider, not a hard-coded browser list.
 
 Requesting float/half-float textures implicitly enables the corresponding color
@@ -26,13 +27,14 @@ constructor; each context caches its extension instance within its lifetime.
 - Float uploads use `Float32Array`; half uploads use `Uint16Array` binary16 bits.
   Wrong views, undersized buffers, disabled types and unsupported format/type
   combinations fail before any native author-memory access.
-- RGB/RGBA floating images use sized GLES3 storage. Legacy alpha/luminance images
-  use red/RG storage with private channel swizzles. Replacement storage resets
-  that swizzle; subuploads cannot alias two public formats sharing a native format.
-- Private red/RG mappings must not grant color-attachment renderability to legacy
-  alpha/luminance images. Framebuffer checks, clear, draw, copy and readback retain
+- RGBA32F uses ANGLE's sized GLES2 floating-color extension storage. Legacy
+  alpha/luminance and half-float images retain their native GLES2 channel rules;
+  no private red/RG swizzle is needed. Subuploads must retain the image's public
+  format/type, even if a provider could perform an implicit conversion.
+- Color-attachment renderability must not be granted to legacy alpha/luminance
+  images. Framebuffer checks, clear, draw, copy and readback retain
   the public WebGL1 completeness restrictions.
-- GLES3's core half-float filtering does not implicitly enable WebGL1's linear
+- Native half-float filtering does not implicitly enable WebGL1's linear
   extension. Before that extension is enabled, filtered half textures sample
   incomplete-texture opaque black; author bindings and filters remain unchanged.
 - DOM image uploads reuse the origin-clean Canvas snapshot boundary, including
@@ -52,6 +54,27 @@ Focused tests exercise actual native shader sampling, filtering, DOM conversion,
 renderbuffer clears, HDR readback, failed subuploads and framebuffer restrictions.
 These tests are not a claim of complete upstream conformance or game readiness.
 Upstream and reference-browser fixture evidence will be recorded with the PR.
+
+## Multiple render targets
+
+`WEBGL_draw_buffers` uses the pinned ANGLE implementation, with at least four
+native color attachments and outputs before it can be advertised. Routing is
+framebuffer-local. The default surface exposes only `BACK`/`NONE`; its private
+color attachment never becomes a public handle or enum. Invalid routes leave
+the previous routing intact. Private retirement clears still initialize the
+drawing buffer when an author has disabled its color output.
+
+The validator freezes `gl_MaxDrawBuffers` at compilation and gates the ESSL100
+`GL_EXT_draw_buffers` directive by author admission. Missing outputs reject
+draws unless all color channels are masked, and `gl_FragColor` does not broadcast
+across targets. Duplicate color-image attachments are unsupported. Every color
+slot participates in public attachment reflection and retained-resource deletion.
+Window, Worker and restoration tests exercise distinct native output pixels.
+
+The unchanged pinned Khronos fixtures pass **17/17 cases, 1,798 assertions** in
+the development build, with no expected-failure exemptions. This includes the
+four upstream MRT cases and all earlier texture/geometry regressions. Final
+release-head measurements remain a separate verification step.
 
 ## Depth textures and framebuffer lifetime
 
@@ -81,10 +104,10 @@ retain its storage. Deleted objects cannot be rebound or newly attached. Final
 detachment and framebuffer deletion release the retained native resource.
 
 WebGL1 permits floating framebuffer values to be copied into normalized texture
-images. GLES3's stricter native copy rules require a bounded owned RGBA-float
-read, destination-channel selection, clamping and normalized upload. Pack and
-unpack alignment are restored, out-of-bounds storage is initialized, and replacing
-a legacy floating image resets its private channel swizzle. State queries on an
+images. Full and subimage copies use a bounded owned RGBA-float read,
+destination-channel selection, clamping and normalized upload. Pack and
+unpack alignment are restored, out-of-bounds storage is initialized, and failed
+destination updates preserve the previous image. State queries on an
 incomplete read surface return `INVALID_OPERATION`; an actual read still returns
 `INVALID_FRAMEBUFFER_OPERATION` without changing the destination.
 
@@ -112,7 +135,7 @@ and interpolation of four separately rendered depth values.
 and `SRGB8_ALPHA8_EXT` renderbuffers. ANGLE owns sRGB decoding, encoded writes,
 and linear-space blending; the browser does not approximate these in shaders or
 CPU pixel conversions. Alpha is not gamma converted. RGB-only sRGB images are
-not color-renderable in this WebGL1 extension, even if the private GLES3 provider
+not color-renderable in this WebGL1 extension, even if a newer native provider
 could render to its sized format. Framebuffer encoding queries remain extension
 gated, and generated sRGB mipmaps remain forbidden by the WebGL1 contract.
 

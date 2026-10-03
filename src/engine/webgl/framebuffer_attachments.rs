@@ -23,13 +23,13 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         let point = c.u(1)?;
-        if ![
-            gl::COLOR_ATTACHMENT0,
-            gl::DEPTH_ATTACHMENT,
-            gl::STENCIL_ATTACHMENT,
-            DEPTH_STENCIL_ATTACHMENT,
-        ]
-        .contains(&point)
+        if !self.color_attachment_allowed(point)
+            && ![
+                gl::DEPTH_ATTACHMENT,
+                gl::STENCIL_ATTACHMENT,
+                DEPTH_STENCIL_ATTACHMENT,
+            ]
+            .contains(&point)
         {
             return Err(gl::INVALID_ENUM);
         }
@@ -79,9 +79,9 @@ impl WebGl {
         } else {
             updated.remove(&point);
         }
-        apply(&updated);
+        apply(&updated, self.extensions.max_color_attachments);
         if let Err(error) = self.driver_result() {
-            apply(&previous);
+            apply(&previous, self.extensions.max_color_attachments);
             self.driver_result()?;
             return Err(error);
         }
@@ -115,7 +115,7 @@ impl WebGl {
         for point in &removed {
             entries.remove(point);
         }
-        apply(entries);
+        apply(entries, self.extensions.max_color_attachments);
         self.driver_result()?;
         for _ in removed {
             self.objects.release(id);
@@ -124,22 +124,22 @@ impl WebGl {
     }
 }
 
-fn apply(entries: &HashMap<u32, Attachment>) {
-    // Preserve each logical slot in browser metadata. For invalid combinations,
-    // the combined assignment wins only in the private physical image; public
-    // completeness validation prevents all reads/writes until the conflict ends.
-    let combined = entries.get(&DEPTH_STENCIL_ATTACHMENT);
-    for (point, entry) in [
-        (gl::COLOR_ATTACHMENT0, entries.get(&gl::COLOR_ATTACHMENT0)),
+fn apply(entries: &HashMap<u32, Attachment>, color_count: u32) {
+    // GLES2 WebGL compatibility also retains distinct logical native slots.
+    // Apply each exact assignment without clearing a separate surviving image
+    // when removing a combined depth/stencil attachment.
+    let colors = (0..color_count.max(1)).map(|index| {
+        let point = gl::COLOR_ATTACHMENT0 + index;
+        (point, entries.get(&point))
+    });
+    for (point, entry) in colors.chain([
+        (gl::DEPTH_ATTACHMENT, entries.get(&gl::DEPTH_ATTACHMENT)),
+        (gl::STENCIL_ATTACHMENT, entries.get(&gl::STENCIL_ATTACHMENT)),
         (
-            gl::DEPTH_ATTACHMENT,
-            combined.or_else(|| entries.get(&gl::DEPTH_ATTACHMENT)),
+            DEPTH_STENCIL_ATTACHMENT,
+            entries.get(&DEPTH_STENCIL_ATTACHMENT),
         ),
-        (
-            gl::STENCIL_ATTACHMENT,
-            combined.or_else(|| entries.get(&gl::STENCIL_ATTACHMENT)),
-        ),
-    ] {
+    ]) {
         unsafe {
             if let Some(entry) = entry
                 && entry.kind == Kind::Texture

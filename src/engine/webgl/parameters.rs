@@ -15,6 +15,9 @@ impl WebGl {
     }
 
     pub(super) fn parameter(&mut self, pname: u32) -> Result<Value> {
+        if let Some(value) = self.draw_buffer_parameter(pname)? {
+            return Ok(value);
+        }
         if pname == 0x84ff {
             if !self
                 .extensions

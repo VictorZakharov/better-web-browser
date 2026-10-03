@@ -1,6 +1,6 @@
-//! Author extension state can be narrower than the private GLES3 provider.
+//! Author filtering admission can be narrower than the native provider.
 //! Incomplete WebGL textures sample opaque black, rather than generating a
-//! draw error or silently acquiring GLES3's core half-float linear filtering.
+//! draw error or acquiring a provider's broader filtering capabilities.
 use super::texture_capabilities::TextureCapability;
 use super::{Kind, Result, WebGl, gl};
 

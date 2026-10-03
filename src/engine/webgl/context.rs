@@ -41,7 +41,7 @@ impl NativeContext {
                 egl::SURFACE_TYPE as i32,
                 egl::PBUFFER_BIT as i32,
                 egl::RENDERABLE_TYPE as i32,
-                0x0040, // EGL_OPENGL_ES3_BIT_KHR, exact native provider capability.
+                0x0004, // EGL_OPENGL_ES2_BIT, matches the public WebGL1 shader contract.
                 egl::RED_SIZE as i32,
                 8,
                 egl::GREEN_SIZE as i32,
@@ -57,7 +57,7 @@ impl NativeContext {
             if egl::ChooseConfig(display, attributes.as_ptr(), &mut config, 1, &mut count) == 0
                 || count != 1
             {
-                return Err(error("choose GLES3 pbuffer format"));
+                return Err(error("choose GLES2 pbuffer format"));
             }
             let attributes = [
                 egl::WIDTH as i32,
@@ -68,15 +68,15 @@ impl NativeContext {
             ];
             result.surface = egl::CreatePbufferSurface(display, config, attributes.as_ptr());
             if result.surface.is_null() {
-                return Err(error("create GLES3 pbuffer"));
+                return Err(error("create GLES2 pbuffer"));
             }
             // WebGL shader restrictions, zero-initialized resources, and buffer-only attributes.
             let attributes = [
                 egl::CONTEXT_CLIENT_VERSION as i32,
-                3,
-                // The native provider uses GLES3 explicitly; WebGL1's closed API
-                // table and separate WebGL shader validator remain authoritative.
-                // Do not rely on ANGLE silently upgrading a requested GLES2 context.
+                2,
+                // Match WebGL1's native shader rules, including EXT_draw_buffers.
+                // A silently upgraded GLES3 compatibility context instead uses
+                // WebGL2's one-element gl_FragData rule for ESSL100.
                 // EGL_ANGLE_create_context_backwards_compatible.
                 0x3483,
                 0,
@@ -90,7 +90,7 @@ impl NativeContext {
             ];
             result.context = egl::CreateContext(display, config, ptr::null(), attributes.as_ptr());
             if result.context.is_null() {
-                return Err(error("create WebGL-compatible GLES3 backend"));
+                return Err(error("create WebGL-compatible GLES2 backend"));
             }
         }
         result.make_current()?;
@@ -159,8 +159,8 @@ mod tests {
                 .to_str()
                 .unwrap();
             assert!(
-                version.starts_with("OpenGL ES 3.0"),
-                "requested exact GLES3 backend but received {version}"
+                version.starts_with("OpenGL ES 2.0"),
+                "requested exact GLES2 backend but received {version}"
             );
             let pointer = unsafe { gl::GetString(gl::EXTENSIONS) };
             assert!(!pointer.is_null());

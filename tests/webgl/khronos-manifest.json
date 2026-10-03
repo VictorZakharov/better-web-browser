@@ -20,6 +20,7 @@
     "sdk/tests/js/tests/ext-color-buffer-half-float.js",
     "sdk/tests/js/tests/oes-texture-float-and-half-float-linear.js",
     "sdk/tests/js/tests/ext-texture-filter-anisotropic.js",
+    "sdk/tests/js/tests/webgl-draw-buffers-utils.js",
     "sdk/tests/resources/gray-1024x1024.jpg"
   ],
   "tests": [
@@ -35,6 +36,10 @@
     {"path":"sdk/tests/conformance/extensions/ext-color-buffer-half-float.html","area":"WebGL half color targets","expected":"pass","harness":"khronos","required_extension":"EXT_color_buffer_half_float"},
     {"path":"sdk/tests/conformance/extensions/webgl-depth-texture.html","area":"WebGL depth textures","expected":"pass","harness":"khronos","required_extension":"WEBGL_depth_texture"},
     {"path":"sdk/tests/conformance/extensions/ext-texture-filter-anisotropic.html","area":"WebGL anisotropy","expected":"pass","harness":"khronos","required_extension":"EXT_texture_filter_anisotropic"},
-    {"path":"sdk/tests/conformance/extensions/ext-sRGB.html","area":"WebGL sRGB color pipeline","expected":"pass","harness":"khronos","required_extension":"EXT_sRGB"}
+    {"path":"sdk/tests/conformance/extensions/ext-sRGB.html","area":"WebGL sRGB color pipeline","expected":"pass","harness":"khronos","required_extension":"EXT_sRGB"},
+    {"path":"sdk/tests/conformance/extensions/webgl-draw-buffers.html","area":"WebGL multiple render targets","expected":"pass","harness":"khronos","required_extension":"WEBGL_draw_buffers"},
+    {"path":"sdk/tests/conformance/extensions/webgl-draw-buffers-framebuffer-unsupported.html","area":"WebGL MRT attachment aliasing","expected":"pass","harness":"khronos","required_extension":"WEBGL_draw_buffers"},
+    {"path":"sdk/tests/conformance/extensions/webgl-draw-buffers-max-draw-buffers.html","area":"WebGL frozen shader output limits","expected":"pass","harness":"khronos","required_extension":"WEBGL_draw_buffers"},
+    {"path":"sdk/tests/conformance/extensions/webgl-draw-buffers-broadcast-return.html","area":"WebGL MRT shader output control flow","expected":"pass","harness":"khronos","required_extension":"WEBGL_draw_buffers"}
   ]
 }

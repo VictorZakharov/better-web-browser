@@ -1,6 +1,35 @@
 use super::*;
 
 #[test]
+fn worker_webgl_mrt_shader_writes_four_independent_native_color_targets() {
+    let loader: Arc<WorkerSourceLoader> = Arc::new(|url, _| Err(format!("unexpected {url}")));
+    let setup = crate::engine::script::tests::webgl_draw_buffers::SETUP.replace(
+        "document.querySelector('canvas').getContext('webgl',{preserveDrawingBuffer:true})",
+        "new OffscreenCanvas(2,2).getContext('webgl',{preserveDrawingBuffer:true})",
+    );
+    let code = format!(
+        r#"{setup}
+        gl.drawArrays(gl.TRIANGLE_STRIP,0,4);error(0,'worker MRT draw');
+        postMessage(textures.map(inspect).join(';'));close();
+    "#
+    );
+    let (runtime, initial) = WorkerRuntime::start(
+        "https://example.com/worker.js",
+        &code,
+        "",
+        ScriptKind::Classic,
+        loader,
+    );
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert_eq!(
+        initial.messages,
+        [r#""255,0,0,255;0,255,0,255;0,0,255,255;255,255,255,255""#]
+    );
+    assert!(initial.closed);
+    drop(runtime);
+}
+
+#[test]
 fn worker_webgl_hdr_binary_readback_preserves_view_bounds_and_shutdown_ownership() {
     let loader: Arc<WorkerSourceLoader> = Arc::new(|url, _| Err(format!("unexpected {url}")));
     let (runtime, initial) = WorkerRuntime::start(
