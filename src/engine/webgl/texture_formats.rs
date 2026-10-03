@@ -14,6 +14,12 @@ const GREEN: u32 = 0x1904;
 const BLUE: u32 = 0x1905;
 
 pub(super) fn native_format(format: u32, kind: u32) -> (u32, u32, u32) {
+    if super::depth_textures::is_depth(format) {
+        // Keep WebGL1's unsized depth definition. ANGLE deliberately permits
+        // legacy non-comparison LINEAR sampling for these formats; sized GLES3
+        // depth definitions instead require NEAREST (crbug.com/649200).
+        return (format, format, kind);
+    }
     let native_kind = if kind == HALF_FLOAT { 0x140b } else { kind };
     if ![gl::FLOAT, HALF_FLOAT].contains(&kind) {
         return (format, format, native_kind);
@@ -52,6 +58,25 @@ pub(super) fn texture_format(
     kind: u32,
     capabilities: &TextureCapabilities,
 ) -> Result<PixelFormat> {
+    if super::depth_textures::is_depth(format) {
+        if !capabilities.enabled(Capability::Depth) {
+            return Err(gl::INVALID_ENUM);
+        }
+        return Ok(PixelFormat {
+            upload_bytes: super::depth_textures::pixel_bytes(format, kind)?,
+            storage_bytes: 4,
+        });
+    }
+    if capabilities.enabled(Capability::Depth)
+        && [
+            gl::UNSIGNED_SHORT,
+            gl::UNSIGNED_INT,
+            super::depth_textures::UNSIGNED_INT_24_8,
+        ]
+        .contains(&kind)
+    {
+        return Err(gl::INVALID_OPERATION);
+    }
     let components = match format {
         gl::RGBA => 4,
         gl::RGB => 3,

@@ -1,8 +1,7 @@
 //! Float readback extends the byte transport without exposing driver pointers.
 //! Format/type admission follows EXT_color_buffer_half_float's WebGL table.
 use super::texture_capabilities::TextureCapability as Capability;
-use super::{Command, MAX_UPLOAD_BYTES, Result, WebGl, gl, json};
-use serde_json::Value;
+use super::{Command, MAX_UPLOAD_BYTES, Result, WebGl, gl};
 
 impl WebGl {
     pub(super) fn color_read_type(&mut self) -> Result<u32> {
@@ -29,7 +28,7 @@ impl WebGl {
         })
     }
 
-    pub(super) fn read_pixels(&mut self, c: &Command, input: Option<&[u8]>) -> Result<Value> {
+    pub(super) fn read_pixels(&mut self, c: &Command, input: Option<&[u8]>) -> Result<Vec<u8>> {
         let width = c.n(2)?;
         let height = c.n(3)?;
         if width < 0 || height < 0 {
@@ -98,6 +97,6 @@ impl WebGl {
                 }
             }
         }
-        Ok(json!(bytes))
+        Ok(bytes)
     }
 }

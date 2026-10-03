@@ -25,13 +25,31 @@ impl WebGl {
             }
             "deleteTexture" => {
                 let id = c.u(0)?;
-                for unit in &mut self.textures {
-                    for binding in unit {
+                if id == 0 {
+                    return Ok(Value::Null);
+                }
+                for (index, unit) in self.textures.iter_mut().enumerate() {
+                    for (slot, binding) in unit.iter_mut().enumerate() {
                         if *binding == id {
                             *binding = 0;
+                            unsafe {
+                                gl::ActiveTexture(gl::TEXTURE0 + index as u32);
+                                gl::BindTexture(
+                                    if slot == 0 {
+                                        gl::TEXTURE_2D
+                                    } else {
+                                        gl::TEXTURE_CUBE_MAP
+                                    },
+                                    0,
+                                );
+                            }
                         }
                     }
                 }
+                unsafe {
+                    gl::ActiveTexture(gl::TEXTURE0 + self.texture_unit as u32);
+                }
+                self.detach_current_resource(id, Kind::Texture)?;
                 self.objects.delete(id, Kind::Texture)?;
             }
             "activeTexture" => {
@@ -51,6 +69,9 @@ impl WebGl {
                 let id = c.u(1)?;
                 if id != 0 {
                     let object = self.objects.get_mut(id, Kind::Texture)?;
+                    if object.pending_delete {
+                        return Err(gl::INVALID_OPERATION);
+                    }
                     if object.buffer_target != 0 && object.buffer_target != target {
                         return Err(gl::INVALID_OPERATION);
                     }
@@ -126,6 +147,17 @@ impl WebGl {
                 let target = c.u(0)?;
                 let slot = texture_slot(target)?;
                 let id = self.textures[self.texture_unit][slot];
+                if self
+                    .objects
+                    .get(id, Kind::Texture)?
+                    .texture_images
+                    .iter()
+                    .any(|((_, level), (format, _))| {
+                        *level == 0 && super::depth_textures::is_depth(*format)
+                    })
+                {
+                    return Err(gl::INVALID_OPERATION);
+                }
                 let capacity = self.objects.get(id, Kind::Texture)?.capacity;
                 // Mip levels consume less than half the base storage. Conservative lifetime
                 // accounting also bounds repeated regenerations and driver-held references.
@@ -195,6 +227,7 @@ impl WebGl {
         }
         let pixel =
             super::texture_formats::texture_format(format, kind, &self.extensions.textures)?;
+        super::depth_textures::validate_upload(c, bytes)?;
         let mut alignment = 0;
         unsafe {
             gl::GetIntegerv(gl::UNPACK_ALIGNMENT, &mut alignment);
@@ -224,11 +257,14 @@ impl WebGl {
             // contract does not. Preserve the public image definition boundary.
             return Err(gl::INVALID_OPERATION);
         }
-        if sub && bytes.is_none() && size != 0 {
+        if sub && bytes.is_none() {
             return Err(gl::INVALID_VALUE);
         }
         if !sub {
-            if c.u(2)? != format || c.n(5)? != 0 {
+            if c.n(5)? != 0 {
+                return Err(gl::INVALID_VALUE);
+            }
+            if c.u(2)? != format {
                 return Err(gl::INVALID_OPERATION);
             }
             // Charge every new level allocation; this deliberately overestimates replacement.

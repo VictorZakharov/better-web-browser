@@ -146,29 +146,33 @@ mod tests {
     use mozangle::gles::ffi as gl;
     #[test]
     fn webgl_exact_native_version_allocates_private_default_surface() {
-        let _context = super::super::WebGl::new(8, 4, super::super::Options::default())
-            .expect("exact native WebGL provider and private framebuffer");
+        super::super::session::run_native_test(|| {
+            let _context = super::super::WebGl::new(8, 4, super::super::Options::default())
+                .expect("exact native WebGL provider and private framebuffer");
+        });
     }
     #[test]
     fn webgl_native_context_enables_compiler_restrictions() {
-        let _context = NativeContext::new().unwrap();
-        let version = unsafe { std::ffi::CStr::from_ptr(gl::GetString(gl::VERSION).cast()) }
-            .to_str()
-            .unwrap();
-        assert!(
-            version.starts_with("OpenGL ES 3.0"),
-            "requested exact GLES3 backend but received {version}"
-        );
-        let pointer = unsafe { gl::GetString(gl::EXTENSIONS) };
-        assert!(!pointer.is_null());
-        let extensions = unsafe { std::ffi::CStr::from_ptr(pointer.cast()) }
-            .to_str()
-            .unwrap();
-        assert!(
-            extensions
-                .split_ascii_whitespace()
-                .any(|value| value == "GL_ANGLE_webgl_compatibility"),
-            "native WebGL compatibility is not enabled"
-        );
+        super::super::session::run_native_test(|| {
+            let _context = NativeContext::new().unwrap();
+            let version = unsafe { std::ffi::CStr::from_ptr(gl::GetString(gl::VERSION).cast()) }
+                .to_str()
+                .unwrap();
+            assert!(
+                version.starts_with("OpenGL ES 3.0"),
+                "requested exact GLES3 backend but received {version}"
+            );
+            let pointer = unsafe { gl::GetString(gl::EXTENSIONS) };
+            assert!(!pointer.is_null());
+            let extensions = unsafe { std::ffi::CStr::from_ptr(pointer.cast()) }
+                .to_str()
+                .unwrap();
+            assert!(
+                extensions
+                    .split_ascii_whitespace()
+                    .any(|value| value == "GL_ANGLE_webgl_compatibility"),
+                "native WebGL compatibility is not enabled"
+            );
+        });
     }
 }

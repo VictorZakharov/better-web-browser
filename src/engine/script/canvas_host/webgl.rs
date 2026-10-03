@@ -20,7 +20,7 @@ pub(crate) fn dispatch(
 ) -> JsResult<Option<JsValue>> {
     if !matches!(
         operation,
-        "webglCreate" | "webglDestroy" | "webglCommand" | "webglSnapshot"
+        "webglCreate" | "webglDestroy" | "webglCommand" | "webglReadPixels" | "webglSnapshot"
     ) {
         return Ok(None);
     }
@@ -48,6 +48,15 @@ pub(crate) fn dispatch(
                 let command = argument_string(args, 2)?;
                 let value = contexts.execute(id, &command, args.get(3).and_then(JsValue::as_bytes));
                 JsValue::String(value.to_string())
+            }
+            "webglReadPixels" => {
+                use crate::engine::webgl::PixelReply;
+                let command = argument_string(args, 2)?;
+                match contexts.read_pixels(id, &command, args.get(3).and_then(JsValue::as_bytes)) {
+                    PixelReply::Bytes(bytes) => JsValue::Bytes(bytes),
+                    PixelReply::Error => JsValue::Null,
+                    PixelReply::Lost => JsValue::String(r#"{"lost":true}"#.into()),
+                }
             }
             "webglSnapshot" => {
                 contexts

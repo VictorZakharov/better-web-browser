@@ -1,6 +1,6 @@
 use super::webgl_instancing::check;
 
-const DRAW: &str = r#"
+pub(super) const DRAW: &str = r#"
     const gl=document.querySelector('canvas').getContext('webgl',{preserveDrawingBuffer:true});
     const assert=(v,s)=>{if(!v)throw Error(s)};
     const error=(code,label)=>{const actual=gl.getError();assert(actual===code,label+' GL '+actual)};

@@ -69,7 +69,8 @@
                 const kind=webGlUnsigned(type);
                 const valid=kind===0x1401 ? pixels instanceof Uint8Array || pixels instanceof Uint8ClampedArray :
                     kind===0x1406 ? pixels instanceof Float32Array :
-                    [0x8d61,0x8363,0x8033,0x8034].includes(kind) && pixels instanceof Uint16Array;
+                    [0x1405,0x84fa].includes(kind) ? pixels instanceof Uint32Array :
+                    [0x1403,0x8d61,0x8363,0x8033,0x8034].includes(kind) && pixels instanceof Uint16Array;
                 if (!valid) {
                     webGlError(this, 0x0502); return;
                 }

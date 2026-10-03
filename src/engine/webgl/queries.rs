@@ -40,7 +40,7 @@ impl WebGl {
                 self.driver_result()?;
                 Ok(json!(value))
             }
-            "readPixels" => self.read_pixels(c, input),
+            "readPixels" => self.read_pixels(c, input).map(|bytes| json!(bytes)),
             "getActiveUniform" | "getActiveAttrib" => {
                 let program = self.objects.get(c.u(0)?, Kind::Program)?.native;
                 let index = c.u(1)?;

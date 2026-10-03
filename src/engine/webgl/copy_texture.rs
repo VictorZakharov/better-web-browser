@@ -17,6 +17,16 @@ impl WebGl {
         self.objects.get(id, Kind::Texture)?;
         let level = c.n(1)?;
         let sub = c.op == "copyTexSubImage2D";
+        if sub
+            && self
+                .objects
+                .get(id, Kind::Texture)?
+                .texture_images
+                .get(&(target, level))
+                .is_some_and(|(format, _)| super::depth_textures::is_depth(*format))
+        {
+            return Err(gl::INVALID_OPERATION);
+        }
         self.validate_framebuffer()?;
         let width = c.n(if sub { 6 } else { 5 })?;
         let height = c.n(if sub { 7 } else { 6 })?;
@@ -28,6 +38,14 @@ impl WebGl {
         }
         if !sub {
             let format = c.u(2)?;
+            if super::depth_textures::is_depth(format)
+                && self
+                    .extensions
+                    .textures
+                    .enabled(super::texture_capabilities::TextureCapability::Depth)
+            {
+                return Err(gl::INVALID_OPERATION);
+            }
             if ![
                 gl::ALPHA,
                 gl::RGB,
@@ -45,8 +63,17 @@ impl WebGl {
             self.charge(0, width as usize * height as usize * 4)?;
             self.objects.get_mut(id, Kind::Texture)?.capacity =
                 width as usize * height as usize * 4;
-            unsafe {
-                gl::CopyTexImage2D(target, level, format, c.n(3)?, c.n(4)?, width, height, 0);
+            if self.color_read_type()? == gl::FLOAT {
+                self.copy_float_to_normalized(
+                    target,
+                    level,
+                    format,
+                    [c.n(3)?, c.n(4)?, width, height],
+                )?;
+            } else {
+                unsafe {
+                    gl::CopyTexImage2D(target, level, format, c.n(3)?, c.n(4)?, width, height, 0);
+                }
             }
         } else {
             unsafe {
@@ -64,6 +91,23 @@ impl WebGl {
         }
         self.driver_result()?;
         if !sub {
+            if level == 0 {
+                let binding_target = if slot == 0 {
+                    gl::TEXTURE_2D
+                } else {
+                    gl::TEXTURE_CUBE_MAP
+                };
+                for (offset, value) in
+                    super::texture_formats::native_swizzle(c.u(2)?, gl::UNSIGNED_BYTE)
+                        .into_iter()
+                        .enumerate()
+                {
+                    unsafe {
+                        gl::TexParameteri(binding_target, 0x8e42 + offset as u32, value as i32);
+                    }
+                }
+                self.driver_result()?;
+            }
             self.objects
                 .get_mut(id, Kind::Texture)?
                 .texture_images

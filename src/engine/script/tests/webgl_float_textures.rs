@@ -19,6 +19,24 @@ pub(super) const HELPERS: &str = r#"
 "#;
 
 #[test]
+fn webgl_incomplete_read_queries_and_reads_have_distinct_errors() {
+    check(&format!(
+        r#"{HELPERS}
+        gl.bindFramebuffer(gl.FRAMEBUFFER,gl.createFramebuffer());
+        assert(gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_FORMAT)===null,'invalid format query');
+        error(gl.INVALID_OPERATION,'incomplete format query');
+        assert(gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_TYPE)===null,'invalid type query');
+        error(gl.INVALID_OPERATION,'incomplete type query');
+        const pixels=new Uint8Array([9,8,7,6]);
+        gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+        error(gl.INVALID_FRAMEBUFFER_OPERATION,'incomplete actual read');
+        assert([...pixels].join()==='9,8,7,6','invalid read leaves bytes unchanged');
+        document.querySelector('output').textContent='pass';
+    "#
+    ));
+}
+
+#[test]
 fn webgl_float_upload_and_readback_preserve_hdr_values_and_destination_offsets() {
     check(&format!(
         r#"{HELPERS}

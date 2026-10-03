@@ -13,7 +13,7 @@ Merely finding a native GLES capability never admits a new public enum or type.
 Implemented contracts in this batch are `OES_texture_float`,
 `OES_texture_half_float`, their two linear-filter extensions,
 `WEBGL_color_buffer_float`, `EXT_color_buffer_half_float`, and
-`EXT_texture_filter_anisotropic`. Depth textures and sRGB are not yet advertised.
+`EXT_texture_filter_anisotropic` and `WEBGL_depth_texture`. sRGB is not yet advertised.
 Availability depends on the actual native provider, not a hard-coded browser list.
 
 Requesting float/half-float textures implicitly enables the corresponding color
@@ -53,6 +53,59 @@ renderbuffer clears, HDR readback, failed subuploads and framebuffer restriction
 These tests are not a claim of complete upstream conformance or game readiness.
 Upstream and reference-browser fixture evidence will be recorded with the PR.
 
+## Depth textures and framebuffer lifetime
+
+Depth images are render-only WebGL1 textures: level zero and `TEXTURE_2D`.
+Allocation uses legacy unsized depth storage, preserving both `NEAREST` and
+non-comparison `LINEAR` sampling through ANGLE's WebGL1 compatibility path.
+Sized GLES3 depth storage has a different completeness rule and must not replace
+this public contract merely because it provides the same depth precision.
+
+Depth images require null allocation data and the specified unsigned
+depth/packed-depth-stencil types.
+Subuploads, framebuffer copies and generated mipmaps are rejected. A native
+shader samples values written by depth clears; packed images retain at least
+24 depth bits and 8 stencil bits on the pinned WARP provider.
+
+WebGL1's depth, stencil and combined depth/stencil slots are logical assignments,
+not GLES3 aliases. Forbidden simultaneous assignments produce
+`FRAMEBUFFER_UNSUPPORTED`; all reads/writes fail without changing pixels.
+Removing a conflicting assignment restores the surviving logical attachment.
+Storage formats must match their attachment point even when GLES3 would accept
+a broader pairing.
+
+Framebuffers retain texture/renderbuffer storage and public identity until their
+last attachment is removed. Deletion detaches resources from the current
+framebuffer and texture/renderbuffer bindings, but an inactive framebuffer may
+retain its storage. Deleted objects cannot be rebound or newly attached. Final
+detachment and framebuffer deletion release the retained native resource.
+
+WebGL1 permits floating framebuffer values to be copied into normalized texture
+images. GLES3's stricter native copy rules require a bounded owned RGBA-float
+read, destination-channel selection, clamping and normalized upload. Pack and
+unpack alignment are restored, out-of-bounds storage is initialized, and replacing
+a legacy floating image resets its private channel swizzle. State queries on an
+incomplete read surface return `INVALID_OPERATION`; an actual read still returns
+`INVALID_FRAMEBUFFER_OPERATION` without changing the destination.
+
+## Owned readback transport
+
+The script/native boundary returns pixel data as owned bytes, using the existing
+typed-array host adapter rather than serializing a JSON number for each byte.
+Only the closed `readPixels` operation is admitted on this path. Context ownership,
+payload limits, framebuffer/type validation, view offsets and destination guards
+are unchanged. A failed read returns no bytes; a lost owner/context follows the
+existing context-loss lifecycle. Worker realms use the same native owner path.
+
+The unchanged pinned Khronos texture suite (`714857a28445`) passes all twelve
+development cases and 1,352 assertions after this change in a debug build. Before
+binary transport, both linear-filter cases hit the unchanged 2,000 ms script
+watchdog even in release. This is execution-cost evidence, not an exemption from
+the watchdog or a claim of complete WebGL conformance. The shared
+`tests/webgl/texture-depth-hdr.html` fixture passes 71 assertions in Breeze and
+unified-headless Chrome 154, including actual HDR readback, converted copy pixels
+and interpolation of four separately rendered depth values.
+
 ## Primary contracts
 
 - [OES_texture_float](https://registry.khronos.org/webgl/extensions/OES_texture_float/)
@@ -62,4 +115,6 @@ Upstream and reference-browser fixture evidence will be recorded with the PR.
 - [WEBGL_color_buffer_float](https://registry.khronos.org/webgl/extensions/WEBGL_color_buffer_float/)
 - [EXT_color_buffer_half_float](https://registry.khronos.org/webgl/extensions/EXT_color_buffer_half_float/)
 - [EXT_texture_filter_anisotropic](https://registry.khronos.org/webgl/extensions/EXT_texture_filter_anisotropic/)
+- [WEBGL_depth_texture](https://registry.khronos.org/webgl/extensions/WEBGL_depth_texture/)
+- [WebGL1 framebuffer constraints](https://registry.khronos.org/webgl/specs/latest/1.0/#6.5)
 - [ANGLE explicit context version](https://github.com/google/angle/blob/main/extensions/EGL_ANGLE_create_context_backwards_compatible.txt)

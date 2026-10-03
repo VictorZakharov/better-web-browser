@@ -2,6 +2,18 @@
 use super::{Result, WebGl, gl, json};
 use serde_json::Value;
 impl WebGl {
+    fn implementation_read_type(&mut self) -> Result<u32> {
+        // State queries use INVALID_OPERATION for an incomplete read surface;
+        // actual readPixels retains INVALID_FRAMEBUFFER_OPERATION.
+        self.color_read_type().map_err(|error| {
+            if error == gl::INVALID_FRAMEBUFFER_OPERATION {
+                gl::INVALID_OPERATION
+            } else {
+                error
+            }
+        })
+    }
+
     pub(super) fn parameter(&mut self, pname: u32) -> Result<Value> {
         if pname == 0x84ff {
             if !self
@@ -41,11 +53,11 @@ impl WebGl {
         // Report the supported read pair for the currently bound color surface,
         // not a native optional packed format that the bridge cannot transport.
         if pname == 0x8b9b {
-            self.color_read_type()?;
+            self.implementation_read_type()?;
             return Ok(json!(gl::RGBA));
         }
         if pname == 0x8b9a {
-            return Ok(json!(self.color_read_type()?));
+            return Ok(json!(self.implementation_read_type()?));
         }
         if [
             gl::MAX_TEXTURE_SIZE,

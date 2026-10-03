@@ -46,7 +46,8 @@
             webGlError(context, 0x0501); return null;
         }
         const encoded = f.map(value => Object.is(value, -0) ? '-0' : Number.isFinite(value) ? value : Number.isNaN(value) ? 'nan' : value > 0 ? 'inf' : '-inf');
-        const raw = host('webglCommand', state.id, JSON.stringify({op, i, f:encoded, text}), bytes);
+        const raw = host(op==='readPixels'?'webglReadPixels':'webglCommand', state.id, JSON.stringify({op, i, f:encoded, text}), bytes);
+        if (raw instanceof Uint8Array) return raw;
         const value = raw ? JSON.parse(raw, (key, entry) => {
             if (entry && typeof entry === 'object' && Object.keys(entry).length === 1 && 'webglFloat' in entry)
                 return entry.webglFloat === '-0' ? -0 : entry.webglFloat === 'nan' ? NaN : entry.webglFloat === 'inf' ? Infinity : -Infinity;

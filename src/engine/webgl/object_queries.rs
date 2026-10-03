@@ -15,7 +15,10 @@ impl WebGl {
             .objects
             .get(c.u(0)?, kind)
             .ok()
-            .filter(|o| kind != Kind::Buffer || !o.pending_delete)
+            .filter(|o| {
+                !matches!(kind, Kind::Buffer | Kind::Texture | Kind::Renderbuffer)
+                    || !o.pending_delete
+            })
             .map(|o| o.native)
         else {
             return Ok(json!(false));

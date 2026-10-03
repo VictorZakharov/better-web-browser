@@ -28,6 +28,8 @@ pub(super) struct Object {
     pub shader_log: String,
     pub uniform_type: u32,
     pub texture_images: HashMap<(u32, i32), (u32, u32)>,
+    pub renderbuffer_format: u32,
+    pub framebuffer_attachments: HashMap<u32, super::framebuffer_attachments::Attachment>,
     references: u32,
     attached: Vec<u32>,
 }
@@ -69,6 +71,8 @@ impl Objects {
                 shader_log: String::new(),
                 uniform_type: 0,
                 texture_images: HashMap::new(),
+                renderbuffer_format: 0,
+                framebuffer_attachments: HashMap::new(),
                 references: 0,
                 attached: Vec::new(),
             },
@@ -99,7 +103,10 @@ impl Objects {
             return Ok(());
         }
         self.get(id, kind)?;
-        if matches!(kind, Kind::Shader | Kind::Program | Kind::Buffer) {
+        if matches!(
+            kind,
+            Kind::Shader | Kind::Program | Kind::Buffer | Kind::Texture | Kind::Renderbuffer
+        ) {
             let object = self.get_mut(id, kind)?;
             if object.pending_delete {
                 return Ok(());
@@ -116,7 +123,15 @@ impl Objects {
             return Ok(());
         }
         if let Some(object) = self.entries.remove(&id) {
+            let attached: Vec<_> = object
+                .framebuffer_attachments
+                .values()
+                .map(|entry| entry.id)
+                .collect();
             destroy(object);
+            for resource in attached {
+                self.release(resource);
+            }
         }
         Ok(())
     }
@@ -166,7 +181,12 @@ impl Objects {
         self.get_mut(id, kind)?.native = native;
         Ok(())
     }
-    fn release(&mut self, id: u32) {
+    pub(super) fn retain(&mut self, id: u32, kind: Kind) -> Result<()> {
+        let object = self.get_mut(id, kind)?;
+        object.references = object.references.checked_add(1).ok_or(gl::OUT_OF_MEMORY)?;
+        Ok(())
+    }
+    pub(super) fn release(&mut self, id: u32) {
         if let Some(object) = self.entries.get_mut(&id) {
             object.references = object.references.saturating_sub(1);
         }
@@ -181,7 +201,10 @@ impl Objects {
         {
             // GLES already received Delete*. Names are held only while attached/current;
             // once the last reference disappears they must never alias a recycled driver ID.
-            if object.kind == Kind::Buffer {
+            if matches!(
+                object.kind,
+                Kind::Buffer | Kind::Texture | Kind::Renderbuffer
+            ) {
                 destroy(object);
                 return;
             }

@@ -277,12 +277,8 @@ impl WebGl {
                     names.push("EXT_shader_texture_lod");
                 }
                 for capability in TextureCapability::ALL {
-                    // Depth and sRGB remain private until their API contracts
-                    // and conformance fixtures are implemented in this batch.
-                    if matches!(
-                        capability,
-                        TextureCapability::Depth | TextureCapability::Srgb
-                    ) {
+                    // sRGB remains private until its API contract is implemented.
+                    if capability == TextureCapability::Srgb {
                         continue;
                     }
                     if self.extensions.textures.available(capability) {
@@ -293,10 +289,7 @@ impl WebGl {
             }
             "enableExtension" => {
                 let texture = TextureCapability::ALL.into_iter().find(|capability| {
-                    !matches!(
-                        capability,
-                        TextureCapability::Depth | TextureCapability::Srgb
-                    ) && capability.public_name() == c.text
+                    *capability != TextureCapability::Srgb && capability.public_name() == c.text
                 });
                 let enabled = if let Some(capability) = texture {
                     self.extensions.enable_texture(capability)
@@ -349,24 +342,26 @@ mod texture_tests {
 
     #[test]
     fn pinned_warp_supports_the_texture_render_target_foundations() {
-        let _context = super::super::context::NativeContext::new().unwrap();
-        let mut extensions = Extensions::new();
-        let mut names = extension_string(gl::EXTENSIONS);
-        names.extend(extension_string(0x93a8));
-        for capability in TextureCapability::ALL {
-            assert!(!extensions.textures.enabled(capability));
-        }
-        for capability in TextureCapability::ALL {
-            assert!(
-                extensions.textures.available(capability),
-                "missing {capability:?}; native capabilities: {names:?}"
-            );
-            assert!(
-                extensions.enable_texture(capability),
-                "request failed {capability:?}"
-            );
-            assert!(extensions.textures.enabled(capability));
-            assert_eq!(unsafe { gl::GetError() }, gl::NO_ERROR, "{capability:?}");
-        }
+        super::super::session::run_native_test(|| {
+            let _context = super::super::context::NativeContext::new().unwrap();
+            let mut extensions = Extensions::new();
+            let mut names = extension_string(gl::EXTENSIONS);
+            names.extend(extension_string(0x93a8));
+            for capability in TextureCapability::ALL {
+                assert!(!extensions.textures.enabled(capability));
+            }
+            for capability in TextureCapability::ALL {
+                assert!(
+                    extensions.textures.available(capability),
+                    "missing {capability:?}; native capabilities: {names:?}"
+                );
+                assert!(
+                    extensions.enable_texture(capability),
+                    "request failed {capability:?}"
+                );
+                assert!(extensions.textures.enabled(capability));
+                assert_eq!(unsafe { gl::GetError() }, gl::NO_ERROR, "{capability:?}");
+            }
+        });
     }
 }
