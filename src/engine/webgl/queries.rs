@@ -7,6 +7,8 @@ impl WebGl {
             "getParameter" => self.parameter(c.u(0)?),
             "isEnabled" => {
                 let cap = c.u(0)?;
+                let rasterizer_discard =
+                    self.options.api == super::ApiVersion::Two && cap == 0x8c89;
                 if ![
                     gl::BLEND,
                     gl::CULL_FACE,
@@ -19,6 +21,7 @@ impl WebGl {
                     gl::STENCIL_TEST,
                 ]
                 .contains(&cap)
+                    && !rasterizer_discard
                 {
                     return Err(gl::INVALID_ENUM);
                 }
@@ -132,80 +135,7 @@ impl WebGl {
                         .collect::<Vec<_>>()
                 ))
             }
-            "getVertexAttrib" | "getVertexAttribOffset" => {
-                let index = c.u(0)?;
-                if index as usize >= self.attributes.len() {
-                    return Err(gl::INVALID_VALUE);
-                }
-                let pname = c.u(1)?;
-                if c.op == "getVertexAttrib" && pname == 0x88fe {
-                    if !self.extensions.instancing {
-                        return Err(gl::INVALID_ENUM);
-                    }
-                    return Ok(json!(self.attributes[index as usize].divisor));
-                }
-                if c.op == "getVertexAttribOffset" {
-                    if pname != gl::VERTEX_ATTRIB_ARRAY_POINTER {
-                        return Err(gl::INVALID_ENUM);
-                    }
-                    return Ok(json!(self.attributes[index as usize].offset));
-                }
-                if pname == gl::CURRENT_VERTEX_ATTRIB {
-                    let mut values = [0.0f32; 4];
-                    unsafe {
-                        gl::GetVertexAttribfv(index, pname, values.as_mut_ptr());
-                    }
-                    return Ok(json!(values.map(super::float_values::encode)));
-                }
-                if ![
-                    gl::VERTEX_ATTRIB_ARRAY_ENABLED,
-                    gl::VERTEX_ATTRIB_ARRAY_SIZE,
-                    gl::VERTEX_ATTRIB_ARRAY_STRIDE,
-                    gl::VERTEX_ATTRIB_ARRAY_TYPE,
-                    gl::VERTEX_ATTRIB_ARRAY_NORMALIZED,
-                    gl::VERTEX_ATTRIB_ARRAY_BUFFER_BINDING,
-                ]
-                .contains(&pname)
-                {
-                    return Err(gl::INVALID_ENUM);
-                }
-                if pname == gl::VERTEX_ATTRIB_ARRAY_BUFFER_BINDING {
-                    return Ok(json!(self.attributes[index as usize].buffer));
-                }
-                // Keep detached attributes' format/stride even when their native
-                // array was rebuilt to release a deleted buffer safely in GLES2.
-                let attribute = &self.attributes[index as usize];
-                let component = match attribute.kind {
-                    gl::BYTE | gl::UNSIGNED_BYTE => 1,
-                    gl::SHORT | gl::UNSIGNED_SHORT => 2,
-                    _ => 4,
-                };
-                match pname {
-                    gl::VERTEX_ATTRIB_ARRAY_ENABLED => return Ok(json!(attribute.enabled)),
-                    gl::VERTEX_ATTRIB_ARRAY_SIZE => return Ok(json!(attribute.size / component)),
-                    gl::VERTEX_ATTRIB_ARRAY_STRIDE => return Ok(json!(attribute.stride)),
-                    gl::VERTEX_ATTRIB_ARRAY_TYPE => return Ok(json!(attribute.kind)),
-                    gl::VERTEX_ATTRIB_ARRAY_NORMALIZED => return Ok(json!(attribute.normalized)),
-                    _ => {}
-                }
-                let mut value = 0;
-                unsafe {
-                    gl::GetVertexAttribiv(index, pname, &mut value);
-                }
-                self.driver_result()?;
-                Ok(
-                    if [
-                        gl::VERTEX_ATTRIB_ARRAY_ENABLED,
-                        gl::VERTEX_ATTRIB_ARRAY_NORMALIZED,
-                    ]
-                    .contains(&pname)
-                    {
-                        json!(value != 0)
-                    } else {
-                        json!(value)
-                    },
-                )
-            }
+            "getVertexAttrib" | "getVertexAttribOffset" => self.vertex_attribute_query(c),
             "getUniform" => self.get_uniform(c),
             _ => Err(gl::INVALID_OPERATION),
         }

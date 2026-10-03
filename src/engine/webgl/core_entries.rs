@@ -9,8 +9,28 @@ pub(super) type UnmapBuffer = unsafe extern "system" fn(u32) -> u8;
 pub(super) type UnsignedUniform = unsafe extern "system" fn(i32, i32, *const u32);
 pub(super) type MatrixUniform = unsafe extern "system" fn(i32, i32, u8, *const f32);
 pub(super) type GetUnsignedUniform = unsafe extern "system" fn(u32, i32, *mut u32);
+pub(super) type IntegerPointer = unsafe extern "system" fn(u32, i32, u32, i32, *const c_void);
+pub(super) type IntegerAttribute = unsafe extern "system" fn(u32, *const i32);
+pub(super) type UnsignedAttribute = unsafe extern "system" fn(u32, *const u32);
+pub(super) type GetIntegerAttribute = unsafe extern "system" fn(u32, u32, *mut i32);
+pub(super) type GetUnsignedAttribute = unsafe extern "system" fn(u32, u32, *mut u32);
+pub(super) type GetInteger64 = unsafe extern "system" fn(u32, *mut i64);
 
 pub(super) struct CoreEntries {
+    pub get_integer64: GetInteger64,
+    pub max_element_index: u32,
+    pub integer_pointer: IntegerPointer,
+    pub integer_attribute: IntegerAttribute,
+    pub unsigned_attribute: UnsignedAttribute,
+    pub get_integer_attribute: GetIntegerAttribute,
+    pub get_unsigned_attribute: GetUnsignedAttribute,
+    pub gen_arrays: super::extensions::GenArrays,
+    pub bind_array: super::extensions::BindArray,
+    pub is_array: super::extensions::IsArray,
+    pub arrays: super::extensions::DrawArrays,
+    pub elements: super::extensions::DrawElements,
+    pub divisor: super::extensions::Divisor,
+    pub draw_buffers: super::extensions::DrawBuffers,
     pub copy_buffer: CopyBuffer,
     pub map_buffer: MapBuffer,
     pub unmap_buffer: UnmapBuffer,
@@ -40,7 +60,35 @@ macro_rules! entry {
 
 impl CoreEntries {
     pub(super) fn load() -> Result<Self, String> {
+        // Teardown resolves this same fixed symbol; fail creation if it is absent.
+        let _: super::extensions::DeleteArrays =
+            entry!(c"glDeleteVertexArrays", super::extensions::DeleteArrays);
+        let get_integer64 = entry!(c"glGetInteger64v", GetInteger64);
+        let mut max_element_index = 0;
+        // SAFETY: exact scalar GLint64 output for the fixed GLES3 capability.
+        unsafe {
+            get_integer64(0x8d6b, &mut max_element_index);
+        }
+        if unsafe { super::gl::GetError() } != super::gl::NO_ERROR
+            || !(0x00ff_ffff..=u32::MAX as i64).contains(&max_element_index)
+        {
+            return Err("ANGLE MAX_ELEMENT_INDEX does not meet the admitted WebGL2 minimum".into());
+        }
         Ok(Self {
+            get_integer64,
+            max_element_index: max_element_index as u32,
+            integer_pointer: entry!(c"glVertexAttribIPointer", IntegerPointer),
+            integer_attribute: entry!(c"glVertexAttribI4iv", IntegerAttribute),
+            unsigned_attribute: entry!(c"glVertexAttribI4uiv", UnsignedAttribute),
+            get_integer_attribute: entry!(c"glGetVertexAttribIiv", GetIntegerAttribute),
+            get_unsigned_attribute: entry!(c"glGetVertexAttribIuiv", GetUnsignedAttribute),
+            gen_arrays: entry!(c"glGenVertexArrays", super::extensions::GenArrays),
+            bind_array: entry!(c"glBindVertexArray", super::extensions::BindArray),
+            is_array: entry!(c"glIsVertexArray", super::extensions::IsArray),
+            arrays: entry!(c"glDrawArraysInstanced", super::extensions::DrawArrays),
+            elements: entry!(c"glDrawElementsInstanced", super::extensions::DrawElements),
+            divisor: entry!(c"glVertexAttribDivisor", super::extensions::Divisor),
+            draw_buffers: entry!(c"glDrawBuffers", super::extensions::DrawBuffers),
             copy_buffer: entry!(c"glCopyBufferSubData", CopyBuffer),
             map_buffer: entry!(c"glMapBufferRange", MapBuffer),
             unmap_buffer: entry!(c"glUnmapBuffer", UnmapBuffer),

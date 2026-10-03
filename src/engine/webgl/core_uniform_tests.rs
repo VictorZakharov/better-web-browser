@@ -2,7 +2,7 @@
 use super::api_version_tests::{call, compile, compiled, link, version_two};
 use super::*;
 
-fn program(context: &mut WebGl, vertex: &str, fragment: &str) -> u32 {
+pub(super) fn program(context: &mut WebGl, vertex: &str, fragment: &str) -> u32 {
     let vertex = compile(context, gl::VERTEX_SHADER, vertex);
     let fragment = compile(context, gl::FRAGMENT_SHADER, fragment);
     for shader in [vertex, fragment] {
@@ -42,7 +42,7 @@ fn values(context: &mut WebGl, program: u32, location: u32) -> Value {
         .clone()
 }
 
-const VERTEX: &str = "#version 300 es\nvoid main(){int i=gl_VertexID;vec2 p=vec2(float((i<<1)&2),float(i&2));gl_Position=vec4(p*2.0-1.0,0,1);}";
+pub(super) const VERTEX: &str = "#version 300 es\nvoid main(){int i=gl_VertexID;vec2 p=vec2(float((i<<1)&2),float(i&2));gl_Position=vec4(p*2.0-1.0,0,1);}";
 
 #[test]
 fn webgl2_unsigned_uniform_vectors_roundtrip_without_signed_truncation() {

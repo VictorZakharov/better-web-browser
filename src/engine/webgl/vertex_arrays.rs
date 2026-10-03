@@ -45,7 +45,7 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         match c.op.as_str() {
-            "createVertexArrayOES" => {
+            "createVertexArrayOES" | "createVertexArray" => {
                 let mut native = 0;
                 let generate = self.extensions.gen_arrays.ok_or(gl::INVALID_OPERATION)?;
                 unsafe {
@@ -56,7 +56,7 @@ impl WebGl {
                     Ok(id) => id,
                     Err(error) => {
                         unsafe {
-                            super::extensions::delete_vertex_array(native);
+                            super::extensions::delete_vertex_array(native, self.options.api);
                         }
                         return Err(error);
                     }
@@ -70,11 +70,11 @@ impl WebGl {
                 );
                 Ok(json!(id))
             }
-            "bindVertexArrayOES" => {
+            "bindVertexArrayOES" | "bindVertexArray" => {
                 self.bind_vertex_array(c.u(0)?)?;
                 Ok(Value::Null)
             }
-            "deleteVertexArrayOES" => {
+            "deleteVertexArrayOES" | "deleteVertexArray" => {
                 let id = c.u(0)?;
                 if id == 0 {
                     return Ok(Value::Null);
@@ -92,7 +92,7 @@ impl WebGl {
                 self.driver_result()?;
                 Ok(Value::Null)
             }
-            "isVertexArrayOES" => {
+            "isVertexArrayOES" | "isVertexArray" => {
                 let id = c.u(0)?;
                 let Some(object) = self.objects.get(id, Kind::VertexArray).ok() else {
                     return Ok(json!(false));
@@ -179,7 +179,7 @@ impl WebGl {
                 )?;
             }
             unsafe {
-                super::extensions::delete_vertex_array(old);
+                super::extensions::delete_vertex_array(old, self.options.api);
             }
         }
         self.objects.delete(id, Kind::Buffer)?;
@@ -199,21 +199,31 @@ impl WebGl {
             for (index, attribute) in self.attributes.iter().enumerate() {
                 if attribute.buffer != 0 {
                     let buffer = self.objects.name(attribute.buffer, Kind::Buffer)?;
-                    let component = match attribute.kind {
-                        gl::BYTE | gl::UNSIGNED_BYTE => 1,
-                        gl::SHORT | gl::UNSIGNED_SHORT => 2,
-                        _ => 4,
-                    };
                     unsafe {
                         gl::BindBuffer(gl::ARRAY_BUFFER, buffer);
-                        gl::VertexAttribPointer(
-                            index as u32,
-                            (attribute.size / component) as i32,
-                            attribute.kind,
-                            u8::from(attribute.normalized),
-                            attribute.stride as i32,
-                            attribute.offset as *const _,
-                        );
+                        if attribute.integer {
+                            let entry = self
+                                .core
+                                .as_ref()
+                                .ok_or(gl::INVALID_OPERATION)?
+                                .integer_pointer;
+                            entry(
+                                index as u32,
+                                attribute.width as i32,
+                                attribute.kind,
+                                attribute.stride as i32,
+                                attribute.offset as *const _,
+                            );
+                        } else {
+                            gl::VertexAttribPointer(
+                                index as u32,
+                                attribute.width as i32,
+                                attribute.kind,
+                                u8::from(attribute.normalized),
+                                attribute.stride as i32,
+                                attribute.offset as *const _,
+                            );
+                        }
                     }
                 }
                 if attribute.enabled {
@@ -245,7 +255,7 @@ impl WebGl {
         if let Err(error) = result {
             unsafe {
                 bind(old);
-                super::extensions::delete_vertex_array(native);
+                super::extensions::delete_vertex_array(native, self.options.api);
             }
             return Err(error);
         }

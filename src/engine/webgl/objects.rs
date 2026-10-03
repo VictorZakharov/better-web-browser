@@ -36,9 +36,16 @@ pub(super) struct Object {
 }
 #[derive(Default)]
 pub(super) struct Objects {
+    api: super::ApiVersion,
     entries: HashMap<u32, Object>,
 }
 impl Objects {
+    pub(super) fn new(api: super::ApiVersion) -> Self {
+        Self {
+            api,
+            entries: HashMap::new(),
+        }
+    }
     pub fn uniform(&self, owner: u32, generation: u32, native: u32) -> Option<u32> {
         self.entries.iter().find_map(|(&id, object)| {
             (object.kind == Kind::Uniform
@@ -130,7 +137,7 @@ impl Objects {
                 .values()
                 .map(|entry| entry.id)
                 .collect();
-            destroy(object);
+            destroy(object, self.api);
             for resource in attached {
                 self.release(resource);
             }
@@ -139,7 +146,7 @@ impl Objects {
     }
     pub fn delete_all(&mut self) {
         for (_, object) in self.entries.drain() {
-            destroy(object);
+            destroy(object, self.api);
         }
     }
     pub fn attach(&mut self, program: u32, shader: u32) -> Result<()> {
@@ -207,7 +214,7 @@ impl Objects {
                 object.kind,
                 Kind::Buffer | Kind::Texture | Kind::Renderbuffer
             ) {
-                destroy(object);
+                destroy(object, self.api);
                 return;
             }
             for shader in object.attached {
@@ -221,7 +228,7 @@ impl Objects {
         })
     }
 }
-fn destroy(object: Object) {
+fn destroy(object: Object, api: super::ApiVersion) {
     // SAFETY: called only with the owning context current and a typed live driver name.
     unsafe {
         match object.kind {
@@ -233,7 +240,7 @@ fn destroy(object: Object) {
             Kind::Texture => gl::DeleteTextures(1, &object.native),
             Kind::Framebuffer => gl::DeleteFramebuffers(1, &object.native),
             Kind::Renderbuffer => gl::DeleteRenderbuffers(1, &object.native),
-            Kind::VertexArray => super::extensions::delete_vertex_array(object.native),
+            Kind::VertexArray => super::extensions::delete_vertex_array(object.native, api),
         }
     }
 }

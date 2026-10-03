@@ -160,6 +160,9 @@ impl Extensions {
         }
     }
     pub(super) fn enable_vertex_arrays(&mut self) -> bool {
+        if self.vertex_arrays {
+            return true;
+        }
         if !self.available_vertex_arrays {
             return false;
         }
@@ -176,6 +179,9 @@ impl Extensions {
         self.vertex_arrays
     }
     pub(super) fn enable_instancing(&mut self) -> bool {
+        if self.instancing {
+            return true;
+        }
         if !self.available_instancing {
             return false;
         }
@@ -276,8 +282,12 @@ pub(super) fn initialize_storage() -> std::result::Result<(), String> {
     }
     Ok(())
 }
-pub(super) unsafe fn delete_vertex_array(name: u32) {
-    if let Some(delete) = entry!(c"glDeleteVertexArraysOES", DeleteArrays) {
+pub(super) unsafe fn delete_vertex_array(name: u32, api: super::ApiVersion) {
+    let entry = match api {
+        super::ApiVersion::One => entry!(c"glDeleteVertexArraysOES", DeleteArrays),
+        super::ApiVersion::Two => entry!(c"glDeleteVertexArrays", DeleteArrays),
+    };
+    if let Some(delete) = entry {
         unsafe {
             delete(1, &name);
         }

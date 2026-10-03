@@ -37,6 +37,18 @@ WebGL1's shader rules or extension admission.
 - Private surface allocation and capture temporarily unbind pixel buffers and
   restore them on exit. Owned CPU pixel opcodes cannot be confused with future
   PBO-offset overloads. Resize/capture preserve author buffer contents and bindings.
+- Core vertex arrays retain element bindings and integer pointer formats across
+  object deletion/rebuild. Instancing works with ESSL300 vertex IDs without
+  WebGL1's extension-only per-vertex attribute requirement.
+- Fixed primitive restart excludes the maximum index marker from attribute
+  bounds checks for all three index widths. Range hints cannot reject otherwise
+  valid indices; checked indexed drawing remains the shared safety boundary.
+- Integer vertex inputs preserve signedness, half-float and packed inputs use
+  their real byte widths, and constant queries retain their last upload type.
+  Constant values belong to the context, not the vertex array.
+- Closed scalar capability queries use native 32/64-bit reply widths. Native
+  `MAX_ELEMENT_INDEX` bounds indexed draws; rasterizer discard changes real
+  pixel output without disturbing the program or vertex-array state.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
@@ -46,10 +58,9 @@ presence is not a complete WebGL2 conformance result or a new HTML5test score.
 
 Sized texture formats and immutable storage, 3D/array textures, GLES3 pixel-store
 layouts, separate read/draw framebuffer state, multisample storage and resolves,
-samplers, uniform blocks, integer vertex attributes, queries, sync and transform
-feedback need their own bounded native contracts and realm bindings. Core vertex
-arrays, instancing and multiple outputs must use their versioned GLES3 semantics,
-not simply expose WebGL1 extension objects under new names.
+samplers, uniform blocks, queries, sync and transform feedback need their own
+bounded native contracts and realm bindings. Public core entry points need
+versioned realm bindings, not WebGL1 extension objects under new names.
 
 Only after the coherent interface is admitted should shared Window/Worker tests,
 unchanged upstream WebGL2 cases and hidden Chromium fixtures establish public

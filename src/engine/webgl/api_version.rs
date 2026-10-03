@@ -14,10 +14,9 @@ impl ApiVersion {
     pub(super) fn query_name_budget(self) -> usize {
         match self {
             Self::One => 256,
-            // A uniform path can contain multiple 1024-byte identifiers and
-            // array subscripts. Bound bridge memory, not a complete path to
-            // the shader's individual-token limit.
-            Self::Two => super::MAX_SHADER_BYTES,
+            // WebGL2 explicitly limits the complete queried location name,
+            // independently of the ESSL token-size limit (section 5.6).
+            Self::Two => 1024,
         }
     }
     pub(super) fn client_version(self) -> i32 {

@@ -15,7 +15,14 @@ mod copy_texture_conversion;
 #[cfg(test)]
 mod core_buffer_tests;
 mod core_buffers;
+#[cfg(test)]
+mod core_draw_tests;
+mod core_draws;
 mod core_entries;
+mod core_extensions;
+#[cfg(test)]
+mod core_parameter_tests;
+mod core_parameters;
 #[cfg(test)]
 mod core_uniform_tests;
 mod core_uniforms;
@@ -61,6 +68,10 @@ mod uniforms;
 #[cfg(test)]
 mod validation_tests;
 mod vertex_arrays;
+mod vertex_attribute_queries;
+#[cfg(test)]
+mod vertex_attribute_tests;
+mod vertex_attributes;
 pub(crate) use pixel_transport::PixelReply;
 pub(crate) use session::Contexts;
 
@@ -237,6 +248,7 @@ struct WebGl {
     element_buffer: u32,
     program: u32,
     attributes: Vec<buffers::Attribute>,
+    attribute_values: Vec<vertex_attributes::ValueKind>,
     extensions: extensions::Extensions,
     vertex_arrays: vertex_arrays::VertexArrays,
     framebuffer: u32,
@@ -267,12 +279,12 @@ impl WebGl {
         if !(8..=32).contains(&count) || !(8..=64).contains(&units) {
             return Err("ANGLE resource limits are outside the admitted WebGL baseline".into());
         }
-        Ok(Self {
+        let mut context = Self {
             native,
             core,
             core_buffer_bindings: HashMap::new(),
             surface,
-            objects: Objects::default(),
+            objects: Objects::new(options.api),
             default_draw_buffer: gl::BACK,
             errors: VecDeque::new(),
             options,
@@ -289,13 +301,28 @@ impl WebGl {
             element_buffer: 0,
             program: 0,
             attributes: vec![buffers::Attribute::default(); count as usize],
+            attribute_values: vec![vertex_attributes::ValueKind::Float; count as usize],
             extensions: extensions::Extensions::new(),
             vertex_arrays: vertex_arrays::VertexArrays::default(),
             framebuffer: 0,
             renderbuffer: 0,
             texture_unit: 0,
             textures: vec![[0; 2]; units as usize],
-        })
+        };
+        if let Some(core) = &context.core {
+            context.extensions.admit_core(core);
+            context
+                .enable_vertex_arrays()
+                .map_err(|error| format!("Initialize GLES3 vertex state: GL {error:#x}"))?;
+            // WebGL2 always enables fixed-index primitive restart, not an author capability.
+            unsafe {
+                gl::Enable(0x8d69);
+            }
+            context
+                .driver_result()
+                .map_err(|error| format!("Initialize WebGL2 core state: GL {error:#x}"))?;
+        }
+        Ok(context)
     }
     fn error(&mut self, error: u32) {
         if error != gl::NO_ERROR && !self.errors.contains(&error) && self.errors.len() < 8 {
@@ -336,7 +363,10 @@ impl Drop for WebGl {
         if self.native.make_current().is_ok() {
             if self.vertex_arrays.default_native != 0 {
                 unsafe {
-                    extensions::delete_vertex_array(self.vertex_arrays.default_native);
+                    extensions::delete_vertex_array(
+                        self.vertex_arrays.default_native,
+                        self.options.api,
+                    );
                 }
             }
             self.objects.delete_all();

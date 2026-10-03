@@ -5,6 +5,29 @@ use serde_json::Value;
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
+            "drawRangeElements" => return self.draw_range_elements(c),
+            "vertexAttribIPointer" => return self.vertex_pointer(c),
+            "vertexAttribI4i" | "vertexAttribI4iv" | "vertexAttribI4ui" | "vertexAttribI4uiv" => {
+                return self.integer_attribute(c);
+            }
+            "createVertexArray" | "bindVertexArray" | "deleteVertexArray" | "isVertexArray" => {
+                if self.options.api != super::ApiVersion::Two {
+                    return Err(gl::INVALID_OPERATION);
+                }
+                return self.vertex_array_command(c);
+            }
+            "vertexAttribDivisor" | "drawArraysInstanced" | "drawElementsInstanced" => {
+                if self.options.api != super::ApiVersion::Two {
+                    return Err(gl::INVALID_OPERATION);
+                }
+                return self.instanced_command(c);
+            }
+            "drawBuffers" => {
+                if self.options.api != super::ApiVersion::Two {
+                    return Err(gl::INVALID_OPERATION);
+                }
+                return self.draw_buffers_command(c);
+            }
             "uniform1ui" | "uniform2ui" | "uniform3ui" | "uniform4ui" | "uniform1uiv"
             | "uniform2uiv" | "uniform3uiv" | "uniform4uiv" | "uniformMatrix2x3fv"
             | "uniformMatrix2x4fv" | "uniformMatrix3x2fv" | "uniformMatrix3x4fv"
@@ -128,6 +151,8 @@ impl WebGl {
             }
             "enable" | "disable" => {
                 let cap = c.u(0)?;
+                let rasterizer_discard =
+                    self.options.api == super::ApiVersion::Two && cap == 0x8c89;
                 if ![
                     gl::BLEND,
                     gl::CULL_FACE,
@@ -140,6 +165,7 @@ impl WebGl {
                     gl::STENCIL_TEST,
                 ]
                 .contains(&cap)
+                    && !rasterizer_discard
                 {
                     return Err(gl::INVALID_ENUM);
                 }
@@ -246,6 +272,8 @@ impl WebGl {
                 unsafe {
                     gl::VertexAttrib4fv(index, values.as_ptr());
                 }
+                self.driver_result()?;
+                self.attribute_values[index as usize] = super::vertex_attributes::ValueKind::Float;
             }
             "blendColor" => unsafe {
                 gl::BlendColor(c.float(0)?, c.float(1)?, c.float(2)?, c.float(3)?);
