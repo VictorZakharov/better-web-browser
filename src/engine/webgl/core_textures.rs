@@ -45,7 +45,6 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         let mut images = Vec::new();
-        let mut bytes = 0usize;
         for level in 0..levels {
             let w = (width as u32 >> level).max(1);
             let h = (height as u32 >> level).max(1);
@@ -55,9 +54,6 @@ impl WebGl {
                 &[gl::TEXTURE_2D]
             };
             for &face in faces {
-                bytes = bytes
-                    .checked_add(w as usize * h as usize * storage.bytes)
-                    .ok_or(gl::OUT_OF_MEMORY)?;
                 images.push((
                     (face, level),
                     Image {
@@ -69,7 +65,18 @@ impl WebGl {
                 ));
             }
         }
-        self.charge(0, bytes)?;
+        let reservation = self.prepare_texture_storage(
+            id,
+            images
+                .iter()
+                .map(|(key, image)| {
+                    (
+                        *key,
+                        image.width as usize * image.height as usize * storage.bytes,
+                    )
+                })
+                .collect(),
+        )?;
         let function = self
             .core
             .as_ref()
@@ -80,9 +87,9 @@ impl WebGl {
             function(target, levels, internal, width, height);
         }
         self.driver_result()?;
+        self.commit_texture_storage(reservation)?;
         let object = self.objects.get_mut(id, Kind::Texture)?;
         object.immutable_levels = levels as u32;
-        object.capacity = bytes;
         object.core_images.clear();
         object.texture_images.clear();
         for (key, image) in images {
@@ -179,9 +186,14 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         let pointer = self.unpack_pointer(c, bytes, from_buffer, 8, size, kind)?;
-        if !sub {
-            self.charge(0, width as usize * height as usize * storage)?;
-        }
+        let reservation = if !sub {
+            Some(self.prepare_texture_storage(
+                id,
+                vec![((target, level), width as usize * height as usize * storage)],
+            )?)
+        } else {
+            None
+        };
         // CPU pointers and PBO offsets reach distinct, validated overloads.
         unsafe {
             if sub {
@@ -211,11 +223,11 @@ impl WebGl {
             }
         }
         self.driver_result()?;
+        if let Some(reservation) = reservation {
+            self.commit_texture_storage(reservation)?;
+        }
         if !sub {
             let object = self.objects.get_mut(id, Kind::Texture)?;
-            object.capacity = object
-                .capacity
-                .max(width as usize * height as usize * storage);
             object.core_images.insert(
                 (target, level),
                 Image {

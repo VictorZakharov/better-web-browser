@@ -177,13 +177,7 @@ impl WebGl {
                 {
                     return Err(gl::INVALID_OPERATION);
                 }
-                let capacity = self.objects.get(id, Kind::Texture)?.capacity;
-                // Mip levels consume less than half the base storage. Conservative lifetime
-                // accounting also bounds repeated regenerations and driver-held references.
-                self.charge(0, capacity / 2)?;
-                unsafe {
-                    gl::GenerateMipmap(target);
-                }
+                return self.generate_legacy_mips(target, slot, id);
             }
             "pixelStorei" => {
                 let pname = c.u(0)?;
@@ -308,19 +302,18 @@ impl WebGl {
         if sub && bytes.is_none() {
             return Err(gl::INVALID_VALUE);
         }
-        if !sub {
+        let reservation = if !sub {
             if c.n(5)? != 0 {
                 return Err(gl::INVALID_VALUE);
             }
             if c.u(2)? != format {
                 return Err(gl::INVALID_OPERATION);
             }
-            // Charge every new level allocation; this deliberately overestimates replacement.
             let storage = (width as usize * height as usize * pixel.storage_bytes).max(size);
-            self.charge(0, storage)?;
-            let object = self.objects.get_mut(id, Kind::Texture)?;
-            object.capacity = object.capacity.max(storage);
-        }
+            Some(self.prepare_texture_storage(id, vec![((target, level), storage)])?)
+        } else {
+            None
+        };
         let pointer = bytes.map_or(ptr::null(), |b| b.as_ptr().cast());
         // Preserve GLES2 extension tokens; floating RGBA32F allocation uses
         // ANGLE's sized color-buffer extension internal format.
@@ -354,7 +347,19 @@ impl WebGl {
             }
         }
         self.driver_result()?;
+        if let Some(reservation) = reservation {
+            self.commit_texture_storage(reservation)?;
+        }
         if !sub {
+            self.objects.get_mut(id, Kind::Texture)?.core_images.insert(
+                (target, level),
+                super::core_textures::Image {
+                    internal: format,
+                    width: width as u32,
+                    height: height as u32,
+                    depth: 1,
+                },
+            );
             self.objects
                 .get_mut(id, Kind::Texture)?
                 .texture_images

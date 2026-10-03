@@ -23,7 +23,7 @@ impl WebGl {
             &[target]
         };
         let mut generated = Vec::new();
-        let mut bytes = 0usize;
+        let mut allocations = Vec::new();
         for &face in faces {
             let image = *object
                 .core_images
@@ -60,39 +60,21 @@ impl WebGl {
                         image.depth
                     },
                 };
-                let previous = object
-                    .core_images
-                    .get(&(face, level))
-                    .map(|old| {
-                        let (format, kind) = object.texture_images[&(face, level)];
-                        super::core_texture_formats::upload(old.internal, format, kind).map(
-                            |(_, storage)| {
-                                old.width as usize
-                                    * old.height as usize
-                                    * old.depth as usize
-                                    * storage
-                            },
-                        )
-                    })
-                    .transpose()?
-                    .unwrap_or(0);
                 let allocation =
                     image.width as usize * image.height as usize * image.depth as usize * storage;
-                bytes = bytes
-                    .checked_add(allocation.saturating_sub(previous))
-                    .ok_or(gl::OUT_OF_MEMORY)?;
+                allocations.push(((face, level), allocation));
                 generated.push(((face, level), image, (format, kind)));
             }
         }
-        self.charge(0, bytes)?;
+        let reservation = self.prepare_texture_storage(id, allocations)?;
         // GLES3, unlike WebGL1, permits non-power-of-two mip chains and core
         // sRGB formats. ANGLE checks renderability/filterability and cube completeness.
         unsafe {
             gl::GenerateMipmap(target);
         }
         self.driver_result()?;
+        self.commit_texture_storage(reservation)?;
         let object = self.objects.get_mut(id, Kind::Texture)?;
-        object.capacity = object.capacity.saturating_add(bytes);
         for (key, image, format) in generated {
             object.core_images.insert(key, image);
             object.texture_images.insert(key, format);

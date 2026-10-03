@@ -102,11 +102,13 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         let allocation = allocation(width as u32, height as u32, depth as u32, storage)?;
-        if !sub {
-            self.charge(0, allocation)?;
-        }
         let pointer =
             self.unpack_pointer(c, bytes, from_buffer, if sub { 10 } else { 9 }, size, kind)?;
+        let reservation = if !sub {
+            Some(self.prepare_texture_storage(id, vec![((target, level), allocation)])?)
+        } else {
+            None
+        };
         let core = self.core.as_ref().ok_or(gl::INVALID_OPERATION)?;
         // The validated footprint includes every skipped row/image and padding.
         unsafe {
@@ -131,6 +133,9 @@ impl WebGl {
             }
         }
         self.driver_result()?;
+        if let Some(reservation) = reservation {
+            self.commit_texture_storage(reservation)?;
+        }
         if !sub {
             if bytes.is_none() && !from_buffer {
                 self.initialize_volume(
@@ -145,7 +150,6 @@ impl WebGl {
                 )?;
             }
             let object = self.objects.get_mut(id, Kind::Texture)?;
-            object.capacity = object.capacity.max(allocation);
             object.core_images.insert(
                 (target, level),
                 Image {
@@ -187,7 +191,6 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         let mut images = Vec::new();
-        let mut total = 0usize;
         for level in 0..levels {
             let image = Image {
                 internal,
@@ -199,17 +202,23 @@ impl WebGl {
                     depth as u32
                 },
             };
-            total = total
-                .checked_add(allocation(
-                    image.width,
-                    image.height,
-                    image.depth,
-                    storage.bytes,
-                )?)
-                .ok_or(gl::OUT_OF_MEMORY)?;
             images.push(((target, level), image));
         }
-        self.charge(0, total)?;
+        let reservation = self.prepare_texture_storage(
+            id,
+            images
+                .iter()
+                .map(|(key, image)| {
+                    (
+                        *key,
+                        image.width as usize
+                            * image.height as usize
+                            * image.depth as usize
+                            * storage.bytes,
+                    )
+                })
+                .collect(),
+        )?;
         let function = self
             .core
             .as_ref()
@@ -219,11 +228,11 @@ impl WebGl {
             function(target, levels, internal, width, height, depth);
         }
         self.driver_result()?;
+        self.commit_texture_storage(reservation)?;
         for ((_, level), image) in &images {
             self.initialize_volume(target, *level, *image)?;
         }
         let object = self.objects.get_mut(id, Kind::Texture)?;
-        object.capacity = total;
         object.immutable_levels = levels as u32;
         object.core_images.clear();
         object.texture_images.clear();

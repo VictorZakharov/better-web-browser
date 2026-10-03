@@ -78,6 +78,7 @@ mod framebuffers;
 mod index_ranges;
 mod indexed_uniform_buffers;
 mod instancing;
+mod legacy_mip_allocations;
 mod multisample;
 #[cfg(test)]
 mod multisample_tests;
@@ -117,6 +118,9 @@ mod sync_object_tests;
 mod sync_objects;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod texture_allocation_tests;
+mod texture_allocations;
 mod texture_capabilities;
 mod texture_color_space;
 mod texture_formats;

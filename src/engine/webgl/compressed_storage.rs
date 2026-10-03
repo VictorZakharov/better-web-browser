@@ -44,7 +44,6 @@ impl WebGl {
             &[target]
         };
         let mut images = Vec::new();
-        let mut size = 0usize;
         for level in 0..levels {
             let image = Image {
                 internal,
@@ -53,17 +52,21 @@ impl WebGl {
                 depth: depth as u32,
             };
             for &face in faces {
-                size = size
-                    .checked_add(
-                        image.width as usize * image.height as usize * image.depth as usize * 4,
-                    )
-                    .ok_or(gl::OUT_OF_MEMORY)?;
                 images.push(((face, level), image));
             }
         }
-        let previous = object.capacity;
-        let capacity = size.max(previous);
-        self.charge(previous, capacity)?;
+        let reservation = self.prepare_texture_storage(
+            id,
+            images
+                .iter()
+                .map(|(key, image)| {
+                    (
+                        *key,
+                        image.width as usize * image.height as usize * image.depth as usize * 4,
+                    )
+                })
+                .collect(),
+        )?;
         let core = self.core.as_ref().ok_or(gl::INVALID_OPERATION)?;
         unsafe {
             if array {
@@ -73,11 +76,11 @@ impl WebGl {
             }
         }
         self.driver_result()?;
+        self.commit_texture_storage(reservation)?;
         for ((face, level), image) in &images {
             self.initialize_compressed_image(*face, *level, *image, array)?;
         }
         let object = self.objects.get_mut(id, Kind::Texture)?;
-        object.capacity = capacity;
         object.immutable_levels = levels as u32;
         object.core_images.clear();
         object.texture_images.clear();

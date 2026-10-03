@@ -17,6 +17,7 @@ impl WebGl {
         self.objects.get(id, Kind::Texture)?;
         let level = c.n(1)?;
         let sub = c.op == "copyTexSubImage2D";
+        let mut reservation = None;
         if sub
             && self
                 .objects
@@ -60,9 +61,10 @@ impl WebGl {
             if c.n(7)? != 0 || (slot == 1 && width != height) {
                 return Err(gl::INVALID_VALUE);
             }
-            self.charge(0, width as usize * height as usize * 4)?;
-            self.objects.get_mut(id, Kind::Texture)?.capacity =
-                width as usize * height as usize * 4;
+            reservation = Some(self.prepare_texture_storage(
+                id,
+                vec![((target, level), width as usize * height as usize * 4)],
+            )?);
             if self.color_read_type()? == gl::FLOAT {
                 self.copy_float_to_normalized(
                     target,
@@ -114,7 +116,19 @@ impl WebGl {
             }
         }
         self.driver_result()?;
+        if let Some(reservation) = reservation {
+            self.commit_texture_storage(reservation)?;
+        }
         if !sub {
+            self.objects.get_mut(id, Kind::Texture)?.core_images.insert(
+                (target, level),
+                super::core_textures::Image {
+                    internal: c.u(2)?,
+                    width: width as u32,
+                    height: height as u32,
+                    depth: 1,
+                },
+            );
             self.objects
                 .get_mut(id, Kind::Texture)?
                 .texture_images

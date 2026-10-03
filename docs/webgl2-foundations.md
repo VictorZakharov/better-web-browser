@@ -128,6 +128,13 @@ WebGL1's shader rules or extension admission.
   actual private storage, reflect granted alpha/depth/stencil bits, and report
   logical default ownership instead of leaking native texture/renderbuffer names.
   Independent read/draw bindings and read routes remain untouched.
+- Texture uploads, copies, immutable allocations and generated mip chains share
+  per-image lifetime high-water accounting. Replacing a texture with equal or
+  smaller storage does not consume the full budget again; only growth is charged.
+  Reservations validate the complete operation before touching native storage
+  and commit only after successful allocation. Failed native mip generation
+  does not reserve nonexistent levels. Deleted object names intentionally do not
+  reclaim the context-lifetime budget while native objects may remain referenced.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal

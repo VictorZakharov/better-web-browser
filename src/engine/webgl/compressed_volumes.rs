@@ -101,14 +101,7 @@ impl WebGl {
             format.image_dimensions(width as u32, height as u32, level as u32)?;
             let pointer = self.compressed_pointer(c, bytes, from_buffer, 7, expected)?;
             let size = width as usize * height as usize * depth as usize * 4;
-            let old_size = object.core_images.get(&(target, level)).map_or(0, |image| {
-                image.width as usize * image.height as usize * image.depth as usize * 4
-            });
-            let previous = object.capacity;
-            let capacity = previous
-                .checked_add(size.saturating_sub(old_size))
-                .ok_or(gl::OUT_OF_MEMORY)?;
-            self.charge(previous, capacity)?;
+            let reservation = self.prepare_texture_storage(id, vec![((target, level), size)])?;
             let function = self
                 .core
                 .as_ref()
@@ -128,8 +121,8 @@ impl WebGl {
                 )
             };
             self.driver_result()?;
+            self.commit_texture_storage(reservation)?;
             let object = self.objects.get_mut(id, Kind::Texture)?;
-            object.capacity = capacity;
             object
                 .texture_images
                 .insert((target, level), (internal, gl::UNSIGNED_BYTE));
