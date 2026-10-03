@@ -5,6 +5,7 @@ use serde_json::Value;
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
+            "texStorage2D" => return self.core_texture_storage(c),
             "drawRangeElements" => return self.draw_range_elements(c),
             "vertexAttribIPointer" => return self.vertex_pointer(c),
             "vertexAttribI4i" | "vertexAttribI4iv" | "vertexAttribI4ui" | "vertexAttribI4uiv" => {

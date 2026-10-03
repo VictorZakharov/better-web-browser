@@ -15,8 +15,10 @@ pub(super) type UnsignedAttribute = unsafe extern "system" fn(u32, *const u32);
 pub(super) type GetIntegerAttribute = unsafe extern "system" fn(u32, u32, *mut i32);
 pub(super) type GetUnsignedAttribute = unsafe extern "system" fn(u32, u32, *mut u32);
 pub(super) type GetInteger64 = unsafe extern "system" fn(u32, *mut i64);
+pub(super) type TextureStorage2D = unsafe extern "system" fn(u32, i32, u32, i32, i32);
 
 pub(super) struct CoreEntries {
+    pub texture_storage_2d: TextureStorage2D,
     pub get_integer64: GetInteger64,
     pub max_element_index: u32,
     pub integer_pointer: IntegerPointer,
@@ -75,6 +77,7 @@ impl CoreEntries {
             return Err("ANGLE MAX_ELEMENT_INDEX does not meet the admitted WebGL2 minimum".into());
         }
         Ok(Self {
+            texture_storage_2d: entry!(c"glTexStorage2D", TextureStorage2D),
             get_integer64,
             max_element_index: max_element_index as u32,
             integer_pointer: entry!(c"glVertexAttribIPointer", IntegerPointer),

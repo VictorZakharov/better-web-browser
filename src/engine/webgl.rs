@@ -24,6 +24,15 @@ mod core_extensions;
 mod core_parameter_tests;
 mod core_parameters;
 #[cfg(test)]
+mod core_texture_format_tests;
+mod core_texture_formats;
+#[cfg(test)]
+mod core_texture_mip_tests;
+mod core_texture_mips;
+#[cfg(test)]
+mod core_texture_tests;
+mod core_textures;
+#[cfg(test)]
 mod core_uniform_tests;
 mod core_uniforms;
 mod depth_textures;

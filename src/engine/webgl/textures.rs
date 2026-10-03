@@ -125,6 +125,26 @@ impl WebGl {
                 let target = c.u(0)?;
                 texture_slot(target)?;
                 let pname = c.u(1)?;
+                if self.options.api == super::ApiVersion::Two && [0x912f, 0x82df].contains(&pname) {
+                    let mut value = 0;
+                    unsafe {
+                        gl::GetTexParameteriv(target, pname, &mut value);
+                    }
+                    self.driver_result()?;
+                    return Ok(if pname == 0x912f {
+                        json!(value != 0)
+                    } else {
+                        json!(value)
+                    });
+                }
+                if self.options.api == super::ApiVersion::Two && [0x813a, 0x813b].contains(&pname) {
+                    let mut value = 0.0;
+                    unsafe {
+                        gl::GetTexParameterfv(target, pname, &mut value);
+                    }
+                    self.driver_result()?;
+                    return Ok(json!(value));
+                }
                 if !self.texture_parameter_allowed(pname) {
                     return Err(gl::INVALID_ENUM);
                 }
@@ -144,6 +164,9 @@ impl WebGl {
                 return Ok(json!(value));
             }
             "generateMipmap" => {
+                if self.options.api == super::ApiVersion::Two {
+                    return self.core_generate_mipmap(c);
+                }
                 let target = c.u(0)?;
                 let slot = texture_slot(target)?;
                 let id = self.textures[self.texture_unit][slot];
@@ -187,6 +210,11 @@ impl WebGl {
         Ok(Value::Null)
     }
     fn texture_parameter_allowed(&self, pname: u32) -> bool {
+        if self.options.api == super::ApiVersion::Two
+            && [0x8072, 0x813a, 0x813b, 0x813c, 0x813d, 0x884c, 0x884d].contains(&pname)
+        {
+            return true;
+        }
         [
             gl::TEXTURE_MIN_FILTER,
             gl::TEXTURE_MAG_FILTER,
@@ -201,6 +229,9 @@ impl WebGl {
                     .enabled(TextureCapability::Anisotropy)
     }
     fn upload_texture(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
+        if self.options.api == super::ApiVersion::Two {
+            return self.core_texture_upload(c, bytes);
+        }
         if self.options.api == super::ApiVersion::Two
             && self
                 .core_buffer_bindings

@@ -49,6 +49,13 @@ WebGL1's shader rules or extension admission.
 - Closed scalar capability queries use native 32/64-bit reply widths. Native
   `MAX_ELEMENT_INDEX` bounds indexed draws; rasterizer discard changes real
   pixel output without disturbing the program or vertex-array state.
+- Sized 2D color/integer/depth storage has a closed format/type table checked
+  against actual ANGLE allocation. Half-float storage accepts float uploads
+  without losing HDR values; unsigned integer sampling preserves u32 values.
+- Immutable 2D/cube mip chains are bounded, robustly initialized and cannot be
+  redefined. Compatible subimage updates preserve unaffected levels. Mutable
+  NPOT mip generation records dimensions and charges growth, not repeated
+  regeneration; immutable generation does not allocate storage again.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
@@ -56,7 +63,7 @@ presence is not a complete WebGL2 conformance result or a new HTML5test score.
 
 ## Remaining admission work
 
-Sized texture formats and immutable storage, 3D/array textures, GLES3 pixel-store
+3D/array textures, GLES3 pixel-store
 layouts, separate read/draw framebuffer state, multisample storage and resolves,
 samplers, uniform blocks, queries, sync and transform feedback need their own
 bounded native contracts and realm bindings. Public core entry points need
