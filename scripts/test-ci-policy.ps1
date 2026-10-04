@@ -66,4 +66,9 @@ $nativeAction = Get-Content (Join-Path $PSScriptRoot '../.github/actions/windows
 if ($nativeAction -notmatch 'run: ./scripts/prepare-native-cache.ps1') {
     throw 'The Windows action must configure the native compiler cache.'
 }
+$angleSetup = Get-Content (Join-Path $PSScriptRoot 'prepare-angle.ps1') -Raw
+if ($angleSetup -notmatch '\$env:CLANG_PATH = Join-Path \$selected ''clang.exe''' -or
+    $angleSetup -notmatch '"CLANG_PATH=\$\(\$env:CLANG_PATH\)"') {
+    throw 'Bindgen must use the matching Clang executable/library across Actions steps.'
+}
 Write-Output "CI policy tests passed ($tests result cases plus automatic smoke-target policy)."

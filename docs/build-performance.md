@@ -117,6 +117,14 @@ Cargo freshness): 395 C/C++ hits, zero misses/errors, 51.44s compilation and
 toolchain/dependencies can still exceed the warm-run target. See the [sccache compiler-wrapper usage](https://github.com/mozilla/sccache/tree/v0.17.0#usage)
 and locked cc-rs `get_base_compiler` / `env_tool` paths for the distinction.
 
+The first hosted native-cache attempt failed during bindgen: its selected
+standalone LLVM library was paired with Visual Studio's older Clang intrinsic
+headers after the developer shell changed PATH. `prepare-angle.ps1` now
+requires the matching `clang.exe` alongside `libclang.dll` and exports both
+`CLANG_PATH` and `LIBCLANG_PATH` to subsequent steps. This selects coherent
+include discovery without suppressing intrinsic errors or modifying ANGLE.
+Failed attempts are not counted as successful timing evidence.
+
 Main run `37197706177` independently failed one assertion in
 `sdk/tests/conformance/extensions/s3tc-and-rgtc.html`; the general WPT pass was
 554 cases / 6,086 assertions, and the graphics suite was 19/20 cases. The
