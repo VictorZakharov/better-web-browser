@@ -139,6 +139,8 @@ mod samplers;
 mod session;
 mod shader_commands;
 mod shader_queries;
+#[cfg(test)]
+mod shader_source_budget_tests;
 mod shader_validation;
 mod stencil_masks;
 mod surface;
@@ -233,6 +235,10 @@ const MAX_PROCESS_RESOURCE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_NATIVE_CONTEXTS: usize = 16;
 const MAX_UPLOAD_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SHADER_BYTES: usize = 32 * 1024;
+// Generated standards-compliant materials routinely exceed the log/reflection
+// budget. Keep source admission independent, with bounded JSON escape expansion.
+const MAX_SHADER_SOURCE_BYTES: usize = 256 * 1024;
+const MAX_COMMAND_BYTES: usize = MAX_SHADER_SOURCE_BYTES * 6 + 4096;
 const MAX_DRAW_VERTICES: u32 = 1_000_000;
 type Result<T> = std::result::Result<T, u32>;
 

@@ -148,7 +148,7 @@ fn texture_alignment_and_target_binding_are_checked_before_upload() {
 #[test]
 fn oversized_payload_rejection_does_not_copy_or_modify_driver_storage() {
     let (mut contexts, id) = context();
-    let code = "x".repeat(MAX_SHADER_BYTES + 4097);
+    let code = "x".repeat(MAX_COMMAND_BYTES + 1);
     assert_eq!(contexts.execute(id, &code, None), Value::Null);
     assert_eq!(
         command(&mut contexts, id, "getError", &[], &[], "", None),

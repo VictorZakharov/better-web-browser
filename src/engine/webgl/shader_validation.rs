@@ -1,7 +1,7 @@
 //! Use ANGLE's explicit WebGL validator before its native GLES compiler.
 //! ESSL output encodes public names and lifts extension directives legally;
 //! author source remains separate from the translated driver source.
-use super::{MAX_SHADER_BYTES, WebGl, gl};
+use super::{MAX_SHADER_BYTES, MAX_SHADER_SOURCE_BYTES, WebGl, gl};
 use mozangle::shaders::{self, BuiltInResources, Output, ShaderValidator};
 
 impl WebGl {
@@ -58,7 +58,7 @@ impl WebGl {
         }
         .ok_or_else(|| "Could not construct the WebGL shader validator".to_owned())?;
         match validator.compile_and_translate(&[source]) {
-            Ok(translated) if translated.len() <= MAX_SHADER_BYTES * 8 => {
+            Ok(translated) if translated.len() <= MAX_SHADER_SOURCE_BYTES * 8 => {
                 if version_two {
                     // Both validators enforce WebGL2 restrictions. Feed the native
                     // WebGL2 compiler the validated original names: unlike WebGL1,

@@ -1,6 +1,6 @@
 //! One native owner thread. Realm callers never move ANGLE contexts across threads.
 use super::{
-    BackendContexts, MAX_CONTEXTS, MAX_SHADER_BYTES, MAX_UPLOAD_BYTES, PixelReply, gl, json,
+    BackendContexts, MAX_COMMAND_BYTES, MAX_CONTEXTS, MAX_UPLOAD_BYTES, PixelReply, gl, json,
 };
 use serde_json::Value;
 use std::{
@@ -105,7 +105,7 @@ impl Contexts {
             return json!({"lost":true});
         }
         // Reject before copying data into the bounded submission queue.
-        let (serialized, bytes) = if command.len() > MAX_SHADER_BYTES + 4096
+        let (serialized, bytes) = if command.len() > MAX_COMMAND_BYTES
             || bytes.is_some_and(|b| b.len() > MAX_UPLOAD_BYTES)
         {
             (

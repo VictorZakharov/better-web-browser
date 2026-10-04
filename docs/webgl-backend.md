@@ -75,7 +75,8 @@ version claims full upstream conformance. See the
   author's framebuffer, clear values, scissor and write masks afterward.
 
 Initial limits: eight contexts per realm and sixteen per native owner, 1,024 live objects per context,
-64 MiB resource budget per context and 128 MiB across native contexts, 16 MiB uploads, 32 KiB shader source,
+64 MiB resource budget per context and 128 MiB across native contexts, 16 MiB uploads,
+256 KiB shader source, independently capped 32 KiB logs/reflection scratch,
 one million vertices per draw, four million drawing-buffer pixels and maximum
 admitted dimensions of 4,096. The budget includes drawing-buffer attachments and both native buffer
 storage and its CPU mirror. Charges are not reclaimed on deletion because GLES can retain references after

@@ -1,5 +1,5 @@
 //! Shader and program commands: typed ownership, linkage and public queries.
-use super::{Command, Kind, MAX_SHADER_BYTES, Result, WebGl, gl, json};
+use super::{Command, Kind, MAX_SHADER_BYTES, MAX_SHADER_SOURCE_BYTES, Result, WebGl, gl, json};
 use serde_json::Value;
 use std::{ffi::CString, ptr};
 
@@ -8,7 +8,7 @@ impl WebGl {
         match c.op.as_str() {
             "shaderSource" => {
                 let shader = self.objects.get(c.u(0)?, Kind::Shader)?.native;
-                if c.text.len() > MAX_SHADER_BYTES || c.text.contains('\0') {
+                if c.text.len() > MAX_SHADER_SOURCE_BYTES || c.text.contains('\0') {
                     return Err(gl::INVALID_VALUE);
                 }
                 let previous = self.objects.get(c.u(0)?, Kind::Shader)?.capacity;

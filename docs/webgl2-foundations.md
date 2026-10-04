@@ -294,7 +294,24 @@ writes, padded and out-of-bounds reads never use this cache. Drawing, clearing,
 resize and unpreserved presentation invalidate pixels. A bounded caller-side
 fence-poll cache retains only successful task-stable status and side-effect-free
 zero-time waits. The trusted task boundary clears it; flush waits always reach
-ANGLE. None of these caches publish completion from inside an author task.
+ANGLE. Query-availability polls follow the same task-stable rule. Repeated
+`finish()` calls may reuse a successful native finish only while no new non-poll
+command has intervened; the first finish still drains real native work. Neither
+finish nor these caches publish completion from inside an author task.
+
+Built-in transform-feedback outputs such as `gl_Position` and `gl_PointSize`
+are admitted as capture names. The reserved-name restriction for author GLSL
+declarations does not apply to selecting existing built-in outputs; ANGLE
+validates their availability at link time. Focused tests read actual captured
+values and require active capture bindings to remain unchanged after errors.
+
+Generated shader sources have a separate 256 KiB admission budget. Logs and
+reflection scratch remain bounded to 32 KiB, translated output to eight times
+the source cap, and retained source/driver storage to the existing aggregate
+resource budgets. Command transport accounts for worst-case JSON escaping
+without truncating author source. Oversized or unbudgeted replacements leave
+previous source and compiler state intact. This is a browser-wide policy, not a
+Three.js-specific exception.
 
 ## Primary contracts and reuse
 

@@ -41,9 +41,7 @@ impl BackendContexts {
         };
         context.resource_limit =
             MAX_RESOURCE_BYTES.min(MAX_PROCESS_RESOURCE_BYTES.saturating_sub(other_bytes));
-        if command.len() > MAX_SHADER_BYTES + 4096
-            || bytes.is_some_and(|b| b.len() > MAX_UPLOAD_BYTES)
-        {
+        if command.len() > MAX_COMMAND_BYTES || bytes.is_some_and(|b| b.len() > MAX_UPLOAD_BYTES) {
             context.error(gl::OUT_OF_MEMORY);
             return Value::Null;
         }
