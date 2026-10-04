@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>pending</title>
+<style>body{font:16px sans-serif;margin:24px}canvas{width:256px;height:256px;image-rendering:pixelated}pre{white-space:pre-wrap}</style>
+<canvas id="canvas" width="64" height="64"></canvas>
+<pre id="results">Waiting for an unmodified, same-origin Three.js module</pre>
+<script type="module">
+import { run } from './three-rendering.js';
+const results = document.querySelector('#results');
+try {
+    // Deliberately no CDN/default package: the caller supplies a provenance-
+    // checked installed release. This fixture does not vendor or patch Three.js.
+    const path = new URLSearchParams(location.search).get('module');
+    if (!path) throw Error('Supply ?module= with a same-origin Three.js module URL');
+    const url = new URL(path, location.href);
+    if (url.origin !== location.origin) throw Error('The module must be same-origin');
+    await run(await import(url.href), document.querySelector('#canvas'), results);
+} catch (error) {
+    results.textContent = String(error.stack || error);
+    results.setAttribute('data-failures', '1');
+    document.title = 'failed: Three.js rendering';
+} finally {
+    document.documentElement.setAttribute('data-fixture-ready', 'true');
+}
+</script>
