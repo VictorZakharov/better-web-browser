@@ -63,6 +63,20 @@
     }
     installIndexedIterator(HTMLCollection.prototype);
 
+    class NodeList {
+        constructor(token) {
+            if (token !== htmlCollectionConstructionToken) throw new TypeError('Illegal constructor');
+        }
+        get length() { return collectionItems(this).length; }
+        item(index) {
+            const items = collectionItems(this);
+            if (arguments.length === 0) throw new TypeError('NodeList.item requires an index');
+            return items[Number(index) >>> 0] || null;
+        }
+        get [Symbol.toStringTag]() { return 'NodeList'; }
+    }
+    installIndexedIterator(NodeList.prototype, true);
+
     // HTMLCollection is a live legacy platform object: every access resolves the
     // current tree, while indexed and named properties remain ordinary reads.
     // https://dom.spec.whatwg.org/#interface-htmlcollection
@@ -82,11 +96,28 @@
             },
             set(target, property, value, receiver) {
                 const index = collectionIndex(property);
+                if (!named && index !== null && collectionItems(target)[index] !== undefined)
+                    return false;
                 if (index !== null && setIndex) {
                     setIndex(index, value);
                     return true;
                 }
                 return Reflect.set(target, property, value, receiver);
+            },
+            defineProperty(target, property, descriptor) {
+                // NodeList has an indexed getter, but no indexed setter. Web IDL
+                // rejects definitions at any array index, even an absent one.
+                // https://webidl.spec.whatwg.org/#legacy-platform-object-defineownproperty
+                if (!named && collectionIndex(property) !== null) return false;
+                return Reflect.defineProperty(target, property, descriptor);
+            },
+            deleteProperty(target, property) {
+                const index = collectionIndex(property);
+                if (!named && index !== null) return collectionItems(target)[index] === undefined;
+                return Reflect.deleteProperty(target, property);
+            },
+            preventExtensions(target) {
+                return named ? Reflect.preventExtensions(target) : false;
             },
             has(target, property) {
                 if (collectionIndex(property) !== null) return target.item(property) !== null || property in target;
@@ -112,6 +143,11 @@
                         }
                     }
                 }
+                if (!named) {
+                    const indices = Array.from({ length: items.length }, (_, index) => String(index));
+                    return [...indices, ...keys.filter(key => typeof key === 'string' &&
+                        collectionIndex(key) === null), ...keys.filter(key => typeof key === 'symbol')];
+                }
                 return keys;
             },
             getOwnPropertyDescriptor(target, property) {
@@ -134,7 +170,7 @@
     };
     const liveHtmlCollection = (resolve, constructor = HTMLCollection, setIndex = null) =>
         liveIndexedCollection(resolve, constructor, true, setIndex);
-    const liveNodeList = (resolve, constructor) =>
+    const liveNodeList = (resolve, constructor = NodeList) =>
         liveIndexedCollection(resolve, constructor, false);
 
     const selectorCollection = (root, selector) =>

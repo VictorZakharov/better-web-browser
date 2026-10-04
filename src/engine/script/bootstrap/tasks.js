@@ -167,24 +167,20 @@
     const mutationRegistrations = new WeakMap();
     const pendingMutationObservers = new Set();
     const mutationAncestorCache = new WeakMap();
+    let mutationAncestorEpoch = 0;
     let mutationRegistrationCount = 0;
-    invalidateMutationAncestors = root => {
-        const pending = [root];
-        while (pending.length) {
-            const node = pending.pop();
-            mutationAncestorCache.delete(node);
-            pending.push(...node.childNodes);
-            const shadowRoot = shadowRootForTraversal(node);
-            if (shadowRoot) pending.push(shadowRoot);
-        }
-    };
+    // An insertion can change every descendant's ancestry. Invalidate lazily
+    // instead of walking the growing subtree even when no observer is installed.
+    // Recompute from the native tree before using a cached ancestry for delivery.
+    invalidateMutationAncestors = () => { mutationAncestorEpoch++; };
     const mutationAncestors = target => {
-        let ancestors = mutationAncestorCache.get(target);
-        if (!ancestors) {
-            ancestors = list(host('inclusiveAncestors', nodeId(target)));
-            mutationAncestorCache.set(target, ancestors);
+        let record = mutationAncestorCache.get(target);
+        if (!record || record.epoch !== mutationAncestorEpoch) {
+            record = { epoch: mutationAncestorEpoch,
+                ancestors: list(host('inclusiveAncestors', nodeId(target))) };
+            mutationAncestorCache.set(target, record);
         }
-        return ancestors;
+        return record.ancestors;
     };
     let mutationObserverMicrotaskQueued = false;
     const suppressedMutationRecordTargets = new Map();

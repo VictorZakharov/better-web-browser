@@ -52,6 +52,7 @@ mod canvas_transform;
 mod channel_messaging;
 mod check_visibility;
 mod checkable;
+mod child_collections;
 mod collections;
 mod compatibility;
 mod conditional_query_integration;

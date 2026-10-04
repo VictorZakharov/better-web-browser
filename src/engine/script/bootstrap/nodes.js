@@ -7,7 +7,7 @@
             wasConnected: node.isConnected,
             oldDocument: node.ownerDocument,
             oldParent: node.parentNode,
-            oldIndex: node.parentNode ? Array.from(node.parentNode.childNodes).indexOf(node) : -1,
+            oldIndex: node.parentNode ? host('indexOfChild', nodeId(node.parentNode), nodeId(node)) : -1,
             oldPreviousSibling: node.previousSibling,
             oldNextSibling: node.nextSibling
         }));
@@ -159,7 +159,7 @@
                 if (record.oldParent || record.oldDocument !== targetDocument)
                     captureRegistryTree(record.node);
             for (const record of records) if (record.oldParent) iteratorPreRemove(record.node);
-            let insertionIndex = this.childNodes.length;
+            let insertionIndex = host('childCount', nodeId(this));
             insertionIndex -= records.filter(record => record.oldParent === this).length;
             const nodes = child.nodeType === 11 ? [...child.childNodes] : [child];
             const inserted = nodes.every(node => !!host('appendChild', nodeId(this), nodeId(node)));
@@ -188,8 +188,8 @@
                     captureRegistryTree(record.node);
             for (const record of records) if (record.oldParent && child !== reference)
                 iteratorPreRemove(record.node);
-            let insertionIndex = reference ? Array.from(this.childNodes).indexOf(reference) :
-                this.childNodes.length;
+            let insertionIndex = reference ? host('indexOfChild', nodeId(this), nodeId(reference)) :
+                host('childCount', nodeId(this));
             insertionIndex -= records.filter(record => record.oldParent === this &&
                 record.oldIndex < insertionIndex).length;
             const nodes = child.nodeType === 11 ? [...child.childNodes] : [child];
@@ -240,7 +240,7 @@
             const wasConnected = isNode(child) && child.isConnected;
             const previousSibling = isNode(child) ? child.previousSibling : null;
             const nextSibling = isNode(child) ? child.nextSibling : null;
-            const removedIndex = isNode(child) ? Array.from(this.childNodes).indexOf(child) : -1;
+            const removedIndex = isNode(child) ? host('indexOfChild', nodeId(this), nodeId(child)) : -1;
             if (removedIndex >= 0) {
                 captureRegistryTree(child);
                 iteratorPreRemove(child);

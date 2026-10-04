@@ -8,6 +8,26 @@ pub(super) fn dispatch(
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     let value = match operation {
+        "childCount" => JsValue::from(
+            state
+                .node(argument_id(args, 1))
+                .map_or(0, |node| node.children.borrow().len() as u32),
+        ),
+        "indexOfChild" => {
+            let child = state.node(argument_id(args, 2));
+            let index = state
+                .node(argument_id(args, 1))
+                .zip(child)
+                .and_then(|(parent, child)| {
+                    parent
+                        .children
+                        .borrow()
+                        .iter()
+                        .position(|candidate| candidate.id() == child.id())
+                })
+                .map_or(-1., |index| index as f64);
+            JsValue::Number(index)
+        }
         "parent" => {
             let parent = state
                 .node(argument_id(args, 1))

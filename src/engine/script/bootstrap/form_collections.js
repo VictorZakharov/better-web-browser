@@ -1,16 +1,6 @@
     // The form collections are live views of the same DOM/control state used by
     // submission and rendering. See HTML's common DOM interfaces, §2.6.4.
     // https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#collections
-    class NodeList {
-        constructor(token) {
-            if (token !== htmlCollectionConstructionToken) throw new TypeError('Illegal constructor');
-        }
-        get length() { return collectionItems(this).length; }
-        item(index) { return collectionItems(this)[Number(index) >>> 0] || null; }
-        get [Symbol.toStringTag]() { return 'NodeList'; }
-    }
-    installIndexedIterator(NodeList.prototype, true);
-
     class RadioNodeList extends NodeList {
         get value() {
             const checked = collectionItems(this).find(element =>
