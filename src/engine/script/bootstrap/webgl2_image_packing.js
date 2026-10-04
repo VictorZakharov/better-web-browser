@@ -1,7 +1,7 @@
     // TexImageSource conversion is restricted to the WebGL2 DOM-upload table,
     // not the larger table admitted for application-owned typed pixel buffers.
     // https://registry.khronos.org/webgl/specs/latest/2.0/#DOM-uploads
-    const webGl2ImagePacking = (format,type) => {
+    const webGl2ImagePacking = (format,type,precise=false) => {
         if (type===0x8363 && format===0x1907) return {constructor:Uint16Array,bytes:2,
             pack:c => ((c(0)>>3)<<11)|((c(1)>>2)<<5)|(c(2)>>3)};
         if (type===0x8033 && format===0x1908) return {constructor:Uint16Array,bytes:2,
@@ -9,11 +9,13 @@
         if (type===0x8034 && format===0x1908) return {constructor:Uint16Array,bytes:2,
             pack:c => ((c(0)>>3)<<11)|((c(1)>>3)<<6)|((c(2)>>3)<<1)|(c(3)>>7)};
         if (type===0x8368 && format===0x1908) return {constructor:Uint32Array,bytes:4,
-            pack:c => (Math.floor(c(0)*1023/255)|Math.floor(c(1)*1023/255)<<10|
-                Math.floor(c(2)*1023/255)<<20|Math.floor(c(3)*3/255)<<30)>>>0};
+            pack:c => ((precise?Math.round(c(0)*1023):Math.floor(c(0)*1023/255))|
+                (precise?Math.round(c(1)*1023):Math.floor(c(1)*1023/255))<<10|
+                (precise?Math.round(c(2)*1023):Math.floor(c(2)*1023/255))<<20|
+                (precise?Math.round(c(3)*3):Math.floor(c(3)*3/255))<<30)>>>0};
         if (type===0x8c3b && format===0x1907) return {constructor:Uint32Array,bytes:4,
-            pack:c => (webGl2ImageFloat(c(0)/255,6)|webGl2ImageFloat(c(1)/255,6)<<11|
-                webGl2ImageFloat(c(2)/255,5)<<22)>>>0};
+            pack:c => (webGl2ImageFloat(c(0)/(precise?1:255),6)|webGl2ImageFloat(c(1)/(precise?1:255),6)<<11|
+                webGl2ImageFloat(c(2)/(precise?1:255),5)<<22)>>>0};
         return null;
     };
     const webGl2ImageFloat = (value,mantissaBits) => {

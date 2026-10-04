@@ -30,6 +30,32 @@ pub(super) fn apply_profile(image: &mut RasterImage, profile: &ColorProfile) -> 
         DataColorSpace::Gray => (Layout::Gray, 1),
         _ => return Err("image ICC profile does not describe RGB or grayscale pixels".into()),
     };
+    if let Some(words) = &mut image.rgba16 {
+        let transform = profile
+            .create_transform_16bit(
+                layout,
+                &destination,
+                Layout::Rgb,
+                TransformOptions::default(),
+            )
+            .map_err(|error| format!("create precise image color transform: {error}"))?;
+        let width = image.width as usize;
+        let mut source = vec![0; width * components];
+        let mut output = vec![0; width * 3];
+        for row in words.chunks_exact_mut(width * 4) {
+            for (pixel, color) in row.chunks_exact(4).zip(source.chunks_exact_mut(components)) {
+                color.copy_from_slice(&pixel[..components]);
+            }
+            transform
+                .transform(&source, &mut output)
+                .map_err(|error| format!("convert precise image colors: {error}"))?;
+            for (pixel, color) in row.chunks_exact_mut(4).zip(output.chunks_exact(3)) {
+                pixel[..3].copy_from_slice(color);
+            }
+        }
+        super::precision::refresh_bytes(image);
+        return Ok(());
+    }
     // Row-sized scratch keeps color management from duplicating the entire image.
     // Alpha bypasses the transform: it is coverage, not an ICC color component.
     let transform = profile

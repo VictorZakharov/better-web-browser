@@ -41,7 +41,7 @@
             }).then(async response => {
                 if (!response.ok && response.type !== 'opaque') throw imageDecodeError();
                 const bytes = new Uint8Array(await response.arrayBuffer());
-                const decoded = host('canvasDecode', bytes);
+                const decoded = host('canvasDecode', bytes, false, false, true);
                 if (!decoded) throw imageDecodeError();
                 return decoded;
             }).then(decoded => {
@@ -52,7 +52,10 @@
                 }
                 state.decoded = {
                     width: Number(decoded[0]), height: Number(decoded[1]),
-                    pixels: new Uint8ClampedArray(decoded[2])
+                    pixels: new Uint8ClampedArray(decoded[2]),
+                    // Private decoder-owned little-endian samples; no author
+                    // attribute/property can supply trusted source precision.
+                    pixels16: decodedBitmapWords(decoded[3])
                 };
                 updateImageElementState(element, true, decoded[0], decoded[1]);
                 state.settle(true);

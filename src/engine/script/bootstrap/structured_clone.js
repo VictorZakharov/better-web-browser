@@ -84,7 +84,8 @@
                 const record = canvas.snapshot(value);
                 return { t: record.kind, id, w: record.width, h: record.height,
                     cw: record.canvasWidth, ch: record.canvasHeight, o: record.alpha,
-                    m: record.mode, a: record.premultiplied, p: bytesToBase64(record.pixels) };
+                    m: record.mode, a: record.premultiplied, p: bytesToBase64(record.pixels),
+                    p16:record.precise?bytesToBase64(record.precise):undefined };
             }
             if (typeof DOMMatrixReadOnly === 'function' && value instanceof DOMMatrixReadOnly)
                 return { t: 'dom-matrix', id, v: Array.from(value.toFloat64Array(), encode),
@@ -171,7 +172,8 @@
             else if (node.t === 'audio-chunk') value = audio?.receiveChunk(node.v, base64ToBytes(node.p)) ?? fail();
             else if (node.t === 'video-frame') value = frames?.receive(node.v, base64ToBytes(node.p)) ?? fail();
             else if (node.t === 'imagebitmap' || node.t === 'offscreencanvas')
-                value = globalThis.__cloneCanvasBindings?.receive(node, base64ToBytes(node.p)) ?? fail();
+                value = globalThis.__cloneCanvasBindings?.receive(node, base64ToBytes(node.p),
+                    node.p16===undefined?null:base64ToBytes(node.p16)) ?? fail();
             else if (node.t === 'dom-matrix') {
                 const numbers = node.v.map(decode);
                 value = new (node.r ? DOMMatrix : DOMMatrixReadOnly)(node.d ?

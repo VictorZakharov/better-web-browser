@@ -108,7 +108,9 @@
                     mode: state.mode, kind: 'offscreencanvas' };
             }
             const state = imageBitmapPixels(value);
+            bitmapPrecisionBudget(state,state.width,state.height);
             return { width: state.width, height: state.height, pixels: state.pixels,
+                precise:encodedBitmapWords(state.pixels16),
                 premultiplied: state.premultiplied, kind: 'imagebitmap' };
         },
         detach(value) {
@@ -118,13 +120,16 @@
                 if (state) { state.pixels = null; state.context = null; }
             } else closeImageBitmap(value);
         },
-        receive(record, bytes) {
+        receive(record, bytes, preciseBytes = null) {
             const width = Number(record.w), height = Number(record.h);
             if (!Number.isInteger(width) || !Number.isInteger(height) || width < 0 || height < 0 ||
                 width * height > MAX_CANVAS_PIXELS || bytes.length !== width * height * 4)
                 throw new DOMException('Invalid bitmap transfer', 'DataCloneError');
             const pixels = new Uint8ClampedArray(bytes);
-            if (record.t === 'imagebitmap') return makeImageBitmap(width, height, pixels, record.a === true);
+            if (preciseBytes && (record.t !== 'imagebitmap' || preciseBytes.byteLength!==width*height*8))
+                throw new DOMException('Invalid precise bitmap transfer','DataCloneError');
+            if (record.t === 'imagebitmap') return makeImageBitmap(width, height, pixels,
+                record.a === true,decodedBitmapWords(preciseBytes));
             if (record.t !== 'offscreencanvas')
                 throw new DOMException('Unknown bitmap transfer', 'DataCloneError');
             const canvasWidth = record.cw ?? width, canvasHeight = record.ch ?? height;

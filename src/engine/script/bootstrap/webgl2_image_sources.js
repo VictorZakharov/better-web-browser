@@ -18,12 +18,17 @@
         const snapshot=webGlSourceSnapshot(context,source), state=webGl2State(context);
         if (!snapshot) return null;
         const bitmap=imageBitmapStates.get(source);
-        if (bitmap) snapshot.pixels=bitmap.pixels;
+        if (bitmap) { snapshot.pixels=bitmap.pixels; snapshot.pixels16=bitmap.pixels16; }
         const components=new Map([[0x1903,1],[0x1906,1],[0x1909,1],[0x190a,2],
             [0x8227,2],[0x1907,3],[0x1908,4],[0x8d94,1],[0x8228,2],[0x8d98,3],[0x8d99,4]]).get(format);
         const integer=[0x8d94,0x8228,0x8d98,0x8d99].includes(format);
         const constructors=new Map([[0x1401,Uint8Array],[0x1406,Float32Array],[0x140b,webGlBinary16Array]]);
-        const packing=webGl2ImagePacking(format,type);
+        // Low-bit/integer targets keep their established RGBA8 conversion.
+        // Floating and RGB10 targets consume real decoder precision, not an
+        // expanded eight-bit approximation. WebGL2 DOM uploads remain restricted
+        // to the specification's table (EXT_texture_norm16 does not widen it).
+        const precise=!!snapshot.pixels16 && [0x1406,0x140b,0x8368,0x8c3b].includes(type);
+        const packing=webGl2ImagePacking(format,type,precise);
         const constructor=packing?.constructor ?? constructors.get(type);
         if (!components || !constructor || integer && type!==0x1401) { webGlError(context,0x0502); return null; }
         if (width===undefined) width=snapshot.width;
@@ -44,12 +49,15 @@
             const y=!bitmap && state.unpackFlip ? snapshot.height-1-selectedY : selectedY;
             const input=(y*snapshot.width+skipPixels+column)*4;
             const output=((layer*height+row)*width+column)*(packing?1:components);
-            const alpha=snapshot.pixels[input+3];
+            const pixels=precise?snapshot.pixels16:snapshot.pixels;
+            const scale=precise?65535:255;
+            const alpha=pixels[input+3];
             const channel=index => {
-                const value=snapshot.pixels[input+index]*(!bitmap && state.unpackPremultiply && index!==3 ? alpha/255 : 1);
+                const value=pixels[input+index]*(!bitmap && state.unpackPremultiply && index!==3 ? alpha/scale : 1);
                 // Packed DOM conversion uses an eight-bit intermediate, like
                 // the decoded image pipeline. Preserve full precision for the
                 // direct FLOAT/HALF_FLOAT routes instead.
+                if (precise) return value/scale;
                 return packing ? Math.round(value) :
                     type===0x1401 ? Math.round(value) : value/255;
             };

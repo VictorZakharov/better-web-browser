@@ -30,11 +30,18 @@ pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Op
             ignore_orientation: matches!(args.get(2), Some(JsValue::Boolean(true))),
             ignore_color_profile: matches!(args.get(3), Some(JsValue::Boolean(true))),
         };
-        return Ok(Some(match decode_with_options(bytes, options) {
-            Some((width, height, pixels)) => JsValue::Array(vec![
-                JsValue::from(f64::from(width)),
-                JsValue::from(f64::from(height)),
-                JsValue::Bytes(pixels),
+        let precise = matches!(args.get(4), Some(JsValue::Boolean(true)));
+        return Ok(Some(match decode_raster(bytes, options, precise) {
+            Some(image) => JsValue::Array(vec![
+                JsValue::from(f64::from(image.width)),
+                JsValue::from(f64::from(image.height)),
+                JsValue::Bytes(image.rgba),
+                image
+                    .rgba16
+                    .map(|words| {
+                        JsValue::Bytes(words.into_iter().flat_map(u16::to_le_bytes).collect())
+                    })
+                    .unwrap_or(JsValue::Null),
             ]),
             None => JsValue::Null,
         }));
@@ -81,10 +88,19 @@ fn decode(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
     decode_with_options(bytes, Default::default())
 }
 
+#[cfg(test)]
 fn decode_with_options(
     bytes: &[u8],
     options: crate::engine::image_decode::DecodeOptions,
 ) -> Option<(u32, u32, Vec<u8>)> {
+    decode_raster(bytes, options, false).map(|image| (image.width, image.height, image.rgba))
+}
+
+fn decode_raster(
+    bytes: &[u8],
+    options: crate::engine::image_decode::DecodeOptions,
+    precise: bool,
+) -> Option<crate::engine::image_decode::RasterImage> {
     if bytes.is_empty() || bytes.len() > MAX_ENCODED_BYTES {
         return None;
     }
@@ -115,15 +131,25 @@ fn decode_with_options(
                 pixel[2] = unpremultiply(blue);
             }
         }
-        return Some((image.width, image.height, rgba));
+        return crate::engine::image_decode::RasterImage::new(
+            image.width,
+            image.height,
+            rgba,
+            crate::engine::image_decode::DecodeLimits::CANVAS,
+        )
+        .ok();
     }
-    let image = crate::engine::image_decode::decode(
+    let decode = if precise {
+        crate::engine::image_decode::decode_precise
+    } else {
+        crate::engine::image_decode::decode
+    };
+    decode(
         bytes,
         crate::engine::image_decode::DecodeLimits::CANVAS,
         options,
     )
-    .ok()?;
-    Some((image.width, image.height, image.rgba))
+    .ok()
 }
 
 fn encode(
