@@ -67,6 +67,10 @@ impl WebGl {
     }
 
     pub(super) fn core_read_pair(&mut self, format: u32, kind: u32) -> Result<usize> {
+        // GLES3 §4.3.2 distinguishes an unknown read enum from a known pair
+        // unsupported by the selected color attachment. Upload-only depth,
+        // luminance and packed-depth enums must not reach the latter check.
+        super::core_texture_formats::validate_read_enums(format, kind)?;
         self.validate_read_framebuffer()?;
         let component = if self.read_framebuffer == 0 {
             0x8c17

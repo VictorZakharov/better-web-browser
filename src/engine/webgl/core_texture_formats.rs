@@ -144,3 +144,39 @@ fn upload_bytes(format: u32, kind: u32) -> Result<usize> {
 pub(super) fn read_bytes(format: u32, kind: u32) -> Result<usize> {
     upload_bytes(format, kind)
 }
+
+pub(super) fn validate_read_enums(format: u32, kind: u32) -> Result<()> {
+    if ![
+        RED,
+        RG,
+        gl::RGB,
+        gl::RGBA,
+        gl::ALPHA,
+        RED_INTEGER,
+        RG_INTEGER,
+        RGB_INTEGER,
+        RGBA_INTEGER,
+    ]
+    .contains(&format)
+        || ![
+            gl::BYTE,
+            gl::UNSIGNED_BYTE,
+            gl::SHORT,
+            gl::UNSIGNED_SHORT,
+            gl::INT,
+            gl::UNSIGNED_INT,
+            HALF,
+            gl::FLOAT,
+            gl::UNSIGNED_SHORT_5_6_5,
+            gl::UNSIGNED_SHORT_4_4_4_4,
+            gl::UNSIGNED_SHORT_5_5_5_1,
+            UINT_2101010,
+            UINT_101111,
+            UINT_5999,
+        ]
+        .contains(&kind)
+    {
+        return Err(gl::INVALID_ENUM);
+    }
+    Ok(())
+}

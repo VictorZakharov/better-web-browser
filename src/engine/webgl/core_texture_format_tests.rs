@@ -12,6 +12,46 @@ const SIZED: &[u32] = &[
 ];
 
 #[test]
+fn webgl2_read_enums_do_not_reuse_the_texture_upload_enum_domain() {
+    for format in [
+        0x1902,
+        0x84f9,
+        0x8229,
+        gl::RGBA4,
+        gl::LUMINANCE,
+        gl::LUMINANCE_ALPHA,
+        0xdead,
+    ] {
+        assert_eq!(
+            formats::validate_read_enums(format, gl::UNSIGNED_BYTE),
+            Err(gl::INVALID_ENUM)
+        );
+    }
+    for kind in [0x84fa, 0x8dad, 0xdead] {
+        assert_eq!(
+            formats::validate_read_enums(gl::RGBA, kind),
+            Err(gl::INVALID_ENUM)
+        );
+    }
+    for format in [
+        formats::RED,
+        formats::RG,
+        gl::RGB,
+        gl::RGBA,
+        gl::ALPHA,
+        formats::RED_INTEGER,
+        formats::RG_INTEGER,
+        formats::RGB_INTEGER,
+        formats::RGBA_INTEGER,
+    ] {
+        assert_eq!(
+            formats::validate_read_enums(format, gl::UNSIGNED_BYTE),
+            Ok(())
+        );
+    }
+}
+
+#[test]
 fn webgl2_each_sized_format_allocates_native_storage_with_every_legal_upload_type() {
     session::run_native_test(|| {
         let mut context = version_two();

@@ -316,7 +316,7 @@ fn webgl2_transform_objects_and_varying_lists_reject_foreign_or_malformed_inputs
             json!(false)
         );
         let program = shader(&mut context, INTERLEAVED, r#"["captured"]"#);
-        for names in ["null", r#"[1]"#, r#"["a\u0000b"]"#, r#"["gl_Position"]"#] {
+        for names in ["null", r#"[1]"#, r#"["a\u0000b"]"#] {
             assert_eq!(
                 command(
                     &mut context,

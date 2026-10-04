@@ -125,6 +125,8 @@ mod queries;
 #[cfg(test)]
 mod query_object_tests;
 mod query_objects;
+#[cfg(test)]
+mod read_pair_validation_tests;
 mod readback_cache;
 #[cfg(test)]
 mod readback_cache_tests;
@@ -166,6 +168,8 @@ mod textures;
 #[cfg(test)]
 mod transform_array_tests;
 mod transform_buffers;
+#[cfg(test)]
+mod transform_builtin_tests;
 #[cfg(test)]
 mod transform_delete_tests;
 mod transform_entries;

@@ -24,7 +24,11 @@ impl WebGl {
             let names = names
                 .into_iter()
                 .map(|name| {
-                    if name.len() > 1024 || !name.is_ascii() || name.starts_with("gl_") {
+                    // Capture names include built-in vertex outputs such as
+                    // gl_Position. ANGLE validates their link-time availability;
+                    // the reserved identifier rule for author declarations does
+                    // not prohibit selecting an existing built-in output.
+                    if name.len() > 1024 || !name.is_ascii() {
                         return Err(gl::INVALID_VALUE);
                     }
                     CString::new(name).map_err(|_| gl::INVALID_VALUE)
