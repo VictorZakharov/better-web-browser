@@ -139,8 +139,8 @@ fn eight_streams_report_progress_and_an_abort_can_retry_without_blocking() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/streaming-network");
 
-    // The CI suite runs several hidden renderers in parallel. Leave enough deterministic settle
-    // headroom for the full 25 MiB stream to finish even when those processes contend for CPU.
+    // CI isolates this peak-memory measurement from other hidden browser trees.
+    // Retain deterministic settle headroom for the complete 25 MiB finite stream.
     let mut child = hidden_benchmark(&url, &artifacts, 15000);
     let status = wait_for_child(&mut child, Duration::from_secs(35));
     server
