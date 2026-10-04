@@ -3,6 +3,7 @@
     // https://registry.khronos.org/webgl/extensions/OES_texture_half_float/
     const webGlTextureExtensionConstants = [
         ['EXT_color_buffer_float', {}],
+        ['EXT_float_blend', {}],
         ['OES_texture_float', {}],
         ['OES_texture_half_float', {HALF_FLOAT_OES:0x8d61}],
         ['OES_texture_float_linear', {}],

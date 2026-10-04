@@ -82,6 +82,11 @@ impl WebGl {
                         c"GL_EXT_color_buffer_float",
                         self.extensions.available_core_color_float,
                     );
+                    if self.extensions.core_color_float
+                        && !self.extensions.enable_implicit_float_blend()
+                    {
+                        self.extensions.core_color_float = false;
+                    }
                     self.driver_result()?;
                     return Ok(json!(self.extensions.core_color_float));
                 }
