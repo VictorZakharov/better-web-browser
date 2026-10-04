@@ -38,12 +38,13 @@
         getContext(contextId, options = undefined) {
             if (this.__detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
             const requested = String(contextId);
-            const mode = requested === 'experimental-webgl' ? 'webgl' : requested;
+            const mode = ['experimental-webgl','webgl2'].includes(requested) ? 'webgl' : requested;
             if (!['2d', 'bitmaprenderer', 'webgl'].includes(mode)) return null;
             const state = stateForCanvas(this);
             if (state.mode !== 'none' && state.mode !== mode) return null;
-            if (state.context) return state.context;
-            const context = mode === 'webgl' ? createWebGlContext(this, options) : mode === '2d' ?
+            if (state.context) return mode === 'webgl' &&
+                webGlState(state.context).api !== (requested === 'webgl2' ? 'webgl2' : 'webgl1') ? null : state.context;
+            const context = mode === 'webgl' ? createWebGlContext(this, options, requested === 'webgl2' ? 'webgl2' : 'webgl1') : mode === '2d' ?
                 new OffscreenCanvasRenderingContext2D(offscreenContextToken, this) :
                 new ImageBitmapRenderingContext(canvasBitmapContextToken, this, options);
             if (!context) return null;

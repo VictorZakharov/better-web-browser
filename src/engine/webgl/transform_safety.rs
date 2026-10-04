@@ -2,6 +2,42 @@
 use super::{ApiVersion, Kind, Result, WebGl, gl};
 const TARGET: u32 = super::core_buffers::TRANSFORM_FEEDBACK;
 impl WebGl {
+    pub(super) fn validate_transform_point_capacity(
+        &self,
+        count: u32,
+        instances: u32,
+    ) -> Result<()> {
+        if self.options.api != ApiVersion::Two {
+            return Ok(());
+        }
+        let record = &self.transform_feedback.records[&self.transform_feedback.bound];
+        if !record.active || record.paused {
+            return Ok(());
+        }
+        let mut varyings = 0;
+        let native = self.objects.get(record.program, Kind::Program)?.native;
+        unsafe { gl::GetProgramiv(native, 0x8c83, &mut varyings) };
+        if varyings <= 0 {
+            return Ok(());
+        }
+        let binding = record.bindings.first().ok_or(gl::INVALID_OPERATION)?;
+        let object = self.objects.get(binding.id, Kind::Buffer)?;
+        let available = object.bytes.len().saturating_sub(binding.offset);
+        let available = binding.size.map_or(available, |size| available.min(size));
+        // Every captured point writes at least one 32-bit component to binding
+        // zero, in either separate or interleaved mode. This conservative lower
+        // bound proves an oversized instanced draw cannot fit before the work
+        // budget rejects it; never multiply vertex and instance counts in u32.
+        let minimum = u64::from(count)
+            .checked_mul(u64::from(instances))
+            .and_then(|vertices| vertices.checked_mul(4))
+            .ok_or(gl::INVALID_OPERATION)?;
+        if minimum > available as u64 {
+            return Err(gl::INVALID_OPERATION);
+        }
+        Ok(())
+    }
+
     pub(super) fn validate_transform_buffer_use(&self, target: u32, id: u32) -> Result<()> {
         if self.options.api == ApiVersion::One || id == 0 {
             return Ok(());

@@ -16,9 +16,17 @@ impl BackendContexts {
         command: &str,
         input: Option<&[u8]>,
     ) -> PixelReply {
+        let other_bytes: usize = self
+            .contexts
+            .iter()
+            .filter(|(key, _)| **key != id)
+            .map(|(_, context)| context.resource_bytes)
+            .sum();
         let Some(context) = self.contexts.get_mut(&id) else {
             return PixelReply::Lost;
         };
+        context.resource_limit = super::MAX_RESOURCE_BYTES
+            .min(super::MAX_PROCESS_RESOURCE_BYTES.saturating_sub(other_bytes));
         if command.len() > 1024 || input.is_some_and(|bytes| bytes.len() > MAX_UPLOAD_BYTES) {
             context.error(gl::OUT_OF_MEMORY);
             return PixelReply::Error;

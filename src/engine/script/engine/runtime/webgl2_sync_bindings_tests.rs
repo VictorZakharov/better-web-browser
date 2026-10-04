@@ -2,6 +2,33 @@
 use super::webgl2_bindings_tests::{check, document};
 
 #[test]
+fn webgl2_realm_repeated_readback_cannot_publish_a_fence_inside_the_task() {
+    let (mut context, _host) = document();
+    check(
+        &mut context,
+        r#"
+        const gl=new OffscreenCanvas(2,2).getContext('webgl2');
+        const sync=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);
+        const pixel=new Uint8Array(4);
+        gl.clearColor(1,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+        for (let iteration=0;iteration<256;++iteration) {
+            gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);
+            if (pixel.join()!=='255,0,0,255') throw Error('readback lost real color');
+            if (gl.getSyncParameter(sync,gl.SYNC_STATUS)!==gl.UNSIGNALED ||
+                gl.clientWaitSync(sync,0,0)!==gl.TIMEOUT_EXPIRED)
+                throw Error('readback published completion before returning to the event loop');
+        }
+        if (gl.getError()!==gl.NO_ERROR) throw Error('repeated readback failed');
+        "#,
+    );
+    context.complete_gpu_task().unwrap();
+    check(
+        &mut context,
+        "if (gl.getSyncParameter(sync,gl.SYNC_STATUS)!==gl.SIGNALED) throw Error('fence remained unpublished after task');",
+    );
+}
+
+#[test]
 fn webgl2_realm_sync_identity_and_wait_domains_remain_native_owned() {
     let (mut context, _host) = document();
     check(

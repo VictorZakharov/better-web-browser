@@ -4,6 +4,7 @@ use serde_json::Value;
 
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
+        self.invalidate_default_resolve(&c.op);
         // WebGL's default antialiased buffer resolves transparently for reads
         // and texture copies. Author multisample FBOs still require a blit.
         let _default_read = if matches!(

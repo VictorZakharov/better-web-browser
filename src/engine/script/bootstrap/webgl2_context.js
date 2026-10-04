@@ -1,5 +1,5 @@
     // WebGL2 is a separate Web IDL interface, not a subclass of WebGL1.
-    // This staged layer is private until the complete canvas interface is admitted.
+    // Canvas context mode locks the chosen version for the lifetime of the canvas.
     // https://registry.khronos.org/webgl/specs/latest/2.0/webgl2.idl
     class WebGL2RenderingContext {
         constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
@@ -14,6 +14,9 @@
         Object.defineProperty(WebGL2RenderingContext, key, {enumerable:true, value});
     }
     Object.defineProperty(webGl2Prototype, Symbol.toStringTag, {value:'WebGL2RenderingContext'});
+    Object.defineProperty(WebGL2RenderingContext, 'length', {value:0});
+    Object.defineProperty(globalThis, 'WebGL2RenderingContext',
+        {configurable:true,writable:true,value:WebGL2RenderingContext});
 
     for (const name of ['WebGLQuery', 'WebGLSampler', 'WebGLSync',
         'WebGLTransformFeedback', 'WebGLVertexArrayObject']) {
@@ -21,10 +24,12 @@
             constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
         };
         Object.defineProperty(constructor, 'name', {value:name});
+        Object.defineProperty(constructor, 'length', {value:0});
         Object.setPrototypeOf(constructor.prototype,WebGLObject.prototype);
         Object.setPrototypeOf(constructor,WebGLObject);
         Object.defineProperty(constructor.prototype, Symbol.toStringTag, {value:name});
         webGlObjectClasses[name] = constructor;
+        Object.defineProperty(globalThis,name,{configurable:true,writable:true,value:constructor});
     }
 
     const webGl2State = context => {

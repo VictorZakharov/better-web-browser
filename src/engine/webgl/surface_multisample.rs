@@ -5,6 +5,36 @@ use super::framebuffer_guard::{Direction, FramebufferGuard};
 use super::{ApiVersion, Options, gl};
 
 impl super::WebGl {
+    pub(super) fn invalidate_default_resolve(&mut self, operation: &str) {
+        // Only writes to the private default draw buffer invalidate resolved
+        // color. Readback, queries and state changes must not repeatedly submit
+        // identical full-surface GPU blits. Conservatively invalidate even when
+        // validation, write masks or rasterizer discard later prevent a write.
+        if self.framebuffer == 0
+            && matches!(
+                operation,
+                "clear"
+                    | "clearBufferfv"
+                    | "clearBufferiv"
+                    | "clearBufferuiv"
+                    | "clearBufferfi"
+                    | "drawArrays"
+                    | "drawElements"
+                    | "drawArraysInstanced"
+                    | "drawElementsInstanced"
+                    | "drawArraysInstancedANGLE"
+                    | "drawElementsInstancedANGLE"
+                    | "drawRangeElements"
+                    | "blitFramebuffer"
+                    | "invalidateFramebuffer"
+                    | "invalidateSubFramebuffer"
+            )
+        {
+            self.surface.invalidate_resolve();
+            self.readback_cache.invalidate();
+        }
+    }
+
     pub(super) fn resolved_default_read(&self) -> super::Result<Option<FramebufferGuard>> {
         if self.options.api == ApiVersion::Two && self.read_framebuffer == 0 {
             self.surface

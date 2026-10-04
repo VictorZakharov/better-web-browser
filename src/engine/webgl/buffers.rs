@@ -19,15 +19,33 @@ impl WebGl {
                 if ![gl::ARRAY_BUFFER, gl::ELEMENT_ARRAY_BUFFER].contains(&target) && !extra {
                     return Err(gl::INVALID_ENUM);
                 }
-                if id != 0 {
-                    let object = self.objects.get_mut(id, Kind::Buffer)?;
-                    let class = super::core_buffers::classification(target);
-                    if object.buffer_target != 0 && class != 0 && object.buffer_target != class {
+                let class = if id == 0 {
+                    0
+                } else {
+                    let previous = self.objects.get(id, Kind::Buffer)?.buffer_target;
+                    let requested = super::core_buffers::classification(target);
+                    if previous != 0 && requested != 0 && previous != requested {
                         return Err(gl::INVALID_OPERATION);
                     }
-                    if class != 0 {
-                        object.buffer_target = class;
+                    // Copy targets preserve an established class, but a first
+                    // copy-target binding establishes the "other data" class.
+                    // WebGL2 §5.1 Buffer Object Binding.
+                    if requested == 0 {
+                        if previous == 0 {
+                            gl::ARRAY_BUFFER
+                        } else {
+                            previous
+                        }
+                    } else {
+                        requested
                     }
+                };
+                unsafe {
+                    gl::BindBuffer(target, native);
+                }
+                self.driver_result()?;
+                if id != 0 {
+                    self.objects.get_mut(id, Kind::Buffer)?.buffer_target = class;
                 }
                 match target {
                     gl::ARRAY_BUFFER => self.array_buffer = id,
@@ -39,9 +57,6 @@ impl WebGl {
                         self.core_buffer_bindings.insert(target, id);
                     }
                     _ => return Err(gl::INVALID_ENUM),
-                }
-                unsafe {
-                    gl::BindBuffer(target, native);
                 }
             }
             "bufferData" => {

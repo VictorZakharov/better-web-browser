@@ -1,4 +1,4 @@
-//! Exercise private staged realm bindings without advertising partial support.
+//! Exercise real public realm admission through the shared Window/Worker bootstrap.
 use super::*;
 use crate::engine::script::{HostState, bootstrap, module_loader::WebModuleLoader};
 
@@ -20,12 +20,7 @@ pub(in crate::engine::script) fn staged_bootstrap(bootstrap: &str) -> String {
         "// Opaque names retain identity, realm ownership and restoration generation.",
         r#"
         globalThis.__stageWebGl2 = (canvas, requested) => {
-            const context = createWebGlContext(canvas, requested, 'webgl2');
-            if (context) {
-                const state = stateForCanvas(canvas);
-                state.context = context; state.mode = 'webgl';
-            }
-            return context;
+            return canvas.getContext('webgl2',requested);
         };
         globalThis.__stageWebGl2Constructor = WebGL2RenderingContext;
         globalThis.__stageWebGl2Types = webGlObjectClasses;
@@ -58,8 +53,8 @@ fn webgl2_realm_core_constants_are_readonly_and_do_not_leak_into_webgl1() {
             }
             if (gl[name]!==value) throw Error('instance constant');
         }
-        if ('READ_FRAMEBUFFER' in WebGLRenderingContext.prototype || typeof WebGL2RenderingContext!=='undefined')
-            throw Error('staged enums leaked into public WebGL1');
+        if ('READ_FRAMEBUFFER' in WebGLRenderingContext.prototype || WebGL2RenderingContext!==constructor)
+            throw Error('core enums leaked into WebGL1 or public interface differs');
         if (gl.getParameter(gl.MAX_CLIENT_WAIT_TIMEOUT_WEBGL)!==0 || gl.getError()!==0)
             throw Error('constant and real capability disagree');
     "#,
@@ -96,7 +91,7 @@ fn webgl2_realm_buffer_overloads_select_view_ranges_before_converting_arguments(
 }
 
 #[test]
-fn webgl2_realm_prototype_is_distinct_and_public_admission_stays_closed() {
+fn webgl2_realm_prototype_is_distinct_and_public_admission_uses_real_native_storage() {
     let (mut context, _host) = document();
     check(
         &mut context,
@@ -104,8 +99,9 @@ fn webgl2_realm_prototype_is_distinct_and_public_admission_stays_closed() {
         const canvas = new OffscreenCanvas(4,4);
         const gl = __stageWebGl2(canvas, {preserveDrawingBuffer:true});
         if (!gl) throw Error('real GLES3 context required');
-        if (typeof WebGL2RenderingContext !== 'undefined') throw Error('partial API advertised');
-        if (new OffscreenCanvas(1,1).getContext('webgl2') !== null) throw Error('partial canvas admitted');
+        if (WebGL2RenderingContext!==__stageWebGl2Constructor) throw Error('public interface identity');
+        if (!(new OffscreenCanvas(1,1).getContext('webgl2') instanceof WebGL2RenderingContext))
+            throw Error('public native canvas admission');
         if (gl instanceof WebGLRenderingContext) throw Error('WebGL2 incorrectly subclasses WebGL1');
         if (!(gl instanceof __stageWebGl2Constructor)) throw Error('wrong interface identity');
         if (!(gl.createBuffer() instanceof WebGLObject) || !(gl.createSampler() instanceof WebGLObject))
@@ -227,6 +223,54 @@ fn webgl2_realm_buffer_views_use_intrinsic_ranges_not_author_properties() {
             throw Error('DataView byte offsets');
         let threw=false; try { gl.bufferSubData(gl.ARRAY_BUFFER,0,null); } catch(e) { threw=e instanceof TypeError; }
         if (!threw || gl.getError()!==0) throw Error('nullable BufferSource accepted');
+    "#,
+    );
+}
+
+#[test]
+fn webgl2_public_canvas_admission_locks_version_and_exposes_illegal_interface_constructors() {
+    let (mut context, _host) = document();
+    check(
+        &mut context,
+        r#"
+        for(const create of [()=>new OffscreenCanvas(2,2),()=>{
+            const canvas=document.createElement('canvas');canvas.width=2;canvas.height=2;return canvas;
+        }]) {
+            for(const requested of ['webgl','experimental-webgl','webgl2']) {
+                const canvas=create(),gl=canvas.getContext(requested,{antialias:false});
+                const two=requested==='webgl2',type=two?WebGL2RenderingContext:WebGLRenderingContext;
+                if(!(gl instanceof type) || gl.canvas!==canvas) throw Error('wrong public interface '+requested);
+                if(canvas.getContext(requested)!==gl) throw Error('context identity changed');
+                if(canvas.getContext(two?'webgl':'webgl2')!==null || canvas.getContext('2d')!==null ||
+                    canvas.getContext('bitmaprenderer')!==null) throw Error('context mode unlocked');
+                if(canvas.getContext('experimental-webgl2')!==null) throw Error('unsupported experimental alias');
+                if(!two && canvas.getContext(requested==='webgl'?'experimental-webgl':'webgl')!==gl)
+                    throw Error('WebGL1 aliases differ');
+                if(two && gl instanceof WebGLRenderingContext) throw Error('WebGL2 is not a WebGL1 subclass');
+                gl.getExtension('WEBGL_lose_context').loseContext();
+                if(canvas.getContext(requested)!==gl || canvas.getContext(two?'webgl':'webgl2')!==null)
+                    throw Error('context loss unlocked canvas mode');
+            }
+            const locked=create();locked.getContext('2d');
+            if(locked.getContext('webgl2')!==null) throw Error('2D mode unlocked');
+            const failed=create();
+            if(failed.getContext('webgl2',{failIfMajorPerformanceCaveat:true})!==null)
+                throw Error('software backend ignored performance caveat');
+            if(!(failed.getContext('webgl') instanceof WebGLRenderingContext))
+                throw Error('failed creation consumed canvas context mode');
+        }
+        for(const name of ['WebGLRenderingContext','WebGL2RenderingContext','WebGLObject','WebGLBuffer',
+            'WebGLShader','WebGLProgram','WebGLTexture','WebGLFramebuffer','WebGLRenderbuffer',
+            'WebGLUniformLocation','WebGLActiveInfo','WebGLShaderPrecisionFormat','WebGLQuery',
+            'WebGLSampler','WebGLSync','WebGLTransformFeedback','WebGLVertexArrayObject']) {
+            const type=globalThis[name],descriptor=Object.getOwnPropertyDescriptor(globalThis,name);
+            if(type.name!==name || type.length!==0 || !descriptor.writable || !descriptor.configurable || descriptor.enumerable)
+                throw Error('interface object descriptor '+name);
+            let threw=false;try{new type();}catch(error){threw=error instanceof TypeError;}
+            if(!threw) throw Error('illegal constructor '+name);
+            threw=false;try{type();}catch(error){threw=error instanceof TypeError;}
+            if(!threw) throw Error('illegal function call '+name);
+        }
     "#,
     );
 }

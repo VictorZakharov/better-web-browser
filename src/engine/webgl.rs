@@ -96,6 +96,8 @@ mod framebuffer_queries;
 mod framebuffers;
 mod image_uploads;
 mod index_ranges;
+#[cfg(test)]
+mod indexed_range_admission_tests;
 mod indexed_uniform_buffers;
 mod instancing;
 mod legacy_mip_allocations;
@@ -123,6 +125,9 @@ mod queries;
 #[cfg(test)]
 mod query_object_tests;
 mod query_objects;
+mod readback_cache;
+#[cfg(test)]
+mod readback_cache_tests;
 mod resize;
 #[cfg(test)]
 mod same_size_resize_tests;
@@ -142,6 +147,7 @@ mod sync_entries;
 #[cfg(test)]
 mod sync_object_tests;
 mod sync_objects;
+mod sync_reply_cache;
 mod task_completion;
 #[cfg(test)]
 mod task_completion_tests;
@@ -293,6 +299,7 @@ struct WebGl {
     core: Option<core_entries::CoreEntries>,
     core_buffer_bindings: HashMap<u32, u32>,
     surface: Surface,
+    readback_cache: readback_cache::Cache,
     objects: Objects,
     errors: VecDeque<u32>,
     options: Options,

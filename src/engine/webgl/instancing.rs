@@ -35,6 +35,9 @@ impl WebGl {
                 .checked_mul(instances)
                 .is_none_or(|work| work > MAX_DRAW_VERTICES)
         {
+            if mode == gl::POINTS {
+                self.validate_transform_point_capacity(count, instances)?;
+            }
             return Err(gl::INVALID_VALUE);
         }
         self.validate_program()?;

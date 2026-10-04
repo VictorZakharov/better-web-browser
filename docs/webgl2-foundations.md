@@ -1,9 +1,11 @@
-# Internal WebGL2 foundation
+# WebGL2 native baseline
 
-This is a staged native implementation, not an advertised canvas context.
-`canvas.getContext('webgl2')` still returns null. The ordinary WebGL1 creation
-dictionary does not forward arbitrary author options into the native creation
-protocol. Do not add an interface merely to satisfy a feature probe.
+Windows Canvas and OffscreenCanvas now admit `getContext('webgl2')` through
+the real ANGLE backend. This is a bounded baseline, not full conformance
+certification or evidence that the sibling game runs. A canvas locks to its
+first successfully created context type; failed creation consumes no mode.
+`experimental-webgl2` remains unsupported. Ordinary creation dictionaries do
+not forward arbitrary author options into the native creation protocol.
 
 The closed internal `api` value selects a GLES2 or GLES3.1 provider through
 the existing pinned ANGLE dependency. Both retain WebGL compatibility, robust
@@ -24,7 +26,8 @@ WebGL1's shader rules or extension admission.
   no-prefix threshold, so WebGL1's textual prefix decoder is not applicable.
   Tests resolve uniforms at 1022, 1023 and 1024 bytes and reject 1025-byte tokens.
 - Core copy, uniform, pixel-pack, pixel-unpack and transform-feedback buffer
-  targets, additional usage enums, and neutral copy-target classification.
+  targets and additional usage enums. A first copy-target binding establishes
+  other-data classification; later copy bindings preserve an existing type.
   Element/non-element classification and cross-context ownership remain strict.
 - Native buffer copies check both ranges and same-buffer overlap before writing;
   successful copies also update the browser-owned index-validation mirror.
@@ -86,7 +89,7 @@ WebGL1's shader rules or extension admission.
   previously bound unit. Cross-context handles and invalid shapes are rejected.
 - Uniform blocks reflect actual std140 member offsets, matrix strides, shader
   references and active indices. Indexed uniform base/range bindings retain
-  buffers, validate alignment and bounds, and preserve unrelated generic state
+  buffers, validate alignment and integer domains, and preserve unrelated generic state
   during deletion. Base sizes track reallocation; explicit ranges do not. Native
   draw validation rejects missing/undersized block storage before changing pixels.
 - Owned pixel transfers account for aligned row lengths, skip rows/pixels and
@@ -158,15 +161,15 @@ These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
 presence is not a complete WebGL2 conformance result or a new HTML5test score.
 
-## Remaining admission work
+## Public bindings and remaining verification
 
 Framebuffer invalidation validates its target, attachment domain and signed
 rectangle, then preserves contents. This is the explicitly permitted WebGL no-op
 policy, not a discard optimization; native undefined-content hints are not
 forwarded. Real integer, HDR, depth/stencil, multisample and separate read/draw
 tests establish preservation. True 3D copies now preserve neighboring slices
-through private GPU blits; non-renderable destinations still need a conversion
-path before coherent public admission.
+through private GPU blits; non-renderable RGB float/integer destinations use
+the bounded native readback and upload path described below.
 
 Queries and sync use a typed owner-thread task boundary, never an author command.
 The host publishes ready native results after document/worker tasks and their
@@ -193,7 +196,7 @@ not CPU-generated substitutes. Public admission still requires broader tests.
 Coherent realm overloads need their own bindings. Public core entry points need
 versioned realm bindings, not WebGL1 extension objects under new names.
 
-The staged realm now has a distinct WebGL2 prototype and genuinely branded
+The public realm has a distinct WebGL2 prototype and genuinely branded
 query, sampler, sync, transform-feedback and vertex-array objects. All resource
 interfaces inherit `WebGLObject`; reflection records and uniform locations do
 not. Rejected native deletions do not prematurely retire the JavaScript brand.
@@ -202,10 +205,12 @@ getters backed by private native-result snapshots. Forged and proxy receivers
 cannot read those slots; deleting a program or losing its context does not
 invalidate an existing record. WebGL operations use Web IDL property descriptors
 in both versions, including the compressed-texture overloads.
-Private unit-test admission reaches the real GLES3 backend without advertising
-partial support through public `getContext('webgl2')` or interface globals.
+Window and Worker unit tests use ordinary public `getContext('webgl2')`, not
+a private admission shortcut. Native interface constructors remain illegal
+for author code. Captured WeakMap operations protect context/resource/extension
+brands from author replacements of built-in WeakMap methods.
 
-Implemented staged bindings include indexed buffers, owned-byte buffer readback,
+Implemented bindings include indexed buffers, owned-byte buffer readback,
 uniform-block reflection, unsigned/non-square uniforms, integer attributes,
 independent framebuffer routes, typed clears, multisample queries/resolves,
 invalidation, and opaque fences. Buffer and uniform ranges use source elements;
@@ -225,7 +230,7 @@ and restores native pack/unpack/PBO state without changing author bindings.
 It allocates only the copied rectangle and accounts for both simultaneous
 buffers against the context resource budget; it is not a GPU-only fast path.
 
-Staged WebGL2 creation now honors `antialias` through real four-sample native
+WebGL2 creation honors `antialias` through real four-sample native
 color and optional depth/stencil renderbuffers. A private single-sample color
 surface receives GLES3 resolves for presentation, client/PBO pixel reads and
 texture copies. Explicit author multisample framebuffers retain their ordinary
@@ -268,14 +273,28 @@ application-owned typed-buffer table. `RGBA8`, omitted from the current generate
 Khronos IDL but required by GLES3 storage and the WebGL2 2.0.0 specification,
 is included explicitly. Genuine ImageData and OffscreenCanvas sources have
 private brands; prototype-forged objects cannot become upload sources, including
-during context loss. The complete interface contract remains admission work, not
-claimed features. The existing WebGL1 regression suite must stay green
-throughout.
+during context loss. The existing WebGL1 regression suite must stay green
+throughout; public context availability is not a full-conformance claim.
 
-Only after the coherent interface is admitted should shared Window/Worker tests,
-unchanged upstream WebGL2 cases and hidden Chromium fixtures establish public
-availability. Running the unchanged sibling game remains a separate end-to-end
+Shared Window/Worker tests, unchanged upstream WebGL2 cases and hidden Chromium
+fixtures exercise public availability. Running the unchanged sibling game remains a separate end-to-end
 acceptance milestone; see [the game roadmap](gd-clone-compatibility.md).
+
+Indexed uniform and transform-feedback ranges may be declared before allocating
+buffer storage, and may extend beyond it. They are metadata, not permission to
+access nonexistent bytes: real native draws still reject undersized storage.
+Capacity checks use widened arithmetic before admitting oversized point capture.
+
+Repeated reads avoid redundant multisample resolves until a default-buffer write.
+A separate cache retains at most 64 KiB of actual, successfully read GPU pixels
+for an exact tight RGBA8 default-buffer rectangle. Its retained capacity is
+charged against context/process budgets; exhausted optional cache capacity falls
+back to native reads without changing the result. Author FBOs, pack-buffer
+writes, padded and out-of-bounds reads never use this cache. Drawing, clearing,
+resize and unpreserved presentation invalidate pixels. A bounded caller-side
+fence-poll cache retains only successful task-stable status and side-effect-free
+zero-time waits. The trusted task boundary clears it; flush waits always reach
+ANGLE. None of these caches publish completion from inside an author task.
 
 ## Primary contracts and reuse
 

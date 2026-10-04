@@ -119,7 +119,7 @@ fn webgl2_realm_worker_has_identical_native_restoration_and_bitmap_upload_contra
         gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0);
         const pixel=new Uint8Array(4);gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);
         if([...pixel].join()!=='12,34,56,255' || gl.getError()!==0) throw Error('worker DOM bitmap pixels');
-        if(typeof WebGL2RenderingContext!=='undefined') throw Error('staged Worker API leaked');
+        if(WebGL2RenderingContext!==__stageWebGl2Constructor) throw Error('Worker public interface differs');
         }
     "#,
     );

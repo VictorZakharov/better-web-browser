@@ -1,10 +1,10 @@
     // Private context/object brands keep driver IDs out of author-visible properties.
     // https://registry.khronos.org/webgl/specs/latest/1.0/
     const webGlToken = Symbol('WebGL native construction');
-    const webGlContexts = new WeakMap();
-    const webGlObjects = new WeakMap();
+    const webGlContexts = webGlPrivateBrands();
+    const webGlObjects = webGlPrivateBrands();
     const webGlObjectClasses = {};
-    const webGlEventMessages = new WeakMap();
+    const webGlEventMessages = webGlPrivateBrands();
     class WebGLContextEvent extends Event {
         constructor(type, options = {}) {
             super(type, options);
@@ -22,6 +22,7 @@
         constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
     }
     Object.defineProperty(WebGLObject.prototype, Symbol.toStringTag, {value:'WebGLObject'});
+    Object.defineProperty(WebGLObject, 'length', {value:0});
     Object.defineProperty(globalThis, 'WebGLObject', {configurable:true, writable:true, value:WebGLObject});
     for (const name of ['WebGLBuffer', 'WebGLShader', 'WebGLProgram', 'WebGLTexture',
         'WebGLFramebuffer', 'WebGLRenderbuffer', 'WebGLUniformLocation', 'WebGLActiveInfo',
@@ -30,6 +31,7 @@
             constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
         };
         Object.defineProperty(constructor, 'name', {value:name});
+        Object.defineProperty(constructor, 'length', {value:0});
         // Resource interfaces inherit WebGLObject; reflection records and
         // uniform locations are separate IDL interfaces, not GPU resources.
         if (!['WebGLUniformLocation','WebGLActiveInfo','WebGLShaderPrecisionFormat'].includes(name)) {
@@ -126,6 +128,7 @@
         }
     }
     Object.defineProperty(WebGLRenderingContext.prototype, Symbol.toStringTag, {value:'WebGLRenderingContext'});
+    Object.defineProperty(WebGLRenderingContext, 'length', {value:0});
     // JavaScript class syntax defaults to non-enumerable members; Web IDL
     // operations and regular attributes are enumerable on the prototype.
     for (const name of Object.getOwnPropertyNames(WebGLRenderingContext.prototype)) {

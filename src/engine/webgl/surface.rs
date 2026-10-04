@@ -12,6 +12,7 @@ pub(super) struct Surface {
     read_buffer: Option<super::core_entries::ReadBuffer>,
     multisample: Option<super::surface_multisample::Multisample>,
     allocated_bytes: usize,
+    resolve_dirty: std::cell::Cell<bool>,
 }
 impl Surface {
     pub fn new(
@@ -40,6 +41,7 @@ impl Surface {
             depth_stencil: 0,
             multisample: None,
             allocated_bytes,
+            resolve_dirty: std::cell::Cell::new(true),
             read_buffer: if options.api == super::ApiVersion::Two {
                 Some(super::core_entries::CoreEntries::read_buffer_entry()?)
             } else {
@@ -251,10 +253,17 @@ impl Surface {
             .map_or(self.framebuffer, |surface| surface.resolve)
     }
     pub(super) fn resolve(&self) -> Result<(), String> {
-        if let Some(multisample) = &self.multisample {
+        if self.resolve_dirty.get()
+            && let Some(multisample) = &self.multisample
+        {
             multisample.resolve(self.width, self.height)?;
+            self.resolve_dirty.set(false);
         }
         Ok(())
+    }
+
+    pub(super) fn invalidate_resolve(&self) {
+        self.resolve_dirty.set(true);
     }
 
     pub(super) fn resolved_read_guard(

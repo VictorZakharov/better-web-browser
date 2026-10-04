@@ -47,9 +47,9 @@ float/half-float and sRGB formats use their GLES2 extension tokens directly.
 The separate WebGL1 validator enforces author extension admission. Its reversible
 name prefix is removed from validated ESSL before native recompilation, preserving
 legal 256-byte identifiers and public reflection without doubling their length.
-WebGL2 remains unavailable pending its separate API and backend contract. Its
-[internal GLES3 foundations](webgl2-foundations.md) are tested without advertising
-a partial context. See the
+WebGL2 has a separate [public GLES3 baseline](webgl2-foundations.md), with
+version-locked Canvas/OffscreenCanvas admission and real native rendering. Neither
+version claims full upstream conformance. See the
 [texture/HDR contract](webgl-texture-formats.md) for storage and validation details.
 
 ## Implemented native boundary
@@ -120,7 +120,7 @@ contracts against unified-headless Chrome, including indexed textured geometry
 and Canvas-copy orientation. A required renderer smoke test runs the same eighteen
 checks inside the AppContainer and verifies both owned bitmaps across IPC.
 Full upstream WebGL conformance, accelerated adapters
-and wider resource limits remain follow-up work. No WebGL 2, WebGPU, WebVR, WebXR
+and wider resource limits remain follow-up work. No WebGPU, WebVR, WebXR
 or unsupported extension is advertised. Measurements are recorded in the README
 and PR; there is no score-specific browser behavior.
 

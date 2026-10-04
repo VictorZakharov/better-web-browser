@@ -299,12 +299,13 @@
         }
         getContext(contextId, options = undefined) {
             const requested = String(contextId);
-            const mode = requested === 'experimental-webgl' ? 'webgl' : requested;
+            const mode = ['experimental-webgl','webgl2'].includes(requested) ? 'webgl' : requested;
             if (!['2d', 'bitmaprenderer', 'webgl'].includes(mode)) return null;
             const state = stateForCanvas(this);
             if (state.mode !== 'none' && state.mode !== mode) return null;
-            if (state.context) return state.context;
-            const context = mode === 'webgl' ? createWebGlContext(this, options) : mode === '2d' ? new CanvasRenderingContext2D(this) :
+            if (state.context) return mode === 'webgl' &&
+                webGlState(state.context).api !== (requested === 'webgl2' ? 'webgl2' : 'webgl1') ? null : state.context;
+            const context = mode === 'webgl' ? createWebGlContext(this, options, requested === 'webgl2' ? 'webgl2' : 'webgl1') : mode === '2d' ? new CanvasRenderingContext2D(this) :
                 new ImageBitmapRenderingContext(canvasBitmapContextToken, this, options);
             if (!context) return null;
             state.context = context;

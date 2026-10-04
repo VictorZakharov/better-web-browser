@@ -96,6 +96,36 @@ impl WebGl {
         if (c.u(6)? as usize) < size {
             return Err(gl::INVALID_OPERATION);
         }
+        if input.is_some_and(|data| data.len() < size) {
+            return Err(gl::INVALID_OPERATION);
+        }
+        let default_read = if core {
+            self.read_framebuffer == 0
+        } else {
+            self.framebuffer == 0
+        };
+        let region = super::readback_cache::Region {
+            x: c.n(0)?,
+            y: c.n(1)?,
+            width,
+            height,
+        };
+        // A successful, tight, in-bounds RGBA8 read has no caller-owned
+        // padding to preserve. Reuse its owned native pixels while the default
+        // buffer is unchanged; arbitrary FBOs and pack routes remain native.
+        let reusable = default_read
+            && self.default_read_buffer != gl::NONE
+            && format == gl::RGBA
+            && kind == gl::UNSIGNED_BYTE
+            && layout.start == 0
+            && layout.row_stride == width as usize * 4
+            && region.x >= 0
+            && region.y >= 0
+            && i64::from(region.x) + i64::from(width) <= i64::from(self.surface.width)
+            && i64::from(region.y) + i64::from(height) <= i64::from(self.surface.height);
+        if reusable && let Some(bytes) = self.readback_cache.read(region) {
+            return Ok(bytes);
+        }
         // Preserve destination padding and out-of-bounds pixels, just like the
         // byte path. The native driver receives only our bounded owned storage.
         let mut bytes = match input {
@@ -115,11 +145,6 @@ impl WebGl {
             );
         }
         self.driver_result()?;
-        let default_read = if self.options.api == super::ApiVersion::Two {
-            self.read_framebuffer == 0
-        } else {
-            self.framebuffer == 0
-        };
         if default_read && !self.options.alpha && format == gl::RGBA && kind == gl::UNSIGNED_BYTE {
             let stride = layout.row_stride;
             let x = c.n(0)?;
@@ -137,6 +162,13 @@ impl WebGl {
                     }
                 }
             }
+        }
+        if reusable {
+            self.resource_bytes += self.readback_cache.record(
+                region,
+                &bytes,
+                self.resource_limit.saturating_sub(self.resource_bytes),
+            );
         }
         Ok(bytes)
     }

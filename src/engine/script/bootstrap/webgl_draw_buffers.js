@@ -1,4 +1,4 @@
-    const webGlDrawBuffersExtensions = new WeakMap();
+    const webGlDrawBuffersExtensions = webGlPrivateBrands();
     class WEBGL_draw_buffers {
         constructor(token, context) {
             if (token !== webGlToken) throw new TypeError('Illegal constructor');

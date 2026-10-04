@@ -3,7 +3,7 @@
     // turn native resource retirement into reentrant script execution.
     // https://registry.khronos.org/webgl/specs/latest/1.0/#5.15.2
     const webGlQueueTask = callback => queueWebGlContextTask(callback);
-    const webGlLoseExtensions = new WeakMap();
+    const webGlLoseExtensions = webGlPrivateBrands();
     const loseWebGlContext = (context, simulated) => {
         const state = webGlState(context);
         if (state.lost) { webGlError(context, 0x0502); return; }

@@ -9,6 +9,8 @@ impl WebGl {
         self.clear_default_surface();
     }
     pub(super) fn clear_default_surface(&mut self) {
+        self.readback_cache.invalidate();
+        self.surface.invalidate_resolve();
         let _framebuffer = super::framebuffer_guard::FramebufferGuard::bind(
             self.options.api,
             super::framebuffer_guard::Direction::Draw,

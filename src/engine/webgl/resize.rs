@@ -34,6 +34,7 @@ impl WebGl {
     }
 
     pub(super) fn resize(&mut self, c: &Command) -> Result<Value> {
+        self.readback_cache.invalidate();
         let width = c.u(0)?.max(1);
         let height = c.u(1)?.max(1);
         if width > 4096 || height > 4096 || u64::from(width) * u64::from(height) > 4 * 1024 * 1024 {

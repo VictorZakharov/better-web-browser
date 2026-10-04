@@ -66,9 +66,9 @@ impl WebGl {
                 if size == 0
                     || !offset.is_multiple_of(4)
                     || !size.is_multiple_of(4)
-                    || offset
-                        .checked_add(size)
-                        .is_none_or(|end| end > object.bytes.len())
+                    // Range declarations do not require existing storage;
+                    // ANGLE's WebGL draw validation checks capture capacity.
+                    || offset.checked_add(size).is_none_or(|end| end > isize::MAX as usize)
                 {
                     return Err(gl::INVALID_VALUE);
                 }

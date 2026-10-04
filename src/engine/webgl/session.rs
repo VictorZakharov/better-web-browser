@@ -41,6 +41,7 @@ pub(crate) struct Contexts {
     live: HashSet<u32>,
     leases: HashMap<u32, Arc<()>>,
     asynchronous: HashSet<u32>,
+    sync_replies: super::sync_reply_cache::Cache,
 }
 impl Contexts {
     pub(crate) fn create(&mut self, width: u32, height: u32, options: &str) -> Option<u32> {
@@ -66,6 +67,7 @@ impl Contexts {
         Some(id)
     }
     pub(crate) fn remove(&mut self, id: u32) {
+        self.sync_replies.remove(id);
         if self.live.remove(&id) {
             self.leases.remove(&id);
             self.asynchronous.remove(&id);
@@ -73,6 +75,7 @@ impl Contexts {
         }
     }
     pub(crate) fn clear(&mut self) {
+        self.sync_replies.clear();
         if self.live.is_empty() {
             return;
         }
@@ -83,6 +86,7 @@ impl Contexts {
     /// Called by the embedder only after an HTML task and its microtask checkpoint.
     /// Ordinary commands, presentation and nested checkpoints never publish results.
     pub(crate) fn complete_task(&mut self) {
+        self.sync_replies.clear();
         if self.asynchronous.is_empty() {
             return;
         }
@@ -101,7 +105,7 @@ impl Contexts {
             return json!({"lost":true});
         }
         // Reject before copying data into the bounded submission queue.
-        let (command, bytes) = if command.len() > MAX_SHADER_BYTES + 4096
+        let (serialized, bytes) = if command.len() > MAX_SHADER_BYTES + 4096
             || bytes.is_some_and(|b| b.len() > MAX_UPLOAD_BYTES)
         {
             (
@@ -109,11 +113,20 @@ impl Contexts {
                 None,
             )
         } else {
+            if let Some(value) = self.sync_replies.get(id, command) {
+                return value;
+            }
             (command.into(), bytes.map(<[u8]>::to_vec))
         };
-        match request(Operation::Command(id, command, bytes)) {
-            Some(Reply::Command(value)) => value,
-            _ => json!({"lost":true}),
+        match request(Operation::Command(id, serialized, bytes)) {
+            Some(Reply::Command(value)) => {
+                self.sync_replies.record(id, command, &value);
+                value
+            }
+            _ => {
+                self.sync_replies.remove(id);
+                json!({"lost":true})
+            }
         }
     }
     pub(crate) fn read_pixels(
@@ -134,8 +147,16 @@ impl Contexts {
             command.into(),
             bytes.map(<[u8]>::to_vec),
         )) {
-            Some(Reply::Pixels(value)) => value,
-            _ => PixelReply::Lost,
+            Some(Reply::Pixels(value)) => {
+                if matches!(value, PixelReply::Lost) {
+                    self.sync_replies.remove(id);
+                }
+                value
+            }
+            _ => {
+                self.sync_replies.remove(id);
+                PixelReply::Lost
+            }
         }
     }
     pub(crate) fn snapshot(&mut self, id: u32) -> Option<Bitmap> {

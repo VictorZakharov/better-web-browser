@@ -107,3 +107,51 @@ fn webgl_context_operations_and_attributes_have_webidl_property_descriptors() {
     "#,
     );
 }
+
+#[test]
+fn webgl_native_context_resource_and_extension_brands_ignore_author_weakmap_replacement() {
+    let (mut context, _host) = document();
+    check(
+        &mut context,
+        r#"
+        const gl=__stageWebGl2(new OffscreenCanvas(2,2),{antialias:false});
+        const buffer=gl.createBuffer(),extension=gl.getExtension('WEBGL_lose_context');
+        const event=new WebGLContextEvent('native',{statusMessage:'real message'});
+        const status=Object.getOwnPropertyDescriptor(WebGLContextEvent.prototype,'statusMessage').get;
+        const original={get:WeakMap.prototype.get,set:WeakMap.prototype.set,
+            has:WeakMap.prototype.has,delete:WeakMap.prototype.delete,constructor:WeakMap};
+        let consulted=0;
+        WeakMap.prototype.get=function(){consulted++;return {id:1,type:'WebGLBuffer',context:gl,epoch:0,api:'webgl2'};};
+        WeakMap.prototype.set=function(){consulted++;};WeakMap.prototype.has=function(){consulted++;return true;};
+        WeakMap.prototype.delete=function(){consulted++;return true;};
+        globalThis.WeakMap=function(){consulted++;throw Error('author constructor');};
+        try {
+            for(const receiver of [{},Object.create(__stageWebGl2Constructor.prototype),new Proxy(gl,{})]) {
+                let threw=false;try{__stageWebGl2Constructor.prototype.createBuffer.call(receiver);}
+                catch(error){threw=error instanceof TypeError;}
+                if(!threw) throw Error('forged context receiver');
+            }
+            for(const resource of [{},Object.create(WebGLBuffer.prototype),new Proxy(buffer,{})]) {
+                let threw=false;try{gl.bindBuffer(gl.ARRAY_BUFFER,resource);}catch(error){threw=error instanceof TypeError;}
+                if(!threw) throw Error('forged resource argument');
+            }
+            gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,16,gl.STATIC_DRAW);
+            if(gl.getBufferParameter(gl.ARRAY_BUFFER,gl.BUFFER_SIZE)!==16) throw Error('genuine native resource');
+            const next=gl.createBuffer();gl.deleteBuffer(next);
+            if(gl.isBuffer(next)) throw Error('retired resource brand');
+            if(status.call(event)!=='real message') throw Error('forged event status');
+            let threw=false;try{status.call({});}catch(error){threw=error instanceof TypeError;}
+            if(!threw) throw Error('forged event receiver');
+            threw=false;try{Object.getPrototypeOf(extension).loseContext.call({});}
+            catch(error){threw=error instanceof TypeError;}
+            if(!threw) throw Error('forged extension receiver');
+            if(consulted!==0 || gl.getError()!==0) throw Error('private brand consulted author hooks');
+        } finally {
+            globalThis.WeakMap=original.constructor;
+            for(const name of ['get','set','has','delete']) WeakMap.prototype[name]=original[name];
+        }
+        extension.loseContext();
+        if(!gl.isContextLost()) throw Error('genuine extension brand lost');
+    "#,
+    );
+}

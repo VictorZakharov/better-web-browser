@@ -1,8 +1,8 @@
 # WebGL 1 texture and HDR foundations
 
 This slice reuses the existing pinned ANGLE renderer and compiler. It adds no
-dependency, copied renderer code, or site-specific texture path. WebGL 2 remains
-unavailable until its separate API contract is implemented and verified.
+dependency, copied renderer code, or site-specific texture path. The separate
+[WebGL2 baseline](webgl2-foundations.md) retains its own format and API contract.
 
 ## Author capability boundaries
 

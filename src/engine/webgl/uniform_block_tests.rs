@@ -223,7 +223,7 @@ fn webgl2_uniform_buffer_range_uses_checked_aligned_offset_and_reports_exact_ran
             call(&mut context, "getIndexedParameter", &[0x8a2a, 1], ""),
             json!(48)
         );
-        for (offset, size) in [(-1, 48), (alignment as i64, 0), (alignment as i64, 49)] {
+        for (offset, size) in [(-1, 48), (alignment as i64, 0)] {
             let command = Command {
                 op: "bindBufferRange".into(),
                 i: vec![UNIFORM, 1, id as i64, offset, size],

@@ -39,6 +39,58 @@ fn triangle(context: &mut WebGl) {
 }
 
 #[test]
+fn webgl2_default_resolve_reuses_real_color_until_the_next_write_or_retirement() {
+    session::run_native_test(|| {
+        let mut context = context(true);
+        super::volume_copy_tests::clear(&mut context, [1.0, 0.0, 0.0, 1.0]);
+        for _ in 0..8 {
+            assert!(
+                read(&mut context)
+                    .unwrap()
+                    .chunks_exact(4)
+                    .all(|p| p == [255, 0, 0, 255])
+            );
+        }
+        // State-only changes do not change pixels, but the following masked
+        // clear must invalidate the resolved attachment before its next read.
+        call(&mut context, "colorMask", &[0, 1, 0, 0], "");
+        super::volume_copy_tests::clear(&mut context, [0.0, 1.0, 0.0, 0.0]);
+        assert!(
+            read(&mut context)
+                .unwrap()
+                .chunks_exact(4)
+                .all(|p| p == [255, 255, 0, 255])
+        );
+        call(&mut context, "colorMask", &[1, 1, 1, 1], "");
+        context
+            .dispatch(
+                &Command {
+                    op: "clearBufferfv".into(),
+                    i: vec![0x1800, 0],
+                    f: vec![0.0, 0.0, 1.0, 1.0],
+                    text: String::new(),
+                },
+                None,
+            )
+            .unwrap();
+        assert!(
+            context
+                .surface
+                .snapshot()
+                .unwrap()
+                .chunks_exact(4)
+                .all(|p| p == [0, 0, 255, 255])
+        );
+        triangle(&mut context);
+        let pixels = read(&mut context).unwrap();
+        assert!(pixels.chunks_exact(4).any(|p| p[0] > 0 && p[0] < 255));
+        context.presented();
+        assert!(read(&mut context).unwrap().iter().all(|byte| *byte == 0));
+        assert_eq!(call(&mut context, "getError", &[], ""), json!(0));
+    });
+}
+
+#[test]
 fn webgl2_default_antialias_has_real_four_sample_edge_coverage() {
     session::run_native_test(|| {
         for antialias in [false, true] {
