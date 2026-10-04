@@ -46,19 +46,21 @@ impl WebGl {
             0x8217,
         ]
         .contains(&pname);
+        // WebGL2 explicitly rejects names outside its reflection table, even
+        // when GLES would otherwise report an unattached image first.
+        if !valid_pname {
+            return Err(gl::INVALID_ENUM);
+        }
         let entries = &self
             .objects
             .get(framebuffer, Kind::Framebuffer)?
             .framebuffer_attachments;
         let entry = if point == DEPTH_STENCIL_ATTACHMENT {
             let depth = entries.get(&gl::DEPTH_ATTACHMENT);
-            // GLES3.0 §6.1.13 compares attached objects for this query,
-            // not layers/mip images. Completeness still compares images.
-            if depth.map(|entry| (entry.id, entry.kind))
-                != entries
-                    .get(&gl::STENCIL_ATTACHMENT)
-                    .map(|entry| (entry.id, entry.kind))
-            {
+            // WebGL2 overrides GLES's object comparison: different layers or
+            // mip images of the same object still generate INVALID_OPERATION.
+            // https://registry.khronos.org/webgl/specs/latest/2.0/#3.7.4
+            if depth != entries.get(&gl::STENCIL_ATTACHMENT) {
                 return Err(gl::INVALID_OPERATION);
             }
             depth
@@ -78,9 +80,6 @@ impl WebGl {
             })));
         }
         let entry = entry.ok_or(gl::INVALID_OPERATION)?;
-        if !valid_pname {
-            return Err(gl::INVALID_ENUM);
-        }
         if [
             gl::FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL,
             gl::FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE,

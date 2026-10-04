@@ -196,7 +196,7 @@ fn framebuffer_contract_invalid_read_selectors_preserve_independent_state() {
 }
 
 #[test]
-fn framebuffer_contract_missing_image_error_precedes_invalid_query_name() {
+fn framebuffer_contract_webgl_query_names_are_checked_before_missing_images() {
     session::run_native_test(|| {
         let mut context = version_two();
         framebuffer(&mut context, READ);
@@ -216,7 +216,11 @@ fn framebuffer_contract_missing_image_error_precedes_invalid_query_name() {
                 ] {
                     assert_eq!(
                         query(&mut context, target, point, pname),
-                        Err(gl::INVALID_OPERATION)
+                        Err(if [0, 0xdead].contains(&pname) {
+                            gl::INVALID_ENUM
+                        } else {
+                            gl::INVALID_OPERATION
+                        })
                     );
                 }
                 assert_eq!(
@@ -258,7 +262,7 @@ fn framebuffer_contract_missing_image_error_precedes_invalid_query_name() {
         );
         assert_eq!(
             query(&mut context, READ, gl::COLOR_ATTACHMENT0, 0),
-            Err(gl::INVALID_OPERATION)
+            Err(gl::INVALID_ENUM)
         );
         assert_eq!(
             query(
@@ -273,7 +277,7 @@ fn framebuffer_contract_missing_image_error_precedes_invalid_query_name() {
 }
 
 #[test]
-fn framebuffer_contract_depth_stencil_query_compares_objects_not_layer_images() {
+fn framebuffer_contract_depth_stencil_query_compares_images_not_only_objects() {
     session::run_native_test(|| {
         let mut context = version_two();
         framebuffer(&mut context, gl::FRAMEBUFFER);
@@ -298,7 +302,7 @@ fn framebuffer_contract_depth_stencil_query_compares_objects_not_layer_images() 
                     DEPTH_STENCIL_ATTACHMENT,
                     gl::FRAMEBUFFER_ATTACHMENT_OBJECT_NAME
                 ),
-                Ok(json!(tex))
+                Err(gl::INVALID_OPERATION)
             );
             assert_eq!(
                 query(&mut context, target, DEPTH_STENCIL_ATTACHMENT, 0x8211),
