@@ -1017,11 +1017,11 @@ renderer, fake capabilities or score-specific responses are used.
 | Measurement | Before (main `b06fe0e`, PR #223) | After | Unified-headless Chrome 154 |
 | --- | ---: | ---: | ---: |
 | HTML5test rendered score, three samples | 502 each | 507 each | 579 each |
-| Window-ready median | 16.972 ms | 17.570 ms | 239.525 ms |
-| Harness page-ready median | 246.356 ms | 266.037 ms | 1056.164 ms |
-| Settled JavaScript time median | 620.353 ms | 769.523 ms | 580.832 ms |
-| Process-tree working-set median | 221.277 MiB | 264.691 MiB | 835.320 MiB |
-| Process-tree private-bytes median | 169.398 MiB | 236.973 MiB | 359.980 MiB |
+| Window-ready median | 16.972 ms | 19.428 ms | 239.525 ms |
+| Harness page-ready median | 246.356 ms | 291.766 ms | 1056.164 ms |
+| Settled JavaScript time median | 620.353 ms | 773.411 ms | 580.832 ms |
+| Process-tree working-set median | 221.277 MiB | 264.730 MiB | 835.320 MiB |
+| Process-tree private-bytes median | 169.398 MiB | 238.227 MiB | 359.980 MiB |
 | Unmodified Three.js pixel scenes | WebGL2 context unavailable | 12/12 | 12/12 |
 | Hardware/fallback creation contracts | Not implemented | 8/8 | 8/8 in the reference investigation |
 | Required pinned Khronos cases / passing assertions | 20 / 3122 in the preceding batch | 74 / 8696 | Not run against pinned suite |
