@@ -9,10 +9,15 @@ mod api_version;
 mod api_version_tests;
 #[cfg(test)]
 mod array_copy_boundary_tests;
+#[cfg(test)]
+mod buffer_mirror_tests;
 mod buffer_retirement;
 #[cfg(test)]
 mod buffer_retirement_tests;
 mod buffers;
+mod command_batch;
+#[cfg(test)]
+mod command_batch_tests;
 mod commands;
 #[cfg(test)]
 mod compressed_buffer_tests;

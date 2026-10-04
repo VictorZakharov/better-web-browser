@@ -25,39 +25,56 @@ impl Cache {
     }
 
     pub(super) fn record(&mut self, context: u32, source: &str, value: &Value) {
+        // Most commands mutate state and cannot be cached. Avoid reparsing their
+        // JSON on this caller-side fast path: the native owner still validates
+        // every command. This filter only excludes cache candidates; it never
+        // admits a reply without the structured validation below.
+        if source.len() > 256
+            || ![
+                "\"getQueryParameter\"",
+                "\"finish\"",
+                "\"getSyncParameter\"",
+                "\"clientWaitSync\"",
+            ]
+            .iter()
+            .any(|name| source.contains(name))
+        {
+            self.remove(context);
+            return;
+        }
         // Retain only successful task-frozen status and zero-flag, zero-time
         // waits. FLUSH_COMMANDS_BIT has a real submission side effect and must
         // always reach ANGLE; invalid/deleted/foreign names never populate us.
-        let cacheable = source.len() <= 256
-            && serde_json::from_str::<Command>(source).is_ok_and(|command| {
-                match command.op.as_str() {
-                    "getQueryParameter" => {
-                        command.i.len() == 2 && command.i[1] == 0x8867 && value.is_boolean()
-                    }
-                    "finish" => {
-                        command.i.is_empty()
-                            && command.f.is_empty()
-                            && command.text.is_empty()
-                            && value.is_null()
-                    }
-                    "getSyncParameter" => {
-                        command.i.len() == 2
-                            && command.i[1] == 0x9114
-                            && matches!(value.as_u64(), Some(0x9118 | 0x9119))
-                    }
-                    "clientWaitSync" => {
-                        command.i.len() == 3
-                            && command.i[1..] == [0, 0]
-                            && matches!(value.as_u64(), Some(0x911a | 0x911b))
-                    }
-                    _ => false,
+        let command = serde_json::from_str::<Command>(source).ok();
+        let cacheable = command
+            .as_ref()
+            .is_some_and(|command| match command.op.as_str() {
+                "getQueryParameter" => {
+                    command.i.len() == 2 && command.i[1] == 0x8867 && value.is_boolean()
                 }
+                "finish" => {
+                    command.i.is_empty()
+                        && command.f.is_empty()
+                        && command.text.is_empty()
+                        && value.is_null()
+                }
+                "getSyncParameter" => {
+                    command.i.len() == 2
+                        && command.i[1] == 0x9114
+                        && matches!(value.as_u64(), Some(0x9118 | 0x9119))
+                }
+                "clientWaitSync" => {
+                    command.i.len() == 3
+                        && command.i[1..] == [0, 0]
+                        && matches!(value.as_u64(), Some(0x911a | 0x911b))
+                }
+                _ => false,
             });
         if !cacheable {
             self.remove(context);
             return;
         }
-        if serde_json::from_str::<Command>(source).is_ok_and(|c| c.op == "finish") {
+        if command.is_some_and(|c| c.op == "finish") {
             // The first finish reached ANGLE and drained all earlier work.
             // Repeating it before another non-poll command has no additional
             // work to drain. Task boundaries still discard this knowledge.

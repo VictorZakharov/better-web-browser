@@ -31,6 +31,9 @@ pub(super) struct Object {
     pub kind: Kind,
     pub native: u32,
     pub bytes: Vec<u8>,
+    // Only initialized CPU uploads/copies are authoritative. GPU capture and
+    // pixel-pack writes invalidate this mirror until a full native readback.
+    pub buffer_mirror_valid: bool,
     pub capacity: usize,
     pub buffer_target: u32,
     pub owner: u32,
@@ -87,6 +90,7 @@ impl Objects {
                 kind,
                 native,
                 bytes: Vec::new(),
+                buffer_mirror_valid: true,
                 capacity: 0,
                 buffer_target: 0,
                 owner: 0,

@@ -16,6 +16,7 @@ type Bitmap = (u32, u32, Vec<u8>);
 enum Operation {
     Create(u32, u32, String, Weak<()>),
     Command(u32, String, Option<Vec<u8>>),
+    Batch(Vec<(u32, String)>),
     Pixels(u32, String, Option<Vec<u8>>),
     Snapshot(u32),
     TaskBoundary(Vec<u32>),
@@ -25,6 +26,7 @@ enum Operation {
 enum Reply {
     Created(Option<u32>),
     Command(Value),
+    Batch(Vec<u32>),
     Pixels(PixelReply),
     Snapshot(Option<Bitmap>),
     TaskBoundary(Vec<u32>),
@@ -42,9 +44,11 @@ pub(crate) struct Contexts {
     leases: HashMap<u32, Arc<()>>,
     asynchronous: HashSet<u32>,
     sync_replies: super::sync_reply_cache::Cache,
+    pending: super::command_batch::Pending,
 }
 impl Contexts {
     pub(crate) fn create(&mut self, width: u32, height: u32, options: &str) -> Option<u32> {
+        self.flush_pending();
         if self.live.len() >= MAX_CONTEXTS || options.len() > 1024 {
             return None;
         }
@@ -67,6 +71,7 @@ impl Contexts {
         Some(id)
     }
     pub(crate) fn remove(&mut self, id: u32) {
+        self.pending.remove(id);
         self.sync_replies.remove(id);
         if self.live.remove(&id) {
             self.leases.remove(&id);
@@ -75,6 +80,7 @@ impl Contexts {
         }
     }
     pub(crate) fn clear(&mut self) {
+        self.pending.clear();
         self.sync_replies.clear();
         if self.live.is_empty() {
             return;
@@ -86,6 +92,7 @@ impl Contexts {
     /// Called by the embedder only after an HTML task and its microtask checkpoint.
     /// Ordinary commands, presentation and nested checkpoints never publish results.
     pub(crate) fn complete_task(&mut self) {
+        self.flush_pending();
         self.sync_replies.clear();
         if self.asynchronous.is_empty() {
             return;
@@ -101,6 +108,22 @@ impl Contexts {
         }
     }
     pub(crate) fn execute(&mut self, id: u32, command: &str, bytes: Option<&[u8]>) -> Value {
+        if !self.live.contains(&id) {
+            return json!({"lost":true});
+        }
+        if bytes.is_none() && super::command_batch::Pending::candidate(command) {
+            self.sync_replies.remove(id);
+            self.pending.push(id, command);
+            if self.pending.full() {
+                self.flush_pending();
+            }
+            return if self.live.contains(&id) {
+                Value::Null
+            } else {
+                json!({"lost":true})
+            };
+        }
+        self.flush_pending();
         if !self.live.contains(&id) {
             return json!({"lost":true});
         }
@@ -135,6 +158,7 @@ impl Contexts {
         command: &str,
         bytes: Option<&[u8]>,
     ) -> PixelReply {
+        self.flush_pending();
         if !self.live.contains(&id) {
             return PixelReply::Lost;
         }
@@ -160,12 +184,28 @@ impl Contexts {
         }
     }
     pub(crate) fn snapshot(&mut self, id: u32) -> Option<Bitmap> {
+        self.flush_pending();
         if !self.live.contains(&id) {
             return None;
         }
         match request(Operation::Snapshot(id)) {
             Some(Reply::Snapshot(bitmap)) => bitmap,
             _ => None,
+        }
+    }
+
+    fn flush_pending(&mut self) {
+        let commands = self.pending.take();
+        if commands.is_empty() {
+            return;
+        }
+        let ids: HashSet<_> = commands.iter().map(|(id, _)| *id).collect();
+        let lost = match request(Operation::Batch(commands)) {
+            Some(Reply::Batch(lost)) => lost,
+            _ => ids.into_iter().collect(),
+        };
+        for id in lost {
+            self.remove(id);
         }
     }
 }
@@ -237,6 +277,10 @@ fn run(incoming: mpsc::Receiver<Request>) {
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
+        let batch_ids: HashSet<_> = match &operation {
+            Operation::Batch(commands) => commands.iter().map(|(id, _)| *id).collect(),
+            _ => HashSet::new(),
+        };
         let (response, orphan) = match operation {
             Operation::Create(width, height, options, lease) => {
                 let id = if lease.strong_count() == 0 {
@@ -253,6 +297,17 @@ fn run(incoming: mpsc::Receiver<Request>) {
                 Reply::Command(backend.execute(id, &command, bytes.as_deref())),
                 Some(id),
             ),
+            Operation::Batch(commands) => {
+                let mut lost = HashSet::new();
+                for (id, command) in commands {
+                    if !lost.contains(&id)
+                        && backend.execute(id, &command, None).get("lost") == Some(&json!(true))
+                    {
+                        lost.insert(id);
+                    }
+                }
+                (Reply::Batch(lost.into_iter().collect()), None)
+            }
             Operation::Snapshot(id) => (Reply::Snapshot(backend.snapshot(id)), Some(id)),
             Operation::TaskBoundary(ids) => {
                 let lost = backend.complete_task(&ids);
@@ -278,11 +333,11 @@ fn run(incoming: mpsc::Receiver<Request>) {
             }
         };
         // A timed-out creation/command cannot leave an unowned native context alive.
-        if reply.send(response).is_err()
-            && let Some(id) = orphan
-        {
-            backend.remove(id);
-            leases.remove(&id);
+        if reply.send(response).is_err() {
+            for id in orphan.into_iter().chain(batch_ids) {
+                backend.remove(id);
+                leases.remove(&id);
+            }
         }
     }
 }

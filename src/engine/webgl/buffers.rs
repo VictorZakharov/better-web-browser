@@ -86,6 +86,7 @@ impl WebGl {
                 let object = self.objects.get_mut(id, Kind::Buffer)?;
                 object.capacity = previous.max(size);
                 object.bytes = data;
+                object.buffer_mirror_valid = true;
             }
             "bufferSubData" => {
                 let target = c.u(0)?;
@@ -106,7 +107,11 @@ impl WebGl {
                     );
                 }
                 self.driver_result()?;
-                self.objects.get_mut(id, Kind::Buffer)?.bytes[offset..end].copy_from_slice(data);
+                let object = self.objects.get_mut(id, Kind::Buffer)?;
+                object.bytes[offset..end].copy_from_slice(data);
+                if offset == 0 && end == object.bytes.len() {
+                    object.buffer_mirror_valid = true;
+                }
             }
             "vertexAttribPointer" => return self.vertex_pointer(c),
             "enableVertexAttribArray" | "disableVertexAttribArray" => {
