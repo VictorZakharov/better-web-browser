@@ -16,6 +16,7 @@
         }
     }
     Object.defineProperty(WebGLContextEvent.prototype, Symbol.toStringTag, {value:'WebGLContextEvent'});
+    Object.defineProperty(WebGLContextEvent.prototype, 'statusMessage', {enumerable:true});
     Object.defineProperty(globalThis, 'WebGLContextEvent', {configurable:true, writable:true, value:WebGLContextEvent});
     class WebGLObject {
         constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
@@ -101,8 +102,8 @@
     class WebGLRenderingContext {
         constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
         get canvas() { return webGlState(this).canvas; }
-        get drawingBufferWidth() { const s = webGlState(this); stateForCanvas(s.canvas); return s.lost ? 0 : Math.max(1, s.canvas.width); }
-        get drawingBufferHeight() { const s = webGlState(this); stateForCanvas(s.canvas); return s.lost ? 0 : Math.max(1, s.canvas.height); }
+        get drawingBufferWidth() { const s = webGlState(this); stateForCanvas(s.canvas); return s.lost ? 0 : (webGlCall(this, 'drawingBufferSize')?.[0] ?? 0); }
+        get drawingBufferHeight() { const s = webGlState(this); stateForCanvas(s.canvas); return s.lost ? 0 : (webGlCall(this, 'drawingBufferSize')?.[1] ?? 0); }
         getContextAttributes() { const s = webGlState(this); return s.lost ? null : {...s.attributes}; }
         isContextLost() { return webGlState(this).lost; }
         getSupportedExtensions() {
@@ -125,6 +126,11 @@
         }
     }
     Object.defineProperty(WebGLRenderingContext.prototype, Symbol.toStringTag, {value:'WebGLRenderingContext'});
+    // JavaScript class syntax defaults to non-enumerable members; Web IDL
+    // operations and regular attributes are enumerable on the prototype.
+    for (const name of Object.getOwnPropertyNames(WebGLRenderingContext.prototype)) {
+        if (name !== 'constructor') Object.defineProperty(WebGLRenderingContext.prototype, name, {enumerable:true});
+    }
     Object.defineProperty(globalThis, 'WebGLRenderingContext', {configurable:true, writable:true, value:WebGLRenderingContext});
     const createWebGlContext = (canvas, requested = {}, api = 'webgl1') => {
         const attributes = webGlContextAttributes(requested, api);
@@ -160,13 +166,17 @@
                     pixels[offset + channel] = alpha ? Math.min(255, Math.round(pixels[offset + channel] * 255 / alpha)) : 0;
             }
         }
+        // Native allocation can be smaller than the unchanged canvas content
+        // attributes. Every bitmap consumer must use the snapshot's extent.
+        state.width = snapshot[0];
+        state.height = snapshot[1];
         state.pixels = pixels;
         native.dirty = false;
     };
     resetWebGlCanvas = state => {
         const native = webGlContexts.get(state.context);
         if (!native || native.lost) return;
-        webGlCall(state.context, 'resize', [native.canvas.width, native.canvas.height]);
+        webGlCall(state.context, 'resizeCanvas', [native.canvas.width, native.canvas.height]);
         native.dirty = true;
     };
     const webGlPresented = state => {

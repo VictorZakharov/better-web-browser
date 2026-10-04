@@ -4,6 +4,7 @@ macro_rules! webgl_bootstrap {
         concat!(
     include_str!("bootstrap/webgl_attributes.js"),
     include_str!("bootstrap/webgl_context.js"),
+    include_str!("bootstrap/webgl_reflection_records.js"),
     include_str!("bootstrap/webgl_argument_brands.js"),
     include_str!("bootstrap/webgl_numeric_arguments.js"),
     include_str!("bootstrap/webgl_lifecycle.js"),

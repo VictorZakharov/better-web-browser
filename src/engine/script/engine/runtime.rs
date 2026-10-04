@@ -33,6 +33,8 @@ mod webgl2_sync_bindings_tests;
 mod webgl2_texture_bindings_tests;
 #[cfg(all(test, windows))]
 mod webgl2_uniform_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl_reflection_bindings_tests;
 
 static INITIALIZE_V8: Once = Once::new();
 static V8_PLATFORM: OnceLock<v8::SharedRef<v8::Platform>> = OnceLock::new();

@@ -2,6 +2,37 @@
 use super::{Command, Result, Surface, WebGl, gl};
 use serde_json::Value;
 impl WebGl {
+    pub(super) fn resize_canvas(&mut self, c: &Command) -> Result<Value> {
+        let requested = (c.u(0)?.max(1), c.u(1)?.max(1));
+        if requested == (self.surface.width, self.surface.height) {
+            return self.resize(c);
+        }
+        let available = self.resource_limit.saturating_sub(self.resource_bytes);
+        let extent = super::drawing_buffer_extent::admitted(
+            requested.0,
+            requested.1,
+            self.options,
+            available,
+        );
+        let (width, height) = match extent {
+            Some(extent) => extent,
+            // With no room for overlapping storage, a smaller existing buffer
+            // can still satisfy a larger canvas request. Clear it on every
+            // assignment; never expose pixels from the old canvas bitmap.
+            None if self.surface.width <= requested.0 && self.surface.height <= requested.1 => {
+                (self.surface.width, self.surface.height)
+            }
+            None => return Err(gl::OUT_OF_MEMORY),
+        };
+        let resize = Command {
+            op: "resize".into(),
+            i: vec![width.into(), height.into()],
+            f: vec![],
+            text: String::new(),
+        };
+        self.resize(&resize)
+    }
+
     pub(super) fn resize(&mut self, c: &Command) -> Result<Value> {
         let width = c.u(0)?.max(1);
         let height = c.u(1)?.max(1);

@@ -49,7 +49,7 @@
             return /^(create|get|is)/.test(name) || webGlResultMethods.has(name) ? result : undefined;
         };
         Object.defineProperties(method, {name:{value:name}, length:{value:arity}});
-        Object.defineProperty(webGlPrototype, name, {configurable:true, writable:true, value:method});
+        Object.defineProperty(webGlPrototype, name, {enumerable:true, configurable:true, writable:true, value:method});
     };
     for (const type of ['Buffer', 'Shader', 'Program', 'Texture', 'Framebuffer', 'Renderbuffer']) {
         webGlMethod('create' + type, function(...args) {

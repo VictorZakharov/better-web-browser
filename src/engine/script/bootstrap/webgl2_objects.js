@@ -54,9 +54,7 @@
         if (id < 0) return null;
         const result = webGlCall(this, 'getTransformFeedbackVarying', [id, index]);
         if (!result) return null;
-        const value = new webGlObjectClasses.WebGLActiveInfo(webGlToken);
-        for (const [key, entry] of Object.entries(result)) Object.defineProperty(value, key, {enumerable:true, value:entry});
-        return value;
+        return webGlReflectionRecord('WebGLActiveInfo', result);
     }, null);
     webGl2Method('beginQuery', 2, 'u-', [[1,'WebGLQuery',false]], function(target, query) {
         const id = webGl2Handle(this, query, 'WebGLQuery');

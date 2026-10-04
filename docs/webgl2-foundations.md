@@ -197,6 +197,11 @@ The staged realm now has a distinct WebGL2 prototype and genuinely branded
 query, sampler, sync, transform-feedback and vertex-array objects. All resource
 interfaces inherit `WebGLObject`; reflection records and uniform locations do
 not. Rejected native deletions do not prematurely retire the JavaScript brand.
+Shared shader reflection records now expose readonly, enumerable prototype
+getters backed by private native-result snapshots. Forged and proxy receivers
+cannot read those slots; deleting a program or losing its context does not
+invalidate an existing record. WebGL operations use Web IDL property descriptors
+in both versions, including the compressed-texture overloads.
 Private unit-test admission reaches the real GLES3 backend without advertising
 partial support through public `getContext('webgl2')` or interface globals.
 
@@ -231,6 +236,20 @@ All multisample and resolve attachments count against the existing storage
 budgets, including temporary old/new overlap during resize. WebGL1's current
 single-sample admission is unchanged. Native and realm tests measure partial
 diagonal-edge coverage instead of relying on the antialias attribute alone.
+
+Canvas creation and resize requests negotiate a smaller native extent when
+the requested dimensions exceed the bitmap or attachment-storage budget.
+The integer size policy includes multisample storage and resize overlap;
+texture/renderbuffer allocations keep their strict validation. Canvas content
+attributes remain unchanged, while `drawingBufferWidth`/`drawingBufferHeight`
+report actual native storage and bitmap transfers use the snapshot's extent.
+Every successful assignment clears the native bitmap without resetting the
+viewport. If no overlapping storage is available, a smaller existing buffer
+may be reused and cleared; an unsatisfiable shrink retains the existing buffer
+and reports `OUT_OF_MEMORY`. Tests cover zero dimensions, bounded oversized
+requests, memory accounting and preservation of author masks/scissor. Hidden
+Chrome reference captures confirm native-size bitmap transfer and the 1×1
+minimum for zero-sized canvas requests; implementation size caps can differ.
 
 Texture binding work includes typed 2D/volume uploads, immutable storage,
 layer attachments, compressed element-offset/length and PBO overloads, and

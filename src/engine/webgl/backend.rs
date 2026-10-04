@@ -13,15 +13,13 @@ impl BackendContexts {
             return None;
         }
         let options: Options = serde_json::from_str(options).ok()?;
-        let surface_bytes = Surface::allocation_bytes(width, height, options)?;
         let existing: usize = self
             .contexts
             .values()
             .map(|context| context.resource_bytes)
             .sum();
-        if existing.checked_add(surface_bytes)? > MAX_PROCESS_RESOURCE_BYTES {
-            return None;
-        }
+        let available = MAX_RESOURCE_BYTES.min(MAX_PROCESS_RESOURCE_BYTES.saturating_sub(existing));
+        let (width, height) = drawing_buffer_extent::admitted(width, height, options, available)?;
         let next = self.next.checked_add(1)?;
         let context = WebGl::new(width, height, options).ok()?;
         self.next = next;

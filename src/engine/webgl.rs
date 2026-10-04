@@ -74,6 +74,9 @@ mod default_attachment_queries;
 mod default_attachment_tests;
 mod depth_textures;
 mod draw_buffers;
+mod drawing_buffer_extent;
+#[cfg(test)]
+mod drawing_buffer_extent_tests;
 mod extension_commands;
 mod extensions;
 mod float_values;

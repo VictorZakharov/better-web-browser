@@ -26,5 +26,5 @@
             if (bytes) webGl2Invoke(this,name,args.slice(0,index),[], '',bytes);
         };
         Object.defineProperties(method,{name:{value:name},length:{value:index+1}});
-        Object.defineProperty(webGl2Prototype,name,{configurable:true,writable:true,value:method});
+        Object.defineProperty(webGl2Prototype,name,{enumerable:true,configurable:true,writable:true,value:method});
     }

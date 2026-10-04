@@ -37,3 +37,39 @@ fn webgl2_realm_antialias_creation_and_reads_follow_actual_native_samples() {
     "#,
     );
 }
+
+#[test]
+fn webgl_drawing_buffer_dimensions_and_bitmap_transfer_follow_native_admitted_extent() {
+    let (mut context, _host) = document();
+    check(
+        &mut context,
+        r#"
+        for(const api of ['webgl1','webgl2']) {
+            const canvas=new OffscreenCanvas(5000,1);
+            const gl=api==='webgl2'?__stageWebGl2(canvas,{antialias:false,preserveDrawingBuffer:true}):
+                canvas.getContext('webgl',{preserveDrawingBuffer:true});
+            if(!gl || canvas.width!==5000 || gl.drawingBufferWidth!==4096 || gl.drawingBufferHeight!==1)
+                throw Error('requested canvas extent substituted for native storage');
+            if(gl.getParameter(gl.VIEWPORT).join()!=='0,0,4096,1') throw Error('initial native viewport');
+            gl.clearColor(1,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
+            const bitmap=canvas.transferToImageBitmap();
+            if(bitmap.width!==4096 || bitmap.height!==1) throw Error('bitmap extent differs from native snapshot');
+            const output=new OffscreenCanvas(1,1).getContext('2d');output.drawImage(bitmap,0,0);
+            if(output.getImageData(0,0,1,1).data.join()!=='255,0,0,255') throw Error('reduced buffer pixels');
+            const cleared=new Uint8Array(4);gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,cleared);
+            if(cleared.some(value=>value!==0)) throw Error('bitmap transfer did not reset GPU storage');
+            canvas.width=6000;
+            if(canvas.width!==6000 || gl.drawingBufferWidth!==4096) throw Error('resize content attribute changed');
+            gl.viewport(2,3,4,5);canvas.width=2;
+            if(gl.drawingBufferWidth!==2 || gl.getParameter(gl.VIEWPORT).join()!=='2,3,4,5')
+                throw Error('small resize changed viewport');
+            canvas.width=0;canvas.height=0;
+            if(gl.drawingBufferWidth!==1 || gl.drawingBufferHeight!==1 || canvas.width!==0 || canvas.height!==0)
+                throw Error('zero canvas drawing buffer minimum');
+            if(gl.getError()!==0) throw Error('admitted extent generated a GL error');
+            gl.getExtension('WEBGL_lose_context').loseContext();
+            if(gl.drawingBufferWidth!==0 || gl.drawingBufferHeight!==0) throw Error('lost dimensions');
+        }
+    "#,
+    );
+}

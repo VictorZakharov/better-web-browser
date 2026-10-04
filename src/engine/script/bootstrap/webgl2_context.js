@@ -69,7 +69,7 @@
             return Reflect.apply(implementation, this, args);
         };
         Object.defineProperties(method, {name:{value:name}, length:{value:arity}});
-        Object.defineProperty(webGl2Prototype, name, {configurable:true, writable:true, value:method});
+        Object.defineProperty(webGl2Prototype, name, {enumerable:true, configurable:true, writable:true, value:method});
     };
     const webGl2Handle = (context, value, type, nullable = false) => {
         const id = webGlHandle(context, value, type, nullable);

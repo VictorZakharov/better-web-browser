@@ -75,7 +75,7 @@
             state.inputHeight = height;
             state.width = width;
             state.height = height;
-            state.pixels = width * height <= MAX_CANVAS_PIXELS
+            state.pixels = state.mode !== 'webgl' && width * height <= MAX_CANVAS_PIXELS
                 ? new Uint8ClampedArray(width * height * 4)
                 : null;
             if (state.mode === 'bitmaprenderer') resetCanvasBitmapRenderer(state.context);
