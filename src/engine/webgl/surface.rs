@@ -10,9 +10,16 @@ pub(super) struct Surface {
     texture: u32,
     depth_stencil: u32,
     read_buffer: Option<super::core_entries::ReadBuffer>,
+    multisample: Option<super::surface_multisample::Multisample>,
+    allocated_bytes: usize,
 }
 impl Surface {
-    pub fn new(width: u32, height: u32, options: Options) -> Result<Self, String> {
+    pub fn new(
+        width: u32,
+        height: u32,
+        options: Options,
+        core: Option<&super::core_entries::CoreEntries>,
+    ) -> Result<Self, String> {
         if width == 0
             || height == 0
             || width > 4096
@@ -21,6 +28,9 @@ impl Surface {
         {
             return Err("WebGL drawing buffer exceeds the admitted bitmap size".into());
         }
+        let allocated_bytes = Self::allocation_bytes(width, height, options)
+            .filter(|bytes| *bytes <= super::MAX_RESOURCE_BYTES)
+            .ok_or("WebGL drawing buffer exceeds the context storage budget")?;
         let mut result = Self {
             api: options.api,
             width,
@@ -28,6 +38,8 @@ impl Surface {
             framebuffer: 0,
             texture: 0,
             depth_stencil: 0,
+            multisample: None,
+            allocated_bytes,
             read_buffer: if options.api == super::ApiVersion::Two {
                 Some(super::core_entries::CoreEntries::read_buffer_entry()?)
             } else {
@@ -70,7 +82,8 @@ impl Surface {
                 result.texture,
                 0,
             );
-            if options.depth || options.stencil {
+            if (options.depth || options.stencil) && !super::surface_multisample::requested(options)
+            {
                 gl::GenRenderbuffers(1, &mut result.depth_stencil);
                 gl::BindRenderbuffer(gl::RENDERBUFFER, result.depth_stencil);
                 // Match physical storage to the granted attributes: hidden
@@ -123,9 +136,29 @@ impl Surface {
             gl::BindTexture(gl::TEXTURE_2D, 0);
             gl::BindRenderbuffer(gl::RENDERBUFFER, 0);
         }
+        if super::surface_multisample::requested(options) {
+            let multisample = super::surface_multisample::Multisample::new(
+                width,
+                height,
+                options,
+                core.ok_or("Multisampling requires GLES3")?,
+                result.framebuffer,
+            );
+            match multisample {
+                Ok(multisample) => {
+                    result.framebuffer = multisample.draw;
+                    result.multisample = Some(multisample);
+                }
+                Err(error) => {
+                    result.destroy();
+                    return Err(error);
+                }
+            }
+        }
         Ok(result)
     }
     pub fn snapshot(&self) -> Result<Vec<u8>, String> {
+        self.resolve()?;
         let _pack = super::pixel_buffer_guard::PixelBufferGuard::unbind(
             self.api,
             super::pixel_buffer_guard::Direction::Pack,
@@ -139,7 +172,7 @@ impl Surface {
         let _framebuffer = super::framebuffer_guard::FramebufferGuard::bind(
             self.api,
             super::framebuffer_guard::Direction::Read,
-            self.framebuffer,
+            self.read_surface(),
         );
         let mut route = 0;
         // SAFETY: a bounded, exactly sized RGBA destination. Private state is restored even
@@ -181,6 +214,10 @@ impl Surface {
     pub fn destroy(&mut self) {
         // SAFETY: the owner makes its context current before teardown. Zero names are legal.
         unsafe {
+            if let Some(multisample) = self.multisample.take() {
+                self.framebuffer = multisample.resolve;
+                multisample.destroy();
+            }
             gl::DeleteFramebuffers(1, &self.framebuffer);
             gl::DeleteTextures(1, &self.texture);
             gl::DeleteRenderbuffers(1, &self.depth_stencil);
@@ -188,5 +225,58 @@ impl Surface {
         self.framebuffer = 0;
         self.texture = 0;
         self.depth_stencil = 0;
+    }
+
+    pub(super) fn allocation_bytes(width: u32, height: u32, options: Options) -> Option<usize> {
+        let attachments = if options.depth || options.stencil {
+            8
+        } else {
+            4
+        };
+        let bytes = if super::surface_multisample::requested(options) {
+            4 + 4 * attachments
+        } else {
+            attachments
+        };
+        (width as usize)
+            .checked_mul(height as usize)?
+            .checked_mul(bytes)
+    }
+    pub(super) fn bytes(&self) -> usize {
+        self.allocated_bytes
+    }
+    pub(super) fn read_surface(&self) -> u32 {
+        self.multisample
+            .as_ref()
+            .map_or(self.framebuffer, |surface| surface.resolve)
+    }
+    pub(super) fn resolve(&self) -> Result<(), String> {
+        if let Some(multisample) = &self.multisample {
+            multisample.resolve(self.width, self.height)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn resolved_read_guard(
+        &self,
+        route: u32,
+    ) -> Result<Option<super::framebuffer_guard::FramebufferGuard>, String> {
+        let Some(multisample) = &self.multisample else {
+            return Ok(None);
+        };
+        self.resolve()?;
+        let guard = super::framebuffer_guard::FramebufferGuard::bind(
+            self.api,
+            super::framebuffer_guard::Direction::Read,
+            multisample.resolve,
+        );
+        unsafe {
+            (self.read_buffer.unwrap())(if route == gl::NONE {
+                gl::NONE
+            } else {
+                gl::COLOR_ATTACHMENT0
+            });
+        }
+        Ok(Some(guard))
     }
 }

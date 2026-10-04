@@ -13,7 +13,8 @@ impl WebGl {
         } else {
             None
         };
-        let surface = Surface::new(width, height, options)?;
+        let surface = Surface::new(width, height, options, core.as_ref())?;
+        let surface_bytes = surface.bytes();
         unsafe {
             gl::ClearColor(0.0, 0.0, 0.0, 0.0);
         }
@@ -37,13 +38,7 @@ impl WebGl {
             errors: VecDeque::new(),
             options,
             stencil_masks: stencil_masks::StencilMasks::default(),
-            resource_bytes: width as usize
-                * height as usize
-                * if options.depth || options.stencil {
-                    8
-                } else {
-                    4
-                },
+            resource_bytes: surface_bytes,
             resource_limit: MAX_RESOURCE_BYTES,
             array_buffer: 0,
             element_buffer: 0,

@@ -42,6 +42,8 @@ mod core_attachments;
 mod core_buffer_tests;
 mod core_buffers;
 #[cfg(test)]
+mod core_color_admission_tests;
+#[cfg(test)]
 mod core_draw_tests;
 mod core_draws;
 mod core_entries;
@@ -130,6 +132,9 @@ mod shader_queries;
 mod shader_validation;
 mod stencil_masks;
 mod surface;
+mod surface_multisample;
+#[cfg(test)]
+mod surface_multisample_tests;
 mod sync_entries;
 #[cfg(test)]
 mod sync_object_tests;
@@ -228,6 +233,7 @@ struct Options {
     alpha: bool,
     depth: bool,
     stencil: bool,
+    antialias: bool,
     preserve: bool,
 }
 impl Default for Options {
@@ -237,6 +243,7 @@ impl Default for Options {
             alpha: true,
             depth: true,
             stencil: false,
+            antialias: false,
             preserve: false,
         }
     }

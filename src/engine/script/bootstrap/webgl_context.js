@@ -127,7 +127,7 @@
     Object.defineProperty(WebGLRenderingContext.prototype, Symbol.toStringTag, {value:'WebGLRenderingContext'});
     Object.defineProperty(globalThis, 'WebGLRenderingContext', {configurable:true, writable:true, value:WebGLRenderingContext});
     const createWebGlContext = (canvas, requested = {}, api = 'webgl1') => {
-        const attributes = webGlContextAttributes(requested);
+        const attributes = webGlContextAttributes(requested, api);
         // WARP is a real software GLES driver, not a promise of hardware acceleration.
         const creationFailed = message => {
             canvas.dispatchEvent(markTrusted(new WebGLContextEvent('webglcontextcreationerror',
@@ -138,7 +138,8 @@
             return creationFailed('The available ANGLE/WARP backend is software rendered');
         const id = host('webglCreate', Math.max(1, canvas.width), Math.max(1, canvas.height),
             JSON.stringify({api, alpha:attributes.alpha, depth:attributes.depth,
-                stencil:attributes.stencil, preserve:attributes.preserveDrawingBuffer}));
+                stencil:attributes.stencil, antialias:attributes.antialias,
+                preserve:attributes.preserveDrawingBuffer}));
         if (!id) return creationFailed('ANGLE/WARP is unavailable or the WebGL context/drawing-buffer budget was exceeded');
         const context = api === 'webgl2' ? new WebGL2RenderingContext(webGlToken) : new WebGLRenderingContext(webGlToken);
         webGlContexts.set(context, {id, api, canvas, attributes, objects:new Map(), lost:false, epoch:0,

@@ -13,13 +13,7 @@ impl BackendContexts {
             return None;
         }
         let options: Options = serde_json::from_str(options).ok()?;
-        let surface_bytes = (width as usize).checked_mul(height as usize)?.checked_mul(
-            if options.depth || options.stencil {
-                8
-            } else {
-                4
-            },
-        )?;
+        let surface_bytes = Surface::allocation_bytes(width, height, options)?;
         let existing: usize = self
             .contexts
             .values()

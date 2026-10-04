@@ -47,6 +47,7 @@ impl WebGl {
     }
 
     pub(super) fn read_pixels(&mut self, c: &Command, input: Option<&[u8]>) -> Result<Vec<u8>> {
+        let _default_read = self.resolved_default_read()?;
         if self.options.api == super::ApiVersion::Two
             && self
                 .core_buffer_bindings

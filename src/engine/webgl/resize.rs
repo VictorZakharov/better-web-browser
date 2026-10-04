@@ -16,13 +16,9 @@ impl WebGl {
             self.driver_result()?;
             return Ok(Value::Null);
         }
-        let bpp = if self.options.depth || self.options.stencil {
-            8
-        } else {
-            4
-        };
-        let previous_bytes = self.surface.width as usize * self.surface.height as usize * bpp;
-        let next_bytes = width as usize * height as usize * bpp;
+        let previous_bytes = self.surface.bytes();
+        let next_bytes =
+            Surface::allocation_bytes(width, height, self.options).ok_or(gl::OUT_OF_MEMORY)?;
         // Private attachments cannot be referenced by author objects. They are really
         // destroyed on replacement, so unlike author-resource high-water accounting their
         // storage may be reclaimed. Admit the temporary overlap before allocation.
@@ -53,7 +49,7 @@ impl WebGl {
         }
         // Newly allocated surfaces are zero-initialized by ANGLE even with author masks or
         // scissor enabled. Surface::new's explicit clear is redundant in that case.
-        let new = Surface::new(width, height, self.options);
+        let new = Surface::new(width, height, self.options, self.core.as_ref());
         unsafe {
             gl::Viewport(viewport[0], viewport[1], viewport[2], viewport[3]);
             gl::ClearColor(clear[0], clear[1], clear[2], clear[3]);

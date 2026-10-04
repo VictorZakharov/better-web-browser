@@ -1,7 +1,7 @@
     // Dictionary members are obtained once, in lexicographic order, including
     // hints that this backend cannot honor. Conversion precedes native creation.
     // https://webidl.spec.whatwg.org/#es-dictionary
-    const webGlContextAttributes = requested => {
+    const webGlContextAttributes = (requested, api = 'webgl1') => {
         requested = requested ?? {};
         if (typeof requested !== 'object' && typeof requested !== 'function')
             throw new TypeError('WebGL context attributes must be a dictionary');
@@ -18,9 +18,10 @@
                 converted[name] = preference;
             } else converted[name] = value === undefined ? defaults[name] : Boolean(value);
         }
-        // WARP has no multisampled drawing buffer or desynchronized presenter.
-        // Do not advertise requested hints as capabilities that were granted.
-        converted.antialias = false;
+        // WebGL2 grants this only through a real multisampled drawing buffer;
+        // native allocation failure rejects creation instead of claiming MSAA.
+        // WebGL1 retains its admitted single-sample surface for now.
+        if (api !== 'webgl2') converted.antialias = false;
         converted.desynchronized = false;
         return converted;
     };

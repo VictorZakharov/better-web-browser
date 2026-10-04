@@ -39,6 +39,8 @@ const VERIFY: &str = r#"
     if(gl.drawingBufferWidth!==3 || !gl.getParameter(gl.VERSION).startsWith('WebGL 2.0') ||
         !gl.getParameter(gl.SHADING_LANGUAGE_VERSION).startsWith('WebGL GLSL ES 3.00'))
         throw Error('restoration did not recreate GLES3 context');
+    if(!gl.getContextAttributes().antialias || gl.getParameter(gl.SAMPLES)!==4)
+        throw Error('restoration did not recreate the actual antialiased surface');
     for(const pname of [gl.UNPACK_ROW_LENGTH,gl.UNPACK_IMAGE_HEIGHT])
         if(gl.getParameter(pname)!==0) throw Error('restoration retained unpack state');
     if(gl.getParameter(gl.VERTEX_ARRAY_BINDING)!==null || gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING,0)!==null)

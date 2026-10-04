@@ -220,6 +220,18 @@ and restores native pack/unpack/PBO state without changing author bindings.
 It allocates only the copied rectangle and accounts for both simultaneous
 buffers against the context resource budget; it is not a GPU-only fast path.
 
+Staged WebGL2 creation now honors `antialias` through real four-sample native
+color and optional depth/stencil renderbuffers. A private single-sample color
+surface receives GLES3 resolves for presentation, client/PBO pixel reads and
+texture copies. Explicit author multisample framebuffers retain their ordinary
+resolve requirements. Queries and granted attributes agree with actual samples;
+the shared restoration path recreates the same kind of drawing buffer. Native
+allocation failure rejects creation rather than claiming ungranted antialiasing.
+All multisample and resolve attachments count against the existing storage
+budgets, including temporary old/new overlap during resize. WebGL1's current
+single-sample admission is unchanged. Native and realm tests measure partial
+diagonal-edge coverage instead of relying on the antialias attribute alone.
+
 Texture binding work includes typed 2D/volume uploads, immutable storage,
 layer attachments, compressed element-offset/length and PBO overloads, and
 typed pixel readback. The WebGL2 numeric constants are derived from
