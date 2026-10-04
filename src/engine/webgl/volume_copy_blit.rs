@@ -53,6 +53,28 @@ impl WebGl {
         ) {
             return self.copy_volume_through_native_conversion(id, level, offsets, source);
         }
+        let Some((source, offsets)) =
+            super::volume_copy_region::clip(source, offsets, self.volume_copy_read_extent()?)
+        else {
+            return Ok(());
+        };
+        // The pinned D3D11 volume-source blit can AV or lose its device even
+        // when destination storage is distinct. Capture volume reads with
+        // native CopyTexImage2D before blitting from that separate GPU image.
+        // Same-image feedback was rejected by native validation.
+        if self.read_framebuffer != 0 {
+            let framebuffer = self.objects.get(self.read_framebuffer, Kind::Framebuffer)?;
+            if framebuffer
+                .framebuffer_attachments
+                .get(&framebuffer.read_buffer)
+                .is_some_and(|attachment| {
+                    attachment.kind == Kind::Texture
+                        && attachment.target == super::texture_targets::VOLUME
+                })
+            {
+                return self.copy_volume_through_gpu_staging(id, level, offsets, source);
+            }
+        }
         let core = self.core.as_ref().ok_or(gl::INVALID_OPERATION)?;
         let texture = self.objects.name(id, Kind::Texture)?;
         let mut scratch = ScratchFramebuffer(0);

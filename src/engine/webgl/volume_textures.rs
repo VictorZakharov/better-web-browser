@@ -95,11 +95,11 @@ impl WebGl {
             )?
             .size
         };
-        if size > MAX_UPLOAD_BYTES {
-            return Err(gl::OUT_OF_MEMORY);
-        }
         if bytes.is_some_and(|data| data.len() < size) {
             return Err(gl::INVALID_OPERATION);
+        }
+        if size > MAX_UPLOAD_BYTES {
+            return Err(gl::OUT_OF_MEMORY);
         }
         let allocation = allocation(width as u32, height as u32, depth as u32, storage)?;
         let pointer =

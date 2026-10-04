@@ -163,6 +163,25 @@ impl WebGl {
         point: u32,
         entry: Option<Attachment>,
     ) -> Result<()> {
+        // WebGL2 inherits GLES3.0 attachment semantics. Our GLES3.1 provider
+        // additionally rejects immutable levels outside allocated storage;
+        // GLES3.0 permits the attachment and makes the framebuffer incomplete.
+        // Keep the exact browser image identity, but detach this nonexistent
+        // native image so the stricter provider cannot retain an old image.
+        let entry = if let Some(entry) = entry {
+            if entry.kind == Kind::Texture {
+                let object = self.objects.get(entry.id, Kind::Texture)?;
+                if object.immutable_levels != 0 && entry.level as u32 >= object.immutable_levels {
+                    None
+                } else {
+                    Some(entry)
+                }
+            } else {
+                Some(entry)
+            }
+        } else {
+            None
+        };
         unsafe {
             match entry {
                 Some(entry) if entry.kind == Kind::Texture && entry.layer.is_some() => {

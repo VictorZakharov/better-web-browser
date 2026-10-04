@@ -55,7 +55,24 @@ impl WebGl {
         Ok(Value::Null)
     }
     pub(super) fn core_framebuffer_status(&self, target: u32) -> Result<u32> {
-        self.core_framebuffer_id(target)?;
+        let framebuffer = self.core_framebuffer_id(target)?;
+        if framebuffer != 0 {
+            for entry in self
+                .objects
+                .get(framebuffer, Kind::Framebuffer)?
+                .framebuffer_attachments
+                .values()
+            {
+                if entry.kind == Kind::Texture {
+                    let texture = self.objects.get(entry.id, Kind::Texture)?;
+                    if texture.immutable_levels != 0
+                        && entry.level as u32 >= texture.immutable_levels
+                    {
+                        return Ok(gl::FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+                    }
+                }
+            }
+        }
         // ANGLE's WebGL2 compatibility validator enforces native format and
         // depth/stencil-image constraints. This path must not inherit WebGL1's
         // legacy-format whitelist or its three independent depth/stencil slots.

@@ -15,6 +15,12 @@
         return {offset:webGlLongLong(value)};
     };
     const webGl2PixelBytes = (context,source,type,offset=0) => {
+        if (!webGl2PixelKinds.has(type)) {
+            // FLOAT_32_UNSIGNED_INT_24_8_REV is a known upload type, but has no
+            // client-view overload. Unknown pixel enums are INVALID_ENUM, not
+            // the INVALID_OPERATION reserved for a genuine wrong view kind.
+            webGlError(context,type === 0x8dad ? 0x0502 : 0x0500); return null;
+        }
         if (!webGl2PixelKinds.get(type)?.includes(source.name)) {
             webGlError(context,0x0502); return null;
         }

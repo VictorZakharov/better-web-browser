@@ -71,7 +71,7 @@ impl WebGl {
             let first = c.u(1)?;
             let end = first
                 .checked_add(count)
-                .filter(|end| *end <= i32::MAX as u32)
+                .filter(|end| first <= i32::MAX as u32 && *end <= i32::MAX as u32 + 1)
                 .ok_or(gl::INVALID_VALUE)?;
             if count == 0 || instances == 0 {
                 return Ok(Value::Null);

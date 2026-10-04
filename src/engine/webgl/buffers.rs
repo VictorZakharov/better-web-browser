@@ -132,7 +132,7 @@ impl WebGl {
                 let count = c.u(2)?;
                 if count > MAX_DRAW_VERTICES
                     || first
-                        .checked_add(count)
+                        .checked_add(count.saturating_sub(1))
                         .is_none_or(|end| end > i32::MAX as u32)
                 {
                     return Err(gl::INVALID_VALUE);

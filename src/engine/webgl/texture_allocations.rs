@@ -9,6 +9,11 @@ pub(super) struct Reservation {
     capacity: usize,
     images: Vec<((u32, i32), usize)>,
 }
+impl Reservation {
+    pub(super) fn counter(&self) -> usize {
+        self.counter
+    }
+}
 impl WebGl {
     pub(super) fn prepare_texture_storage(
         &self,

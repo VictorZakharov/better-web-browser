@@ -179,11 +179,11 @@ impl WebGl {
             .layout(width as usize, height as usize, 1, upload, false)?
             .size
         };
-        if size > MAX_UPLOAD_BYTES {
-            return Err(gl::OUT_OF_MEMORY);
-        }
         if bytes.is_some_and(|data| data.len() < size) {
             return Err(gl::INVALID_OPERATION);
+        }
+        if size > MAX_UPLOAD_BYTES {
+            return Err(gl::OUT_OF_MEMORY);
         }
         let pointer = self.unpack_pointer(c, bytes, from_buffer, 8, size, kind)?;
         let reservation = if !sub {

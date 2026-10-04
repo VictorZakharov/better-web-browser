@@ -2,6 +2,37 @@
 use super::webgl2_bindings_tests::{check, document};
 
 #[test]
+fn webgl2_realm_unknown_pixel_types_are_not_wrong_view_errors() {
+    let (mut context, _host) = document();
+    check(
+        &mut context,
+        r#"
+        const gl = new OffscreenCanvas(4,4).getContext('webgl2');
+        const expect = (invoke, error) => {
+            invoke(); if (gl.getError() !== error || gl.getError() !== 0) throw Error('pixel error ordering');
+        };
+        const texture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,texture);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+        const volume = gl.createTexture(); gl.bindTexture(gl.TEXTURE_3D,volume);
+        gl.texImage3D(gl.TEXTURE_3D,0,gl.RGBA8,1,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+        for (const type of [0,0x8032,0x12345678,0xffffffff]) {
+            expect(() => gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,1,1,0,gl.RGBA,type,new Uint8Array(4)),gl.INVALID_ENUM);
+            expect(() => gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,1,1,gl.RGBA,type,new Uint8Array(4)),gl.INVALID_ENUM);
+            expect(() => gl.texImage3D(gl.TEXTURE_3D,0,gl.RGBA8,1,1,1,0,gl.RGBA,type,new Uint8Array(4)),gl.INVALID_ENUM);
+            expect(() => gl.texSubImage3D(gl.TEXTURE_3D,0,0,0,0,1,1,1,gl.RGBA,type,new Uint8Array(4)),gl.INVALID_ENUM);
+            expect(() => gl.readPixels(0,0,1,1,gl.RGBA,type,new Uint8Array(4)),gl.INVALID_ENUM);
+        }
+        expect(() => gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Float32Array(4)),gl.INVALID_OPERATION);
+        expect(() => gl.texImage3D(gl.TEXTURE_3D,0,gl.RGBA8,1,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Float32Array(4)),gl.INVALID_OPERATION);
+        expect(() => gl.texImage2D(gl.TEXTURE_2D,0,gl.DEPTH32F_STENCIL8,1,1,0,gl.DEPTH_STENCIL,
+            gl.FLOAT_32_UNSIGNED_INT_24_8_REV,new Uint32Array(2)),gl.INVALID_OPERATION);
+        const max = gl.getParameter(gl.MAX_3D_TEXTURE_SIZE);
+        expect(() => gl.texImage3D(gl.TEXTURE_3D,0,gl.RGBA,max,max,2,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(4)),gl.INVALID_OPERATION);
+    "#,
+    );
+}
+
+#[test]
 fn webgl2_realm_volume_offsets_and_layer_attachments_preserve_neighbor_images() {
     let (mut context, _host) = document();
     check(

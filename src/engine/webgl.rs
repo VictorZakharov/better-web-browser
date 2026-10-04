@@ -49,6 +49,12 @@ mod core_buffers;
 #[cfg(test)]
 mod core_color_admission_tests;
 #[cfg(test)]
+mod core_copy_boundary_tests;
+mod core_copy_conversion;
+mod core_copy_texture;
+#[cfg(test)]
+mod core_copy_texture_tests;
+#[cfg(test)]
 mod core_draw_tests;
 mod core_draws;
 mod core_entries;
@@ -102,6 +108,8 @@ mod framebuffer_invalidation_tests;
 mod framebuffer_queries;
 mod framebuffers;
 mod image_uploads;
+#[cfg(test)]
+mod immutable_attachment_tests;
 mod index_ranges;
 #[cfg(test)]
 mod indexed_range_admission_tests;
@@ -128,6 +136,8 @@ mod pixel_store_guard;
 mod pixel_transfer_tests;
 mod pixel_transport;
 mod presentation;
+#[cfg(test)]
+mod presentation_state_tests;
 mod queries;
 #[cfg(test)]
 mod query_object_tests;
@@ -213,13 +223,18 @@ mod vertex_attribute_queries;
 mod vertex_attribute_tests;
 mod vertex_attributes;
 #[cfg(test)]
+mod vertex_id_boundary_tests;
+#[cfg(test)]
 mod volume_blit_tests;
 mod volume_copy;
+#[cfg(test)]
+mod volume_copy_alias_tests;
 mod volume_copy_blit;
 mod volume_copy_conversion;
 #[cfg(test)]
 mod volume_copy_conversion_tests;
 mod volume_copy_region;
+mod volume_copy_staging;
 #[cfg(test)]
 mod volume_copy_tests;
 #[cfg(test)]

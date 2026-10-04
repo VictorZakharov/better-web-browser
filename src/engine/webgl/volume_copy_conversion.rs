@@ -33,7 +33,9 @@ impl WebGl {
             .ok_or(gl::OUT_OF_MEMORY)?;
         // Charge both simultaneous owned buffers, not just the smaller RGB
         // upload. No context-global mirror is consulted or replaced.
-        let read_size = pixels.checked_mul(16).ok_or(gl::OUT_OF_MEMORY)?;
+        let read_size = pixels
+            .checked_mul(plan.read_bytes())
+            .ok_or(gl::OUT_OF_MEMORY)?;
         let upload_size = pixels
             .checked_mul(3 * plan.bytes())
             .ok_or(gl::OUT_OF_MEMORY)?;
@@ -100,6 +102,7 @@ impl WebGl {
 
 #[derive(Clone, Copy)]
 pub(super) enum Transfer {
+    Normalized,
     Float,
     Signed(u8),
     Unsigned(u8),
@@ -107,6 +110,7 @@ pub(super) enum Transfer {
 impl Transfer {
     pub(super) fn for_format(internal: u32) -> Result<Self> {
         Ok(match internal {
+            gl::RGB | 0x8051 | 0x8c41 | 0x8d62 => Self::Normalized,
             0x8815 | 0x881b => Self::Float,
             0x8d8f => Self::Signed(1),
             0x8d89 => Self::Signed(2),
@@ -117,33 +121,43 @@ impl Transfer {
             _ => return Err(gl::INVALID_OPERATION),
         })
     }
-    fn bytes(self) -> usize {
+    pub(super) fn bytes(self) -> usize {
         match self {
+            Self::Normalized => 1,
             Self::Float => 4,
             Self::Signed(bytes) | Self::Unsigned(bytes) => bytes as usize,
         }
     }
-    fn read_format(self) -> u32 {
+    pub(super) fn read_bytes(self) -> usize {
+        if matches!(self, Self::Normalized) {
+            4
+        } else {
+            16
+        }
+    }
+    pub(super) fn read_format(self) -> u32 {
         match self {
-            Self::Float => gl::RGBA,
+            Self::Float | Self::Normalized => gl::RGBA,
             _ => formats::RGBA_INTEGER,
         }
     }
-    fn read_type(self) -> u32 {
+    pub(super) fn read_type(self) -> u32 {
         match self {
+            Self::Normalized => gl::UNSIGNED_BYTE,
             Self::Float => gl::FLOAT,
             Self::Signed(_) => gl::INT,
             Self::Unsigned(_) => gl::UNSIGNED_INT,
         }
     }
-    fn upload_format(self) -> u32 {
+    pub(super) fn upload_format(self) -> u32 {
         match self {
-            Self::Float => gl::RGB,
+            Self::Float | Self::Normalized => gl::RGB,
             _ => formats::RGB_INTEGER,
         }
     }
-    fn upload_type(self) -> u32 {
+    pub(super) fn upload_type(self) -> u32 {
         match self {
+            Self::Normalized => gl::UNSIGNED_BYTE,
             Self::Float => gl::FLOAT,
             Self::Signed(1) => gl::BYTE,
             Self::Signed(2) => gl::SHORT,
@@ -154,11 +168,15 @@ impl Transfer {
         }
     }
     pub(super) fn select_rgb(self, source: &[u8]) -> Result<Vec<u8>> {
-        if !source.len().is_multiple_of(16) {
+        if !source.len().is_multiple_of(self.read_bytes()) {
             return Err(gl::INVALID_OPERATION);
         }
-        let mut output = Vec::with_capacity(source.len() / 16 * 3 * self.bytes());
-        for pixel in source.chunks_exact(16) {
+        let mut output = Vec::with_capacity(source.len() / self.read_bytes() * 3 * self.bytes());
+        for pixel in source.chunks_exact(self.read_bytes()) {
+            if matches!(self, Self::Normalized) {
+                output.extend_from_slice(&pixel[..3]);
+                continue;
+            }
             for component in pixel[..12].chunks_exact(4) {
                 let bits: [u8; 4] = component.try_into().unwrap();
                 match self {
