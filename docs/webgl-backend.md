@@ -16,6 +16,14 @@ library, custom GLSL parser, or validation-only NULL renderer. ANGLE provides th
 GLSL compiler and D3D11 renderer. The initial policy uses D3D11 WARP, which performs
 actual software rendering and supports hidden CI without a native window.
 
+Production now prefers a real hardware D3D11 adapter and falls back to WARP
+when hardware admission fails. Trusted DXGI adapter enumeration supplies power
+preference hints where ANGLE supports LUID selection; author code never supplies
+an adapter handle or native display attribute. Strict
+`failIfMajorPerformanceCaveat` creation disables software fallback. Native unit
+tests remain deterministic WARP runs. See the
+[adapter policy and current limits](webgl2-foundations.md#adapter-selection-and-source-precision).
+
 The published package's `UPSTREAM`, root license, native ANGLE license, Cargo
 manifest, build script and relevant shader/context implementations were inspected.
 That is a provenance/build-policy review, not a claim of a comprehensive native

@@ -116,8 +116,8 @@ WebGL1's shader rules or extension admission.
   enablement; the linear S3TC extension requires every native DXT family.
   Owned 2D/cube uploads enforce exact block footprints and family-specific mip
   and subregion rules. These complete public WebGL1 slices also run through the
-  shared Window/Worker bindings and contained renderer. They do not depend on
-  admitting an incomplete WebGL2 canvas interface.
+  shared Window/Worker bindings and contained renderer. Their WebGL1 admission
+  is independent of the separate public WebGL2 interface.
 - Staged core compressed storage covers immutable 2D/cube mip chains and array
   layers. Every level/layer is explicitly initialized in bounded encoded tiles;
   BC1 RGBA uses transparent blocks rather than treating opaque zero blocks as
@@ -159,7 +159,8 @@ WebGL1's shader rules or extension admission.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
-presence is not a complete WebGL2 conformance result or a new HTML5test score.
+presence is not a complete WebGL2 conformance result. Public admission and the
+separately measured HTML5test score are described in the README.
 
 ## Public bindings and remaining verification
 
@@ -191,10 +192,10 @@ supports transform-feedback arrays when its internal context is GLES3.1. The
 WebGL2 provider now requests that version, while the separate WebGL2 shader
 validator still rejects ESSL310 and the closed command dispatcher exposes no
 GLES3.1-only operations. Array results come from native GPU buffer storage,
-not CPU-generated substitutes. Public admission still requires broader tests.
+not CPU-generated substitutes. Broader conformance verification remains open.
 
-Coherent realm overloads need their own bindings. Public core entry points need
-versioned realm bindings, not WebGL1 extension objects under new names.
+Core entry points use versioned realm bindings and coherent overloads, not
+WebGL1 extension objects exposed under new names.
 
 The public realm has a distinct WebGL2 prototype and genuinely branded
 query, sampler, sync, transform-feedback and vertex-array objects. All resource
@@ -312,6 +313,87 @@ resource budgets. Command transport accounts for worst-case JSON escaping
 without truncating author source. Oversized or unbudgeted replacements leave
 previous source and compiler state intact. This is a browser-wide policy, not a
 Three.js-specific exception.
+
+Location queries follow their own reserved-name rules: linked programs return
+`-1` for reserved attribute names and `null` for reserved uniform names, without
+an error. Attempting to bind those names remains `INVALID_OPERATION`; unlinked
+program queries still fail before the absent-location result. Query names use
+the GLSL source character set, rather than accepting every ASCII control or
+rejecting valid array/structure punctuation. This is shared by both context
+versions and checked at the native boundary as well as through public bindings.
+`TexImage`'s integer internal-format parameter uses `INVALID_VALUE` for
+unsupported values; immutable `TexStorage` retains its distinct `INVALID_ENUM`
+contract. Invalid redefinitions preserve storage and accounting.
+
+### Unmodified framework acceptance
+
+The optional [Three.js fixture](../tests/webgl/three-rendering.html) imports a
+caller-supplied, same-origin installed release through its `module` query
+parameter. It does not bundle, patch, downgrade or depend on a CDN copy of the
+library. The locally inspected Three.js 0.185.1 package identifies its upstream
+as `mrdoob/three.js` and includes the MIT license; retain that provenance and
+license when preparing a reference checkout. The fixture itself contains only
+our small acceptance scenes, not copied third-party renderer/shader sources.
+
+Serve the repository and the checked library from one loopback fixture root.
+For example, a URL ending in
+`/better-web-browser/tests/webgl/three-rendering.html?module=/reference-three/build/three.module.js`
+uses an untouched reference checkout beside this repository. Run it with
+`scripts/run-hidden-benchmark.ps1 -FreshProfile -SettleMs 3000`, collecting
+`#results` and `.contract`, then the unified-headless Chromium harness against
+the same URL. All profiles and reports belong in a task-specific G: directory;
+use the owned fixture-server lifecycle and stop it in `finally`.
+
+The cases exercise indexed data textures, instancing, multisampled and float
+targets, volume/array sampling, shadowed and physical material shaders, morph
+targets, half-float multisample resolve followed by post-processing, and resize.
+Every case requires real pixels and no GL error. A successful context lookup or
+the library's own capability flag is not accepted as evidence of rendering.
+This remains a bounded framework test, not proof of sustained game performance
+or that the unchanged sibling game already runs.
+
+The required pinned Khronos manifest keeps the preceding WebGL1 extension cases
+and adds WebGL2 public interfaces, buffers, samplers, queries/fences, vertex
+arrays, uniforms, transform feedback, texture storage/uploads, readback and
+blits. Expectations remain forbidden, and the combined suite must report at
+least 6,000 real assertions. This curated gate is not the entire upstream suite.
+The final local release replay passes 74 cases and 8,696 assertions, including
+the original normalized-16 extension and decoded 10bpc image tests. Upstream
+resources are pinned in the manifest so a fresh CI checkout includes their real
+helper scripts and PNG data; no local replacement helper is served.
+The wider investigation also records gaps in synchronous XHR and blob/nested
+worker loading, rather than marking their tests as expected failures. A layered
+depth/stencil attachment query conflicts with the latest WebGL2 specification's
+different-image rule; the implementation retains that rule rather than changing
+it merely to match a legacy assertion. Those cases are not presented as passes.
+
+### Adapter selection and source precision
+
+Production creation tries a suitable hardware D3D11 adapter before software
+WARP. `powerPreference` uses trusted DXGI adapter selection when ANGLE exposes
+its LUID selection extension; unsupported hints do not prevent ordinary hardware
+creation. `failIfMajorPerformanceCaveat` disables the software fallback. A failed
+attempt never locks a canvas into a context mode. Native unit tests explicitly
+use WARP for reproducibility. Combined texture units are bounded to 64 owned
+binding slots even when a driver advertises more; the reported limit and shader
+validator use that same capacity.
+
+Genuinely decoded 16-bit integer images retain a private precision sidecar for
+WebGL floating-point and high-precision packed uploads. The existing `image`
+decoder and `moxcms` color transforms are reused; ordinary page painting remains
+RGBA8. Color conversion, bitmap cropping/resizing, alpha handling, structured
+clone and transfer preserve the decoded words before destination quantization.
+Author-visible properties cannot fabricate this provenance. Decode and resize
+scratch remain bounded. This does not add float16 ImageData, HDR display output
+or a higher-precision decoder for every supported image codec.
+
+The pinned ANGLE provider still has an immutable NPOT base-level storage bug
+that can lose the D3D device. Its upstream
+[storage-retention fix](https://chromium.googlesource.com/angle/angle.git/+/248abdcad1e48f1753a5ecba1575e38494afe695%5E%21/)
+has not been backported here. The wider investigation retains this failure;
+the curated gate does not claim coverage of that case. A dependency refresh or
+licensed, reviewed backport remains required rather than padding textures or
+changing the public API's permitted dimensions.
 
 ## Primary contracts and reuse
 
