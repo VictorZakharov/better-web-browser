@@ -101,6 +101,22 @@ The under-three-minute goal must be checked against the new hosted run, not
 inferred from the one-second local smoke execution. Production compilation,
 native dependencies, linking and runner queues still contribute to wall clock.
 
+The initial smoke-only hosted run still spent 6m41s compiling and just 1.71s
+executing its three checks. Its cache statistics contained Rust hits only.
+The locked cc-rs MSVC discovery path does not apply its `RUSTC_WRAPPER`
+fallback. The Windows action now loads the installed Microsoft developer-shell
+module and explicitly selects `sccache cl.exe` for C++ compilation, including
+ANGLE. It exports only an allowlist of compiler environment variables to later
+steps, not credentials; compiler, headers, native flags and graphics code are
+unchanged. The local cold wrapped rebuild completed in 1m55s with 395 cached
+C/C++ compilations and zero compiler/cache errors. This is local evidence, not
+a hosted under-three-minute claim. A forced warm native rebuild used identical
+compiler arguments (only wrapper-setting whitespace changed to invalidate
+Cargo freshness): 395 C/C++ hits, zero misses/errors, 51.44s compilation and
+1.40s smoke execution. First cache population and changes to the native
+toolchain/dependencies can still exceed the warm-run target. See the [sccache compiler-wrapper usage](https://github.com/mozilla/sccache/tree/v0.17.0#usage)
+and locked cc-rs `get_base_compiler` / `env_tool` paths for the distinction.
+
 Main run `37197706177` independently failed one assertion in
 `sdk/tests/conformance/extensions/s3tc-and-rgtc.html`; the general WPT pass was
 554 cases / 6,086 assertions, and the graphics suite was 19/20 cases. The

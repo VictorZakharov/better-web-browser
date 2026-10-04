@@ -62,4 +62,8 @@ if ($workflow -match 'cargo test[^\r\n]*(--lib|--all-targets|--test renderer_pro
     $workflow -match 'run-wpt\.ps1|test-live-runtime\.ps1|run-alpha\.ps1|test-renderer-smoke\.ps1') {
     throw 'Full test or standards suites must run locally, not in the automatic smoke workflow.'
 }
+$nativeAction = Get-Content (Join-Path $PSScriptRoot '../.github/actions/windows-rust/action.yml') -Raw
+if ($nativeAction -notmatch 'run: ./scripts/prepare-native-cache.ps1') {
+    throw 'The Windows action must configure the native compiler cache.'
+}
 Write-Output "CI policy tests passed ($tests result cases plus automatic smoke-target policy)."

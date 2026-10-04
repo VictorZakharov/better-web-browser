@@ -11,6 +11,9 @@ runs:
       uses: mozilla-actions/sccache-action@v0.0.11
       with:
         version: v0.17.0
+    - name: Configure cached native C++ compiler
+      shell: pwsh
+      run: ./scripts/prepare-native-cache.ps1
     - name: Restore Cargo registry cache
       uses: actions/cache@v6
       with:
