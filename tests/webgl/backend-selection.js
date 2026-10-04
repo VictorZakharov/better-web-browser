@@ -15,6 +15,28 @@
     };
     const readGreen = gl => {
         gl.clearColor(0, 1, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+        if (gl instanceof WebGL2RenderingContext) {
+            const limit = gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS);
+            const sources = [
+                '#version 300 es\nvoid main(){uint i=uint(gl_VertexID);vec2 p=vec2(float((i<<1u)&2u),float(i&2u));gl_Position=vec4(p*2.0-1.0,0,1);}',
+                '#version 300 es\nprecision highp float;out vec4 color;void main(){color=gl_MaxCombinedTextureImageUnits==' + limit + '?vec4(0,1,0,1):vec4(1,0,0,1);}'
+            ];
+            const program = gl.createProgram(), shaders = [];
+            try {
+                for (let index=0;index<2;index++) {
+                    const shader = gl.createShader(index ? gl.FRAGMENT_SHADER : gl.VERTEX_SHADER);
+                    shaders.push(shader); gl.shaderSource(shader,sources[index]); gl.compileShader(shader);
+                    assert(gl.getShaderParameter(shader,gl.COMPILE_STATUS), gl.getShaderInfoLog(shader));
+                    gl.attachShader(program,shader);
+                }
+                gl.linkProgram(program);
+                assert(gl.getProgramParameter(program,gl.LINK_STATUS), gl.getProgramInfoLog(program));
+                gl.useProgram(program); gl.drawArrays(gl.TRIANGLES,0,3);
+            } finally {
+                gl.useProgram(null); gl.deleteProgram(program);
+                for (const shader of shaders) gl.deleteShader(shader);
+            }
+        }
         const pixels = new Uint8Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
         assert([...pixels].join() === '0,255,0,255' && gl.getError() === 0, 'native pixels unavailable');
     };

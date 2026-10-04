@@ -374,9 +374,10 @@ WARP. `powerPreference` uses trusted DXGI adapter selection when ANGLE exposes
 its LUID selection extension; unsupported hints do not prevent ordinary hardware
 creation. `failIfMajorPerformanceCaveat` disables the software fallback. A failed
 attempt never locks a canvas into a context mode. Native unit tests explicitly
-use WARP for reproducibility. Combined texture units are bounded to 64 owned
-binding slots even when a driver advertises more; the reported limit and shader
-validator use that same capacity.
+use WARP for reproducibility. Combined texture-unit admission is bounded to 256
+owned binding slots; the query, owned arrays, shader validator and native ESSL
+built-ins retain the same driver limit. A larger unsupported limit rejects that
+backend instead of clamping only the public query.
 
 Genuinely decoded 16-bit integer images retain a private precision sidecar for
 WebGL floating-point and high-precision packed uploads. The existing `image`

@@ -47,10 +47,9 @@ impl WebGl {
         if !(8..=32).contains(&count) || !(8..=256).contains(&units) {
             return Err("ANGLE resource limits are outside the admitted WebGL baseline".into());
         }
-        // Browser-owned binding arrays remain bounded independently of a
-        // hardware provider's larger combined-unit capacity. Report this same
-        // admitted limit to authors and the shader validator, not native 128/192.
-        let units = units.min(64);
+        // Keep the query, owned slots and shader built-ins on the same native
+        // limit. Admission above bounds the arrays to 256 slots; clamping only
+        // the JavaScript query would disagree with the native ESSL compiler.
         let mut context = Self {
             native,
             core,
