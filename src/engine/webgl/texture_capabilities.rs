@@ -14,10 +14,11 @@ pub(super) enum TextureCapability {
     Srgb,
     Anisotropy,
     FloatBlend,
+    Norm16,
 }
 
 impl TextureCapability {
-    pub(super) const ALL: [Self; 10] = [
+    pub(super) const ALL: [Self; 11] = [
         Self::Float,
         Self::HalfFloat,
         Self::FloatLinear,
@@ -28,6 +29,7 @@ impl TextureCapability {
         Self::Srgb,
         Self::Anisotropy,
         Self::FloatBlend,
+        Self::Norm16,
     ];
 
     pub(super) fn native_name(self) -> &'static CStr {
@@ -44,6 +46,7 @@ impl TextureCapability {
             Self::Srgb => c"GL_EXT_sRGB",
             Self::Anisotropy => c"GL_EXT_texture_filter_anisotropic",
             Self::FloatBlend => c"GL_EXT_float_blend",
+            Self::Norm16 => c"GL_EXT_texture_norm16",
         }
     }
 
@@ -59,10 +62,14 @@ impl TextureCapability {
             Self::Srgb => "EXT_sRGB",
             Self::Anisotropy => "EXT_texture_filter_anisotropic",
             Self::FloatBlend => "EXT_float_blend",
+            Self::Norm16 => "EXT_texture_norm16",
         }
     }
 
     pub(super) fn exposed_in(self, api: super::ApiVersion) -> bool {
+        if self == Self::Norm16 {
+            return api == super::ApiVersion::Two;
+        }
         api == super::ApiVersion::One
             || !matches!(
                 self,
@@ -82,8 +89,8 @@ impl TextureCapability {
 
 #[derive(Default)]
 pub(super) struct TextureCapabilities {
-    available: [bool; 10],
-    enabled: [bool; 10],
+    available: [bool; 11],
+    enabled: [bool; 11],
 }
 
 impl super::extensions::Extensions {

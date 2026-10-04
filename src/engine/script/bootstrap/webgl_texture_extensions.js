@@ -4,6 +4,11 @@
     const webGlTextureExtensionConstants = [
         ['EXT_color_buffer_float', {}],
         ['EXT_float_blend', {}],
+        ['EXT_texture_norm16', {
+            R16_EXT:0x822a, RG16_EXT:0x822c, RGB16_EXT:0x8054, RGBA16_EXT:0x805b,
+            R16_SNORM_EXT:0x8f98, RG16_SNORM_EXT:0x8f99,
+            RGB16_SNORM_EXT:0x8f9a, RGBA16_SNORM_EXT:0x8f9b
+        }],
         ['OES_texture_float', {}],
         ['OES_texture_half_float', {HALF_FLOAT_OES:0x8d61}],
         ['OES_texture_float_linear', {}],

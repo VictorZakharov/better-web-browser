@@ -72,6 +72,9 @@ impl WebGl {
         // luminance and packed-depth enums must not reach the latter check.
         super::core_texture_formats::validate_read_enums(format, kind)?;
         self.validate_read_framebuffer()?;
+        if self.normalized_read_pair(format, kind)? {
+            return Ok(8);
+        }
         let component = if self.read_framebuffer == 0 {
             0x8c17
         } else {

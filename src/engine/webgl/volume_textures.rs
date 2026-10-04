@@ -78,6 +78,7 @@ impl WebGl {
             }
             (c.u(2)?, [0; 3])
         };
+        self.validate_normalized_texture(internal, gl::INVALID_VALUE)?;
         let (upload, storage) = formats::upload(internal, format, kind)?;
         let size = if bytes.is_none() && !sub && !from_buffer {
             0
@@ -104,12 +105,29 @@ impl WebGl {
         let allocation = allocation(width as u32, height as u32, depth as u32, storage)?;
         let pointer =
             self.unpack_pointer(c, bytes, from_buffer, if sub { 10 } else { 9 }, size, kind)?;
+        let owned =
+            self.normalized_unpack_bytes(c, internal, from_buffer, if sub { 10 } else { 9 }, size)?;
+        let _unpack = owned.as_ref().map(|_| {
+            super::pixel_buffer_guard::PixelBufferGuard::unbind(
+                self.options.api,
+                super::pixel_buffer_guard::Direction::Unpack,
+            )
+        });
+        let pointer = owned
+            .as_ref()
+            .map_or(pointer, |bytes| bytes.as_ptr().cast());
         let reservation = if !sub {
             Some(self.prepare_texture_storage(id, vec![((target, level), allocation)])?)
         } else {
             None
         };
         let core = self.core.as_ref().ok_or(gl::INVALID_OPERATION)?;
+        self.validate_normalized_unpack_workspace(
+            owned.as_deref(),
+            reservation
+                .as_ref()
+                .map_or(self.resource_bytes, |value| value.counter()),
+        )?;
         // The validated footprint includes every skipped row/image and padding.
         unsafe {
             if sub {
@@ -176,6 +194,7 @@ impl WebGl {
         }
         let levels = c.n(1)?;
         let internal = c.u(2)?;
+        self.validate_normalized_texture(internal, gl::INVALID_ENUM)?;
         let storage = formats::storage(internal)?;
         let (width, height, depth) = (c.n(3)?, c.n(4)?, c.n(5)?);
         dimensions(target, width, height, depth)?;

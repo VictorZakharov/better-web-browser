@@ -18,8 +18,13 @@ pub(super) fn adapt(tests: &[TestCase], path: &str, body: Vec<u8>) -> Result<Vec
     // quoting still makes the reporting configuration unambiguous and non-executable.
     let extension =
         serde_json::to_string(&test.required_extension).map_err(|error| error.to_string())?;
+    let version = if test.path.starts_with("sdk/tests/conformance2/") {
+        2
+    } else {
+        1
+    };
     let adapter = format!(
-        "<script>globalThis.__breezeRequiredWebGlExtension={extension};\n{REPORTER}</script>"
+        "<script>globalThis.__breezeRequiredWebGlExtension={extension};globalThis.__breezeRequiredWebGlVersion={version};\n{REPORTER}</script>"
     );
     let mut html = String::with_capacity(source.len() + adapter.len());
     html.push_str(&source[..position]);
@@ -74,6 +79,28 @@ mod tests {
         let mut wpt = case("test.html");
         wpt.harness = HarnessKind::Testharness;
         assert_eq!(adapt(&[wpt], "/test.html", source.clone()).unwrap(), source);
+    }
+
+    #[test]
+    fn required_extension_probe_uses_the_selected_suites_context_version() {
+        for (path, version) in [
+            ("sdk/tests/conformance/extensions/example.html", 1),
+            ("sdk/tests/conformance2/extensions/example.html", 2),
+            ("sdk/tests/conformance2/renderbuffers/example.html", 2),
+        ] {
+            let result = String::from_utf8(
+                adapt(
+                    &[case(path)],
+                    &format!("/{path}"),
+                    b"<head></head>".to_vec(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert!(result.contains(&format!("__breezeRequiredWebGlVersion={version}")));
+            assert!(result.contains("__breezeRequiredWebGlExtension=\"ANGLE_instanced_arrays\""));
+            assert!(result.contains("delete globalThis.__breezeRequiredWebGlVersion"));
+        }
     }
 
     #[test]

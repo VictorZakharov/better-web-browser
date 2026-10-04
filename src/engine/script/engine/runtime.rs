@@ -28,6 +28,8 @@ mod webgl2_multisample_bindings_tests;
 #[cfg(all(test, windows))]
 mod webgl2_name_bindings_tests;
 #[cfg(all(test, windows))]
+mod webgl2_norm16_bindings_tests;
+#[cfg(all(test, windows))]
 mod webgl2_pixel_bindings_tests;
 #[cfg(all(test, windows))]
 mod webgl2_sync_bindings_tests;

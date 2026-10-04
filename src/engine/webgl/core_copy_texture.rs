@@ -48,6 +48,7 @@ impl WebGl {
                 return Err(gl::INVALID_OPERATION);
             }
             internal = command.u(2)?;
+            self.validate_normalized_texture(internal, gl::INVALID_ENUM)?;
             let (base, kind, bytes) = copy_format(internal)?;
             if command.n(7)? != 0 || slot == 1 && width != height {
                 return Err(gl::INVALID_VALUE);

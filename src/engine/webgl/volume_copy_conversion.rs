@@ -103,6 +103,7 @@ impl WebGl {
 #[derive(Clone, Copy)]
 pub(super) enum Transfer {
     Normalized,
+    Normalized16,
     Float,
     Signed(u8),
     Unsigned(u8),
@@ -111,6 +112,7 @@ impl Transfer {
     pub(super) fn for_format(internal: u32) -> Result<Self> {
         Ok(match internal {
             gl::RGB | 0x8051 | 0x8c41 | 0x8d62 => Self::Normalized,
+            0x8054 => Self::Normalized16,
             0x8815 | 0x881b => Self::Float,
             0x8d8f => Self::Signed(1),
             0x8d89 => Self::Signed(2),
@@ -124,26 +126,28 @@ impl Transfer {
     pub(super) fn bytes(self) -> usize {
         match self {
             Self::Normalized => 1,
+            Self::Normalized16 => 2,
             Self::Float => 4,
             Self::Signed(bytes) | Self::Unsigned(bytes) => bytes as usize,
         }
     }
     pub(super) fn read_bytes(self) -> usize {
-        if matches!(self, Self::Normalized) {
-            4
-        } else {
-            16
+        match self {
+            Self::Normalized => 4,
+            Self::Normalized16 => 8,
+            _ => 16,
         }
     }
     pub(super) fn read_format(self) -> u32 {
         match self {
-            Self::Float | Self::Normalized => gl::RGBA,
+            Self::Float | Self::Normalized | Self::Normalized16 => gl::RGBA,
             _ => formats::RGBA_INTEGER,
         }
     }
     pub(super) fn read_type(self) -> u32 {
         match self {
             Self::Normalized => gl::UNSIGNED_BYTE,
+            Self::Normalized16 => gl::UNSIGNED_SHORT,
             Self::Float => gl::FLOAT,
             Self::Signed(_) => gl::INT,
             Self::Unsigned(_) => gl::UNSIGNED_INT,
@@ -151,13 +155,14 @@ impl Transfer {
     }
     pub(super) fn upload_format(self) -> u32 {
         match self {
-            Self::Float | Self::Normalized => gl::RGB,
+            Self::Float | Self::Normalized | Self::Normalized16 => gl::RGB,
             _ => formats::RGB_INTEGER,
         }
     }
     pub(super) fn upload_type(self) -> u32 {
         match self {
             Self::Normalized => gl::UNSIGNED_BYTE,
+            Self::Normalized16 => gl::UNSIGNED_SHORT,
             Self::Float => gl::FLOAT,
             Self::Signed(1) => gl::BYTE,
             Self::Signed(2) => gl::SHORT,
@@ -173,8 +178,8 @@ impl Transfer {
         }
         let mut output = Vec::with_capacity(source.len() / self.read_bytes() * 3 * self.bytes());
         for pixel in source.chunks_exact(self.read_bytes()) {
-            if matches!(self, Self::Normalized) {
-                output.extend_from_slice(&pixel[..3]);
+            if matches!(self, Self::Normalized | Self::Normalized16) {
+                output.extend_from_slice(&pixel[..3 * self.bytes()]);
                 continue;
             }
             for component in pixel[..12].chunks_exact(4) {

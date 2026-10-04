@@ -82,6 +82,7 @@ mod core_textures;
 #[cfg(test)]
 mod core_uniform_tests;
 mod core_uniforms;
+mod creation_options;
 mod default_attachment_queries;
 #[cfg(test)]
 mod default_attachment_tests;
@@ -121,6 +122,11 @@ mod legacy_mip_allocations;
 mod multisample;
 #[cfg(test)]
 mod multisample_tests;
+#[cfg(test)]
+mod normalized_texture_pixel_tests;
+#[cfg(test)]
+mod normalized_texture_tests;
+mod normalized_textures;
 mod object_deletion;
 mod object_queries;
 mod objects;
@@ -252,6 +258,7 @@ pub(crate) use session::Contexts;
 
 use api_version::ApiVersion;
 use context::NativeContext;
+use creation_options::Options;
 use objects::{Kind, Objects};
 use surface::Surface;
 
@@ -271,29 +278,6 @@ type Result<T> = std::result::Result<T, u32>;
 
 mod backend;
 use backend::BackendContexts;
-
-#[derive(Clone, Copy, serde::Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct Options {
-    api: ApiVersion,
-    alpha: bool,
-    depth: bool,
-    stencil: bool,
-    antialias: bool,
-    preserve: bool,
-}
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            api: ApiVersion::One,
-            alpha: true,
-            depth: true,
-            stencil: false,
-            antialias: false,
-            preserve: false,
-        }
-    }
-}
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]

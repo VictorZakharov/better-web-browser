@@ -49,7 +49,7 @@ impl WebGl {
             .internal;
         if matches!(
             internal,
-            0x8815 | 0x881b | 0x8d7d | 0x8d8f | 0x8d77 | 0x8d89 | 0x8d71 | 0x8d83
+            0x8054 | 0x8815 | 0x881b | 0x8d7d | 0x8d8f | 0x8d77 | 0x8d89 | 0x8d71 | 0x8d83
         ) {
             return self.copy_volume_through_native_conversion(id, level, offsets, source);
         }
