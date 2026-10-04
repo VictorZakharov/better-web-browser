@@ -138,6 +138,45 @@ fn framebuffer_contract_null_texture_detachment_ignores_all_image_fields() {
 }
 
 #[test]
+fn framebuffer_contract_attachment_limit_errors_depend_on_the_operation() {
+    session::run_native_test(|| {
+        let mut context = version_two();
+        for target in [gl::FRAMEBUFFER, DRAW, READ] {
+            let id = framebuffer(&mut context, target);
+            let point = gl::COLOR_ATTACHMENT0 + context.extensions.max_color_attachments;
+            for (op, arguments, expected) in [
+                (
+                    "framebufferTexture2D",
+                    vec![target as i64, point as i64, gl::TEXTURE_2D as i64, 0, 0],
+                    gl::INVALID_ENUM,
+                ),
+                (
+                    "framebufferRenderbuffer",
+                    vec![target as i64, point as i64, gl::RENDERBUFFER as i64, 0],
+                    gl::INVALID_ENUM,
+                ),
+                (
+                    "framebufferTextureLayer",
+                    vec![target as i64, point as i64, 0, 0, 0],
+                    gl::INVALID_OPERATION,
+                ),
+            ] {
+                assert_eq!(upload(&mut context, op, &arguments, None), Err(expected));
+                assert!(
+                    context
+                        .objects
+                        .get(id, Kind::Framebuffer)
+                        .unwrap()
+                        .framebuffer_attachments
+                        .is_empty()
+                );
+                assert_eq!(call(&mut context, "getError", &[], ""), json!(0));
+            }
+        }
+    });
+}
+
+#[test]
 fn framebuffer_contract_invalid_read_selectors_preserve_independent_state() {
     session::run_native_test(|| {
         let mut context = version_two();

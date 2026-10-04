@@ -48,10 +48,19 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         let point = c.u(1)?;
+        let layered = c.op == "framebufferTextureLayer";
         if (gl::COLOR_ATTACHMENT0..=gl::COLOR_ATTACHMENT0 + 31).contains(&point)
             && !self.color_attachment_allowed(point)
         {
-            return Err(gl::INVALID_OPERATION);
+            // GLES3's layered attachment command distinguishes a recognized
+            // but unavailable color slot. Texture2D/Renderbuffer instead use
+            // INVALID_ENUM for points outside MAX_COLOR_ATTACHMENTS.
+            // Khronos ES3 reference pages: glFramebufferTexture2D/Layer.
+            return Err(if layered {
+                gl::INVALID_OPERATION
+            } else {
+                gl::INVALID_ENUM
+            });
         }
         if !self.color_attachment_allowed(point)
             && ![
@@ -63,7 +72,6 @@ impl WebGl {
         {
             return Err(gl::INVALID_ENUM);
         }
-        let layered = c.op == "framebufferTextureLayer";
         let texture = layered || c.op == "framebufferTexture2D";
         let kind = if texture {
             Kind::Texture
