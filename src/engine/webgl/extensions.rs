@@ -326,6 +326,11 @@ mod texture_tests {
                 assert!(!extensions.textures.enabled(capability));
             }
             for capability in TextureCapability::ALL {
+                // This context is GLES2/WebGL1. WebGL2-only capabilities have
+                // their own real GLES3 allocation/readback tests.
+                if !capability.exposed_in(super::super::ApiVersion::One) {
+                    continue;
+                }
                 assert!(
                     extensions.textures.available(capability),
                     "missing {capability:?}; native capabilities: {names:?}"
