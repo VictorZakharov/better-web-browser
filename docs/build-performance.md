@@ -73,6 +73,43 @@ a two-second per-event receive timeout before sending the deliberate busy callba
 The receive now uses the remaining setup deadline. The 500 ms watchdog, 150 ms
 kill grace, callback duration and frame-cadence assertions are unchanged.
 
+### October 4 automatic smoke policy (#225)
+
+This supersedes the historical policies below: source PRs and main now run only
+production Clippy, source/format checks, dependency/security policy, harness
+self-tests, and the dedicated `ci_smoke` integration target. Its three hidden
+checks cover startup/ping/shutdown, AppContainer child/network restrictions,
+and a real HTML/CSS/JavaScript presentation with native WebGL2 clear/readback.
+It does not import the full renderer suite or compile the library's unit-test
+configuration. Full unit/integration, WPT/Khronos and visual suites remain
+available and required locally for relevant changes; automatic main no longer
+runs standards compliance or the visual matrix. This deliberately trades
+hosted coverage for feedback time, at the user's request. Release packaging and
+the separate fuzz workflow are unchanged.
+
+The pre-change #225 run's core job took **10m16s**: compilation was **7m54s**
+and execution of 4,213 tests was **100.81s**. The renderer job took **7m26s**:
+compilation was **6m20s**, while its 27 selected tests ran in **15.21s**.
+Compiler cache hits were about 90%, so this was not solely a missing registry
+cache. Runtime test filters cannot remove test-module compilation/linking cost.
+The replacement keeps sccache and Cargo caches, never caches `target`, and
+keeps the protected `windows` and `Linear PR history` names. Gate policy rejects
+failed, cancelled, missing or incorrectly skipped smoke workers. Only verified
+Markdown-only PRs may skip them; main always runs them.
+
+The under-three-minute goal must be checked against the new hosted run, not
+inferred from the one-second local smoke execution. Production compilation,
+native dependencies, linking and runner queues still contribute to wall clock.
+
+Main run `37197706177` independently failed one assertion in
+`sdk/tests/conformance/extensions/s3tc-and-rgtc.html`; the general WPT pass was
+554 cases / 6,086 assertions, and the graphics suite was 19/20 cases. The
+workflow did not retain the failing JSON report, so the exact assertion is not
+available from its summary log. The current branch passes all 755 assertions
+of that case in both local release and debug. This is not a claim that the
+hosted-only failure's cause has been established, nor justification to weaken
+its local assertions or remove it from the retained Khronos manifest.
+
 ### September 15 PR policy (#155)
 
 The required `windows` and `Linear PR history` names remain unchanged. Source-changing PRs retain

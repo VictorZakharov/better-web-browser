@@ -3,7 +3,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $gate = Join-Path $PSScriptRoot 'assert-ci-results.ps1'
-$names = @('source', 'lint', 'test', 'live', 'wpt', 'alpha', 'dependencies', 'harness')
+$names = @('source', 'lint', 'test', 'dependencies', 'harness')
 $tests = 0
 function Check-Gate {
     param([hashtable] $Arguments, [bool] $Pass)
@@ -19,7 +19,7 @@ foreach ($policy in @(
 )) {
     $workers = @{}
     foreach ($name in $names) {
-        $workers[$name] = if ($policy.markdown -or ($name -in @('alpha', 'wpt', 'live') -and $policy.event -eq 'pull_request')) {
+        $workers[$name] = if ($policy.markdown) {
             'skipped'
         } else { 'success' }
     }
@@ -49,4 +49,17 @@ foreach ($policy in @(
         $case = $arguments.Clone(); $case.EventName = 'push'; Check-Gate $case $false
     }
 }
-Write-Output "CI policy tests passed ($tests cases: main, source PR, Markdown-only PR, and fail-closed gates)."
+# Test the actual workflow as well as the result gate. A runtime libtest filter
+# does not save compilation of the full test tree; CI must use its small target.
+$workflow = Get-Content (Join-Path $PSScriptRoot '../.github/workflows/ci.yml') -Raw
+if ($workflow -notmatch 'cargo test --locked --test ci_smoke -- --test-threads=1' -or
+    $workflow -notmatch 'cargo clippy --lib --bin better-web-browser --locked -- -D warnings' -or
+    $workflow -notmatch '(?m)^    name: windows\r?$' -or
+    $workflow -notmatch '(?m)^    name: Linear PR history\r?$') {
+    throw 'Required smoke targets or protected check names are missing.'
+}
+if ($workflow -match 'cargo test[^\r\n]*(--lib|--all-targets|--test renderer_process)' -or
+    $workflow -match 'run-wpt\.ps1|test-live-runtime\.ps1|run-alpha\.ps1|test-renderer-smoke\.ps1') {
+    throw 'Full test or standards suites must run locally, not in the automatic smoke workflow.'
+}
+Write-Output "CI policy tests passed ($tests result cases plus automatic smoke-target policy)."
