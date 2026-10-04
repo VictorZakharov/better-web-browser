@@ -103,10 +103,6 @@ pub(super) fn truncate_log(log: &mut String) {
 
 // The native API receives public names after the validated translator prefix
 // is undone. Its own internal compiler mangling is not visible in reflection.
-pub(super) fn driver_name(name: &str) -> String {
-    name.to_owned()
-}
-
 pub(super) fn public_name(name: &str) -> String {
     name.to_owned()
 }
@@ -152,12 +148,10 @@ mod tests {
 
     #[test]
     fn shader_name_mapping_preserves_identifier_components_and_subscripts() {
-        assert_eq!(driver_name("lights[12]._utint"), "lights[12]._utint");
         assert_eq!(
             translated_names("_ulights[12]._u_utint"),
             "lights[12]._utint"
         );
-        assert_eq!(driver_name("gl_Position"), "gl_Position");
         assert_eq!(public_name("gl_Position"), "gl_Position");
         assert_eq!(public_name("_ucolors[2]"), "_ucolors[2]");
         assert_eq!(translated_names("_ucolors[2]"), "colors[2]");

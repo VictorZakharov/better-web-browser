@@ -114,7 +114,10 @@ pub(super) fn upload(internal: u32, format: u32, kind: u32) -> Result<(usize, us
             Err(gl::INVALID_OPERATION)
         };
     }
-    let storage = storage(internal)?;
+    // TexImage's internalformat is GLint, unlike TexStorage's GLenum. Preserve
+    // its INVALID_VALUE contract for unsupported values (GLES2 §3.7.1 and
+    // Chromium ValidateTexFuncFormatAndType); storage queries retain ENUM.
+    let storage = storage(internal).map_err(|_| gl::INVALID_VALUE)?;
     if storage.base != format || !storage.types.contains(&kind) {
         return Err(gl::INVALID_OPERATION);
     }

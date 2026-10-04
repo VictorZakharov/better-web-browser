@@ -65,6 +65,8 @@ mod core_texture_mip_tests;
 mod core_texture_mips;
 #[cfg(test)]
 mod core_texture_tests;
+#[cfg(test)]
+mod core_texture_value_tests;
 mod core_textures;
 #[cfg(test)]
 mod core_uniform_tests;
@@ -138,6 +140,9 @@ mod sampler_tests;
 mod samplers;
 mod session;
 mod shader_commands;
+#[cfg(test)]
+mod shader_name_tests;
+mod shader_names;
 mod shader_queries;
 #[cfg(test)]
 mod shader_source_budget_tests;

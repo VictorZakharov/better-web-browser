@@ -106,7 +106,14 @@ fn webgl2_each_sized_format_allocates_native_storage_with_every_legal_upload_typ
 #[test]
 fn webgl2_texture_table_does_not_admit_unknown_enums_or_mismatched_signedness() {
     for (internal, base, kind, expected) in [
-        (0xdead, gl::RGBA, gl::UNSIGNED_BYTE, gl::INVALID_ENUM),
+        (0xdead, gl::RGBA, gl::UNSIGNED_BYTE, gl::INVALID_VALUE),
+        (0x822a, formats::RED, gl::UNSIGNED_SHORT, gl::INVALID_VALUE),
+        (
+            formats::RED,
+            formats::RED,
+            gl::UNSIGNED_SHORT,
+            gl::INVALID_VALUE,
+        ),
         (0x8058, 0xdead, gl::UNSIGNED_BYTE, gl::INVALID_ENUM),
         (0x8058, gl::RGBA, 0xdead, gl::INVALID_ENUM),
         (

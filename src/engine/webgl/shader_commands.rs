@@ -155,22 +155,24 @@ impl WebGl {
             "getShaderInfoLog" | "getProgramInfoLog" => return self.shader_log(c),
             "getAttribLocation" | "bindAttribLocation" => {
                 let program = self.objects.get(c.u(0)?, Kind::Program)?.native;
-                if c.text.len() > self.options.api.query_name_budget()
-                    || !c.text.is_ascii()
-                    || c.text.starts_with("gl_")
-                {
-                    return Err(gl::INVALID_VALUE);
-                }
-                let name = CString::new(super::shader_validation::driver_name(&c.text))
-                    .map_err(|_| gl::INVALID_VALUE)?;
+                let name = super::shader_names::location(&c.text, self.options.api)?;
                 if c.op == "getAttribLocation" {
-                    return Ok(json!(unsafe {
-                        gl::GetAttribLocation(program, name.as_ptr())
-                    }));
+                    super::shader_names::linked(program)?;
+                    // Built-ins may be reflected by ANGLE but have no author
+                    // location. A query is not an attempt to bind a reserved name.
+                    if super::shader_names::reserved(&c.text) {
+                        return Ok(json!(-1));
+                    }
+                    let location = unsafe { gl::GetAttribLocation(program, name.as_ptr()) };
+                    self.driver_result()?;
+                    return Ok(json!(location));
                 }
                 let index = c.u(1)?;
                 if index as usize >= self.attributes.len() {
                     return Err(gl::INVALID_VALUE);
+                }
+                if super::shader_names::reserved(&c.text) {
+                    return Err(gl::INVALID_OPERATION);
                 }
                 unsafe {
                     gl::BindAttribLocation(program, index, name.as_ptr());

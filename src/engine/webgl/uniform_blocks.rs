@@ -4,9 +4,7 @@ use serde_json::{Value, json};
 use std::ffi::CString;
 
 pub(super) fn name(value: &str) -> Result<CString> {
-    if value.len() > 1024 {
-        return Err(gl::INVALID_VALUE);
-    }
+    super::shader_names::validate(value, 1024)?;
     CString::new(value).map_err(|_| gl::INVALID_VALUE)
 }
 pub(super) fn program_count(program: u32, pname: u32) -> Result<u32> {
