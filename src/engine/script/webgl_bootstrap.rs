@@ -16,6 +16,7 @@ macro_rules! webgl_bootstrap {
     include_str!("bootstrap/webgl_vertex_arrays.js"),
     include_str!("bootstrap/webgl_methods.js"),
     include_str!("bootstrap/webgl_queries.js"),
+    include_str!("bootstrap/webgl_video_sources.js"),
     include_str!("bootstrap/webgl_textures.js"),
     include_str!("bootstrap/webgl_constants.js"),
     include_str!("bootstrap/webgl2_context.js"),

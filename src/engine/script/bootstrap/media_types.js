@@ -3,4 +3,5 @@
     // Template conversion uses Web IDL's ToString behavior, including Symbol rejection.
     const mediaTypeString = value => `${value}`;
     const mediaElementBrands = new WeakSet();
+    const videoElementBrands = new WeakSet();
     const supportedMediaType = type => host('mediaCanPlayType', mediaTypeString(type));

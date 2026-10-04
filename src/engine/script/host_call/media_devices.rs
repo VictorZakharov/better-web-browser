@@ -45,6 +45,11 @@ pub(super) fn dispatch(
                 track_id as u8,
                 args.get(3).is_some_and(JsValue::to_boolean),
             );
+            if track_id == 1 && !args.get(3).is_some_and(JsValue::to_boolean) {
+                for (node, _) in state.capture.video_nodes(id.into()) {
+                    state.media_images.blacken(node);
+                }
+            }
             return Ok(Some(JsValue::undefined()));
         }
         let node = state
@@ -64,6 +69,7 @@ pub(super) fn dispatch(
             }
         } else {
             state.capture.detach(id.into(), node.id());
+            state.media_images.remove(node.id());
         }
         return Ok(Some(JsValue::undefined()));
     }

@@ -24,6 +24,7 @@ mod geometry;
 mod guarded_run;
 mod history;
 mod import_maps;
+mod media_images;
 mod memory;
 mod module_preparation;
 pub(crate) mod parser;

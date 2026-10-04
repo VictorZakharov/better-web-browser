@@ -1,4 +1,4 @@
-    const webGl2IsImage = value => imageBitmapStates.has(value) || videoFrameStates.has(value) ||
+    const webGl2IsImage = value => webGlIsVideoSource(value) || imageBitmapStates.has(value) || videoFrameStates.has(value) ||
         imageDataStates.has(value) || offscreenCanvasBrands.has(value) ||
         typeof nodeHandles !== 'undefined' && nodeHandles.has(value) &&
         (value instanceof HTMLCanvasElement ||
@@ -12,7 +12,11 @@
         return webGl2PixelArgument(value);
     };
     const webGl2ImagePixels = (context,source,width,height,depth,format,type,volume) => {
-        const snapshot=imageSourceSnapshot(source,true), state=webGl2State(context);
+        // A DOM overload is incompatible with PIXEL_UNPACK_BUFFER, even when
+        // the source has no decoded frame. Validate without reading any pixels.
+        if (webGlCall(context,'getParameter',[0x88ef])) { webGlError(context,0x0502); return null; }
+        const snapshot=webGlSourceSnapshot(context,source), state=webGl2State(context);
+        if (!snapshot) return null;
         const bitmap=imageBitmapStates.get(source);
         if (bitmap) snapshot.pixels=bitmap.pixels;
         const components=new Map([[0x1903,1],[0x1906,1],[0x1909,1],[0x190a,2],

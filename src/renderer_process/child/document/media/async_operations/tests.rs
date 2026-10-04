@@ -35,6 +35,7 @@ fn previous_playback() -> MediaPlayback {
     let dom = crate::engine::dom::parse("<video></video>");
     let node = dom.elements_named("video").next().unwrap().id();
     MediaPlayback {
+        origin_clean: true,
         node,
         source_id: 1,
         clock_100ns: 100,

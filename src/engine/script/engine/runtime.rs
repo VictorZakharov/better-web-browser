@@ -39,6 +39,8 @@ mod webgl2_uniform_bindings_tests;
 mod webgl2_view_transform_tests;
 #[cfg(all(test, windows))]
 mod webgl_reflection_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl_video_source_tests;
 
 static INITIALIZE_V8: Once = Once::new();
 static V8_PLATFORM: OnceLock<v8::SharedRef<v8::Platform>> = OnceLock::new();

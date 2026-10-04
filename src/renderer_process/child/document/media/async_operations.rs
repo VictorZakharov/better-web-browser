@@ -57,7 +57,8 @@ impl DocumentRuntime {
             (
                 PendingMediaAction::Decode { mime_type, .. },
                 MediaOperationCompletion::Decoded(result),
-            ) => match result.and_then(|decode| self.install_media_decode(node, decode, mime_type))
+            ) => match result
+                .and_then(|decode| self.install_media_decode(node, decode, mime_type, true))
             {
                 Ok(()) => "committed",
                 Err(error) => {
