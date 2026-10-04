@@ -26,6 +26,12 @@ impl WebGl {
         let program = self.objects.get(c.u(0)?, Kind::Program)?.native;
         let core = self.core.as_ref().ok_or(gl::INVALID_OPERATION)?;
         match c.op.as_str() {
+            "getFragDataLocation" => {
+                let name = name(&c.text)?;
+                let location = unsafe { (core.frag_data_location)(program, name.as_ptr()) };
+                self.driver_result()?;
+                Ok(json!(location))
+            }
             "getUniformIndices" => {
                 let names: Vec<String> =
                     serde_json::from_str(&c.text).map_err(|_| gl::INVALID_VALUE)?;

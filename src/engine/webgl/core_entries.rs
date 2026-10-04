@@ -30,6 +30,7 @@ pub(super) type SamplerFloatQuery = unsafe extern "system" fn(u32, u32, *mut f32
 pub(super) type UniformIndices = unsafe extern "system" fn(u32, i32, *const *const i8, *mut u32);
 pub(super) type ActiveUniforms = unsafe extern "system" fn(u32, i32, *const u32, u32, *mut i32);
 pub(super) type UniformBlockIndex = unsafe extern "system" fn(u32, *const i8) -> u32;
+pub(super) type FragDataLocation = unsafe extern "system" fn(u32, *const i8) -> i32;
 pub(super) type UniformBlockQuery = unsafe extern "system" fn(u32, u32, u32, *mut i32);
 pub(super) type UniformBlockName = unsafe extern "system" fn(u32, u32, i32, *mut i32, *mut i8);
 pub(super) type UniformBlockBinding = unsafe extern "system" fn(u32, u32, u32);
@@ -62,6 +63,7 @@ pub(super) struct CoreEntries {
     pub uniform_indices: UniformIndices,
     pub active_uniforms: ActiveUniforms,
     pub uniform_block_index: UniformBlockIndex,
+    pub frag_data_location: FragDataLocation,
     pub uniform_block_query: UniformBlockQuery,
     pub uniform_block_name: UniformBlockName,
     pub uniform_block_binding: UniformBlockBinding,
@@ -163,6 +165,7 @@ impl CoreEntries {
             uniform_indices: entry!(c"glGetUniformIndices", UniformIndices),
             active_uniforms: entry!(c"glGetActiveUniformsiv", ActiveUniforms),
             uniform_block_index: entry!(c"glGetUniformBlockIndex", UniformBlockIndex),
+            frag_data_location: entry!(c"glGetFragDataLocation", FragDataLocation),
             uniform_block_query: entry!(c"glGetActiveUniformBlockiv", UniformBlockQuery),
             uniform_block_name: entry!(c"glGetActiveUniformBlockName", UniformBlockName),
             uniform_block_binding: entry!(c"glUniformBlockBinding", UniformBlockBinding),

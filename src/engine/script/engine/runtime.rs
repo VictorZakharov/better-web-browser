@@ -13,6 +13,22 @@ mod gpu_task_tests;
 mod gpu_tasks;
 mod hooks;
 mod module_preparation;
+#[cfg(all(test, windows))]
+mod webgl2_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_data_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_framebuffer_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_image_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_pixel_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_sync_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_texture_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_uniform_bindings_tests;
 
 static INITIALIZE_V8: Once = Once::new();
 static V8_PLATFORM: OnceLock<v8::SharedRef<v8::Platform>> = OnceLock::new();

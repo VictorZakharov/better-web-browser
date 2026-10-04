@@ -17,6 +17,11 @@
     }
     Object.defineProperty(WebGLContextEvent.prototype, Symbol.toStringTag, {value:'WebGLContextEvent'});
     Object.defineProperty(globalThis, 'WebGLContextEvent', {configurable:true, writable:true, value:WebGLContextEvent});
+    class WebGLObject {
+        constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
+    }
+    Object.defineProperty(WebGLObject.prototype, Symbol.toStringTag, {value:'WebGLObject'});
+    Object.defineProperty(globalThis, 'WebGLObject', {configurable:true, writable:true, value:WebGLObject});
     for (const name of ['WebGLBuffer', 'WebGLShader', 'WebGLProgram', 'WebGLTexture',
         'WebGLFramebuffer', 'WebGLRenderbuffer', 'WebGLUniformLocation', 'WebGLActiveInfo',
         'WebGLShaderPrecisionFormat']) {
@@ -24,6 +29,12 @@
             constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
         };
         Object.defineProperty(constructor, 'name', {value:name});
+        // Resource interfaces inherit WebGLObject; reflection records and
+        // uniform locations are separate IDL interfaces, not GPU resources.
+        if (!['WebGLUniformLocation','WebGLActiveInfo','WebGLShaderPrecisionFormat'].includes(name)) {
+            Object.setPrototypeOf(constructor.prototype,WebGLObject.prototype);
+            Object.setPrototypeOf(constructor,WebGLObject);
+        }
         Object.defineProperty(constructor.prototype, Symbol.toStringTag, {value:name});
         webGlObjectClasses[name] = constructor;
         Object.defineProperty(globalThis, name, {configurable:true, writable:true, value:constructor});
@@ -46,7 +57,7 @@
             webGlError(context, 0x0501); return null;
         }
         const encoded = f.map(value => Object.is(value, -0) ? '-0' : Number.isFinite(value) ? value : Number.isNaN(value) ? 'nan' : value > 0 ? 'inf' : '-inf');
-        const raw = host(op==='readPixels'?'webglReadPixels':'webglCommand', state.id, JSON.stringify({op, i, f:encoded, text}), bytes);
+        const raw = host(op==='readPixels'||op==='getBufferSubData'?'webglReadPixels':'webglCommand', state.id, JSON.stringify({op, i, f:encoded, text}), bytes);
         if (raw instanceof Uint8Array) return raw;
         // Ordinary scalar/array replies do not need a recursive reviver walk.
         // Only native non-JSON float sentinels require the special conversion.
@@ -115,7 +126,7 @@
     }
     Object.defineProperty(WebGLRenderingContext.prototype, Symbol.toStringTag, {value:'WebGLRenderingContext'});
     Object.defineProperty(globalThis, 'WebGLRenderingContext', {configurable:true, writable:true, value:WebGLRenderingContext});
-    const createWebGlContext = (canvas, requested = {}) => {
+    const createWebGlContext = (canvas, requested = {}, api = 'webgl1') => {
         const attributes = webGlContextAttributes(requested);
         // WARP is a real software GLES driver, not a promise of hardware acceleration.
         const creationFailed = message => {
@@ -126,11 +137,11 @@
         if (attributes.failIfMajorPerformanceCaveat)
             return creationFailed('The available ANGLE/WARP backend is software rendered');
         const id = host('webglCreate', Math.max(1, canvas.width), Math.max(1, canvas.height),
-            JSON.stringify({alpha:attributes.alpha, depth:attributes.depth,
+            JSON.stringify({api, alpha:attributes.alpha, depth:attributes.depth,
                 stencil:attributes.stencil, preserve:attributes.preserveDrawingBuffer}));
         if (!id) return creationFailed('ANGLE/WARP is unavailable or the WebGL context/drawing-buffer budget was exceeded');
-        const context = new WebGLRenderingContext(webGlToken);
-        webGlContexts.set(context, {id, canvas, attributes, objects:new Map(), lost:false, epoch:0,
+        const context = api === 'webgl2' ? new WebGL2RenderingContext(webGlToken) : new WebGLRenderingContext(webGlToken);
+        webGlContexts.set(context, {id, api, canvas, attributes, objects:new Map(), lost:false, epoch:0,
             extensions:new Map(), lossReported:false, lossError:0,
             dirty:true, unpackFlip:false, unpackPremultiply:false, unpackColorSpace:0x9244});
         return context;

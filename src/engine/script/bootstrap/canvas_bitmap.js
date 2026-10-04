@@ -49,7 +49,7 @@
         }
         if (source instanceof HTMLCanvasElement || source instanceof OffscreenCanvas)
             return canvasBitmapSnapshot(source);
-        if (source instanceof HTMLImageElement) {
+        if (typeof HTMLImageElement !== 'undefined' && source instanceof HTMLImageElement) {
             // Only decoded, same-origin/CORS-readable bytes may enter Canvas.
             // Opaque image responses remain inaccessible through this path.
             const decoded = detachedImageLoads.get(source)?.decoded;

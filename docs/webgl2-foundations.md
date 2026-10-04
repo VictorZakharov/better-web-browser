@@ -193,6 +193,36 @@ not CPU-generated substitutes. Public admission still requires broader tests.
 Coherent realm overloads need their own bindings. Public core entry points need
 versioned realm bindings, not WebGL1 extension objects under new names.
 
+The staged realm now has a distinct WebGL2 prototype and genuinely branded
+query, sampler, sync, transform-feedback and vertex-array objects. All resource
+interfaces inherit `WebGLObject`; reflection records and uniform locations do
+not. Rejected native deletions do not prematurely retire the JavaScript brand.
+Private unit-test admission reaches the real GLES3 backend without advertising
+partial support through public `getContext('webgl2')` or interface globals.
+
+Implemented staged bindings include indexed buffers, owned-byte buffer readback,
+uniform-block reflection, unsigned/non-square uniforms, integer attributes,
+independent framebuffer routes, typed clears, multisample queries/resolves,
+invalidation, and opaque fences. Buffer and uniform ranges use source elements;
+pixel-buffer transfers use byte offsets. Intrinsic view validation rejects
+detached and out-of-bounds resizable buffers and accepts genuine shared views
+without consulting shadowed author properties or typed-array iterators.
+Native fragment-output reflection uses a fixed ANGLE entry point and bounded
+NUL-free names. Connected-canvas drawing uses the normal paint checkpoint.
+
+Texture binding work includes typed 2D/volume uploads, immutable storage,
+layer attachments, compressed element-offset/length and PBO overloads, and
+typed pixel readback. The 262 WebGL2 numeric constants are derived solely from
+the Khronos IDL's literal declarations, with its compatible permission notice
+retained in the table. No executable upstream code was imported. DOM image
+sources now support subrectangles, slice strides, flip/premultiplication, and
+unsigned-byte/float/half-float conversions using the existing decoded Canvas
+snapshots. The private native upload guard restores every unpack scalar and
+rejects a bound PBO rather than changing overloads silently. Packed DOM-image
+conversions and the complete interface contract remain admission work, not
+claimed features. The existing WebGL1 regression suite must stay green
+throughout.
+
 Only after the coherent interface is admitted should shared Window/Worker tests,
 unchanged upstream WebGL2 cases and hidden Chromium fixtures establish public
 availability. Running the unchanged sibling game remains a separate end-to-end

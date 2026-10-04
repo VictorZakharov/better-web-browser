@@ -16,6 +16,21 @@ macro_rules! webgl_bootstrap {
     include_str!("bootstrap/webgl_queries.js"),
     include_str!("bootstrap/webgl_textures.js"),
     include_str!("bootstrap/webgl_constants.js"),
+    include_str!("bootstrap/webgl2_context.js"),
+    include_str!("bootstrap/webgl2_constants.js"),
+    include_str!("bootstrap/webgl2_data.js"),
+    include_str!("bootstrap/webgl2_image_sources.js"),
+    include_str!("bootstrap/webgl2_pixels.js"),
+    include_str!("bootstrap/webgl2_texture2d.js"),
+    include_str!("bootstrap/webgl2_compressed_textures.js"),
+    include_str!("bootstrap/webgl2_objects.js"),
+    include_str!("bootstrap/webgl2_sync.js"),
+    include_str!("bootstrap/webgl2_framebuffers.js"),
+    include_str!("bootstrap/webgl2_buffers.js"),
+    include_str!("bootstrap/webgl2_queries.js"),
+    include_str!("bootstrap/webgl2_uniform_blocks.js"),
+    include_str!("bootstrap/webgl2_uniforms.js"),
+    include_str!("bootstrap/webgl2_vertex_attributes.js"),
         )
     };
 }

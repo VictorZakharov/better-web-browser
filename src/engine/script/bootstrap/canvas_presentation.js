@@ -71,6 +71,10 @@
     paintMethod(ImageBitmapRenderingContext.prototype, 'transferFromImageBitmap');
     for (const name of ['clear', 'drawArrays', 'drawElements'])
         paintMethod(WebGLRenderingContext.prototype, name);
+    for (const name of ['clear','drawArrays','drawElements','drawArraysInstanced',
+        'drawElementsInstanced','drawRangeElements','blitFramebuffer',
+        'clearBufferfv','clearBufferiv','clearBufferuiv','clearBufferfi'])
+        paintMethod(webGl2Prototype,name);
     paintMethod(OffscreenCanvas.prototype, 'transferToImageBitmap', canvas => canvas);
 
     const originalGetContext = HTMLCanvasElement.prototype.getContext;

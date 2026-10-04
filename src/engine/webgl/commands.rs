@@ -4,7 +4,11 @@ use serde_json::Value;
 
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
+        if let Some(result) = self.dispatch_texture_transfer(c, bytes) {
+            return result;
+        }
         match c.op.as_str() {
+            "deleteWebGl2Object" => return self.delete_core_object_checked(c),
             "createTransformFeedback"
             | "deleteTransformFeedback"
             | "isTransformFeedback"
@@ -25,25 +29,8 @@ impl WebGl {
                 return self.query_object_command(c);
             }
             "readPixelsToBuffer" => return self.read_pixels_to_buffer(c, bytes),
-            "compressedTexImage2DFromBuffer" | "compressedTexSubImage2DFromBuffer" => {
-                return self.compressed_texture_command(c, bytes);
-            }
-            "compressedTexImage3D"
-            | "compressedTexSubImage3D"
-            | "compressedTexImage3DFromBuffer"
-            | "compressedTexSubImage3DFromBuffer" => {
-                return self.compressed_volume_command(c, bytes);
-            }
-            "texImage2DFromBuffer" | "texSubImage2DFromBuffer" => {
-                if self.options.api != super::ApiVersion::Two {
-                    return Err(gl::INVALID_OPERATION);
-                }
-                return self.core_texture_upload(c, bytes);
-            }
-            "texImage3DFromBuffer" | "texSubImage3DFromBuffer" => {
-                return self.volume_texture_command(c, bytes);
-            }
             "getUniformIndices"
+            | "getFragDataLocation"
             | "getActiveUniforms"
             | "getUniformBlockIndex"
             | "getActiveUniformBlockParameter"
@@ -77,11 +64,6 @@ impl WebGl {
             "invalidateFramebuffer" | "invalidateSubFramebuffer" => {
                 return self.invalidate_framebuffer(c);
             }
-            "copyTexSubImage3D" => return self.copy_volume_texture(c),
-            "texStorage3D" | "texImage3D" | "texSubImage3D" => {
-                return self.volume_texture_command(c, bytes);
-            }
-            "texStorage2D" => return self.core_texture_storage(c),
             "drawRangeElements" => return self.draw_range_elements(c),
             "vertexAttribIPointer" => return self.vertex_pointer(c),
             "vertexAttribI4i" | "vertexAttribI4iv" | "vertexAttribI4ui" | "vertexAttribI4uiv" => {
@@ -332,9 +314,6 @@ impl WebGl {
                 unsafe {
                     gl::Hint(c.u(0)?, c.u(1)?);
                 }
-            }
-            "compressedTexImage2D" | "compressedTexSubImage2D" => {
-                return self.compressed_texture_command(c, bytes);
             }
             "isBuffer" | "isTexture" | "isFramebuffer" | "isRenderbuffer" | "isShader"
             | "isProgram" => return self.object_query(c),
