@@ -5,6 +5,14 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 static NEXT_OBJECT: AtomicU32 = AtomicU32::new(1);
 
+pub(super) fn next_browser_name() -> Result<u32> {
+    NEXT_OBJECT
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+            next.checked_add(1)
+        })
+        .map_err(|_| gl::OUT_OF_MEMORY)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Kind {
     Buffer,
@@ -15,6 +23,9 @@ pub(super) enum Kind {
     Framebuffer,
     Renderbuffer,
     VertexArray,
+    Sampler,
+    Query,
+    TransformFeedback,
 }
 pub(super) struct Object {
     pub kind: Kind,
@@ -27,14 +38,29 @@ pub(super) struct Object {
     pub pending_delete: bool,
     pub shader_log: String,
     pub uniform_type: u32,
+    pub texture_images: HashMap<(u32, i32), (u32, u32)>,
+    pub texture_allocations: HashMap<(u32, i32), usize>,
+    pub core_images: HashMap<(u32, i32), super::core_textures::Image>,
+    pub immutable_levels: u32,
+    pub renderbuffer_format: u32,
+    pub framebuffer_attachments: HashMap<u32, super::framebuffer_attachments::Attachment>,
+    pub draw_buffers: Vec<u32>,
+    pub read_buffer: u32,
     references: u32,
     attached: Vec<u32>,
 }
 #[derive(Default)]
 pub(super) struct Objects {
+    api: super::ApiVersion,
     entries: HashMap<u32, Object>,
 }
 impl Objects {
+    pub(super) fn new(api: super::ApiVersion) -> Self {
+        Self {
+            api,
+            entries: HashMap::new(),
+        }
+    }
     pub fn uniform(&self, owner: u32, generation: u32, native: u32) -> Option<u32> {
         self.entries.iter().find_map(|(&id, object)| {
             (object.kind == Kind::Uniform
@@ -49,11 +75,7 @@ impl Objects {
             return Err(gl::OUT_OF_MEMORY);
         }
         // Names must not alias in peer contexts or after a context is restored.
-        let id = NEXT_OBJECT
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
-                next.checked_add(1)
-            })
-            .map_err(|_| gl::OUT_OF_MEMORY)?;
+        let id = next_browser_name()?;
         self.entries.insert(
             id,
             Object {
@@ -67,6 +89,14 @@ impl Objects {
                 pending_delete: false,
                 shader_log: String::new(),
                 uniform_type: 0,
+                texture_images: HashMap::new(),
+                texture_allocations: HashMap::new(),
+                core_images: HashMap::new(),
+                immutable_levels: 0,
+                renderbuffer_format: 0,
+                framebuffer_attachments: HashMap::new(),
+                draw_buffers: vec![gl::COLOR_ATTACHMENT0],
+                read_buffer: gl::COLOR_ATTACHMENT0,
                 references: 0,
                 attached: Vec::new(),
             },
@@ -97,7 +127,10 @@ impl Objects {
             return Ok(());
         }
         self.get(id, kind)?;
-        if matches!(kind, Kind::Shader | Kind::Program | Kind::Buffer) {
+        if matches!(
+            kind,
+            Kind::Shader | Kind::Program | Kind::Buffer | Kind::Texture | Kind::Renderbuffer
+        ) {
             let object = self.get_mut(id, kind)?;
             if object.pending_delete {
                 return Ok(());
@@ -114,13 +147,21 @@ impl Objects {
             return Ok(());
         }
         if let Some(object) = self.entries.remove(&id) {
-            destroy(object);
+            let attached: Vec<_> = object
+                .framebuffer_attachments
+                .values()
+                .map(|entry| entry.id)
+                .collect();
+            destroy(object, self.api);
+            for resource in attached {
+                self.release(resource);
+            }
         }
         Ok(())
     }
     pub fn delete_all(&mut self) {
         for (_, object) in self.entries.drain() {
-            destroy(object);
+            destroy(object, self.api);
         }
     }
     pub fn attach(&mut self, program: u32, shader: u32) -> Result<()> {
@@ -164,7 +205,12 @@ impl Objects {
         self.get_mut(id, kind)?.native = native;
         Ok(())
     }
-    fn release(&mut self, id: u32) {
+    pub(super) fn retain(&mut self, id: u32, kind: Kind) -> Result<()> {
+        let object = self.get_mut(id, kind)?;
+        object.references = object.references.checked_add(1).ok_or(gl::OUT_OF_MEMORY)?;
+        Ok(())
+    }
+    pub(super) fn release(&mut self, id: u32) {
         if let Some(object) = self.entries.get_mut(&id) {
             object.references = object.references.saturating_sub(1);
         }
@@ -179,8 +225,11 @@ impl Objects {
         {
             // GLES already received Delete*. Names are held only while attached/current;
             // once the last reference disappears they must never alias a recycled driver ID.
-            if object.kind == Kind::Buffer {
-                destroy(object);
+            if matches!(
+                object.kind,
+                Kind::Buffer | Kind::Texture | Kind::Renderbuffer
+            ) {
+                destroy(object, self.api);
                 return;
             }
             for shader in object.attached {
@@ -194,7 +243,7 @@ impl Objects {
         })
     }
 }
-fn destroy(object: Object) {
+fn destroy(object: Object, api: super::ApiVersion) {
     // SAFETY: called only with the owning context current and a typed live driver name.
     unsafe {
         match object.kind {
@@ -206,7 +255,10 @@ fn destroy(object: Object) {
             Kind::Texture => gl::DeleteTextures(1, &object.native),
             Kind::Framebuffer => gl::DeleteFramebuffers(1, &object.native),
             Kind::Renderbuffer => gl::DeleteRenderbuffers(1, &object.native),
-            Kind::VertexArray => super::extensions::delete_vertex_array(object.native),
+            Kind::VertexArray => super::extensions::delete_vertex_array(object.native, api),
+            Kind::Sampler => super::extensions::delete_sampler(object.native),
+            Kind::Query => super::query_objects::delete_native(object.native),
+            Kind::TransformFeedback => super::transform_entries::delete_native(object.native),
         }
     }
 }

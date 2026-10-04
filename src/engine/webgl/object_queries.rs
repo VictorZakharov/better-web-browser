@@ -15,7 +15,10 @@ impl WebGl {
             .objects
             .get(c.u(0)?, kind)
             .ok()
-            .filter(|o| kind != Kind::Buffer || !o.pending_delete)
+            .filter(|o| {
+                !matches!(kind, Kind::Buffer | Kind::Texture | Kind::Renderbuffer)
+                    || !o.pending_delete
+            })
             .map(|o| o.native)
         else {
             return Ok(json!(false));
@@ -28,7 +31,11 @@ impl WebGl {
                 Kind::Renderbuffer => gl::IsRenderbuffer(native),
                 Kind::Shader => gl::IsShader(native),
                 Kind::Program => gl::IsProgram(native),
-                Kind::Uniform | Kind::VertexArray => 0,
+                Kind::Uniform
+                | Kind::VertexArray
+                | Kind::Sampler
+                | Kind::Query
+                | Kind::TransformFeedback => 0,
             }
         };
         Ok(json!(value != 0))

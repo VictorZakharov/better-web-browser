@@ -19,7 +19,7 @@ impl WebGl {
                 &mut precision,
             );
         }
-        let resources = BuiltInResources {
+        let mut resources = BuiltInResources {
             MaxVertexAttribs: limit(gl::MAX_VERTEX_ATTRIBS),
             MaxVertexUniformVectors: limit(gl::MAX_VERTEX_UNIFORM_VECTORS),
             MaxVaryingVectors: limit(gl::MAX_VARYING_VECTORS),
@@ -30,14 +30,47 @@ impl WebGl {
             OES_standard_derivatives: i32::from(self.extensions.derivatives),
             EXT_frag_depth: i32::from(self.extensions.frag_depth),
             EXT_shader_texture_lod: i32::from(self.extensions.texture_lod),
+            EXT_draw_buffers: i32::from(self.extensions.draw_buffers),
+            MaxDrawBuffers: if self.extensions.draw_buffers {
+                self.extensions.max_draw_buffers as i32
+            } else {
+                1
+            },
             FragmentPrecisionHigh: i32::from(precision > 0),
             HashFunction: None,
             ..BuiltInResources::default()
         };
-        let validator = ShaderValidator::for_webgl(kind, Output::Essl, &resources)
-            .ok_or_else(|| "Could not construct the WebGL shader validator".to_owned())?;
+        let version_two = self.options.api == super::ApiVersion::Two;
+        if version_two {
+            // ESSL300 limits are native scalar capabilities, not WebGL1's extension defaults.
+            resources.MaxVertexOutputVectors = limit(0x9122) / 4;
+            resources.MaxFragmentInputVectors = limit(0x9125) / 4;
+            resources.MinProgramTexelOffset = limit(0x8904);
+            resources.MaxProgramTexelOffset = limit(0x8905);
+            resources.MaxFragmentUniformBlocks = limit(0x8a2d);
+            resources.MaxVertexUniformBlocks = limit(0x8a2b);
+            resources.MaxDrawBuffers = limit(0x8824);
+        }
+        let validator = if version_two {
+            ShaderValidator::for_webgl2(kind, Output::Essl, &resources)
+        } else {
+            ShaderValidator::for_webgl(kind, Output::Essl, &resources)
+        }
+        .ok_or_else(|| "Could not construct the WebGL shader validator".to_owned())?;
         match validator.compile_and_translate(&[source]) {
-            Ok(translated) if translated.len() <= MAX_SHADER_BYTES * 8 => Ok(translated),
+            Ok(translated) if translated.len() <= MAX_SHADER_BYTES * 8 => {
+                if version_two {
+                    // Both validators enforce WebGL2 restrictions. Feed the native
+                    // WebGL2 compiler the validated original names: unlike WebGL1,
+                    // 1024-byte identifiers reach ANGLE's no-prefix boundary and
+                    // cannot be safely decoded by stripping a textual prefix.
+                    return Ok(source.to_owned());
+                }
+                // Both compiler stages now use WebGL1's 256-byte token limit.
+                // Undo only the translator's reversible author-name prefix
+                // before the native compiler remangles names internally.
+                Ok(translated_names(&translated))
+            }
             Ok(_) => Err("Translated WebGL shader exceeds the compiler output budget".into()),
             Err(reason) => {
                 let mut log = validator.info_log();
@@ -68,20 +101,20 @@ pub(super) fn truncate_log(log: &mut String) {
     log.truncate(end);
 }
 
-// mozangle 0.7.1's pinned ANGLE HashNames.cpp uses this reversible encoding
-// when BuiltInResources.HashFunction is null. Apply it to identifier components,
-// never array subscripts, so native reflection still describes the author API.
+// The native API receives public names after the validated translator prefix
+// is undone. Its own internal compiler mangling is not visible in reflection.
 pub(super) fn driver_name(name: &str) -> String {
-    map_identifiers(name, |word| {
-        if !word.starts_with("gl_") {
-            format!("_u{word}")
-        } else {
-            word.to_owned()
-        }
-    })
+    name.to_owned()
 }
 
 pub(super) fn public_name(name: &str) -> String {
+    name.to_owned()
+}
+
+fn translated_names(name: &str) -> String {
+    // mozangle 0.7.1's pinned ANGLE HashNames.cpp uses a reversible _u
+    // prefix when BuiltInResources.HashFunction is null. Apply to identifier
+    // components only; leave numeric subscripts and punctuation untouched.
     // WebGL 1 rejects tokens longer than 256, below ANGLE's 1024-byte
     // no-prefix threshold. Every legal user identifier has exactly one prefix.
     map_identifiers(name, |word| {
@@ -119,20 +152,25 @@ mod tests {
 
     #[test]
     fn shader_name_mapping_preserves_identifier_components_and_subscripts() {
-        assert_eq!(driver_name("lights[12]._utint"), "_ulights[12]._u_utint");
-        assert_eq!(public_name("_ulights[12]._u_utint"), "lights[12]._utint");
+        assert_eq!(driver_name("lights[12]._utint"), "lights[12]._utint");
+        assert_eq!(
+            translated_names("_ulights[12]._u_utint"),
+            "lights[12]._utint"
+        );
         assert_eq!(driver_name("gl_Position"), "gl_Position");
         assert_eq!(public_name("gl_Position"), "gl_Position");
-        assert_eq!(public_name("_ucolors[2]"), "colors[2]");
+        assert_eq!(public_name("_ucolors[2]"), "_ucolors[2]");
+        assert_eq!(translated_names("_ucolors[2]"), "colors[2]");
     }
 
     #[test]
     fn shader_identifier_budget_does_not_strip_long_author_prefix() {
         for length in [2, 255, 256] {
             let name = format!("_u{}", "a".repeat(length - 2));
-            let encoded = driver_name(&name);
+            let encoded = format!("_u{name}");
             assert_eq!(encoded.len(), length + 2);
-            assert_eq!(public_name(&encoded), name);
+            assert_eq!(translated_names(&encoded), name);
+            assert_eq!(public_name(&name), name);
         }
     }
 

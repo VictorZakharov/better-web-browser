@@ -10,7 +10,7 @@ not by an assumed HTML5test score increase.
 ## Backend and provenance
 
 The Windows backend uses exactly pinned [`mozangle` 0.7.1](https://github.com/servo/mozangle),
-a BSD-3-Clause packaging of Mozilla's ANGLE fork. EGL and GLES2 are compiled from
+a BSD-3-Clause packaging of Mozilla's ANGLE fork. EGL and GLES are compiled from
 the locked Cargo source; there is no downloaded browser DLL, author-provided native
 library, custom GLSL parser, or validation-only NULL renderer. ANGLE provides the
 GLSL compiler and D3D11 renderer. The initial policy uses D3D11 WARP, which performs
@@ -33,6 +33,24 @@ conflict with the pinned static V8 archive. It does not disable shader validatio
 rewrite third-party headers, or suppress linker diagnostics. The actual EGL context
 requests WebGL compatibility, robust resource initialization and disabled client
 arrays. Backend failure must produce context-creation failure, not a fake context.
+
+The WebGL1 provider requests **exact GLES 2.0**, with ANGLE's backwards-compatible
+context upgrade disabled. A GLES3 WebGL-compatible provider applies WebGL2 shader
+rules even to ESSL100: its `gl_FragData` array has one element, breaking valid
+`WEBGL_draw_buffers` programs. The backend version must match the author contract;
+turning off native WebGL validation is not an acceptable workaround.
+
+Private format dependencies (`OES_rgb8_rgba8`, `EXT_texture_storage`, `OES_depth24`
+and `EXT_draw_buffers`) are enabled internally without granting author APIs.
+RGBA32F uses ANGLE's `CHROMIUM_color_buffer_float_rgba` storage contract; legacy
+float/half-float and sRGB formats use their GLES2 extension tokens directly.
+The separate WebGL1 validator enforces author extension admission. Its reversible
+name prefix is removed from validated ESSL before native recompilation, preserving
+legal 256-byte identifiers and public reflection without doubling their length.
+WebGL2 remains unavailable pending its separate API and backend contract. Its
+[internal GLES3 foundations](webgl2-foundations.md) are tested without advertising
+a partial context. See the
+[texture/HDR contract](webgl-texture-formats.md) for storage and validation details.
 
 ## Implemented native boundary
 
@@ -105,6 +123,10 @@ Full upstream WebGL conformance, accelerated adapters
 and wider resource limits remain follow-up work. No WebGL 2, WebGPU, WebVR, WebXR
 or unsupported extension is advertised. Measurements are recorded in the README
 and PR; there is no score-specific browser behavior.
+
+The long-term application target is the sibling Last Stand game; its real
+WebGL 2, HDR and rendering-budget requirements are tracked in the
+[gd-clone compatibility roadmap](gd-clone-compatibility.md).
 
 The binding-parser preflight is `./scripts/prepare-angle.ps1`. It accepts an
 explicit LLVM directory or discovers the installed LLVM `bin` directory, requires

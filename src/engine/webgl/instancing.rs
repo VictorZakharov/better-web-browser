@@ -7,7 +7,7 @@ impl WebGl {
         if !self.extensions.instancing {
             return Err(gl::INVALID_OPERATION);
         }
-        if c.op == "vertexAttribDivisorANGLE" {
+        if ["vertexAttribDivisorANGLE", "vertexAttribDivisor"].contains(&c.op.as_str()) {
             let index = c.u(0)? as usize;
             let divisor = c.u(1)?;
             if index >= self.attributes.len() {
@@ -22,7 +22,8 @@ impl WebGl {
             return Ok(Value::Null);
         }
         let mode = checked_mode(c.u(0)?)?;
-        let indexed = c.op == "drawElementsInstancedANGLE";
+        let indexed =
+            ["drawElementsInstancedANGLE", "drawElementsInstanced"].contains(&c.op.as_str());
         let count = c.u(if indexed { 1 } else { 2 })?;
         let instances = c.u(if indexed { 4 } else { 3 })?;
         // Protect the software rasterizer from multiplicative work even when each
@@ -37,6 +38,7 @@ impl WebGl {
             return Err(gl::INVALID_VALUE);
         }
         self.validate_program()?;
+        self.validate_framebuffer()?;
         if indexed {
             let kind = c.u(2)?;
             let offset = c.u(3)? as usize;
@@ -48,8 +50,11 @@ impl WebGl {
                 return Ok(Value::Null);
             }
             let maximum = self.maximum_index(count as usize, size, offset)?;
-            self.validate_instance_attributes(maximum, instances, true)?;
+            if let Some(maximum) = maximum {
+                self.validate_instance_attributes(maximum, instances, true)?;
+            }
             let function = self.extensions.elements.ok_or(gl::INVALID_OPERATION)?;
+            let _sampling = self.sampling_guard()?;
             unsafe {
                 function(
                     mode,
@@ -70,6 +75,7 @@ impl WebGl {
             }
             self.validate_instance_attributes(end - 1, instances, true)?;
             let function = self.extensions.arrays.ok_or(gl::INVALID_OPERATION)?;
+            let _sampling = self.sampling_guard()?;
             unsafe {
                 function(mode, first as i32, count as i32, instances as i32);
             }

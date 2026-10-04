@@ -5,6 +5,109 @@ use serde_json::Value;
 impl WebGl {
     pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         match c.op.as_str() {
+            "createTransformFeedback"
+            | "deleteTransformFeedback"
+            | "isTransformFeedback"
+            | "bindTransformFeedback"
+            | "beginTransformFeedback"
+            | "endTransformFeedback"
+            | "pauseTransformFeedback"
+            | "resumeTransformFeedback" => {
+                return self.transform_command(c);
+            }
+            "transformFeedbackVaryings" | "getTransformFeedbackVarying" => {
+                return self.transform_varyings(c);
+            }
+            "fenceSync" | "deleteSync" | "isSync" | "clientWaitSync" | "waitSync"
+            | "getSyncParameter" => return self.sync_command(c),
+            "createQuery" | "deleteQuery" | "isQuery" | "beginQuery" | "endQuery" | "getQuery"
+            | "getQueryParameter" | "completeGpuTask" => {
+                return self.query_object_command(c);
+            }
+            "readPixelsToBuffer" => return self.read_pixels_to_buffer(c, bytes),
+            "compressedTexImage2DFromBuffer" | "compressedTexSubImage2DFromBuffer" => {
+                return self.compressed_texture_command(c, bytes);
+            }
+            "compressedTexImage3D"
+            | "compressedTexSubImage3D"
+            | "compressedTexImage3DFromBuffer"
+            | "compressedTexSubImage3DFromBuffer" => {
+                return self.compressed_volume_command(c, bytes);
+            }
+            "texImage2DFromBuffer" | "texSubImage2DFromBuffer" => {
+                if self.options.api != super::ApiVersion::Two {
+                    return Err(gl::INVALID_OPERATION);
+                }
+                return self.core_texture_upload(c, bytes);
+            }
+            "texImage3DFromBuffer" | "texSubImage3DFromBuffer" => {
+                return self.volume_texture_command(c, bytes);
+            }
+            "getUniformIndices"
+            | "getActiveUniforms"
+            | "getUniformBlockIndex"
+            | "getActiveUniformBlockParameter"
+            | "getActiveUniformBlockName"
+            | "uniformBlockBinding" => {
+                return self.uniform_block_command(c);
+            }
+            "bindBufferBase" | "bindBufferRange" | "getIndexedParameter" => {
+                return self.indexed_uniform_command(c);
+            }
+            "createSampler"
+            | "bindSampler"
+            | "deleteSampler"
+            | "isSampler"
+            | "samplerParameteri"
+            | "samplerParameterf"
+            | "getSamplerParameter" => {
+                return self.sampler_command(c);
+            }
+            "clearBufferfv" | "clearBufferiv" | "clearBufferuiv" | "clearBufferfi" => {
+                return self.typed_clear(c);
+            }
+            "renderbufferStorageMultisample" | "getInternalformatParameter" | "blitFramebuffer" => {
+                return self.multisample_command(c);
+            }
+            "framebufferTextureLayer" => {
+                self.core_attach_framebuffer(c)?;
+                return Ok(Value::Null);
+            }
+            "readBuffer" => return self.core_read_buffer(c),
+            "copyTexSubImage3D" => return self.copy_volume_texture(c),
+            "texStorage3D" | "texImage3D" | "texSubImage3D" => {
+                return self.volume_texture_command(c, bytes);
+            }
+            "texStorage2D" => return self.core_texture_storage(c),
+            "drawRangeElements" => return self.draw_range_elements(c),
+            "vertexAttribIPointer" => return self.vertex_pointer(c),
+            "vertexAttribI4i" | "vertexAttribI4iv" | "vertexAttribI4ui" | "vertexAttribI4uiv" => {
+                return self.integer_attribute(c);
+            }
+            "createVertexArray" | "bindVertexArray" | "deleteVertexArray" | "isVertexArray" => {
+                if self.options.api != super::ApiVersion::Two {
+                    return Err(gl::INVALID_OPERATION);
+                }
+                return self.vertex_array_command(c);
+            }
+            "vertexAttribDivisor" | "drawArraysInstanced" | "drawElementsInstanced" => {
+                if self.options.api != super::ApiVersion::Two {
+                    return Err(gl::INVALID_OPERATION);
+                }
+                return self.instanced_command(c);
+            }
+            "drawBuffers" => {
+                if self.options.api != super::ApiVersion::Two {
+                    return Err(gl::INVALID_OPERATION);
+                }
+                return self.draw_buffers_command(c);
+            }
+            "uniform1ui" | "uniform2ui" | "uniform3ui" | "uniform4ui" | "uniform1uiv"
+            | "uniform2uiv" | "uniform3uiv" | "uniform4uiv" | "uniformMatrix2x3fv"
+            | "uniformMatrix2x4fv" | "uniformMatrix3x2fv" | "uniformMatrix3x4fv"
+            | "uniformMatrix4x2fv" | "uniformMatrix4x3fv" => return self.core_uniform_command(c),
+            "copyBufferSubData" | "getBufferSubData" => return self.core_buffer_command(c),
+            "drawBuffersWEBGL" => return self.draw_buffers_command(c),
             "supportedExtensions" | "enableExtension" => return self.extension_command(c),
             "createVertexArrayOES"
             | "bindVertexArrayOES"
@@ -99,6 +202,7 @@ impl WebGl {
                 {
                     return Err(gl::INVALID_VALUE);
                 }
+                self.validate_framebuffer()?;
                 unsafe {
                     gl::Clear(mask);
                 }
@@ -121,6 +225,8 @@ impl WebGl {
             }
             "enable" | "disable" => {
                 let cap = c.u(0)?;
+                let rasterizer_discard =
+                    self.options.api == super::ApiVersion::Two && cap == 0x8c89;
                 if ![
                     gl::BLEND,
                     gl::CULL_FACE,
@@ -133,6 +239,7 @@ impl WebGl {
                     gl::STENCIL_TEST,
                 ]
                 .contains(&cap)
+                    && !rasterizer_discard
                 {
                     return Err(gl::INVALID_ENUM);
                 }
@@ -223,7 +330,9 @@ impl WebGl {
                     gl::Hint(c.u(0)?, c.u(1)?);
                 }
             }
-            "compressedTexImage2D" | "compressedTexSubImage2D" => return Err(gl::INVALID_ENUM),
+            "compressedTexImage2D" | "compressedTexSubImage2D" => {
+                return self.compressed_texture_command(c, bytes);
+            }
             "isBuffer" | "isTexture" | "isFramebuffer" | "isRenderbuffer" | "isShader"
             | "isProgram" => return self.object_query(c),
             "vertexAttrib1f" | "vertexAttrib2f" | "vertexAttrib3f" | "vertexAttrib4f" => {
@@ -239,6 +348,8 @@ impl WebGl {
                 unsafe {
                     gl::VertexAttrib4fv(index, values.as_ptr());
                 }
+                self.driver_result()?;
+                self.attribute_values[index as usize] = super::vertex_attributes::ValueKind::Float;
             }
             "blendColor" => unsafe {
                 gl::BlendColor(c.float(0)?, c.float(1)?, c.float(2)?, c.float(3)?);

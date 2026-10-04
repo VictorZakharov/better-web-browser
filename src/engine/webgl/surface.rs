@@ -3,11 +3,13 @@ use super::{Options, gl};
 use std::ptr;
 
 pub(super) struct Surface {
+    api: super::ApiVersion,
     pub width: u32,
     pub height: u32,
     pub framebuffer: u32,
     texture: u32,
     depth_stencil: u32,
+    read_buffer: Option<super::core_entries::ReadBuffer>,
 }
 impl Surface {
     pub fn new(width: u32, height: u32, options: Options) -> Result<Self, String> {
@@ -20,12 +22,26 @@ impl Surface {
             return Err("WebGL drawing buffer exceeds the admitted bitmap size".into());
         }
         let mut result = Self {
+            api: options.api,
             width,
             height,
             framebuffer: 0,
             texture: 0,
             depth_stencil: 0,
+            read_buffer: if options.api == super::ApiVersion::Two {
+                Some(super::core_entries::CoreEntries::read_buffer_entry()?)
+            } else {
+                None
+            },
         };
+        let _unpack = super::pixel_buffer_guard::PixelBufferGuard::unbind(
+            options.api,
+            super::pixel_buffer_guard::Direction::Unpack,
+        );
+        let _store = super::pixel_store_guard::PixelStoreGuard::tight(
+            options.api,
+            super::pixel_layout::Direction::Unpack,
+        );
         // SAFETY: dimensions are bounded, null texture data allocates storage, and ANGLE's
         // robust resource initialization is enabled. Clear also initializes depth/stencil.
         unsafe {
@@ -57,9 +73,25 @@ impl Surface {
             if options.depth || options.stencil {
                 gl::GenRenderbuffers(1, &mut result.depth_stencil);
                 gl::BindRenderbuffer(gl::RENDERBUFFER, result.depth_stencil);
-                // Packed depth/stencil is a core ANGLE-supported GLES2 drawing-buffer format.
-                gl::RenderbufferStorage(gl::RENDERBUFFER, 0x88F0, width as i32, height as i32);
-                if options.depth {
+                // Match physical storage to the granted attributes: hidden
+                // stencil bits must not make STENCIL_TEST affect a depth-only
+                // default surface, and vice versa.
+                let storage = if options.depth && options.stencil {
+                    0x88f0
+                } else if options.depth {
+                    0x81a6 // DEPTH_COMPONENT24 via the private OES_depth24 dependency.
+                } else {
+                    gl::STENCIL_INDEX8
+                };
+                gl::RenderbufferStorage(gl::RENDERBUFFER, storage, width as i32, height as i32);
+                if options.depth && options.stencil {
+                    gl::FramebufferRenderbuffer(
+                        gl::FRAMEBUFFER,
+                        0x821a,
+                        gl::RENDERBUFFER,
+                        result.depth_stencil,
+                    );
+                } else if options.depth {
                     gl::FramebufferRenderbuffer(
                         gl::FRAMEBUFFER,
                         gl::DEPTH_ATTACHMENT,
@@ -67,7 +99,7 @@ impl Surface {
                         result.depth_stencil,
                     );
                 }
-                if options.stencil {
+                if options.stencil && !options.depth {
                     gl::FramebufferRenderbuffer(
                         gl::FRAMEBUFFER,
                         gl::STENCIL_ATTACHMENT,
@@ -76,12 +108,13 @@ impl Surface {
                     );
                 }
             }
-            let complete = gl::CheckFramebufferStatus(gl::FRAMEBUFFER) == gl::FRAMEBUFFER_COMPLETE;
+            let status = gl::CheckFramebufferStatus(gl::FRAMEBUFFER);
+            let complete = status == gl::FRAMEBUFFER_COMPLETE;
             let error = gl::GetError();
             if !complete || error != gl::NO_ERROR {
                 result.destroy();
                 return Err(format!(
-                    "WebGL drawing-buffer allocation failed: GL {error:#x}"
+                    "WebGL drawing-buffer allocation failed: framebuffer {status:#x}, GL {error:#x}"
                 ));
             }
             gl::Viewport(0, 0, width as i32, height as i32);
@@ -93,15 +126,30 @@ impl Surface {
         Ok(result)
     }
     pub fn snapshot(&self) -> Result<Vec<u8>, String> {
+        let _pack = super::pixel_buffer_guard::PixelBufferGuard::unbind(
+            self.api,
+            super::pixel_buffer_guard::Direction::Pack,
+        );
         let mut pixels = vec![0; self.width as usize * self.height as usize * 4];
-        let mut binding = 0;
+        let _store = super::pixel_store_guard::PixelStoreGuard::tight(
+            self.api,
+            super::pixel_layout::Direction::Pack,
+        );
         let mut alignment = 0;
+        let _framebuffer = super::framebuffer_guard::FramebufferGuard::bind(
+            self.api,
+            super::framebuffer_guard::Direction::Read,
+            self.framebuffer,
+        );
+        let mut route = 0;
         // SAFETY: a bounded, exactly sized RGBA destination. Private state is restored even
         // on readback failure; pixels cannot expose driver memory outside this allocation.
         let error = unsafe {
-            gl::GetIntegerv(gl::FRAMEBUFFER_BINDING, &mut binding);
             gl::GetIntegerv(gl::PACK_ALIGNMENT, &mut alignment);
-            gl::BindFramebuffer(gl::FRAMEBUFFER, self.framebuffer);
+            if let Some(read_buffer) = self.read_buffer {
+                gl::GetIntegerv(0x0c02, &mut route);
+                read_buffer(gl::COLOR_ATTACHMENT0);
+            }
             gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
             gl::ReadPixels(
                 0,
@@ -114,7 +162,9 @@ impl Surface {
             );
             let error = gl::GetError();
             gl::PixelStorei(gl::PACK_ALIGNMENT, alignment);
-            gl::BindFramebuffer(gl::FRAMEBUFFER, binding as u32);
+            if let Some(read_buffer) = self.read_buffer {
+                read_buffer(route as u32);
+            }
             error
         };
         if error != gl::NO_ERROR {

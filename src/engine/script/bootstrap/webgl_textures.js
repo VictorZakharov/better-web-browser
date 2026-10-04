@@ -1,3 +1,4 @@
+    const webGlBinary16Array = Float16Array;
     webGlMethod('pixelStorei', function(pname, parameter) {
         pname = webGlUnsigned(pname);
         const state = webGlState(this);
@@ -14,30 +15,37 @@
         // Canvas imageSourceSnapshot admits only decoded same-origin/CORS-readable images.
         // WebGL never obtains opaque network pixels through a separate native decoding path.
         const snapshot = imageSourceSnapshot(source, true);
-        if (type !== 0x1401 || ![0x1908, 0x1907, 0x1906, 0x1909, 0x190a].includes(format)) {
+        if (![0x1401,0x1406,0x8d61].includes(type) || ![0x1908, 0x1907, 0x1906, 0x1909, 0x190a,0x8c40,0x8c42].includes(format)) {
             webGlError(context, 0x0502); return null;
         }
         const state = webGlState(context);
         const bitmap = imageBitmapStates.get(source);
         if (bitmap) snapshot.pixels = new Uint8ClampedArray(bitmap.pixels);
-        const components = format === 0x1908 ? 4 : format === 0x1907 ? 3 : format === 0x190a ? 2 : 1;
+        const components = [0x1908,0x8c42].includes(format) ? 4 : [0x1907,0x8c40].includes(format) ? 3 : format === 0x190a ? 2 : 1;
         const alignment = context.getParameter(0x0cf5);
-        const rowBytes = snapshot.width * components;
+        const componentBytes = type===0x1406 ? 4 : type===0x8d61 ? 2 : 1;
+        const rowBytes = snapshot.width * components * componentBytes;
         const stride = Math.ceil(rowBytes / alignment) * alignment;
+        if (stride * snapshot.height > 16*1024*1024) { webGlError(context,0x0505); return null; }
         const pixels = new Uint8Array(stride * snapshot.height);
+        // Reuse V8's IEEE binary16 conversion rather than a second half-float
+        // implementation. The packed upload still uses WebGL's Uint16Array ABI.
+        const values = type===0x1406 ? new Float32Array(pixels.buffer) :
+            type===0x8d61 ? new webGlBinary16Array(pixels.buffer) : pixels;
         for (let y = 0; y < snapshot.height; y++) for (let x = 0; x < snapshot.width; x++) {
             const sourceY = !bitmap && state.unpackFlip ? snapshot.height - 1 - y : y;
             const input = (sourceY * snapshot.width + x) * 4;
-            const output = y * stride + x * components;
+            const output = y * stride/componentBytes + x * components;
             const alpha = snapshot.pixels[input + 3];
-            const channel = offset => !bitmap && state.unpackPremultiply ? Math.round(snapshot.pixels[input + offset] * alpha / 255) : snapshot.pixels[input + offset];
-            if (format === 0x1906) pixels[output] = alpha;
+            const convert = value => componentBytes===1 ? Math.round(value) : value/255;
+            const channel = offset => convert(!bitmap && state.unpackPremultiply ? snapshot.pixels[input + offset] * alpha / 255 : snapshot.pixels[input + offset]);
+            if (format === 0x1906) values[output] = convert(alpha);
             else if (format === 0x1909 || format === 0x190a) {
-                pixels[output] = channel(0);
-                if (components === 2) pixels[output + 1] = alpha;
+                values[output] = channel(0);
+                if (components === 2) values[output + 1] = convert(alpha);
             } else {
-                for (let offset = 0; offset < 3; offset++) pixels[output + offset] = channel(offset);
-                if (components === 4) pixels[output + 3] = alpha;
+                for (let offset = 0; offset < 3; offset++) values[output + offset] = channel(offset);
+                if (components === 4) values[output + 3] = convert(alpha);
             }
         }
         return {pixels, width:snapshot.width, height:snapshot.height};
@@ -58,8 +66,12 @@
             if (sub) [target, level, x, y, width, height, format, type, pixels] = args;
             else [target, level, internal, width, height, border, format, type, pixels] = args;
             if (pixels !== null) {
-                const byte = webGlUnsigned(type) === 0x1401;
-                if (byte ? !(pixels instanceof Uint8Array) && !(pixels instanceof Uint8ClampedArray) : !(pixels instanceof Uint16Array)) {
+                const kind=webGlUnsigned(type);
+                const valid=kind===0x1401 ? pixels instanceof Uint8Array || pixels instanceof Uint8ClampedArray :
+                    kind===0x1406 ? pixels instanceof Float32Array :
+                    [0x1405,0x84fa].includes(kind) ? pixels instanceof Uint32Array :
+                    [0x1403,0x8d61,0x8363,0x8033,0x8034].includes(kind) && pixels instanceof Uint16Array;
+                if (!valid) {
                     webGlError(this, 0x0502); return;
                 }
                 pixels = webGlBytes(pixels);

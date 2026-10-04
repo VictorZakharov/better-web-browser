@@ -228,10 +228,17 @@ mod webgl;
 #[cfg(windows)]
 mod webgl_argument_brands;
 mod webgl_attributes;
+pub(super) mod webgl_compressed_textures;
 #[cfg(windows)]
 mod webgl_contracts;
+mod webgl_depth_textures;
+pub(super) mod webgl_draw_buffers;
+mod webgl_float_copy;
+mod webgl_float_sampling;
+mod webgl_float_textures;
 #[cfg(windows)]
 mod webgl_fragment_depth;
+mod webgl_framebuffer_lifetimes;
 #[cfg(windows)]
 mod webgl_instancing;
 mod webgl_khronos_reporter;
@@ -247,9 +254,11 @@ mod webgl_presentation;
 mod webgl_shader_extensions;
 #[cfg(windows)]
 mod webgl_shader_validation;
+mod webgl_srgb;
 mod webgl_stencil_masks;
 #[cfg(windows)]
 mod webgl_texture_lod;
+mod webgl_texture_restoration;
 mod webgl_uniform_reflection;
 #[cfg(windows)]
 mod webgl_vertex_arrays;

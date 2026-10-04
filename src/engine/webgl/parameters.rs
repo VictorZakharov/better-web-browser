@@ -2,7 +2,66 @@
 use super::{Result, WebGl, gl, json};
 use serde_json::Value;
 impl WebGl {
+    fn implementation_read_type(&mut self) -> Result<u32> {
+        // State queries use INVALID_OPERATION for an incomplete read surface;
+        // actual readPixels retains INVALID_FRAMEBUFFER_OPERATION.
+        self.color_read_type().map_err(|error| {
+            if error == gl::INVALID_FRAMEBUFFER_OPERATION {
+                gl::INVALID_OPERATION
+            } else {
+                error
+            }
+        })
+    }
+
     pub(super) fn parameter(&mut self, pname: u32) -> Result<Value> {
+        if self.options.api == super::ApiVersion::Two && [0x8b9a, 0x8b9b].contains(&pname) {
+            self.validate_read_framebuffer().map_err(|error| {
+                if error == gl::INVALID_FRAMEBUFFER_OPERATION {
+                    gl::INVALID_OPERATION
+                } else {
+                    error
+                }
+            })?;
+            let mut value = 0;
+            unsafe { gl::GetIntegerv(pname, &mut value) };
+            self.driver_result()?;
+            return Ok(json!(value));
+        }
+        if let Some(value) = self.core_framebuffer_parameter(pname)? {
+            return Ok(value);
+        }
+        if [0x806a, 0x8c1d].contains(&pname) {
+            if self.options.api != super::ApiVersion::Two {
+                return Err(gl::INVALID_ENUM);
+            }
+            let id = self.textures[self.texture_unit][if pname == 0x806a { 2 } else { 3 }];
+            return Ok(if id == 0 { Value::Null } else { json!(id) });
+        }
+        if let Some(value) = self.core_parameter(pname)? {
+            return Ok(value);
+        }
+        if let Some(value) = self.core_buffer_parameter(pname)? {
+            return Ok(value);
+        }
+        if let Some(value) = self.draw_buffer_parameter(pname)? {
+            return Ok(value);
+        }
+        if pname == 0x84ff {
+            if !self
+                .extensions
+                .textures
+                .enabled(super::texture_capabilities::TextureCapability::Anisotropy)
+            {
+                return Err(gl::INVALID_ENUM);
+            }
+            let mut value = 0.0;
+            unsafe {
+                gl::GetFloatv(pname, &mut value);
+            }
+            self.driver_result()?;
+            return Ok(json!(value));
+        }
         if let Some(mask) = self.stencil_masks.query(pname) {
             return Ok(json!(mask));
         }
@@ -23,13 +82,14 @@ impl WebGl {
             }
             return Ok(json!(self.vertex_arrays.bound));
         }
-        // The bridge implements the mandatory RGBA/UNSIGNED_BYTE read path for every
-        // admitted color surface, independent of a driver's optional packed read format.
+        // Report the supported read pair for the currently bound color surface,
+        // not a native optional packed format that the bridge cannot transport.
         if pname == 0x8b9b {
+            self.implementation_read_type()?;
             return Ok(json!(gl::RGBA));
         }
         if pname == 0x8b9a {
-            return Ok(json!(gl::UNSIGNED_BYTE));
+            return Ok(json!(self.implementation_read_type()?));
         }
         if [
             gl::MAX_TEXTURE_SIZE,
@@ -68,9 +128,13 @@ impl WebGl {
         match pname {
             gl::VENDOR => return Ok(json!("Breeze")),
             gl::RENDERER => return Ok(json!("ANGLE WebGL renderer")),
-            gl::VERSION => return Ok(json!("WebGL 1.0 (OpenGL ES 2.0 ANGLE)")),
-            gl::SHADING_LANGUAGE_VERSION => return Ok(json!("WebGL GLSL ES 1.0 (ANGLE)")),
-            gl::COMPRESSED_TEXTURE_FORMATS => return Ok(json!([])),
+            gl::VERSION => return Ok(json!(self.options.api.version_string())),
+            gl::SHADING_LANGUAGE_VERSION => {
+                return Ok(json!(self.options.api.shader_version_string()));
+            }
+            gl::COMPRESSED_TEXTURE_FORMATS => {
+                return Ok(json!(self.extensions.compressed.formats()));
+            }
             gl::BLEND
             | gl::CULL_FACE
             | gl::DEPTH_TEST

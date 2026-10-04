@@ -2,9 +2,24 @@
 use super::{Command, Kind, Result, WebGl, gl, json};
 use serde_json::Value;
 const DEPTH_STENCIL: u32 = 0x84f9;
-const DEPTH_STENCIL_ATTACHMENT: u32 = 0x821a;
 impl WebGl {
     pub(super) fn framebuffer_command(&mut self, c: &Command) -> Result<Value> {
+        if self.options.api == super::ApiVersion::Two {
+            match c.op.as_str() {
+                "bindFramebuffer" => return self.core_bind_framebuffer(c),
+                "deleteFramebuffer" => return self.core_delete_framebuffer(c),
+                "renderbufferStorage" => return self.core_renderbuffer_storage(c),
+                "getFramebufferAttachmentParameter" => return self.core_attachment_parameter(c),
+                "framebufferTexture2D" | "framebufferRenderbuffer" => {
+                    self.core_attach_framebuffer(c)?;
+                    return Ok(Value::Null);
+                }
+                "checkFramebufferStatus" => {
+                    return Ok(json!(self.core_framebuffer_status(c.u(0)?)?));
+                }
+                _ => {}
+            }
+        }
         match c.op.as_str() {
             "createFramebuffer" | "createRenderbuffer" => {
                 let framebuffer = c.op == "createFramebuffer";
@@ -57,6 +72,9 @@ impl WebGl {
                     return Err(gl::INVALID_ENUM);
                 }
                 let id = c.u(1)?;
+                if id != 0 && self.objects.get(id, Kind::Renderbuffer)?.pending_delete {
+                    return Err(gl::INVALID_OPERATION);
+                }
                 let native = self.objects.name(id, Kind::Renderbuffer)?;
                 unsafe {
                     gl::BindRenderbuffer(gl::RENDERBUFFER, native);
@@ -75,6 +93,12 @@ impl WebGl {
                 }
                 if !framebuffer && self.renderbuffer == id {
                     self.renderbuffer = 0;
+                    unsafe {
+                        gl::BindRenderbuffer(gl::RENDERBUFFER, 0);
+                    }
+                }
+                if !framebuffer {
+                    self.detach_current_resource(id, Kind::Renderbuffer)?;
                 }
                 self.objects.delete(
                     id,
@@ -92,23 +116,13 @@ impl WebGl {
                 let format = c.u(1)?;
                 let width = c.n(2)?;
                 let height = c.n(3)?;
-                if ![
-                    gl::RGBA4,
-                    gl::RGB565,
-                    gl::RGB5_A1,
-                    gl::DEPTH_COMPONENT16,
-                    gl::STENCIL_INDEX8,
-                    DEPTH_STENCIL,
-                ]
-                .contains(&format)
-                {
-                    return Err(gl::INVALID_ENUM);
-                }
+                let bytes =
+                    super::texture_formats::renderbuffer_bytes(format, &self.extensions.textures)?;
                 if !(0..=4096).contains(&width) || !(0..=4096).contains(&height) {
                     return Err(gl::INVALID_VALUE);
                 }
                 self.objects.get(self.renderbuffer, Kind::Renderbuffer)?;
-                self.charge(0, width as usize * height as usize * 4)?;
+                self.charge(0, width as usize * height as usize * bytes)?;
                 unsafe {
                     gl::RenderbufferStorage(
                         gl::RENDERBUFFER,
@@ -121,71 +135,19 @@ impl WebGl {
                         height,
                     );
                 }
+                self.driver_result()?;
+                self.objects
+                    .get_mut(self.renderbuffer, Kind::Renderbuffer)?
+                    .renderbuffer_format = format;
             }
             "framebufferTexture2D" | "framebufferRenderbuffer" => {
-                if c.u(0)? != gl::FRAMEBUFFER {
-                    return Err(gl::INVALID_ENUM);
-                }
-                if self.framebuffer == 0 {
-                    return Err(gl::INVALID_OPERATION);
-                }
-                let attachment = c.u(1)?;
-                if ![
-                    gl::COLOR_ATTACHMENT0,
-                    gl::DEPTH_ATTACHMENT,
-                    gl::STENCIL_ATTACHMENT,
-                    DEPTH_STENCIL_ATTACHMENT,
-                ]
-                .contains(&attachment)
-                {
-                    return Err(gl::INVALID_ENUM);
-                }
-                let attachments: &[u32] = if attachment == DEPTH_STENCIL_ATTACHMENT {
-                    &[gl::DEPTH_ATTACHMENT, gl::STENCIL_ATTACHMENT]
-                } else {
-                    std::slice::from_ref(&attachment)
-                };
-                if c.op == "framebufferTexture2D" {
-                    let target = c.u(2)?;
-                    if target != gl::TEXTURE_2D
-                        && !(gl::TEXTURE_CUBE_MAP_POSITIVE_X..=gl::TEXTURE_CUBE_MAP_NEGATIVE_Z)
-                            .contains(&target)
-                    {
-                        return Err(gl::INVALID_ENUM);
-                    }
-                    if c.n(4)? != 0 {
-                        return Err(gl::INVALID_VALUE);
-                    }
-                    let native = self.objects.name(c.u(3)?, Kind::Texture)?;
-                    for &a in attachments {
-                        unsafe {
-                            gl::FramebufferTexture2D(gl::FRAMEBUFFER, a, target, native, 0);
-                        }
-                    }
-                } else {
-                    if c.u(2)? != gl::RENDERBUFFER {
-                        return Err(gl::INVALID_ENUM);
-                    }
-                    let native = self.objects.name(c.u(3)?, Kind::Renderbuffer)?;
-                    for &a in attachments {
-                        unsafe {
-                            gl::FramebufferRenderbuffer(
-                                gl::FRAMEBUFFER,
-                                a,
-                                gl::RENDERBUFFER,
-                                native,
-                            );
-                        }
-                    }
-                }
+                self.attach_framebuffer(c)?;
             }
             "checkFramebufferStatus" => {
                 if c.u(0)? != gl::FRAMEBUFFER {
                     return Err(gl::INVALID_ENUM);
                 }
-                return Ok(json!(unsafe {
-                    gl::CheckFramebufferStatus(gl::FRAMEBUFFER)
-                }));
+                return Ok(json!(self.framebuffer_status()?));
             }
             "getRenderbufferParameter" => {
                 if c.u(0)? != gl::RENDERBUFFER {
@@ -193,7 +155,7 @@ impl WebGl {
                 }
                 self.objects.get(self.renderbuffer, Kind::Renderbuffer)?;
                 let pname = c.u(1)?;
-                if ![
+                if !([
                     gl::RENDERBUFFER_WIDTH,
                     gl::RENDERBUFFER_HEIGHT,
                     gl::RENDERBUFFER_INTERNAL_FORMAT,
@@ -205,6 +167,7 @@ impl WebGl {
                     gl::RENDERBUFFER_STENCIL_SIZE,
                 ]
                 .contains(&pname)
+                    || self.options.api == super::ApiVersion::Two && pname == 0x8cab)
                 {
                     return Err(gl::INVALID_ENUM);
                 }
@@ -213,72 +176,17 @@ impl WebGl {
                     gl::GetRenderbufferParameteriv(gl::RENDERBUFFER, pname, &mut value);
                 }
                 self.driver_result()?;
-                return Ok(json!(
-                    if pname == gl::RENDERBUFFER_INTERNAL_FORMAT && value == 0x88F0 {
-                        DEPTH_STENCIL as i32
-                    } else {
-                        value
-                    }
-                ));
+                return Ok(json!(if self.options.api == super::ApiVersion::One
+                    && pname == gl::RENDERBUFFER_INTERNAL_FORMAT
+                    && value == 0x88F0
+                {
+                    DEPTH_STENCIL as i32
+                } else {
+                    value
+                }));
             }
             "getFramebufferAttachmentParameter" => {
-                if c.u(0)? != gl::FRAMEBUFFER {
-                    return Err(gl::INVALID_ENUM);
-                }
-                if self.framebuffer == 0 {
-                    return Err(gl::INVALID_OPERATION);
-                }
-                let attachment = c.u(1)?;
-                if ![
-                    gl::COLOR_ATTACHMENT0,
-                    gl::DEPTH_ATTACHMENT,
-                    gl::STENCIL_ATTACHMENT,
-                ]
-                .contains(&attachment)
-                {
-                    return Err(gl::INVALID_ENUM);
-                }
-                let pname = c.u(2)?;
-                if ![
-                    gl::FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
-                    gl::FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,
-                    gl::FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL,
-                    gl::FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE,
-                ]
-                .contains(&pname)
-                {
-                    return Err(gl::INVALID_ENUM);
-                }
-                let mut value = 0;
-                unsafe {
-                    gl::GetFramebufferAttachmentParameteriv(
-                        gl::FRAMEBUFFER,
-                        attachment,
-                        pname,
-                        &mut value,
-                    );
-                }
-                self.driver_result()?;
-                if pname == gl::FRAMEBUFFER_ATTACHMENT_OBJECT_NAME {
-                    let mut kind = 0;
-                    unsafe {
-                        gl::GetFramebufferAttachmentParameteriv(
-                            gl::FRAMEBUFFER,
-                            attachment,
-                            gl::FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
-                            &mut kind,
-                        );
-                    }
-                    return Ok(json!(self.objects.public_name(
-                        value as u32,
-                        if kind == gl::TEXTURE as i32 {
-                            Kind::Texture
-                        } else {
-                            Kind::Renderbuffer
-                        }
-                    )));
-                }
-                return Ok(json!(value));
+                return self.attachment_parameter(c);
             }
             _ => return Err(gl::INVALID_OPERATION),
         }
