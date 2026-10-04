@@ -86,6 +86,38 @@ pub(super) fn read(context: &mut WebGl, id: i64, size: usize) -> Vec<u8> {
         })
         .unwrap()
 }
+pub(super) fn assert_float_capture(bytes: &[u8], expected: &[f32]) {
+    // Lifecycle tests compare captured values, not a provider's signed-zero
+    // choice for shader arithmetic. Keep transport bytes unchanged and require
+    // exact length and numeric equality (no tolerance for other values).
+    assert_eq!(bytes.len(), std::mem::size_of_val(expected));
+    for (index, (bytes, expected)) in bytes.chunks_exact(4).zip(expected).enumerate() {
+        let actual = f32::from_ne_bytes(bytes.try_into().unwrap());
+        assert_eq!(actual, *expected, "captured component {index}");
+    }
+}
+
+#[test]
+fn float_capture_comparison_ignores_only_zero_sign_without_rewriting_bytes() {
+    for zero in [0f32, -0f32] {
+        let bytes = [0.5f32, zero, 1.5, -1.].map(f32::to_ne_bytes).concat();
+        assert_float_capture(&bytes, &[0.5, 0., 1.5, -1.]);
+        assert_eq!(&bytes[4..8], &zero.to_ne_bytes());
+    }
+    let wrong = [0.5f32, 1., 1.5, -1.].map(f32::to_ne_bytes).concat();
+    assert!(
+        std::panic::catch_unwind(|| {
+            assert_float_capture(&wrong, &[0.5, 0., 1.5, -1.]);
+        })
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(|| {
+            assert_float_capture(&wrong[..12], &[0.5, 1., 1.5, -1.]);
+        })
+        .is_err()
+    );
+}
 pub(super) fn draw(context: &mut WebGl, start: i64, count: i64) {
     call(
         context,

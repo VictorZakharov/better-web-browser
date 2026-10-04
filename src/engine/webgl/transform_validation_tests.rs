@@ -132,10 +132,7 @@ fn webgl2_transform_lifecycle_errors_leave_active_capture_and_bindings_unchanged
         call(&mut context, "resumeTransformFeedback", &[], "");
         draw(&mut context, 1, 1);
         call(&mut context, "endTransformFeedback", &[], "");
-        assert_eq!(
-            read(&mut context, id, 16),
-            [0.5f32, 0., 1.5, -1.].map(f32::to_ne_bytes).concat()
-        );
+        assert_float_capture(&read(&mut context, id, 16), &[0.5, 0., 1.5, -1.]);
         call(&mut context, "deleteTransformFeedback", &[feedback], "");
         assert_eq!(
             call(&mut context, "getParameter", &[0x8e25], ""),
@@ -295,10 +292,7 @@ fn webgl2_transform_aliases_are_rejected_even_when_capture_is_not_active() {
         );
         draw(&mut context, 0, 1);
         call(&mut context, "endTransformFeedback", &[], "");
-        assert_eq!(
-            &read(&mut context, id, 16)[..8],
-            &[0.5f32.to_ne_bytes(), 0f32.to_ne_bytes()].concat()
-        );
+        assert_float_capture(&read(&mut context, id, 16)[..8], &[0.5, 0.]);
     });
 }
 
