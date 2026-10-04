@@ -212,14 +212,22 @@ NUL-free names. Connected-canvas drawing uses the normal paint checkpoint.
 
 Texture binding work includes typed 2D/volume uploads, immutable storage,
 layer attachments, compressed element-offset/length and PBO overloads, and
-typed pixel readback. The 262 WebGL2 numeric constants are derived solely from
+typed pixel readback. The WebGL2 numeric constants are derived from
 the Khronos IDL's literal declarations, with its compatible permission notice
 retained in the table. No executable upstream code was imported. DOM image
 sources now support subrectangles, slice strides, flip/premultiplication, and
 unsigned-byte/float/half-float conversions using the existing decoded Canvas
 snapshots. The private native upload guard restores every unpack scalar and
 rejects a bound PBO rather than changing overloads silently. Packed DOM-image
-conversions and the complete interface contract remain admission work, not
+uploads now include RGB565, RGBA4, RGB5_A1, RGB10_A2, and R11F_G11F_B10F.
+Synthetic color/low-alpha pixel results are checked against hidden Chrome,
+including the eight-bit intermediate used by packed premultiplied uploads.
+The DOM-upload table is validated natively and remains narrower than the
+application-owned typed-buffer table. `RGBA8`, omitted from the current generated
+Khronos IDL but required by GLES3 storage and the WebGL2 2.0.0 specification,
+is included explicitly. Genuine ImageData and OffscreenCanvas sources have
+private brands; prototype-forged objects cannot become upload sources, including
+during context loss. The complete interface contract remains admission work, not
 claimed features. The existing WebGL1 regression suite must stay green
 throughout.
 

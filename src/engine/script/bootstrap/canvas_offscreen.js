@@ -12,6 +12,7 @@
             super(canvas);
         }
     }
+    const offscreenCanvasBrands = new WeakSet();
     class OffscreenCanvas extends EventTarget {
         constructor(width, height) {
             super();
@@ -19,6 +20,7 @@
             this.__width = canvasUnsignedDimension(width);
             this.__height = canvasUnsignedDimension(height);
             this.__detached = false;
+            offscreenCanvasBrands.add(this);
             stateForCanvas(this);
         }
         get width() { return this.__detached ? 0 : this.__width; }

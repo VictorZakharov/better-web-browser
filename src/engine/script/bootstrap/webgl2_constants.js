@@ -25,7 +25,9 @@
         PACK_ROW_LENGTH:0x0d02, PACK_SKIP_ROWS:0x0d03,
         PACK_SKIP_PIXELS:0x0d04, COLOR:0x1800,
         DEPTH:0x1801, STENCIL:0x1802,
-        RED:0x1903, RGB8:0x8051,
+        // RGBA8 is specified by GLES3's storage table and implemented by Blink;
+        // Khronos's generated WebGL2 IDL currently omits this required alias.
+        RED:0x1903, RGB8:0x8051, RGBA8:0x8058,
         RGB10_A2:0x8059, TEXTURE_BINDING_3D:0x806a,
         UNPACK_SKIP_IMAGES:0x806d, UNPACK_IMAGE_HEIGHT:0x806e,
         TEXTURE_3D:0x806f, TEXTURE_WRAP_R:0x8072,
@@ -156,4 +158,3 @@
         Object.defineProperty(WebGL2RenderingContext,name,{enumerable:true,value});
         Object.defineProperty(webGl2Prototype,name,{enumerable:true,value});
     }
-

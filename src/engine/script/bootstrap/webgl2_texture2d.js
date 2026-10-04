@@ -4,7 +4,8 @@
         const name = sub ? 'texSubImage2D' : 'texImage2D';
         const imageArity = sub ? 7 : 6;
         webGl2Method(name,imageArity,count => count < 9 ? (sub?'uiiiuu-':'uiiuu-') : 'uiiiiiuu-'+(count >= 10 ? 'a' : ''),
-            count => count < 9 ? [] : [[8,count >= 10 ? webGl2View : webGl2TextureArgument]],function(...args) {
+            count => count < 9 ? [[sub?6:5,webGl2ImageArgument]] :
+                [[8,count >= 10 ? webGl2View : webGl2TextureArgument]],function(...args) {
                 if (args.length < 9) {
                     const format=args[sub?4:3], type=args[sub?5:4], source=args[sub?6:5];
                     const image=webGl2ImagePixels(this,source,undefined,undefined,1,format,type,false);

@@ -47,9 +47,11 @@
             const state = imageBitmapPixels(source);
             return { width: state.width, height: state.height, pixels: bitmapStraightPixels(state) };
         }
-        if (source instanceof HTMLCanvasElement || source instanceof OffscreenCanvas)
+        if (offscreenCanvasBrands.has(source) || source instanceof HTMLCanvasElement &&
+            typeof nodeHandles !== 'undefined' && nodeHandles.has(source))
             return canvasBitmapSnapshot(source);
-        if (typeof HTMLImageElement !== 'undefined' && source instanceof HTMLImageElement) {
+        if (typeof HTMLImageElement !== 'undefined' && source instanceof HTMLImageElement &&
+            nodeHandles.has(source)) {
             // Only decoded, same-origin/CORS-readable bytes may enter Canvas.
             // Opaque image responses remain inaccessible through this path.
             const decoded = detachedImageLoads.get(source)?.decoded;
@@ -58,10 +60,11 @@
             return { width: decoded.width, height: decoded.height,
                 pixels: new Uint8ClampedArray(decoded.pixels) };
         }
-        if (allowImageData && source instanceof ImageData) {
-            if (!source.data.byteLength)
+        if (allowImageData && imageDataStates.has(source)) {
+            const state=imageDataStates.get(source);
+            if (!state.data.byteLength)
                 throw new DOMException('ImageData buffer is detached', 'InvalidStateError');
-            return { width: source.width, height: source.height, pixels: new Uint8ClampedArray(source.data) };
+            return { width: state.width, height: state.height, pixels: new Uint8ClampedArray(state.data) };
         }
         throw new TypeError('Unsupported Canvas image source');
     };

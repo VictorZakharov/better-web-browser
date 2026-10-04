@@ -10,7 +10,13 @@ pub(super) fn document() -> (Context, Rc<RefCell<HostState>>) {
         Rc::new(WebModuleLoader::new()),
     )));
     let mut context = Context::new(HostBridge::Document(Rc::downgrade(&host))).unwrap();
-    let source = bootstrap::BROWSER_BOOTSTRAP.replace(
+    let source = staged_bootstrap(bootstrap::BROWSER_BOOTSTRAP);
+    context.eval(Source::from_bytes(&source)).unwrap();
+    (context, host)
+}
+
+pub(in crate::engine::script) fn staged_bootstrap(bootstrap: &str) -> String {
+    let source = bootstrap.replace(
         "// Opaque names retain identity, realm ownership and restoration generation.",
         r#"
         globalThis.__stageWebGl2 = (canvas, requested) => {
@@ -26,9 +32,8 @@ pub(super) fn document() -> (Context, Rc<RefCell<HostState>>) {
         // Opaque names retain identity, realm ownership and restoration generation.
         "#,
     );
-    assert_ne!(source, bootstrap::BROWSER_BOOTSTRAP);
-    context.eval(Source::from_bytes(&source)).unwrap();
-    (context, host)
+    assert_ne!(source, bootstrap);
+    source
 }
 
 pub(super) fn check(context: &mut Context, code: &str) {
@@ -42,7 +47,7 @@ fn webgl2_realm_core_constants_are_readonly_and_do_not_leak_into_webgl1() {
         &mut context,
         r#"
         const gl=__stageWebGl2(new OffscreenCanvas(2,2)), constructor=__stageWebGl2Constructor;
-        const expected={TIMEOUT_IGNORED:-1,INVALID_INDEX:4294967295,READ_FRAMEBUFFER:0x8ca8,
+        const expected={RGBA8:0x8058,TIMEOUT_IGNORED:-1,INVALID_INDEX:4294967295,READ_FRAMEBUFFER:0x8ca8,
             DRAW_FRAMEBUFFER_BINDING:gl.FRAMEBUFFER_BINDING,RGBA32UI:0x8d70,HALF_FLOAT:0x140b,
             FLOAT_MAT2x3:0x8b65,TEXTURE_3D:0x806f,MAX_CLIENT_WAIT_TIMEOUT_WEBGL:0x9247};
         for (const [name,value] of Object.entries(expected)) {

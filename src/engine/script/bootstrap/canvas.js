@@ -12,6 +12,7 @@
         return Math.min(0xffffffff, Number(raw));
     };
 
+    const imageDataStates = new WeakMap();
     class ImageData {
         constructor(dataOrWidth, widthOrHeight, heightOrSettings, settings = {}) {
             let data;
@@ -47,6 +48,7 @@
                 height: { enumerable: true, value: height },
                 colorSpace: { enumerable: true, value: 'srgb' }
             });
+            imageDataStates.set(this,{data,width,height});
         }
     }
 
