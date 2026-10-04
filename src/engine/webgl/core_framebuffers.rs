@@ -90,6 +90,14 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         let source = c.u(0)?;
+        // GLES3.0 §4.3.1 distinguishes an unknown enum from a recognized
+        // read selector which is incompatible with this framebuffer.
+        if source != gl::NONE
+            && source != gl::BACK
+            && !(gl::COLOR_ATTACHMENT0..=gl::COLOR_ATTACHMENT0 + 31).contains(&source)
+        {
+            return Err(gl::INVALID_ENUM);
+        }
         let native = if self.read_framebuffer == 0 {
             if ![gl::BACK, gl::NONE].contains(&source) {
                 return Err(gl::INVALID_OPERATION);
@@ -101,7 +109,7 @@ impl WebGl {
             }
         } else {
             if source != gl::NONE && !self.color_attachment_allowed(source) {
-                return Err(gl::INVALID_ENUM);
+                return Err(gl::INVALID_OPERATION);
             }
             source
         };

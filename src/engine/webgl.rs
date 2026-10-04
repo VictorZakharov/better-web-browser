@@ -95,6 +95,8 @@ mod extensions;
 mod float_values;
 mod framebuffer_attachments;
 mod framebuffer_completeness;
+#[cfg(test)]
+mod framebuffer_contract_tests;
 mod framebuffer_guard;
 #[cfg(test)]
 mod framebuffer_guard_tests;

@@ -27,7 +27,8 @@
                     webGl2Invoke(this,name+'FromBuffer',[...values,source.offset]);
                     return;
                 }
-                const bytes=source===null ? undefined : webGl2PixelBytes(this,source,type,args[9]??0);
+                let bytes=source===null ? undefined : webGl2PixelBytes(this,source,type,args[9]??0);
+                if (bytes) bytes=webGl2TransformView2D(this,bytes,values[3],values[4],values[6],type);
                 if (source===null || bytes) webGl2Invoke(this,name,values,[], '',bytes);
             });
     }

@@ -48,6 +48,11 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         let point = c.u(1)?;
+        if (gl::COLOR_ATTACHMENT0..=gl::COLOR_ATTACHMENT0 + 31).contains(&point)
+            && !self.color_attachment_allowed(point)
+        {
+            return Err(gl::INVALID_OPERATION);
+        }
         if !self.color_attachment_allowed(point)
             && ![
                 gl::DEPTH_ATTACHMENT,
@@ -66,7 +71,9 @@ impl WebGl {
             Kind::Renderbuffer
         };
         let id = c.u(if layered { 2 } else { 3 })?;
-        let level = if texture {
+        // GLES3.0 §4.4.2: null texture detachment ignores level, face and
+        // layer, including negative or otherwise impossible image indices.
+        let level = if texture && id != 0 {
             c.n(if layered { 3 } else { 4 })?
         } else {
             0
@@ -74,7 +81,11 @@ impl WebGl {
         if !(0..=12).contains(&level) {
             return Err(gl::INVALID_VALUE);
         }
-        let layer = if layered { Some(c.n(4)?) } else { None };
+        let layer = if layered && id != 0 {
+            Some(c.n(4)?)
+        } else {
+            None
+        };
         if layer.is_some_and(|layer| layer < 0) {
             return Err(gl::INVALID_VALUE);
         }
@@ -87,7 +98,7 @@ impl WebGl {
         } else {
             c.u(2)?
         };
-        if texture {
+        if texture && id != 0 {
             if layered {
                 if ![VOLUME, ARRAY].contains(&image_target) {
                     return Err(gl::INVALID_OPERATION);
@@ -98,7 +109,7 @@ impl WebGl {
             } else if image_target != gl::TEXTURE_2D && !(0x8515..=0x851a).contains(&image_target) {
                 return Err(gl::INVALID_ENUM);
             }
-        } else if image_target != gl::RENDERBUFFER {
+        } else if !texture && image_target != gl::RENDERBUFFER {
             return Err(gl::INVALID_ENUM);
         }
         let attachment = if id == 0 {

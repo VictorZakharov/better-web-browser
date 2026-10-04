@@ -35,6 +35,8 @@ mod webgl2_sync_bindings_tests;
 mod webgl2_texture_bindings_tests;
 #[cfg(all(test, windows))]
 mod webgl2_uniform_bindings_tests;
+#[cfg(test)]
+mod webgl2_view_transform_tests;
 #[cfg(all(test, windows))]
 mod webgl_reflection_bindings_tests;
 
