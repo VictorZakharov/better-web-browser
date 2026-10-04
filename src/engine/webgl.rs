@@ -4,11 +4,13 @@ use mozangle::gles::ffi as gl;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 
+mod adapter_selection;
 mod api_version;
 #[cfg(test)]
 mod api_version_tests;
 #[cfg(test)]
 mod array_copy_boundary_tests;
+mod backend_policy;
 #[cfg(test)]
 mod buffer_mirror_tests;
 mod buffer_retirement;

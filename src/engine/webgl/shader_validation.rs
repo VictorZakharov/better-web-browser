@@ -24,7 +24,7 @@ impl WebGl {
             MaxVertexUniformVectors: limit(gl::MAX_VERTEX_UNIFORM_VECTORS),
             MaxVaryingVectors: limit(gl::MAX_VARYING_VECTORS),
             MaxVertexTextureImageUnits: limit(gl::MAX_VERTEX_TEXTURE_IMAGE_UNITS),
-            MaxCombinedTextureImageUnits: limit(gl::MAX_COMBINED_TEXTURE_IMAGE_UNITS),
+            MaxCombinedTextureImageUnits: self.textures.len() as i32,
             MaxTextureImageUnits: limit(gl::MAX_TEXTURE_IMAGE_UNITS),
             MaxFragmentUniformVectors: limit(gl::MAX_FRAGMENT_UNIFORM_VECTORS),
             OES_standard_derivatives: i32::from(self.extensions.derivatives),

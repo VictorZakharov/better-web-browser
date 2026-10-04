@@ -7,7 +7,26 @@ impl WebGl {
         height: u32,
         options: Options,
     ) -> std::result::Result<Self, String> {
-        let native = NativeContext::for_api(options.api)?;
+        // Unit tests retain the same real WARP provider on every machine.
+        // Release browser/harness runs exercise production hardware selection.
+        let software_only = cfg!(test);
+        let preferred = if software_only {
+            None
+        } else {
+            adapter_selection::preferred(options.power_preference)
+        };
+        backend_policy::admit(options, software_only, preferred, |backend| {
+            Self::new_with_backend(width, height, options, backend)
+        })
+    }
+
+    fn new_with_backend(
+        width: u32,
+        height: u32,
+        options: Options,
+        backend: backend_policy::Backend,
+    ) -> std::result::Result<Self, String> {
+        let native = NativeContext::for_backend(options.api, backend)?;
         let core = if options.api == ApiVersion::Two {
             Some(core_entries::CoreEntries::load()?)
         } else {
@@ -25,9 +44,13 @@ impl WebGl {
             gl::GetIntegerv(gl::MAX_VERTEX_ATTRIBS, &mut count);
             gl::GetIntegerv(gl::MAX_COMBINED_TEXTURE_IMAGE_UNITS, &mut units);
         }
-        if !(8..=32).contains(&count) || !(8..=64).contains(&units) {
+        if !(8..=32).contains(&count) || !(8..=256).contains(&units) {
             return Err("ANGLE resource limits are outside the admitted WebGL baseline".into());
         }
+        // Browser-owned binding arrays remain bounded independently of a
+        // hardware provider's larger combined-unit capacity. Report this same
+        // admitted limit to authors and the shader validator, not native 128/192.
+        let units = units.min(64);
         let mut context = Self {
             native,
             core,

@@ -71,6 +71,8 @@ harfrust = "0.5.2"
 swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"] }
 unicode-script = "0.5.8"
 windows = { version = "0.62.2", features = [
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
     "Devices_Enumeration",
     "Devices_Geolocation",
     "Foundation",

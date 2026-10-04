@@ -137,19 +137,20 @@
     Object.defineProperty(globalThis, 'WebGLRenderingContext', {configurable:true, writable:true, value:WebGLRenderingContext});
     const createWebGlContext = (canvas, requested = {}, api = 'webgl1') => {
         const attributes = webGlContextAttributes(requested, api);
-        // WARP is a real software GLES driver, not a promise of hardware acceleration.
         const creationFailed = message => {
             canvas.dispatchEvent(markTrusted(new WebGLContextEvent('webglcontextcreationerror',
                 {statusMessage:message, cancelable:true})));
             return null;
         };
-        if (attributes.failIfMajorPerformanceCaveat)
-            return creationFailed('The available ANGLE/WARP backend is software rendered');
         const id = host('webglCreate', Math.max(1, canvas.width), Math.max(1, canvas.height),
             JSON.stringify({api, alpha:attributes.alpha, depth:attributes.depth,
                 stencil:attributes.stencil, antialias:attributes.antialias,
-                preserve:attributes.preserveDrawingBuffer}));
-        if (!id) return creationFailed('ANGLE/WARP is unavailable or the WebGL context/drawing-buffer budget was exceeded');
+                preserve:attributes.preserveDrawingBuffer,
+                fail_if_major_performance_caveat:attributes.failIfMajorPerformanceCaveat,
+                power_preference:attributes.powerPreference}));
+        if (!id) return creationFailed(attributes.failIfMajorPerformanceCaveat
+            ? 'No suitable hardware ANGLE context is available within the drawing-buffer budget; software fallback is disabled by failIfMajorPerformanceCaveat'
+            : 'No ANGLE backend satisfies the requested WebGL attributes and context/drawing-buffer budget');
         const context = api === 'webgl2' ? new WebGL2RenderingContext(webGlToken) : new WebGLRenderingContext(webGlToken);
         webGlContexts.set(context, {id, api, canvas, attributes, objects:new Map(), lost:false, epoch:0,
             extensions:new Map(), lossReported:false, lossError:0,
