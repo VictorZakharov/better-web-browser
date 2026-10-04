@@ -78,11 +78,15 @@ impl WebGl {
         let component = if self.read_framebuffer == 0 {
             0x8c17
         } else {
-            let route = self
+            let framebuffer = self
                 .objects
-                .get(self.read_framebuffer, super::Kind::Framebuffer)?
-                .read_buffer;
-            if route == gl::NONE {
+                .get(self.read_framebuffer, super::Kind::Framebuffer)?;
+            let route = framebuffer.read_buffer;
+            // A complete framebuffer can select a legal COLOR_ATTACHMENTi
+            // with no image. Reading it is INVALID_OPERATION, not the enum
+            // error from querying that absent attachment's component type.
+            // GLES3 §4.3.2; shared by client-memory and pixel-pack overloads.
+            if route == gl::NONE || !framebuffer.framebuffer_attachments.contains_key(&route) {
                 return Err(gl::INVALID_OPERATION);
             }
             let mut component = 0;
