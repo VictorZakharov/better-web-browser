@@ -1,5 +1,5 @@
 //! Private native framebuffer blits avoid ANGLE's 2D-to-3D staging-copy path.
-//! No CPU pixel readback, synthesized pixels, or author-visible framebuffer.
+//! Non-renderable destinations use bounded real-pixel readback/upload instead.
 use super::framebuffer_guard::{DRAW, Direction, FramebufferGuard};
 use super::{Kind, Result, WebGl, gl};
 
@@ -40,6 +40,19 @@ impl WebGl {
         offsets: [i32; 3],
         source: [i32; 4],
     ) -> Result<()> {
+        let internal = self
+            .objects
+            .get(id, Kind::Texture)?
+            .core_images
+            .get(&(super::texture_targets::VOLUME, level))
+            .ok_or(gl::INVALID_OPERATION)?
+            .internal;
+        if matches!(
+            internal,
+            0x8815 | 0x881b | 0x8d7d | 0x8d8f | 0x8d77 | 0x8d89 | 0x8d71 | 0x8d83
+        ) {
+            return self.copy_volume_through_native_conversion(id, level, offsets, source);
+        }
         let core = self.core.as_ref().ok_or(gl::INVALID_OPERATION)?;
         let texture = self.objects.name(id, Kind::Texture)?;
         let mut scratch = ScratchFramebuffer(0);
@@ -56,10 +69,10 @@ impl WebGl {
         }
         self.driver_result()?;
         if unsafe { gl::CheckFramebufferStatus(DRAW) } != gl::FRAMEBUFFER_COMPLETE {
-            // Non-renderable destination formats need a separate conversion
-            // path before public admission. Never fall back to the corrupting
-            // native CopyTexSubImage3D staging operation for those images.
-            return Err(gl::INVALID_OPERATION);
+            // Only renderable destinations can use a framebuffer blit. The
+            // conversion fallback uploads the copied region without replacing
+            // existing volume storage or synthesizing destination pixels.
+            return self.copy_volume_through_native_conversion(id, level, offsets, source);
         }
         let [x, y, width, height] = source;
         let [dx, dy, _] = offsets;

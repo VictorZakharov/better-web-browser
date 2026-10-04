@@ -1,4 +1,4 @@
-//! GLES3 framebuffer copies update one existing volume/array slice on the GPU.
+//! GLES3 framebuffer copies update one existing volume/array slice.
 //! https://registry.khronos.org/webgl/specs/latest/2.0/#3.7.6
 use super::texture_targets::{ARRAY, VOLUME};
 use super::{ApiVersion, Command, Kind, Result, WebGl, gl};

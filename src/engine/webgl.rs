@@ -186,8 +186,14 @@ mod vertex_attributes;
 mod volume_blit_tests;
 mod volume_copy;
 mod volume_copy_blit;
+mod volume_copy_conversion;
+#[cfg(test)]
+mod volume_copy_conversion_tests;
+mod volume_copy_region;
 #[cfg(test)]
 mod volume_copy_tests;
+#[cfg(test)]
+mod volume_copy_transfer_tests;
 mod volume_initialization;
 #[cfg(test)]
 mod volume_mip_tests;

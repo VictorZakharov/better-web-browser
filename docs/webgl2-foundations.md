@@ -210,6 +210,16 @@ without consulting shadowed author properties or typed-array iterators.
 Native fragment-output reflection uses a fixed ANGLE entry point and bounded
 NUL-free names. Connected-canvas drawing uses the normal paint checkpoint.
 
+Framebuffer-to-volume copies retain ANGLE's complete copy-format, read-route,
+feedback and multisample validation. Renderable destinations use private GPU
+blits. The pinned provider's direct and alternate RGB-float 3D copy paths
+corrupt neighboring layers, so non-renderable RGB float/integer destinations
+use bounded native readback and regional upload instead. This path preserves
+HDR and integer values, clips reads without replacing destination neighbors,
+and restores native pack/unpack/PBO state without changing author bindings.
+It allocates only the copied rectangle and accounts for both simultaneous
+buffers against the context resource budget; it is not a GPU-only fast path.
+
 Texture binding work includes typed 2D/volume uploads, immutable storage,
 layer attachments, compressed element-offset/length and PBO overloads, and
 typed pixel readback. The WebGL2 numeric constants are derived from
