@@ -21,6 +21,7 @@ mod frames;
 mod graph_audio;
 pub(crate) use frames::FramePaintSnapshot;
 mod geometry;
+mod guarded_run;
 mod history;
 mod import_maps;
 mod memory;
@@ -433,26 +434,6 @@ impl ScriptRuntime {
                 rejected_text: None,
             },
         }
-    }
-
-    fn finish_guarded_run(
-        &mut self,
-        result: Result<ScriptOutcome, Box<dyn std::any::Any + Send>>,
-    ) -> ScriptOutcome {
-        let mut outcome = match result {
-            Ok(outcome) => outcome,
-            Err(payload) => {
-                // The V8 entry guard restores isolate state during unwinding, so the damaged
-                // document realm can be released normally instead of leaking engine memory.
-                self.context.take();
-                self.frames.take();
-                stopped_runtime_outcome(panic_detail(payload))
-            }
-        };
-        self.synchronize_css_animations(&mut outcome);
-        self.append_memory_diagnostic(&mut outcome);
-        let outcome = finish_host(outcome, &self.host);
-        self.collect_child_outcomes(outcome)
     }
 }
 

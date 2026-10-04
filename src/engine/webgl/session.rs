@@ -18,6 +18,7 @@ enum Operation {
     Command(u32, String, Option<Vec<u8>>),
     Pixels(u32, String, Option<Vec<u8>>),
     Snapshot(u32),
+    TaskBoundary(Vec<u32>),
     #[cfg(test)]
     NativeTest(fn()),
 }
@@ -26,6 +27,7 @@ enum Reply {
     Command(Value),
     Pixels(PixelReply),
     Snapshot(Option<Bitmap>),
+    TaskBoundary(Vec<u32>),
     #[cfg(test)]
     NativeTest(Option<String>),
 }
@@ -38,12 +40,14 @@ struct Request {
 pub(crate) struct Contexts {
     live: HashSet<u32>,
     leases: HashMap<u32, Arc<()>>,
+    asynchronous: HashSet<u32>,
 }
 impl Contexts {
     pub(crate) fn create(&mut self, width: u32, height: u32, options: &str) -> Option<u32> {
         if self.live.len() >= MAX_CONTEXTS || options.len() > 1024 {
             return None;
         }
+        let api = serde_json::from_str::<super::Options>(options).ok()?.api;
         let lease = Arc::new(());
         let Reply::Created(Some(id)) = request(Operation::Create(
             width,
@@ -56,11 +60,15 @@ impl Contexts {
         };
         self.live.insert(id);
         self.leases.insert(id, lease);
+        if api == super::ApiVersion::Two {
+            self.asynchronous.insert(id);
+        }
         Some(id)
     }
     pub(crate) fn remove(&mut self, id: u32) {
         if self.live.remove(&id) {
             self.leases.remove(&id);
+            self.asynchronous.remove(&id);
             retire(std::iter::once(id));
         }
     }
@@ -70,6 +78,23 @@ impl Contexts {
         }
         retire(self.live.drain());
         self.leases.clear();
+        self.asynchronous.clear();
+    }
+    /// Called by the embedder only after an HTML task and its microtask checkpoint.
+    /// Ordinary commands, presentation and nested checkpoints never publish results.
+    pub(crate) fn complete_task(&mut self) {
+        if self.asynchronous.is_empty() {
+            return;
+        }
+        let ids: Vec<_> = self.asynchronous.iter().copied().collect();
+        let lost = match request(Operation::TaskBoundary(ids.clone())) {
+            Some(Reply::TaskBoundary(lost)) => lost,
+            // A stopped/timed-out owner cannot leave usable cached GPU handles.
+            _ => ids,
+        };
+        for id in lost {
+            self.remove(id);
+        }
     }
     pub(crate) fn execute(&mut self, id: u32, command: &str, bytes: Option<&[u8]>) -> Value {
         if !self.live.contains(&id) {
@@ -208,6 +233,13 @@ fn run(incoming: mpsc::Receiver<Request>) {
                 Some(id),
             ),
             Operation::Snapshot(id) => (Reply::Snapshot(backend.snapshot(id)), Some(id)),
+            Operation::TaskBoundary(ids) => {
+                let lost = backend.complete_task(&ids);
+                for id in &lost {
+                    leases.remove(id);
+                }
+                (Reply::TaskBoundary(lost), None)
+            }
             Operation::Pixels(id, command, bytes) => (
                 Reply::Pixels(backend.read_pixels(id, &command, bytes.as_deref())),
                 Some(id),

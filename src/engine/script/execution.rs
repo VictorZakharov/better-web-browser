@@ -8,6 +8,7 @@ use super::timer_execution::{
 };
 use super::*;
 mod bindings;
+mod startup_tasks;
 
 const SCRIPT_TASK_TIMER_SLICE: Duration = Duration::from_millis(16);
 pub fn execute(document: NodeRef, document_url: &str, scripts: &[ScriptInput]) -> ScriptOutcome {
@@ -154,38 +155,14 @@ pub(super) fn execute_inner(
         append_timer_summary(host, &mut outcome);
         return outcome;
     }
-    // Standalone execution helpers settle the two document tasks; live renderers select each
-    // through advance_time so resource discovery and rendering can run between them.
-    for _ in 0..2 {
-        runtime::document_lifecycle::run_one(context, host, &mut outcome);
-    }
-    for _ in 0..types::STARTUP_TIMER_PASSES {
-        if context.has_message_task()
-            && let Err(error) = context.deliver_message()
-        {
-            outcome.errors.push(format!("posted message: {error}"));
-        }
-        if defer_dynamic_scripts {
-            let mut no_dynamic_script_loader = None;
-            settle_startup_timer_slice(
-                context,
-                host,
-                &mut outcome,
-                &mut no_dynamic_script_loader,
-                total_bytes,
-            );
-        } else {
-            settle_startup_timer_slice(
-                context,
-                host,
-                &mut outcome,
-                dynamic_script_loader,
-                total_bytes,
-            );
-        }
-    }
-
-    append_timer_summary(host, &mut outcome);
+    startup_tasks::settle(
+        context,
+        host,
+        &mut outcome,
+        dynamic_script_loader,
+        total_bytes,
+        defer_dynamic_scripts,
+    );
 
     outcome
 }

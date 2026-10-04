@@ -48,7 +48,7 @@ fn webgl2_sync_completion_is_real_but_cannot_change_inside_a_task() {
             );
         }
         for _ in 0..100 {
-            call(&mut context, "completeGpuTask", &[], "");
+            context.complete_gpu_task().unwrap();
             if status(&mut context, id) == json!(SIGNALED) {
                 break;
             }

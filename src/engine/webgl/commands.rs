@@ -21,7 +21,7 @@ impl WebGl {
             "fenceSync" | "deleteSync" | "isSync" | "clientWaitSync" | "waitSync"
             | "getSyncParameter" => return self.sync_command(c),
             "createQuery" | "deleteQuery" | "isQuery" | "beginQuery" | "endQuery" | "getQuery"
-            | "getQueryParameter" | "completeGpuTask" => {
+            | "getQueryParameter" => {
                 return self.query_object_command(c);
             }
             "readPixelsToBuffer" => return self.read_pixels_to_buffer(c, bytes),
@@ -74,6 +74,9 @@ impl WebGl {
                 return Ok(Value::Null);
             }
             "readBuffer" => return self.core_read_buffer(c),
+            "invalidateFramebuffer" | "invalidateSubFramebuffer" => {
+                return self.invalidate_framebuffer(c);
+            }
             "copyTexSubImage3D" => return self.copy_volume_texture(c),
             "texStorage3D" | "texImage3D" | "texSubImage3D" => {
                 return self.volume_texture_command(c, bytes);

@@ -79,6 +79,8 @@ impl NativeContext {
             let attributes = [
                 egl::CONTEXT_CLIENT_VERSION as i32,
                 api.client_version(),
+                0x30fb, // EGL_CONTEXT_MINOR_VERSION_KHR, trusted provider selection only.
+                api.provider_minor(),
                 // Match WebGL1's native shader rules, including EXT_draw_buffers.
                 // A silently upgraded GLES3 compatibility context instead uses
                 // WebGL2's one-element gl_FragData rule for ESSL100.

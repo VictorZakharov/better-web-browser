@@ -5,7 +5,7 @@ This is a staged native implementation, not an advertised canvas context.
 dictionary does not forward arbitrary author options into the native creation
 protocol. Do not add an interface merely to satisfy a feature probe.
 
-The closed internal `api` value selects an exact GLES2 or GLES3 provider through
+The closed internal `api` value selects a GLES2 or GLES3.1 provider through
 the existing pinned ANGLE dependency. Both retain WebGL compatibility, robust
 resource initialization, disabled client arrays, thread affinity, ownership
 budgets and hidden execution. A newer native driver must not silently change
@@ -13,7 +13,7 @@ WebGL1's shader rules or extension admission.
 
 ## Completed native contracts
 
-- Exact GLES3 construction, private initialized drawing buffer and versioned
+- Explicit GLES3.1 construction, private initialized drawing buffer and versioned
   state strings. Failed/unknown creation versions consume no public context.
 - WebGL2 front-end shader validation with actual GLES3 limits, followed by
   ANGLE's native WebGL2 compiler. ESSL300 `gl_VertexID`, integer operations,
@@ -138,9 +138,11 @@ WebGL1's shader rules or extension admission.
 - GPU framebuffer copies update checked array-layer subregions without changing
   immutable definitions, charging new image storage, or interpreting author
   pixel-store/PBO state. Read and draw framebuffer identities remain separate.
-  True 3D copies are deliberately rejected by this internal opcode: the pinned
-  provider can overwrite untouched slices with stale native debug-fill bytes.
-  This restriction must be removed before coherent public WebGL2 admission.
+  Renderable 3D destination slices use private native framebuffer blits, avoiding
+  the pinned provider's corrupting 2D-to-3D staging path. The provider still
+  validates copy formats, read routes, multisample sources and feedback through
+  its fully validated zero-extent operation, which never executes a copy.
+  Non-renderable destinations remain rejected pending a GPU conversion path.
 - Requesting a promoted WebGL1 extension cannot disable its GLES3 core facility.
   Geometry/shader names are neither advertised nor admitted as legacy objects;
   core derivatives, fragment depth and other operations remain enabled.
@@ -158,22 +160,35 @@ presence is not a complete WebGL2 conformance result or a new HTML5test score.
 
 ## Remaining admission work
 
-The pinned provider also permits undefined contents after framebuffer
-invalidation, which WebGL forbids. No native discard opcode is admitted here.
-Resolve provider initialization/synchronization for both discard and true 3D
-framebuffer copies, and retain the neighboring-slice pixel tests as acceptance.
+Framebuffer invalidation validates its target, attachment domain and signed
+rectangle, then preserves contents. This is the explicitly permitted WebGL no-op
+policy, not a discard optimization; native undefined-content hints are not
+forwarded. Real integer, HDR, depth/stencil, multisample and separate read/draw
+tests establish preservation. True 3D copies now preserve neighboring slices
+through private GPU blits; non-renderable destinations still need a conversion
+path before coherent public admission.
 
-Queries and sync currently use an internal simulated task-completion opcode in
-native tests. No realm forwards that opcode. Public admission needs a trusted
-host completion hook after the task and its microtask checkpoint; `finish`,
-capture and compositor presentation must not stand in for event-loop completion.
+Queries and sync use a typed owner-thread task boundary, never an author command.
+The host publishes ready native results after document/worker tasks and their
+jobs, including between callbacks in a timer batch. Related document realms
+share the boundary; unrelated workers do not. Owner enumeration uses weak Rust
+bridge references and does not enter V8 merely to publish native results.
+`finish`, nested checkpoints,
+capture and compositor presentation cannot publish results. Tests cover both
+real native fences/queries and task/promise ordering before public admission.
 Error replies from `clientWaitSync` must become `WAIT_FAILED` at the realm boundary.
 
-Transform feedback still rejects deletion of a buffer attached to an active
-capture: the retained native-name model needs a deletion path which preserves
-other objects while allowing native active detachment. The exact GLES3.0 provider
-also rejects array capture at link time; no CPU-generated capture result conceals
-that limitation. These require further admission tests and provider decisions.
+Transform-feedback buffer deletion uses native active detachment while retaining
+inactive containers' storage. A generated, never-bound name reservation prevents
+the pinned ANGLE backend's numeric-ID detachment from aliasing older allocations.
+The reservation retires with the final container reference, without rebuilding
+GPU-written storage from a CPU mirror. Allocation failure loses only its owner
+context. The existing ANGLE backend
+supports transform-feedback arrays when its internal context is GLES3.1. The
+WebGL2 provider now requests that version, while the separate WebGL2 shader
+validator still rejects ESSL310 and the closed command dispatcher exposes no
+GLES3.1-only operations. Array results come from native GPU buffer storage,
+not CPU-generated substitutes. Public admission still requires broader tests.
 
 Coherent realm overloads need their own bindings. Public core entry points need
 versioned realm bindings, not WebGL1 extension objects under new names.

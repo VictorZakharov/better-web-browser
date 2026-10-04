@@ -22,7 +22,7 @@ fn clear(context: &mut WebGl, color: [f64; 4]) {
     call(context, "clear", &[gl::COLOR_BUFFER_BIT as i64], "");
 }
 
-fn framebuffer(context: &mut WebGl, format: u32) -> u32 {
+pub(super) fn framebuffer(context: &mut WebGl, format: u32) -> u32 {
     let texture = texture(context, gl::TEXTURE_2D);
     call(
         context,

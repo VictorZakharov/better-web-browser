@@ -162,7 +162,7 @@ fn webgl2_transform_interleaved_outputs_preserve_float_and_full_uint_values() {
             );
         }
         call(&mut context, "finish", &[], "");
-        call(&mut context, "completeGpuTask", &[], "");
+        context.complete_gpu_task().unwrap();
         assert_eq!(
             call(&mut context, "getQueryParameter", &[query, 0x8867], ""),
             json!(true)
@@ -338,7 +338,7 @@ fn webgl2_transform_reflection_reports_linked_varying_names_types_and_mode() {
 }
 
 #[test]
-fn webgl2_transform_provider_rejects_unsupported_array_capture_without_a_fake_result() {
+fn webgl2_transform_provider_captures_array_outputs_as_real_gpu_values() {
     session::run_native_test(|| {
         let mut context = version_two();
         let vertex = compile(
@@ -359,8 +359,6 @@ fn webgl2_transform_provider_rejects_unsupported_array_capture_without_a_fake_re
             r#"["values"]"#,
         );
         call(&mut context, "linkProgram", &[program as i64], "");
-        // The pinned exact GLES3.0 provider permits arrays in shaders but does
-        // not stream them. Keep this limitation visible before realm admission.
         assert_eq!(
             call(
                 &mut context,
@@ -368,13 +366,22 @@ fn webgl2_transform_provider_rejects_unsupported_array_capture_without_a_fake_re
                 &[program as i64, gl::LINK_STATUS as i64],
                 ""
             ),
-            json!(false)
+            json!(true)
         );
-        let log = call(&mut context, "getProgramInfoLog", &[program as i64], "");
-        assert!(log.as_str().unwrap().contains("Capture of arrays"), "{log}");
-        assert_eq!(
-            command(&mut context, "useProgram", &[program as i64], ""),
-            Err(gl::INVALID_OPERATION)
+        call(&mut context, "useProgram", &[program as i64], "");
+        let id = buffer(&mut context, 16);
+        call(&mut context, "bindBufferBase", &[TARGET, 0, id], "");
+        call(&mut context, "enable", &[0x8c89], "");
+        call(
+            &mut context,
+            "beginTransformFeedback",
+            &[gl::POINTS as i64],
+            "",
         );
+        draw(&mut context, 0, 1);
+        call(&mut context, "endTransformFeedback", &[], "");
+        let bytes = read(&mut context, id, 16);
+        assert_float_capture(&bytes[..8], &[3., 7.]);
+        assert_eq!(&bytes[8..], &[0; 8]);
     });
 }

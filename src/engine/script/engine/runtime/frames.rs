@@ -147,11 +147,16 @@ impl Context {
                     .get_slot::<super::super::dynamic_imports::Imports>()
                     .ok_or_else(|| allocation_error("child module registry"))?;
                 private_hooks.insert("__dispatchStorageEvent".into(), storage_dispatch);
+                let gpu_host = local
+                    .get_slot::<HostBridge>()
+                    .map(|bridge| Rc::downgrade(&bridge))
+                    .unwrap_or_default();
                 let context = Box::new(Self {
                     context,
                     private_hooks,
                     imports,
                     _frames: Rc::clone(&self._frames),
+                    gpu_host,
                     next_module_promise: 1,
                     module_promises: HashMap::new(),
                     agent: Rc::clone(&self.agent),

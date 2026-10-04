@@ -34,7 +34,7 @@ fn publish(context: &mut WebGl, query: i64) {
     // Test-only simulated host task boundaries. No public JavaScript method
     // exposes the internal boundary, and glFinish alone cannot publish results.
     for _ in 0..100 {
-        call(context, "completeGpuTask", &[], "");
+        context.complete_gpu_task().unwrap();
         if ready(context, query) == json!(true) {
             return;
         }

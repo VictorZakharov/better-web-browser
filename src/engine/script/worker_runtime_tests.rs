@@ -9,6 +9,9 @@ mod event_listener;
 mod event_source;
 #[path = "worker_runtime_tests/file_api.rs"]
 mod file_api;
+#[cfg(windows)]
+#[path = "worker_runtime_tests/gpu_tasks.rs"]
+mod gpu_tasks;
 #[path = "worker_runtime_tests/image_frames.rs"]
 mod image_frames;
 #[path = "worker_runtime_tests/indexed_db.rs"]

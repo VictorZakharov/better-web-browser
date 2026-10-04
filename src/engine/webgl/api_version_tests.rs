@@ -59,7 +59,7 @@ fn webgl2_native_version_and_robust_zero_initialization_are_real() {
         let version = unsafe { std::ffi::CStr::from_ptr(gl::GetString(gl::VERSION).cast()) }
             .to_str()
             .unwrap();
-        assert!(version.starts_with("OpenGL ES 3.0"), "{version}");
+        assert!(version.starts_with("OpenGL ES 3.1"), "{version}");
         let extensions = unsafe { std::ffi::CStr::from_ptr(gl::GetString(gl::EXTENSIONS).cast()) }
             .to_str()
             .unwrap();

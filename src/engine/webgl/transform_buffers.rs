@@ -109,21 +109,24 @@ impl WebGl {
         }
         let bound = self.transform_feedback.bound;
         let record = self.transform_feedback.records.get_mut(&bound).unwrap();
-        // Staged admission gap: native deletion can detach an active capture,
-        // unlike BindBufferBase. Our retained-name model must be extended before
-        // accepting that operation; reject atomically rather than corrupt state.
-        if record.active && record.bindings.iter().any(|binding| binding.id == id) {
-            return Err(gl::INVALID_OPERATION);
-        }
+        let native_deleted = self.objects.get(id, Kind::Buffer)?.native_deleted;
         let function = self.core.as_ref().unwrap().indexed_buffer_base;
         for (index, binding) in record.bindings.iter_mut().enumerate() {
             if binding.id == id {
-                unsafe { function(TARGET, index as u32, 0) };
+                // DeleteBuffers already detached the native current container.
+                // Rebinding its active capture would itself be an invalid call.
+                if !native_deleted {
+                    if record.active {
+                        return Err(gl::INVALID_OPERATION);
+                    }
+                    unsafe { function(TARGET, index as u32, 0) };
+                }
                 self.objects.release(id);
                 *binding = Binding::default();
             }
         }
         let generic = *self.core_buffer_bindings.get(&TARGET).unwrap_or(&0);
+        let generic = if generic == id { 0 } else { generic };
         unsafe { gl::BindBuffer(TARGET, self.objects.name(generic, Kind::Buffer)?) };
         self.driver_result()
     }

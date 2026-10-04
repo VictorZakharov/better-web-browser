@@ -13,13 +13,6 @@ impl WebGl {
         if !matches!(target, ARRAY | VOLUME) {
             return Err(gl::INVALID_ENUM);
         }
-        // The pinned D3D11 3D copy path reads native storage before committing
-        // pending image uploads, overwriting untouched slices with stale bytes.
-        // Keep this staged opcode fail-closed until the provider is corrected;
-        // array copies use the independent, verified layer-storage path.
-        if target == VOLUME {
-            return Err(gl::INVALID_OPERATION);
-        }
         let level = c.n(1)?;
         if !(0..=12).contains(&level) {
             return Err(gl::INVALID_VALUE);
@@ -53,6 +46,28 @@ impl WebGl {
             .as_ref()
             .ok_or(gl::INVALID_OPERATION)?
             .copy_texture_sub_image_3d;
+        if target == VOLUME {
+            x.checked_add(width).ok_or(gl::INVALID_VALUE)?;
+            y.checked_add(height).ok_or(gl::INVALID_VALUE)?;
+            // Reuse ANGLE's complete CopyTexSubImage format/read-route/MSAA/
+            // feedback validation without entering its corrupting staging path.
+            // The pinned ValidateES3CopyTexImageParametersBase checks all those
+            // contracts BEFORE returning false for zero extent, without an error
+            // or a driver copy. Browser bounds above validate the real extent.
+            unsafe {
+                function(target, level, xoffset, yoffset, zoffset, x, y, 0, 0);
+            }
+            self.driver_result()?;
+            if width != 0 && height != 0 {
+                self.copy_framebuffer_to_volume(
+                    id,
+                    level,
+                    [xoffset, yoffset, zoffset],
+                    [x, y, width, height],
+                )?;
+            }
+            return Ok(Value::Null);
+        }
         // Read-buffer selection, integer/normalized format compatibility,
         // multisample prohibition and feedback loops remain ANGLE validation.
         // This is a GPU copy: author pack/unpack state and PBOs are irrelevant.
