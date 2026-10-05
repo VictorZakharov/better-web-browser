@@ -133,20 +133,28 @@
             this.__path = newCanvasPath();
             this.__stack = [];
         }
-        get fillStyle() { return this.__fill instanceof CanvasGradient ||
+        get fillStyle() { return canvasIsGradient(this.__fill) ||
             this.__fill instanceof CanvasPattern ? this.__fill : this.__fill.serialized; }
         set fillStyle(value) {
-            if (value instanceof CanvasGradient || value instanceof CanvasPattern) {
+            if (canvasIsGradient(value) || value instanceof CanvasPattern) {
                 this.__fill = value; return;
             }
             const color = normalizedColor(value);
             if (color) this.__fill = color;
         }
-        createLinearGradient(x0, y0, x1, y1) { return canvasGradient('linear', [x0, y0, x1, y1]); }
+        createLinearGradient(x0, y0, x1, y1) {
+            canvasImageDataContext(this);
+            if (arguments.length < 4) throw new TypeError('createLinearGradient requires four arguments');
+            return canvasGradient('linear', [x0, y0, x1, y1]);
+        }
         createRadialGradient(x0, y0, r0, x1, y1, r1) {
+            canvasImageDataContext(this);
+            if (arguments.length < 6) throw new TypeError('createRadialGradient requires six arguments');
             return canvasGradient('radial', [x0, y0, r0, x1, y1, r1]);
         }
         createConicGradient(startAngle, x, y) {
+            canvasImageDataContext(this);
+            if (arguments.length < 3) throw new TypeError('createConicGradient requires three arguments');
             return canvasGradient('conic', [startAngle, x, y]);
         }
         get globalAlpha() { return this.__globalAlpha; }

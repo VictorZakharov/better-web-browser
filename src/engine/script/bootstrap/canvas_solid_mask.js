@@ -4,6 +4,7 @@
     const canvasPaintSolidMask = (context, state, mask, style, left, top, right, bottom) => {
         const width = right - left, height = bottom - top, pixels = width * height;
         if (pixels < 256 || pixels > MAX_CANVAS_PIXELS || context.__clipBits ||
+            canvasIsGradient(style) || style instanceof CanvasPattern ||
             context.__compositeOperation !== 'source-over' || !style.channels ||
             canvasPixelLength(mask) !== pixels) return false;
         const region = new canvasPixelArray(pixels * 4);

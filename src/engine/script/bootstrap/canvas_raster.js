@@ -5,10 +5,10 @@
         context => context.__transform);
     CanvasRenderingContext2D.prototype.beginPath = function() { this.__path = newCanvasPath(); };
     Object.defineProperty(CanvasRenderingContext2D.prototype, 'strokeStyle', {
-        get() { return this.__stroke instanceof CanvasGradient ||
+        get() { return canvasIsGradient(this.__stroke) ||
             this.__stroke instanceof CanvasPattern ? this.__stroke : this.__stroke.serialized; },
         set(value) {
-            if (value instanceof CanvasGradient || value instanceof CanvasPattern) {
+            if (canvasIsGradient(value) || value instanceof CanvasPattern) {
                 this.__stroke = value; return;
             }
             const color = normalizedColor(value); if (color) this.__stroke = color;
@@ -125,7 +125,7 @@
         const [left, top, right, bottom] = canvasPixelBounds(path, state, inset);
         if (!(left < right && top < bottom)) return;
         const style = fill ? context.__fill : context.__stroke;
-        if (!paintInverse && (style instanceof CanvasGradient || style instanceof CanvasPattern)) return;
+        if (!paintInverse && (canvasIsGradient(style) || style instanceof CanvasPattern)) return;
         if (fill) {
             const nativeFill = canvasRasterHost('canvasFillMask', canvasRasterStringify({
                 width: right - left, height: bottom - top, left, top, rule,

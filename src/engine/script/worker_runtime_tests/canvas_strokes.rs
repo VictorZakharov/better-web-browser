@@ -1,6 +1,30 @@
 use super::*;
 
 #[test]
+fn offscreen_canvas_uses_nonpremultiplied_gradient_interpolation_and_private_stops() {
+    let (runtime, initial) = WorkerRuntime::start(
+        "https://example.test/gradients.js",
+        r#"
+        const c=new OffscreenCanvas(32,32).getContext('2d'),g=c.createLinearGradient(.5,0,2.5,0);
+        g.addColorStop(0,'rgba(255,0,0,0)');g.addColorStop(1,'blue');
+        g.__stops=[];g.channels=[255,0,0,255];c.fillStyle=g;
+        const p=new Path2D();p.rect(0,0,32,32);c.fill(p);
+        if(Array.from(c.getImageData(1,0,1,1).data).join()!=='128,0,128,128')throw Error('worker gradient');
+        let name='';try{g.addColorStop(NaN,'red')}catch(e){name=e.name}
+        if(name!=='TypeError')throw Error('worker gradient conversion');
+        postMessage('passed');
+        "#,
+        "",
+        ScriptKind::Classic,
+        Arc::new(|url, _| Err(format!("unexpected worker fetch {url}"))),
+    );
+    assert!(runtime.is_some());
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert_eq!(initial.messages, ["\"passed\""]);
+    assert!(initial.fetch_actions.is_empty());
+}
+
+#[test]
 fn offscreen_canvas_batches_owned_solid_masks_with_live_color_and_alpha() {
     let (runtime, initial) = WorkerRuntime::start(
         "https://example.test/solid-mask.js",
