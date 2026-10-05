@@ -8,6 +8,7 @@ use std::io::Cursor;
 mod coverage;
 mod curves;
 mod fill;
+mod mask_cache;
 mod path;
 mod shadow;
 mod stroke_outline;

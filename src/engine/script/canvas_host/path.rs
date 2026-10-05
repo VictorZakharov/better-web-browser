@@ -69,10 +69,11 @@ pub(super) fn stroke_mask(args: &[JsValue]) -> JsValue {
     if source.len() > MAX_REQUEST_BYTES {
         return JsValue::Null;
     }
-    let Some(mask) = serde_json::from_str::<Request>(source)
-        .ok()
-        .and_then(rasterize)
-    else {
+    let Some(mask) = super::mask_cache::rasterize(super::mask_cache::Kind::Stroke, source, || {
+        serde_json::from_str::<Request>(source)
+            .ok()
+            .and_then(rasterize)
+    }) else {
         return JsValue::Null;
     };
     JsValue::Bytes(mask)

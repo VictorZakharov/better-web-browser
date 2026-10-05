@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Repeated Canvas coverage with independent live paint</title>
+<canvas id="canvas" width="96" height="96"></canvas>
+<pre id="probe">Measuring repeated stroke and fill coverage; checking final painted pixels.</pre>
+<script>
+const context = canvas.getContext('2d');
+context.lineWidth = 3;
+context.lineCap = 'round';
+context.setLineDash([5, 2, 1, 2]);
+const path = new Path2D();
+path.moveTo(12, 12);
+path.bezierCurveTo(80, 0, 0, 80, 84, 84);
+path.lineTo(12, 84);
+path.closePath();
+const start = performance.now();
+for (let index = 0; index < 200; index++) {
+    context.clearRect(0, 0, 96, 96);
+    context.fillStyle = index % 2 ? '#0000ff' : '#ff0000';
+    context.fill(path);
+    context.strokeStyle = index % 2 ? '#00ff00' : '#ffffff';
+    context.stroke(path);
+}
+const elapsed = performance.now() - start;
+const sample = (x, y) => Array.from(context.getImageData(x, y, 1, 1).data);
+probe.setAttribute('data-ms', String(elapsed));
+probe.setAttribute('data-interior', JSON.stringify(sample(25, 70)));
+probe.setAttribute('data-outside', JSON.stringify(sample(0, 0)));
+probe.textContent = `200 repeated fills and strokes: ${elapsed.toFixed(2)} ms; ` +
+    `interior ${sample(25, 70)}; outside ${sample(0, 0)}`;
+</script>

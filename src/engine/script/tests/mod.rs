@@ -47,6 +47,7 @@ mod canvas_fill_coverage;
 mod canvas_filter;
 mod canvas_focus_ring;
 mod canvas_image_data;
+mod canvas_mask_reuse;
 mod canvas_native_stroke;
 mod canvas_presentation;
 mod canvas_rect_coverage;
