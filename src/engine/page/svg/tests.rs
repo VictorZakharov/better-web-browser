@@ -6,6 +6,31 @@ fn pixel(image: &DecodedImage, x: usize) -> &[u8] {
 }
 
 #[test]
+fn svg_raster_reuses_pixels_after_compositor_animation_samples() {
+    let mut page = Page::parse(
+        "<svg width=10 height=10><rect width=10 height=10 fill=red /></svg>",
+        "https://example.test/",
+    );
+    page.refresh_resources(800.0);
+    let svg = page.dom.elements_named("svg").next().unwrap();
+    let key = inline_svg_key(&svg);
+    let pixels = page.images[&key].bgra.clone();
+    let old_generation = svg.subtree_mutation_version();
+    assert!(svg.set_animation_style("opacity:0.4;transform:translateX(2px)"));
+    assert_ne!(svg.subtree_mutation_version(), old_generation);
+    page.refresh_resources(800.0);
+    assert!(std::sync::Arc::ptr_eq(&pixels, &page.images[&key].bgra));
+    assert!(svg.set_animation_style("opacity:0.8;transform:translateX(4px)"));
+    page.refresh_resources(800.0);
+    assert!(std::sync::Arc::ptr_eq(&pixels, &page.images[&key].bgra));
+    let rect = page.dom.elements_named("rect").next().unwrap();
+    rect.set_attr("fill", "blue");
+    page.refresh_resources(800.0);
+    assert!(!std::sync::Arc::ptr_eq(&pixels, &page.images[&key].bgra));
+    assert_eq!(pixel(&page.images[&key], 5), [255, 0, 0, 255]);
+}
+
+#[test]
 fn admitted_color_only_refresh_updates_svg_current_color_without_resource_discovery() {
     use crate::engine::invalidation::{InvalidationImpact, RenderInvalidation};
 

@@ -67,3 +67,33 @@ successful context creation or increased HTML5test score is not that milestone.
 Automated application checks must remain hidden, and generated builds/profiles
 must stay on G:. Do not modify or run the sibling's build scripts as part of a
 read-only requirements audit.
+
+### October 5 startup investigation
+
+The existing production build was copied without rebuilding or modifying the
+sibling, at HEAD `c36cbb223a1a0ccd54e7b1e7e3716e2e4e9522cd`. The copied asset set
+(`index-FyQsDf7S.js`, `index-CfGsp_J8.css`, unchanged Three.js 0.185.1) was held
+constant for hidden release-browser comparisons on this machine. Each run used
+a fresh profile and an eight-second settling period. These are single-run
+diagnostics, not a statistically stable gameplay benchmark.
+
+| Measurement | Preceding release | SVG input-cache fix |
+| --- | ---: | ---: |
+| First presentation | 1,834 ms | 831 ms |
+| Cumulative style/resource refresh | 9,331 ms | 1,151 ms |
+| Executed scripts | 1 | 2 |
+
+Animation sampling advances DOM mutation generations even when an SVG's
+serialized decoder input is unchanged. Raster-cache keys now use that actual
+input, including resolved `currentColor`, rather than treating every sample as
+a new drawing. This reuses the existing resvg decoder and does not bypass real
+attribute, text or inherited-color changes. Tests verify pixel allocation reuse
+for opacity/transform samples and replacement after a fill change.
+
+The module now executes, but startup still fails: texture-generation work in
+the document and a worker reaches the two-second JavaScript execution limit.
+The loading screen also has unresolved layout/SVG-definition differences. The
+Chromium reference reached "Lighting the lobby" in its earlier eight-second
+capture; neither capture proves sustained gameplay. Watchdog containment,
+worker scheduling and the remaining visual differences need investigation
+before claiming the unchanged game runs.

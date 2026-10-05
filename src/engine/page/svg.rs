@@ -73,15 +73,15 @@ pub(crate) fn inline_svg_key(node: &NodeRef) -> String {
 
 pub(super) fn inline_svg_version(node: &NodeRef, styles: Option<&StyleSet>) -> u64 {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
-    node.subtree_mutation_version().hash(&mut hash);
-    if let Some(styles) = styles {
-        for descendant in crate::engine::dom::Node::descendants(node) {
-            if let Some(style) = styles.styles.get(&descendant.id()) {
-                let c = style.color;
-                [c.red, c.green, c.blue, c.alpha].hash(&mut hash);
-            }
-        }
-    }
+    // Key the raster by its actual decoder input. DOM mutation generations also
+    // advance for animation samples (including compositor opacity/transform)
+    // that do not change this SVG drawing. Re-rasterizing filters for every such
+    // sample stalls the rendering checkpoint and the document's script tasks.
+    // Serialization includes author attributes, text and resolved currentColor,
+    // so real drawing changes still invalidate the cached pixels.
+    let mut source = String::new();
+    serialize_svg_node(node, &mut source, true, styles);
+    source.hash(&mut hash);
     hash.finish()
 }
 
