@@ -31,5 +31,18 @@ network and port interoperability. These tests do not prove the game runs;
 application startup still needs its own unchanged-production-build capture.
 
 The normative cloning contract is [HTML structured data](https://html.spec.whatwg.org/multipage/structured-data.html).
-Remaining buffer identity, platform-object and transfer-commit work must follow
-that contract, reusing V8 serialization where ownership/lifecycle allow it.
+Typed arrays and DataView now serialize their backing buffer as an ordinary
+graph edge, rather than repeating its base64 bytes for every view. Shared views
+keep one independent cloned buffer, their original offsets and lengths, and
+the same identity when the buffer also appears elsewhere in the graph. This
+works whether a buffer or a view is encountered first and across transfers.
+V8 supplies native view brands and slots; author `constructor`, `buffer`,
+`byteOffset` and `length` getters are not consulted. Subclasses deserialize as
+the corresponding intrinsic typed array. Intrinsic receiving constructors are
+captured at bootstrap rather than selected through author-replaceable globals.
+Old persisted view envelopes remain readable. Detached views and buffers fail
+with `DataCloneError`; shared-memory worker transport remains unsupported.
+
+Remaining platform-object, resizable-buffer metadata and transfer-commit work
+must follow that contract, reusing V8 serialization where ownership/lifecycle
+allow it. These changes do not turn the JSON transport into zero-copy transfer.

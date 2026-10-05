@@ -1,6 +1,7 @@
 //! Bounded native byte conversion for the existing serialized clone transport.
 //! This is not a new public codec or a replacement for V8's ValueSerializer.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+mod view;
 
 const MAX_BYTES: usize = 16 * 1024 * 1024;
 const MAX_ENCODED_BYTES: usize = MAX_BYTES.div_ceil(3) * 4;
@@ -29,6 +30,23 @@ fn convert<'s>(
     operation: &str,
     input: v8::Local<'s, v8::Value>,
 ) -> Result<v8::Local<'s, v8::Value>, &'static str> {
+    if operation == "cloneBinaryView" {
+        return view::snapshot(scope, input);
+    }
+    if operation == "cloneBufferEncode" {
+        let buffer = v8::Local::<v8::ArrayBuffer>::try_from(input)
+            .map_err(|_| "clone value is not an ArrayBuffer")?;
+        if buffer.was_detached() {
+            return Err("clone buffer is detached");
+        }
+        let length = buffer.byte_length();
+        if length > MAX_BYTES {
+            return Err("clone buffer exceeds the 16 MiB limit");
+        }
+        let bytes = v8::Uint8Array::new(scope, buffer, 0, length)
+            .ok_or("clone buffer view allocation failed")?;
+        return convert(scope, "cloneBinaryEncode", bytes.into());
+    }
     if operation == "arrayBufferDetach" {
         let buffer = v8::Local::<v8::ArrayBuffer>::try_from(input)
             .map_err(|_| "transfer value is not an ArrayBuffer")?;

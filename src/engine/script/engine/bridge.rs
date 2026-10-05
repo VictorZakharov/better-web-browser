@@ -261,7 +261,11 @@ fn host_call_callback(
     }
     if matches!(
         operation.as_str(),
-        "arrayBufferDetach" | "cloneBinaryEncode" | "cloneBinaryDecode"
+        "arrayBufferDetach"
+            | "cloneBinaryEncode"
+            | "cloneBinaryDecode"
+            | "cloneBinaryView"
+            | "cloneBufferEncode"
     ) {
         super::binary_clone::dispatch(scope, &operation, arguments, return_value);
         return;

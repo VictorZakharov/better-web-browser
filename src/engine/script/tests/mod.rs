@@ -165,6 +165,7 @@ mod streams_compression;
 mod streams_encoding;
 mod streams_pipe;
 mod streams_transform;
+mod structured_clone_buffers;
 mod style_declaration;
 mod svg;
 mod table_geometry;
