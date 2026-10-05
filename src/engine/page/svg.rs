@@ -1,11 +1,18 @@
 use super::{DecodedImage, MAX_INLINE_SVGS, Page, bounded_utf8_prefix};
 use crate::engine::css::StyleSet;
-use crate::engine::dom::{Node, NodeData, NodeRef};
+use crate::engine::dom::{Node, NodeRef};
 use crate::limits::MAX_SVG_SOURCE_BYTES;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
+mod decoder;
+mod expansion;
+#[cfg(test)]
+mod reference_tests;
+mod references;
+mod serialize;
 #[cfg(test)]
 mod tests;
+mod urls;
 
 const MAX_INLINE_SVG_DIAGNOSTICS: usize = 8;
 const MAX_INLINE_SVG_DIAGNOSTIC_BYTES: usize = 512;
@@ -35,13 +42,14 @@ impl Page {
         for svg in svgs {
             let key = inline_svg_key(&svg);
             let styles = self.cached_styles.as_ref().map(|(_, _, styles)| styles);
-            let version = inline_svg_version(&svg, styles);
+            let input = InlineSvgInput::new(&svg, styles);
+            let version = input.version;
             let changed = self.inline_svg_versions.get(&svg.id()).copied() != Some(version);
             if !changed {
                 continue;
             }
             self.inline_svg_versions.insert(svg.id(), version);
-            match decode_inline_svg(&svg, styles) {
+            match input.decode() {
                 Ok(image) => {
                     let _ = self.install_decoded_image(key, image);
                 }
@@ -71,27 +79,40 @@ pub(crate) fn inline_svg_key(node: &NodeRef) -> String {
     format!("inline-svg:{:032x}", node.id().to_wire())
 }
 
-pub(super) fn inline_svg_version(node: &NodeRef, styles: Option<&StyleSet>) -> u64 {
-    let mut hash = std::collections::hash_map::DefaultHasher::new();
-    node.subtree_mutation_version().hash(&mut hash);
-    if let Some(styles) = styles {
-        for descendant in crate::engine::dom::Node::descendants(node) {
-            if let Some(style) = styles.styles.get(&descendant.id()) {
-                let c = style.color;
-                [c.red, c.green, c.blue, c.alpha].hash(&mut hash);
-            }
-        }
-    }
-    hash.finish()
+pub(super) struct InlineSvgInput {
+    pub version: u64,
+    source: Result<String, String>,
 }
 
+impl InlineSvgInput {
+    pub fn new(node: &NodeRef, styles: Option<&StyleSet>) -> Self {
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        // Key the raster by its actual decoder input. DOM mutation generations also
+        // advance for animation samples (including compositor opacity/transform)
+        // that do not change this SVG drawing. Re-rasterizing filters for every such
+        // sample stalls the rendering checkpoint and the document's script tasks.
+        // Serialization includes author attributes, text and resolved currentColor,
+        // so real drawing changes still invalidate the cached pixels.
+        let source = serialize::source(node, styles);
+        source.hash(&mut hash);
+        Self {
+            version: hash.finish(),
+            source,
+        }
+    }
+
+    pub fn decode(self) -> Result<DecodedImage, String> {
+        let source = self.source?;
+        decode_svg(source.as_bytes(), "inline SVG")
+    }
+}
+
+#[cfg(test)]
 pub(super) fn decode_inline_svg(
     node: &NodeRef,
     styles: Option<&StyleSet>,
 ) -> Result<DecodedImage, String> {
-    let mut source = String::new();
-    serialize_svg_node(node, &mut source, true, styles);
-    decode_svg(source.as_bytes(), "inline SVG")
+    InlineSvgInput::new(node, styles).decode()
 }
 
 pub(crate) fn looks_like_svg(bytes: &[u8]) -> bool {
@@ -118,8 +139,9 @@ pub(crate) fn decode_svg_with_limits(
             "{description} exceeds the {MAX_SVG_SOURCE_BYTES}-byte limit"
         ));
     }
-    let options = resvg::usvg::Options::default();
-    let tree = resvg::usvg::Tree::from_data(source, &options)
+    let source = decoder::payload(source)?;
+    let options = decoder::options(limits);
+    let tree = resvg::usvg::Tree::from_data(&source, &options)
         .map_err(|error| format!("parse {description}: {error}"))?;
     let size = tree.size().to_int_size();
     let width = size.width();
@@ -141,77 +163,4 @@ pub(crate) fn decode_svg_with_limits(
         height,
         bgra: bgra.into(),
     })
-}
-
-fn serialize_svg_node(node: &NodeRef, output: &mut String, root: bool, styles: Option<&StyleSet>) {
-    match &node.data {
-        NodeData::Element(element) => {
-            let tag = element.name.local.as_ref();
-            if tag.eq_ignore_ascii_case("script") {
-                return;
-            }
-            output.push('<');
-            output.push_str(tag);
-            let attrs = element.attrs.borrow();
-            let color = styles
-                .and_then(|styles| styles.styles.get(&node.id()))
-                .map(|style| style.color);
-            let has_xmlns = attrs
-                .iter()
-                .any(|attribute| attribute.name.local.as_ref() == "xmlns");
-            if root && !has_xmlns {
-                output.push_str(" xmlns=\"http://www.w3.org/2000/svg\"");
-            }
-            for attribute in attrs.iter() {
-                if color.is_some() && attribute.name.local.as_ref() == "style" {
-                    continue;
-                }
-                output.push(' ');
-                output.push_str(attribute.name.local.as_ref());
-                output.push_str("=\"");
-                escape_xml(&attribute.value, output);
-                output.push('"');
-            }
-            if let Some(color) = color {
-                // SVG currentColor is resolved per element, not by tinting the whole
-                // bitmap: explicit fills and strokes must retain their own colors.
-                // https://svgwg.org/svg2-draft/painting.html#SpecifyingPaint
-                output.push_str(" style=\"");
-                if let Some(style) = node.attr("style") {
-                    let style = style.trim_end_matches([';', ' ', '\t', '\r', '\n', '\u{c}']);
-                    if !style.is_empty() {
-                        escape_xml(style, output);
-                        output.push(';');
-                    }
-                }
-                output.push_str(&format!(
-                    "color:#{:02x}{:02x}{:02x}{:02x}!important\"",
-                    color.red, color.green, color.blue, color.alpha
-                ));
-            }
-            output.push('>');
-            drop(attrs);
-            for child in node.children.borrow().iter() {
-                serialize_svg_node(child, output, false, styles);
-            }
-            output.push_str("</");
-            output.push_str(tag);
-            output.push('>');
-        }
-        NodeData::Text(text) | NodeData::Cdata(text) => escape_xml(&text.borrow(), output),
-        _ => {}
-    }
-}
-
-fn escape_xml(value: &str, output: &mut String) {
-    for character in value.chars() {
-        match character {
-            '&' => output.push_str("&amp;"),
-            '<' => output.push_str("&lt;"),
-            '>' => output.push_str("&gt;"),
-            '"' => output.push_str("&quot;"),
-            '\'' => output.push_str("&apos;"),
-            character => output.push(character),
-        }
-    }
 }

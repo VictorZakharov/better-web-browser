@@ -5,6 +5,76 @@ use super::*;
 
 const DISCARD: u32 = 0x8c89;
 
+#[test]
+fn native_presentation_generation_tracks_default_writes_not_reads_or_fbo_work() {
+    session::run_native_test(|| {
+        for preserve in [false, true] {
+            let mut context = context(false, preserve, true);
+            assert_eq!(
+                call(&mut context, "drawingBufferDirty", &[], ""),
+                json!(true)
+            );
+            context.presented();
+            assert_eq!(
+                call(&mut context, "drawingBufferDirty", &[], ""),
+                json!(false)
+            );
+            context.surface.snapshot().unwrap();
+            call(&mut context, "getError", &[], "");
+            assert_eq!(
+                call(&mut context, "drawingBufferDirty", &[], ""),
+                json!(false)
+            );
+            let fbo = call(&mut context, "createFramebuffer", &[], "")
+                .as_u64()
+                .unwrap();
+            call(
+                &mut context,
+                "bindFramebuffer",
+                &[DRAW as i64, fbo as i64],
+                "",
+            );
+            // Invalid FBO draws remain ordinary GL errors; they are not Canvas
+            // writes and must not publish the implicit default-buffer clear.
+            assert_eq!(
+                context.dispatch(
+                    &Command {
+                        op: "clear".into(),
+                        i: vec![gl::COLOR_BUFFER_BIT as i64],
+                        f: vec![],
+                        text: String::new(),
+                    },
+                    None
+                ),
+                Err(gl::INVALID_FRAMEBUFFER_OPERATION)
+            );
+            assert_eq!(
+                call(&mut context, "drawingBufferDirty", &[], ""),
+                json!(false)
+            );
+            call(&mut context, "bindFramebuffer", &[DRAW as i64, 0], "");
+            call(
+                &mut context,
+                "bindFramebuffer",
+                &[READ as i64, fbo as i64],
+                "",
+            );
+            call(&mut context, "clear", &[gl::COLOR_BUFFER_BIT as i64], "");
+            assert_eq!(
+                call(&mut context, "drawingBufferDirty", &[], ""),
+                json!(true)
+            );
+            context.presented();
+            // An equal-size Canvas assignment still resets/publishes its bitmap.
+            call(&mut context, "resizeCanvas", &[4, 4], "");
+            assert_eq!(
+                call(&mut context, "drawingBufferDirty", &[], ""),
+                json!(true)
+            );
+        }
+    });
+}
+
 fn context(antialias: bool, preserve: bool, alpha: bool) -> WebGl {
     WebGl::new(
         4,

@@ -17,6 +17,14 @@ pub(super) type IsArray = unsafe extern "system" fn(u32) -> u8;
 pub(super) type DrawBuffers = unsafe extern "system" fn(i32, *const u32);
 
 pub(super) struct Extensions {
+    pub indexed_blend_entries: Option<super::indexed_blend_entries::Entries>,
+    pub available_indexed_blend: bool,
+    pub indexed_blend: bool,
+    pub multi_draw_entries: Option<super::multi_draw_entries::Entries>,
+    pub available_multi_draw: bool,
+    pub multi_draw: bool,
+    pub available_parallel_compile: bool,
+    pub parallel_compile: bool,
     pub available_core_color_float: bool,
     pub core_color_float: bool,
     pub textures: TextureCapabilities,
@@ -125,7 +133,32 @@ impl Extensions {
             && draw_buffers_entry.is_some()
             && max_draw_buffers >= 4
             && max_color_attachments >= max_draw_buffers;
+        let multi_draw_entries = super::multi_draw_entries::Entries::load();
+        let indexed_blend_entries = super::indexed_blend_entries::Entries::load();
         Self {
+            indexed_blend_entries,
+            available_indexed_blend: indexed_blend_entries.is_some()
+                && enabled
+                    .iter()
+                    .chain(&requestable)
+                    .any(|name| name == "GL_OES_draw_buffers_indexed"),
+            indexed_blend: false,
+            multi_draw_entries,
+            available_multi_draw: enabled
+                .iter()
+                .chain(&requestable)
+                .any(|name| name == "GL_ANGLE_multi_draw")
+                && multi_draw_entries.is_some()
+                && advertised
+                && arrays.is_some()
+                && elements.is_some()
+                && divisor.is_some(),
+            multi_draw: false,
+            available_parallel_compile: enabled
+                .iter()
+                .chain(&requestable)
+                .any(|name| name == "GL_KHR_parallel_shader_compile"),
+            parallel_compile: false,
             available_core_color_float: enabled
                 .iter()
                 .chain(&requestable)

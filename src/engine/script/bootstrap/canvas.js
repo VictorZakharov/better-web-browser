@@ -2,6 +2,7 @@
     // operations backed by real pixels; unsupported context types and APIs continue to fail closed.
     const MAX_CANVAS_PIXELS = 4 * 1024 * 1024;
     const canvasStates = new WeakMap();
+    const canvas2dOwners = new WeakMap();
     let synchronizeWebGlCanvas = () => {};
     let resetWebGlCanvas = () => {};
     let dirtyWebGlCanvas = () => {};
@@ -87,10 +88,10 @@
     };
 
     const normalizedRectangle = (x, y, width, height) => {
-        x = Math.trunc(Number(x));
-        y = Math.trunc(Number(y));
-        width = Math.trunc(Number(width));
-        height = Math.trunc(Number(height));
+        x = +x;
+        y = +y;
+        width = +width;
+        height = +height;
         if (![x, y, width, height].every(Number.isFinite)) return null;
         if (width < 0) { x += width; width = -width; }
         if (height < 0) { y += height; height = -height; }
@@ -100,6 +101,7 @@
     class CanvasRenderingContext2D {
         constructor(canvas) {
             Object.defineProperty(this, 'canvas', { enumerable: true, value: canvas });
+            canvas2dOwners.set(this, canvas);
             this.__reset();
         }
         __reset() {
@@ -131,20 +133,28 @@
             this.__path = newCanvasPath();
             this.__stack = [];
         }
-        get fillStyle() { return this.__fill instanceof CanvasGradient ||
-            this.__fill instanceof CanvasPattern ? this.__fill : this.__fill.serialized; }
+        get fillStyle() { return canvasIsGradient(this.__fill) ||
+            canvasIsPattern(this.__fill) ? this.__fill : this.__fill.serialized; }
         set fillStyle(value) {
-            if (value instanceof CanvasGradient || value instanceof CanvasPattern) {
+            if (canvasIsGradient(value) || canvasIsPattern(value)) {
                 this.__fill = value; return;
             }
             const color = normalizedColor(value);
             if (color) this.__fill = color;
         }
-        createLinearGradient(x0, y0, x1, y1) { return canvasGradient('linear', [x0, y0, x1, y1]); }
+        createLinearGradient(x0, y0, x1, y1) {
+            canvasImageDataContext(this);
+            if (arguments.length < 4) throw new TypeError('createLinearGradient requires four arguments');
+            return canvasGradient('linear', [x0, y0, x1, y1]);
+        }
         createRadialGradient(x0, y0, r0, x1, y1, r1) {
+            canvasImageDataContext(this);
+            if (arguments.length < 6) throw new TypeError('createRadialGradient requires six arguments');
             return canvasGradient('radial', [x0, y0, r0, x1, y1, r1]);
         }
         createConicGradient(startAngle, x, y) {
+            canvasImageDataContext(this);
+            if (arguments.length < 3) throw new TypeError('createConicGradient requires three arguments');
             return canvasGradient('conic', [startAngle, x, y]);
         }
         get globalAlpha() { return this.__globalAlpha; }
@@ -209,25 +219,8 @@
         __paintRect(x, y, width, height, style) {
             const rect = normalizedRectangle(x, y, width, height);
             const state = stateForCanvas(this.canvas);
-            if (!rect || !state.pixels) return;
-            if (!canvasIsIdentity(this.__transform)) {
-                paintTransformedCanvasRect(this, state, rect, style);
-                return;
-            }
-            const left = Math.max(0, rect.x);
-            const top = Math.max(0, rect.y);
-            const right = Math.min(state.width, rect.x + rect.width);
-            const bottom = Math.min(state.height, rect.y + rect.height);
-            for (let row = top; row < bottom; row++) for (let column = left; column < right; column++) {
-                if (!canvasClipAllows(this, column, row, state.width)) continue;
-                const offset = (row * state.width + column) * 4;
-                if (!style) {
-                    state.pixels.fill(0, offset, offset + 4);
-                    continue;
-                }
-                compositeCanvasPixel(state.pixels, offset, canvasPaintAt(style, column + 0.5, row + 0.5),
-                    this.__globalAlpha, this.__compositeOperation);
-            }
+            if (!rect || !rect.width || !rect.height || !state.pixels) return;
+            paintTransformedCanvasRect(this, state, rect, style);
         }
         createImageData(widthOrImageData, height, settings) {
             if (widthOrImageData instanceof ImageData)
@@ -235,47 +228,10 @@
             return new ImageData(Math.abs(Number(widthOrImageData)), Math.abs(Number(height)), settings);
         }
         getImageData(x, y, width, height, settings) {
-            const rect = normalizedRectangle(x, y, width, height);
-            if (!rect || rect.width === 0 || rect.height === 0)
-                throw new DOMException('ImageData dimensions must be non-zero', 'IndexSizeError');
-            const state = stateForCanvas(this.canvas);
-            if (!state.pixels || rect.width * rect.height > MAX_CANVAS_PIXELS)
-                throw new DOMException('The requested bitmap exceeds the canvas budget', 'NotSupportedError');
-            const result = new ImageData(rect.width, rect.height, settings);
-            for (let row = 0; row < rect.height; row++) for (let column = 0; column < rect.width; column++) {
-                const sourceX = rect.x + column;
-                const sourceY = rect.y + row;
-                if (sourceX < 0 || sourceY < 0 || sourceX >= state.width || sourceY >= state.height) continue;
-                const source = (sourceY * state.width + sourceX) * 4;
-                const destination = (row * rect.width + column) * 4;
-                result.data.set(state.pixels.subarray(source, source + 4), destination);
-            }
-            return result;
+            return readCanvasImageData(this, x, y, width, height, settings);
         }
-        putImageData(imageData, x, y, dirtyX = 0, dirtyY = 0,
-            dirtyWidth = imageData?.width, dirtyHeight = imageData?.height) {
-            if (!(imageData instanceof ImageData)) throw new TypeError('putImageData requires ImageData');
-            const state = stateForCanvas(this.canvas);
-            if (!state.pixels) return;
-            x = Math.trunc(Number(x));
-            y = Math.trunc(Number(y));
-            dirtyX = Math.trunc(Number(dirtyX)); dirtyY = Math.trunc(Number(dirtyY));
-            dirtyWidth = Math.trunc(Number(dirtyWidth));
-            dirtyHeight = Math.trunc(Number(dirtyHeight));
-            if (![x, y, dirtyX, dirtyY, dirtyWidth, dirtyHeight].every(Number.isFinite)) return;
-            if (dirtyWidth < 0) { dirtyX += dirtyWidth; dirtyWidth = -dirtyWidth; }
-            if (dirtyHeight < 0) { dirtyY += dirtyHeight; dirtyHeight = -dirtyHeight; }
-            const left = Math.max(0, dirtyX), top = Math.max(0, dirtyY);
-            const right = Math.min(imageData.width, dirtyX + dirtyWidth);
-            const bottom = Math.min(imageData.height, dirtyY + dirtyHeight);
-            for (let row = top; row < bottom; row++) for (let column = left; column < right; column++) {
-                const destinationX = x + column;
-                const destinationY = y + row;
-                if (destinationX < 0 || destinationY < 0 || destinationX >= state.width || destinationY >= state.height) continue;
-                const source = (row * imageData.width + column) * 4;
-                const destination = (destinationY * state.width + destinationX) * 4;
-                state.pixels.set(imageData.data.subarray(source, source + 4), destination);
-            }
+        putImageData(imageData, x, y, ...dirty) {
+            writeCanvasImageData(this, imageData, x, y, dirty);
         }
         getContextAttributes() { return { alpha: true, colorSpace: 'srgb', desynchronized: false, willReadFrequently: false }; }
         reset() {

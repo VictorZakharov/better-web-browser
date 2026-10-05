@@ -1,6 +1,23 @@
 use super::*;
 
 #[test]
+fn web_font_snapshots_share_immutable_bytes_but_not_descriptors() {
+    let font = WebFont {
+        family: "Fixture".into(),
+        weight: 400,
+        italic: false,
+        sfnt: vec![0_u8; 1024 * 1024].into(),
+        source_url: "https://example.test/font.woff2".into(),
+        script_source_id: Some(7),
+    };
+    let mut snapshot = font.clone();
+    assert!(std::sync::Arc::ptr_eq(&font.sfnt, &snapshot.sfnt));
+    snapshot.family = "Other family".into();
+    assert_eq!(font.family, "Fixture");
+    assert_eq!(snapshot.sfnt.len(), 1024 * 1024);
+}
+
+#[test]
 fn chooses_modern_woff2_before_a_woff_fallback() {
     let faces = discover_font_faces(
         r#"@font-face {

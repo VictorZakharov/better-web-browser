@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SVG font presentation cascade</title>
+<style>
+  .parent { font-size: 30px; }
+  .rule { font-size: 20px; }
+  @layer base { .layer { font-size: 20px; } }
+  .revert { font-size: revert; }
+  @layer rollback { .rollback { font-size: revert-layer; } }
+</style>
+<div class="parent">
+<svg width="300" height="100">
+  <text id="attribute" font-size="40">attribute</text>
+  <text id="rule" class="rule" font-size="40">rule</text>
+  <text id="layer" class="layer" font-size="40">layer</text>
+  <text id="revert" class="revert" font-size="40">revert</text>
+  <text id="rollback" class="rollback" font-size="40">rollback</text>
+</svg>
+</div>
+<output id="probe"></output>
+<script>
+  ['attribute', 'rule', 'layer', 'revert', 'rollback'].forEach(function (id) {
+    document.getElementById('probe').setAttribute('data-' + id,
+      getComputedStyle(document.getElementById(id)).fontSize);
+  });
+</script>

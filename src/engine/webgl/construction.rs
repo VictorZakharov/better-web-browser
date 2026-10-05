@@ -56,6 +56,7 @@ impl WebGl {
             core_buffer_bindings: HashMap::new(),
             surface,
             readback_cache: readback_cache::Cache::default(),
+            shader_validation_cache: shader_validation_cache::Cache::default(),
             objects: Objects::new(options.api),
             default_draw_buffer: gl::BACK,
             errors: VecDeque::new(),

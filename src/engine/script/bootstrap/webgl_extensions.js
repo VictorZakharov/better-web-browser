@@ -1,4 +1,16 @@
     const webGlExtensionFactories = new Map();
+    // No public constructor or thread-count controls: the WebGL extension
+    // exposes only the driver's non-blocking completion status enumerant.
+    class KHR_parallel_shader_compile {
+        constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
+    }
+    Object.defineProperties(KHR_parallel_shader_compile.prototype, {
+        [Symbol.toStringTag]:{value:'KHR_parallel_shader_compile'},
+        COMPLETION_STATUS_KHR:{value:0x91b1, enumerable:true}
+    });
+    webGlExtensionFactories.set('khr_parallel_shader_compile', {
+        name:'KHR_parallel_shader_compile', create:() => new KHR_parallel_shader_compile(webGlToken)
+    });
     const webGlInstancingExtensions = webGlPrivateBrands();
     const webGlExtensionReceiver = (receiver, map, arity, args, name) => {
         const record = map.get(receiver);

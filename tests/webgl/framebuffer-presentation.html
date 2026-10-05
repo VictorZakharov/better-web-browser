@@ -1,0 +1,51 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>pending: framebuffer presentation</title>
+<style>body{margin:24px;background:white;font:16px sans-serif}canvas{display:block;width:128px;height:128px}</style>
+<canvas width="128" height="128"></canvas>
+<pre id="result">The displayed Canvas must remain red after offscreen green clears.</pre>
+<script>
+(() => {
+    'use strict';
+    const parameters=new URLSearchParams(location.search);
+    const api=parameters.get('api') || 'webgl2';
+    const preserve=parameters.get('preserve') === 'true';
+    const canvas=document.querySelector('canvas');
+    const gl=canvas.getContext(api,{antialias:false,preserveDrawingBuffer:preserve});
+    const result=document.querySelector('#result');
+    const fail=error=>{
+        result.textContent=String(error.stack || error);
+        document.title='failed: framebuffer presentation';
+    };
+    try {
+        if (!gl) throw Error('A real '+api+' context is required');
+        gl.clearColor(1,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
+        // Allow the first default-buffer frame to reach the compositor. A
+        // readback is not evidence of that frame being displayed; captures
+        // inspect the Canvas itself after the later FBO-only work completes.
+        setTimeout(() => {
+            try {
+                const fbo=gl.createFramebuffer(), texture=gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D,texture);
+                gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,8,8,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+                gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0);
+                if (gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)
+                    throw Error('Offscreen framebuffer is incomplete');
+                gl.clearColor(0,1,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
+                const bytes=new Uint8Array(4);
+                gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,bytes);
+                if ([...bytes].join()!=='0,255,0,255') throw Error('Offscreen clear did not render');
+                gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+                gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,bytes);
+                const expected=preserve ? '255,0,0,255' : '0,0,0,0';
+                if ([...bytes].join()!==expected) throw Error('Backing-buffer retirement differs: '+bytes);
+                if (gl.getError()) throw Error('Unexpected WebGL error');
+                result.textContent=JSON.stringify({api,preserve,offscreen:'green',
+                    readableDefault:Array.from(bytes),displayedCanvas:'must remain red'});
+                document.title='ready: framebuffer presentation';
+            } catch (error) { fail(error); }
+        },500);
+    } catch (error) { fail(error); }
+})();
+</script>

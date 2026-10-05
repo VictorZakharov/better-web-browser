@@ -1,6 +1,7 @@
 //! V8 ownership and the engine-neutral values used by native Web API bindings.
 
 mod agent;
+mod binary_clone;
 mod bridge;
 mod control_validation;
 pub(in crate::engine::script) mod crypto;

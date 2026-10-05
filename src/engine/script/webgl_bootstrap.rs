@@ -22,6 +22,8 @@ macro_rules! webgl_bootstrap {
     include_str!("bootstrap/webgl2_context.js"),
     include_str!("bootstrap/webgl2_constants.js"),
     include_str!("bootstrap/webgl2_data.js"),
+    include_str!("bootstrap/webgl_multi_draw.js"),
+    include_str!("bootstrap/webgl_indexed_blend.js"),
     include_str!("bootstrap/webgl2_image_packing.js"),
     include_str!("bootstrap/webgl2_view_pixels.js"),
     include_str!("bootstrap/webgl2_image_sources.js"),

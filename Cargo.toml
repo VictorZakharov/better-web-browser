@@ -46,7 +46,10 @@ ogg = "=0.8.0"
 # MIT/Apache-2.0 safe API over bundled BSD-3-Clause libopus; contained audio jobs only.
 opus = "=0.4.0"
 psl2 = { version = "0.1.12", default-features = false, features = ["fast-lookup"] }
-resvg = { version = "0.48.1", default-features = false }
+# Reuse bounded data-image rendering; ambient file reads remain disabled by our resolver.
+resvg = { version = "0.48.1", default-features = false, features = ["raster-images"] }
+# Already locked through usvg; MIT/Apache-2.0 curve queries for native stroke outlines.
+kurbo = "=0.13.1"
 sha2 = "0.10.9"
 # MPL-2.0 bounded audio demux/decode; only the admitted container/codec pairs are exposed.
 symphonia = { version = "=0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "mkv", "ogg", "vorbis", "flac"] }

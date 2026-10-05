@@ -155,6 +155,7 @@ dependencies = [
  "jxl-color",
  "jxl-oxide",
  "jxl-oxide-common",
+ "kurbo",
  "lewton",
  "moxcms",
  "mozangle",
@@ -1946,12 +1947,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67e3803f97b999e80cbf7c6ecdd07a8102204d92e1633cf48783720c521196bd"
 dependencies = [
  "bytemuck",
+ "gif",
+ "image-webp",
  "log",
  "pico-args",
  "rgb",
  "svgtypes",
  "tiny-skia",
  "usvg",
+ "zune-jpeg",
 ]
 
 [[package]]

@@ -1,31 +1,19 @@
+    const canvasRasterHost = __hostCall;
+    const canvasRasterStringify = JSON.stringify;
     const contextCanvasPath = context => context.__path;
     installCanvasPathMethods(CanvasRenderingContext2D.prototype, contextCanvasPath,
         context => context.__transform);
     CanvasRenderingContext2D.prototype.beginPath = function() { this.__path = newCanvasPath(); };
     Object.defineProperty(CanvasRenderingContext2D.prototype, 'strokeStyle', {
-        get() { return this.__stroke instanceof CanvasGradient ||
-            this.__stroke instanceof CanvasPattern ? this.__stroke : this.__stroke.serialized; },
+        get() { return canvasIsGradient(this.__stroke) ||
+            canvasIsPattern(this.__stroke) ? this.__stroke : this.__stroke.serialized; },
         set(value) {
-            if (value instanceof CanvasGradient || value instanceof CanvasPattern) {
+            if (canvasIsGradient(value) || canvasIsPattern(value)) {
                 this.__stroke = value; return;
             }
             const color = normalizedColor(value); if (color) this.__stroke = color;
         }
     });
-    Object.defineProperty(CanvasRenderingContext2D.prototype, 'lineWidth', {
-        get() { return this.__lineWidth; },
-        set(value) { value = Number(value); if (Number.isFinite(value) && value > 0) this.__lineWidth = value; }
-    });
-    Object.defineProperty(CanvasRenderingContext2D.prototype, 'lineDashOffset', {
-        get() { return this.__dashOffset; },
-        set(value) { value = Number(value); if (Number.isFinite(value)) this.__dashOffset = value; }
-    });
-    CanvasRenderingContext2D.prototype.setLineDash = function(segments) {
-        const values = [...segments].map(Number);
-        if (values.some(value => !Number.isFinite(value) || value < 0)) return;
-        this.__lineDash = values.length % 2 ? values.concat(values) : values;
-    };
-    CanvasRenderingContext2D.prototype.getLineDash = function() { return [...this.__lineDash]; };
     const canvasPathArgument = (context, candidate) => candidate instanceof Path2D ?
         transformCanvasPath(canvasPathData.get(candidate), context.__transform) : context.__path;
     const canvasFillRule = value => value === 'evenodd' ? 'evenodd' : 'nonzero';
@@ -104,17 +92,42 @@
         return canvasStrokeJoins(path).some(([previous, point, next]) =>
             canvasJoinCovers(previous, point, next, x, y, width / 2, join, miterLimit));
     };
+    const canvasNativeStrokeRequest = (context, path, width, height, left, top) => canvasRasterStringify({
+        width, height, left, top, line_width: context.__lineWidth, miter_limit: context.__miterLimit,
+        cap: context.__lineCap, join: context.__lineJoin, transform: context.__transform,
+        dash: context.__lineDash, dash_offset: context.__dashOffset,
+        antialias: true,
+        parts: path.subpaths.map(part => ({ points: part.points, closed: !!part.closed }))
+    });
     const paintCanvasPath = (context, path, fill, rule) => {
         const state = stateForCanvas(context.canvas);
         if (!state.pixels) return;
+        const paintInverse = matrixInverse2D(context.__transform);
+        if (!fill && !paintInverse) return;
+        const [a, b, c, d] = context.__transform;
+        const penScale = Math.max(Math.hypot(a, c), Math.hypot(b, d));
         const inset = fill ? 0 : context.__lineWidth / 2 *
-            (context.__lineJoin === 'miter' ? context.__miterLimit : 1) + 1;
+            penScale * (context.__lineJoin === 'miter' ? context.__miterLimit : 1) + 1;
         const [left, top, right, bottom] = canvasPixelBounds(path, state, inset);
         if (!(left < right && top < bottom)) return;
         const style = fill ? context.__fill : context.__stroke;
-        const paintInverse = matrixInverse2D(context.__transform);
-        if (!paintInverse && (style instanceof CanvasGradient || style instanceof CanvasPattern)) return;
+        if (!paintInverse && (canvasIsGradient(style) || canvasIsPattern(style))) return;
         if (fill) {
+            const nativeFill = canvasRasterHost('canvasFillMask', canvasRasterStringify({
+                width: right - left, height: bottom - top, left, top, rule,
+                parts: path.subpaths.map(part => ({points: part.points, closed: !!part.closed}))
+            }));
+            if (nativeFill) {
+                if (canvasPaintSolidMask(context, state, nativeFill, style, left, top, right, bottom)) return;
+                for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
+                    const coverage = nativeFill[(y - top) * (right - left) + x - left] / 255;
+                    if (coverage && canvasClipAllows(context, x, y, state.width))
+                        compositeCanvasPixel(state.pixels, (y * state.width + x) * 4,
+                            canvasPaintAt(style, x + .5, y + .5, paintInverse),
+                            context.__globalAlpha * coverage, context.__compositeOperation);
+                }
+                return;
+            }
             const edges = pathEdges(path);
             for (let y = top; y < bottom; y++) {
                 const intersections = [];
@@ -140,48 +153,71 @@
         }
         // Mark coverage before compositing so joins or overlapping segments do not darken twice.
         const maskWidth = right - left;
-        const coverage = new Uint8Array(maskWidth * (bottom - top));
-        let coverageWork = 0;
-        for (const segment of canvasStrokeSegments(path)) {
-            const [[x0, y0], [x1, y1]] = [segment.start, segment.end];
-            const radius = context.__lineWidth / 2;
-            const minX = Math.max(left, Math.floor(Math.min(x0, x1) - radius));
-            const maxX = Math.min(right, Math.ceil(Math.max(x0, x1) + radius));
-            const minY = Math.max(top, Math.floor(Math.min(y0, y1) - radius));
-            const maxY = Math.min(bottom, Math.ceil(Math.max(y0, y1) + radius));
-            coverageWork += Math.max(0, maxX - minX) * Math.max(0, maxY - minY);
-            if (coverageWork > 50000000)
+        // The default path already contains construction-time transformed points.
+        // Undo only the painting CTM, stroke with its pen, then transform back.
+        const strokePath = transformCanvasPath(path, paintInverse);
+        const nativeCoverage = canvasRasterHost('canvasStrokeMask',
+            canvasNativeStrokeRequest(context, strokePath, maskWidth, bottom - top, left, top));
+        const coverage = nativeCoverage || new Uint8Array(maskWidth * (bottom - top));
+        if (nativeCoverage && canvasPaintSolidMask(context, state, nativeCoverage, style,
+            left, top, right, bottom)) return;
+        if (!nativeCoverage && !canvasIsIdentity(context.__transform)) {
+            const segments = canvasStrokeSegments(strokePath);
+            const work = maskWidth * (bottom - top) * Math.max(1, strokePath.pointCount);
+            if (work > 50000000)
                 throw new DOMException('Canvas stroke exceeds the raster budget', 'NotSupportedError');
-            for (let y = minY; y < maxY; y++) for (let x = minX; x < maxX; x++) {
-                const projection = canvasStrokeSegmentContains(segment,
-                    x + 0.5, y + 0.5, radius, context.__lineCap);
-                if (projection === null ||
-                    !canvasDashVisible(context.__lineDash,
-                        segment.distance + projection * segment.length + context.__dashOffset)) continue;
-                coverage[(y - top) * maskWidth + x - left] = 1;
-            }
-        }
-        for (const [previous, point, next] of canvasStrokeJoins(path)) {
-            const radius = context.__lineWidth / 2;
-            const extent = radius * (context.__lineJoin === 'miter' ? context.__miterLimit : 1);
-            const minX = Math.max(left, Math.floor(point[0] - extent));
-            const maxX = Math.min(right, Math.ceil(point[0] + extent));
-            const minY = Math.max(top, Math.floor(point[1] - extent));
-            const maxY = Math.min(bottom, Math.ceil(point[1] + extent));
-            coverageWork += Math.max(0, maxX - minX) * Math.max(0, maxY - minY);
-            if (coverageWork > 50000000)
-                throw new DOMException('Canvas stroke exceeds the raster budget', 'NotSupportedError');
-            for (let y = minY; y < maxY; y++) for (let x = minX; x < maxX; x++)
-                if (canvasJoinCovers(previous, point, next, x + 0.5, y + 0.5,
-                    radius, context.__lineJoin, context.__miterLimit))
+            for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
+                const [px, py] = matrixPoint2D(paintInverse, x + .5, y + .5);
+                if (pointOnCanvasStroke(strokePath, segments, px, py, context.__lineWidth,
+                    context.__lineDash, context.__dashOffset, context.__lineCap,
+                    context.__lineJoin, context.__miterLimit))
                     coverage[(y - top) * maskWidth + x - left] = 1;
+            }
+        } else if (!nativeCoverage) {
+            let coverageWork = 0;
+            for (const segment of canvasStrokeSegments(path)) {
+                const [[x0, y0], [x1, y1]] = [segment.start, segment.end];
+                const radius = context.__lineWidth / 2;
+                const minX = Math.max(left, Math.floor(Math.min(x0, x1) - radius));
+                const maxX = Math.min(right, Math.ceil(Math.max(x0, x1) + radius));
+                const minY = Math.max(top, Math.floor(Math.min(y0, y1) - radius));
+                const maxY = Math.min(bottom, Math.ceil(Math.max(y0, y1) + radius));
+                coverageWork += Math.max(0, maxX - minX) * Math.max(0, maxY - minY);
+                if (coverageWork > 50000000)
+                    throw new DOMException('Canvas stroke exceeds the raster budget', 'NotSupportedError');
+                for (let y = minY; y < maxY; y++) for (let x = minX; x < maxX; x++) {
+                    const projection = canvasStrokeSegmentContains(segment,
+                        x + 0.5, y + 0.5, radius, context.__lineCap);
+                    if (projection === null ||
+                        !canvasDashVisible(context.__lineDash,
+                            segment.distance + projection * segment.length + context.__dashOffset)) continue;
+                    coverage[(y - top) * maskWidth + x - left] = 1;
+                }
+            }
+            for (const [previous, point, next] of canvasStrokeJoins(path)) {
+                const radius = context.__lineWidth / 2;
+                const extent = radius * (context.__lineJoin === 'miter' ? context.__miterLimit : 1);
+                const minX = Math.max(left, Math.floor(point[0] - extent));
+                const maxX = Math.min(right, Math.ceil(point[0] + extent));
+                const minY = Math.max(top, Math.floor(point[1] - extent));
+                const maxY = Math.min(bottom, Math.ceil(point[1] + extent));
+                coverageWork += Math.max(0, maxX - minX) * Math.max(0, maxY - minY);
+                if (coverageWork > 50000000)
+                    throw new DOMException('Canvas stroke exceeds the raster budget', 'NotSupportedError');
+                for (let y = minY; y < maxY; y++) for (let x = minX; x < maxX; x++)
+                    if (canvasJoinCovers(previous, point, next, x + 0.5, y + 0.5,
+                        radius, context.__lineJoin, context.__miterLimit))
+                        coverage[(y - top) * maskWidth + x - left] = 1;
+            }
         }
         for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
             if (coverage[(y - top) * maskWidth + x - left] &&
                 canvasClipAllows(context, x, y, state.width))
                 compositeCanvasPixel(state.pixels, (y * state.width + x) * 4,
                     canvasPaintAt(style, x + 0.5, y + 0.5, paintInverse),
-                    context.__globalAlpha, context.__compositeOperation);
+                    context.__globalAlpha * (nativeCoverage ?
+                        coverage[(y - top) * maskWidth + x - left] / 255 : 1),
+                    context.__compositeOperation);
         }
     };
     CanvasRenderingContext2D.prototype.fill = function(pathOrRule, rule) {
@@ -203,6 +239,13 @@
         const path = canvasPathArgument(this, pathOrX);
         const px = Number(external ? xOrY : pathOrX), py = Number(external ? y : xOrY);
         if (!canvasPoint([px, py])) return false;
-        return pointOnCanvasStroke(path, canvasStrokeSegments(path), px, py, this.__lineWidth,
+        const inverse = matrixInverse2D(this.__transform);
+        if (!inverse) return false;
+        const strokePath = transformCanvasPath(path, inverse);
+        const nativeHit = this.__lineDash.length ? canvasRasterHost('canvasStrokeContains',
+            canvasNativeStrokeRequest(this, strokePath, 1, 1, 0, 0), px, py) : null;
+        if (nativeHit !== null) return nativeHit;
+        const [localX, localY] = matrixPoint2D(inverse, px, py);
+        return pointOnCanvasStroke(strokePath, canvasStrokeSegments(strokePath), localX, localY, this.__lineWidth,
             this.__lineDash, this.__dashOffset, this.__lineCap, this.__lineJoin, this.__miterLimit);
     };

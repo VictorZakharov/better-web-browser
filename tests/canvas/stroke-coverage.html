@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Stroke source coverage</title>
+<canvas width="64" height="64"></canvas><pre id="probe"></pre>
+<script>
+const c=document.querySelector('canvas').getContext('2d'),results=[];
+const rgba=(x,y)=>Array.from(c.getImageData(x,y,1,1).data);
+c.lineWidth=1;c.strokeStyle='red';c.beginPath();c.moveTo(8,20);c.lineTo(48,20);c.stroke();
+results.push({half:[rgba(20,19),rgba(20,20)],outside:[rgba(20,18),rgba(20,21)]});
+c.clearRect(0,0,64,64);c.globalAlpha=.5;c.stroke();
+results.push({opacity:rgba(20,20)});
+const retained=new Path2D();retained.moveTo(8,20);retained.lineTo(48,20);
+c.clearRect(0,0,64,64);c.globalAlpha=1;c.translate(0,.5);c.stroke(retained);
+results.push({aligned:[rgba(20,19),rgba(20,20),rgba(20,21)]});c.resetTransform();
+const p=new Path2D();p.moveTo(8,20);p.lineTo(48,20);
+for(const mode of ['source-over','source-in','source-out','source-atop','destination-over',
+    'destination-in','destination-out','destination-atop','xor','copy','lighter','multiply','screen']) {
+    c.globalCompositeOperation='source-over';c.clearRect(0,0,64,64);
+    c.fillStyle='rgba(20,80,160,.5)';c.fillRect(0,0,64,64);
+    c.globalCompositeOperation=mode;c.strokeStyle='rgba(200,40,60,.5)';c.stroke(p);
+    results.push({mode,edge:rgba(20,20),outside:rgba(2,2)});
+}
+c.globalCompositeOperation='source-over';c.clearRect(0,0,64,64);c.strokeStyle='red';
+const arc=new Path2D();arc.moveTo(0,0);arc.arcTo(4,0,4,4,2);c.stroke(arc);
+results.push({arc:[rgba(1,0),rgba(3,1),rgba(4,0),rgba(5,0)],
+    outsideHit:c.isPointInStroke(arc,4.5,.5)});
+document.querySelector('#probe').textContent=JSON.stringify(results);
+for(let start=0;start<results.length;start+=4)
+    document.querySelector('#probe').setAttribute('data-samples-'+start,JSON.stringify(results.slice(start,start+4)));
+</script>

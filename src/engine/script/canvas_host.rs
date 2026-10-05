@@ -5,6 +5,17 @@ use super::*;
 use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
 use std::io::Cursor;
 
+mod coverage;
+mod curves;
+mod fill;
+mod gradient_mask;
+mod mask_cache;
+mod path;
+mod pattern_mask;
+mod shader_mask;
+mod shadow;
+mod solid_mask;
+mod stroke_outline;
 #[cfg(windows)]
 mod text;
 pub(crate) mod webgl;
@@ -13,6 +24,30 @@ use crate::limits::MAX_CANVAS_PIXELS;
 const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
+    if operation == "canvasPaintGradientMask" {
+        return Ok(Some(gradient_mask::paint(args)));
+    }
+    if operation == "canvasPaintPatternMask" {
+        return Ok(Some(pattern_mask::paint(args)));
+    }
+    if operation == "canvasPaintSolidMask" {
+        return Ok(Some(solid_mask::paint(args)));
+    }
+    if operation == "canvasCurvePoints" {
+        return Ok(Some(curves::points(args)));
+    }
+    if operation == "canvasStrokeMask" {
+        return Ok(Some(path::stroke_mask(args)));
+    }
+    if operation == "canvasFillMask" {
+        return Ok(Some(fill::mask(args)));
+    }
+    if operation == "canvasStrokeContains" {
+        return Ok(Some(path::stroke_contains(args)));
+    }
+    if operation == "canvasShadowLayer" {
+        return Ok(Some(shadow::render(args)));
+    }
     if operation == "canvasTextAvailable" {
         return Ok(Some(JsValue::Boolean(cfg!(windows))));
     }

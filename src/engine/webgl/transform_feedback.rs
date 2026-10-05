@@ -14,6 +14,7 @@ pub(super) struct Record {
     pub active: bool,
     pub paused: bool,
     pub program: u32,
+    pub ledger: super::transform_capacity::Ledger,
     seen: bool,
 }
 impl Record {
@@ -24,6 +25,7 @@ impl Record {
             paused: false,
             seen: false,
             program: 0,
+            ledger: super::transform_capacity::Ledger::default(),
         }
     }
 }
@@ -120,6 +122,7 @@ impl WebGl {
         let bound = self.transform_feedback.bound;
         let record = &self.transform_feedback.records[&bound];
         let entries = &self.core.as_ref().unwrap().transform;
+        let mut ledger = None;
         match c.op.as_str() {
             "beginTransformFeedback" => {
                 let mode = c.u(0)?;
@@ -138,7 +141,8 @@ impl WebGl {
                 {
                     return Err(gl::INVALID_OPERATION);
                 }
-                unsafe { (entries.begin)(mode) };
+                ledger = Some(self.new_transform_ledger(mode)?);
+                unsafe { (self.core.as_ref().unwrap().transform.begin)(mode) };
             }
             "endTransformFeedback" => {
                 if !record.active {
@@ -190,11 +194,13 @@ impl WebGl {
             "beginTransformFeedback" => {
                 record.active = true;
                 record.program = self.program;
+                record.ledger = ledger.expect("validated capture capacity");
             }
             "endTransformFeedback" => {
                 record.active = false;
                 record.paused = false;
                 record.program = 0;
+                record.ledger = super::transform_capacity::Ledger::default();
             }
             "pauseTransformFeedback" => record.paused = true,
             "resumeTransformFeedback" => record.paused = false,

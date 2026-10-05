@@ -104,19 +104,178 @@ and its [embedded-content rendering](https://html.spec.whatwg.org/multipage/rend
 
 ## Intentional limits
 
-This is not full Canvas 2D. Worker-transferred OffscreenCanvas placeholders do
-not yet deliver updates to the DOM display list. Text drawing,
-HTML image-element and video image sources, pixel antialiasing, color spaces
-other than sRGB, and CSS filter URLs are not implemented. Blur uses a bounded
+This is not full Canvas 2D. Pixel antialiasing, color spaces other than sRGB,
+and CSS filter URLs are not implemented. Blur uses a bounded
 box approximation; curves and arcs use bounded line-segment flattening.
 Large bitmaps, paths, and raster workloads fail with `NotSupportedError`
-rather than consuming unbounded renderer resources. WebGL/WebGPU remain a
-separate feature inside this repository ([issue #181](https://github.com/VictorZakharov/better-web-browser/issues/181));
-this work does not advertise a partial WebGL context.
+rather than consuming unbounded renderer resources. The independent native
+WebGL implementation is described in [its contract](webgl2-foundations.md);
+Canvas 2D feature probes are not evidence of WebGL or WebGPU completeness.
+
+## Raw pixel transfer
+
+`getImageData` and `putImageData` copy clipped contiguous row spans rather than
+allocating a temporary typed-array view for each pixel. Readback outside the
+bitmap remains transparent black. Dirty rectangles are normalized and
+intersected with both source and destination before copying. These operations
+still bypass transforms, drawing clips and compositing.
+
+Pixel coordinates use the HTML interface's `[EnforceRange] long` conversion:
+truncate finite fractional values and reject non-finite, out-of-range, BigInt
+and Symbol inputs with `TypeError`. Detached ImageData storage instead raises
+`InvalidStateError`. Source data and context identity come from private owners;
+forged prototypes or author-replaced byte getters cannot select another bitmap.
+The retained 4-megapixel bitmap budget bounds both copies and temporary memory.
+
+Regression tests compare an independent pixel-by-pixel clipping oracle with
+row copying, check overload selection and error behavior, and exercise repeated
+1024-square texture-map round trips under the unchanged script watchdog.
 
 Behavioral tests cover encoding, bitmap ownership/transfer, worker parity,
 path construction, pixel paint and compositing, clipping, stroke geometry,
 transforms, gradients, patterns, shadows, filters, and invalid inputs.
+
+Stroke coverage reuses the existing BSD-3-Clause `tiny-skia` rasterizer
+through `resvg`, with bounded path serialization, point count and mask dimensions.
+The context still owns paint, clipping, alpha and compositing. Numeric ranges
+outside this native adapter's bounds select the existing bounded software path;
+they are not silently replaced with an empty image. Native masks now carry
+fractional stroke coverage; the extreme-range software fallback remains binary.
+Stroke outlines now use the painting-time affine pen, including non-uniform
+scale, rotation, reflection and shear. The current default path retains its
+construction-time geometry; a supplied `Path2D` is transformed without mutation.
+Inverse-coordinate hit testing and dashed outlines use the same pen coordinate
+system. Singular painting transforms have no stroke
+area. Tests compare interior/exterior pixels with an independent inverse-matrix
+rectangle oracle, and separately check elliptical round caps and path retention.
+The `tests/canvas/affine-stroke.html` Chrome reference reports `[255,0,0]`
+for each scaled-width, retained-path and elliptical-cap sample triple; a singular
+pen produces neither nonzero pixels nor a hit. These samples match the unit
+tests, not a claim of full antialiasing parity.
+
+Native dashing runs before stroking, so each on interval receives its own caps,
+gaps remove original corner joins, and each subpath restarts its phase. Closed
+contours retain a join across the seam only when an on run is continuous there.
+All-zero patterns are solid; zero-length on intervals can produce round dots.
+Dashed hit queries inspect the same transformed native outline with the existing
+MIT/Apache-2.0 `kurbo` curve library, already locked through `usvg`. Boundary
+points are included, independently of the drawing clip or bitmap bounds.
+The input, dash entries, expansion transitions and final outline have explicit
+budgets. Positive intervals that would underflow native float precision do not
+silently become an all-zero solid pattern. Requests outside the adapter's bounds
+still select the prior bounded software path, whose extreme-range dash geometry
+is not claimed to have full parity.
+
+Native, window and worker tests cover caps, joins, subpath phase, negative
+offsets, empty off runs, affine pens, state ownership and path retention. The
+local `tests/canvas/dashed-stroke.html` fixture matches Chrome's cap/corner hit
+results, reset/gap samples and equivalent negative phase. Chrome's zero-on round
+dot edge had alpha 213 where Breeze's preceding binary mask had 255. The native
+coverage change described below supersedes that binary edge result.
+
+Antialiased strokes combine geometric coverage with source opacity exactly once,
+before filters/shadow generation and full-surface Porter-Duff composition.
+The same rule applies to ordinary paints, gradients and patterns. A bounded
+higher-resolution tiny-skia mask reduces the library's coarse scan-conversion
+steps, then area-averages to source coverage. Scratch is capped at 8,388,608 mask
+bytes; large regions retain native-resolution antialiasing. Integer clips remain
+packed binary regions, and very large native masks may retain the provider's
+binary fallback. This is not full antialiased clipping/fill/image parity.
+
+Tests use an independent polygon/pixel intersection-area oracle for affine pens,
+including edge pixels, instead of a center-hit/binary-alpha approximation.
+Separate tests verify fractional opacity, overlapping-outline union, source-layer
+operators, clips and shadow alpha. In the hidden `stroke-coverage.html` fixture,
+the half-covered one-pixel stroke has alpha 128 in Breeze versus 127 in Chrome;
+both produce 64 at half global opacity and 255 when pixel-aligned.
+Remaining differences are recorded rather than ignored: existing straight-alpha
+bitmap arithmetic differs from Chrome's premultiplied quantization in some blend
+channels, and the sampled `arcTo` edge has alpha 160 versus Chrome's 170 after
+adaptive curve flattening (previously 191). Raster coverage and premultiplied bitmap storage remain follow-up
+work; these fixtures are not a claim of pixel-perfect Canvas rendering.
+
+Rectangle drawing retains Web IDL double coordinates, normalizes negative sizes,
+and converts author arguments once in order. Axis-aligned fill coverage is interval
+overlap; general affine rectangles integrate their convex polygon over each pixel
+square. This does not change the current path or ImageData's integer coordinates.
+`clearRect` ignores paint effects and erases whole pixels, with nearest-edge
+intervals for axis-aligned clears matching the hidden Chrome reference. Saved
+integer clips remain binary, including for fractional rectangles.
+
+Opaque, integer-aligned solid fills and clears use bounded typed-array row copies,
+including axis swaps/reflections. Translucency, blends, clips, gradients/patterns
+and fractional edges retain the general painting path; source-layer generation
+still precedes shadows, filters and compositing. No bitmap ownership or resource
+limit changes are required. Captured copy/fill intrinsics avoid invoking replaced
+author prototype methods during these row operations.
+
+The hidden `rectangle-coverage.html` probe draws twenty 256-square opaque fills
+and includes a final pixel readback in the timed interval. Three fresh-profile
+runs on 2026-10-05 measured Breeze medians of 72.7 ms before and 1.1 ms after;
+Chrome measured 0.2 ms. These tiny fixture timings are not game throughput or
+end-to-end startup measurements. Both produce the correct final red pixel.
+Chrome matches clear erasure, shear coverage and conversion order; reflected
+edge alpha differs by one. A quarter-offset square has exact-area alpha 143 in
+Breeze versus Chrome's rasterized 191. The implementation fixes coordinate
+truncation, but does not claim to match every rasterizer's antialiasing convention.
+
+Filled paths also reuse the existing tiny-skia compound-path rasterizer, with the
+same bounded coverage-mask owner as strokes. Nonzero/evenodd winding is applied
+to all contours together before opacity; duplicated overlapping subpaths do not
+darken twice. Open contours are implicitly closed for filling without altering
+their later stroke geometry. The stored default path remains in construction-time
+bitmap coordinates, while retained Path2D instances apply the painting transform.
+Paint sources, clips, source layers, filters and shadows retain their existing
+owners. Out-of-range native geometry selects the existing binary bounded fallback.
+
+Native admission tests cover invalid requests, point/mask budgets, empty geometry,
+opposite winding and ROI offsets. Window and worker tests cover fractional alpha,
+overlap, holes, transforms, open paths and effect ordering. In the hidden
+`fill-coverage.html` fixture, Breeze matches Chrome's half-covered edge (alpha 64
+at half opacity), duplicated-contour union, evenodd cancellation and open-path
+geometry. With adaptive curves, the sampled filled arc has alpha 231 versus
+Chrome's 216 (previously 202), and the rounded corner has 79 versus 86 (previously 63). These
+are recorded limitations, not evidence of full curve or clipping parity.
+
+Curve construction reuses the existing MIT/Apache-2.0 kurbo dependency instead
+of fixed 24-segment Béziers and coarse small-arc sampling. The bounded native
+adapter flattens transformed quadratic/cubic curves and ellipses with a 0.025
+bitmap-coordinate error budget. Arc-to-cubic and cubic-to-line approximation
+split that budget; transformed controls are checked before adaptive work.
+Requests cap their serialized input at 2 KiB, coordinates at 16,384, and retained
+points at the existing 8,192-point path limit. Out-of-range requests retain the
+bounded software fallback. Path2D stores author-coordinate geometry; scaling an
+already-flattened retained path can still magnify its approximation error.
+
+An empty Bézier subpath begins at its first control point, and a curve following
+closePath starts from the closed contour's first point. Arc angles normalize with
+modulo rather than repeated turn subtraction, so very large finite inputs cannot
+spin indefinitely. Native tests measure distance from independently sampled
+analytic curves; window/worker tests cover origins, construction transforms,
+closed-contour continuation, degenerate arcs and geometry budgets. These changes
+improve real Canvas behavior without introducing a new feature-detection claim.
+
+Source-over compositing uses scalar premultiplied-alpha arithmetic without
+allocating temporary arrays or per-pixel typed-array views. An independent
+alpha oracle, repeated 512-square closed paths and overlapping clipped strokes
+cover the optimized paths.
+
+Canvas shadow generation reuses the existing MIT/Apache-2.0 `image` library's
+separable Gaussian filter, with the HTML `shadowBlur / 2` deviation. Alpha is
+normalized floating point, padded with transparent pixels, and filtered only
+over its occupied region. The native adapter caps sigma at 64 and working
+storage at 8,388,608 pixels; requests outside its storage/dimension bounds
+retain the older bounded software fallback. This is not a claim that every
+Canvas filter or out-of-bitmap shadow source is fully conformant.
+
+Shadow eligibility requires nonzero blur or offset, not just a nontransparent
+shadow color. The drawing clip is applied after source/shadow generation, and
+the shadow and source are composited separately using the selected operator.
+The local `tests/canvas/shadow-gaussian.html` fixture produced alpha samples
+`[4,23,67,106,117,99,55,16]` in Breeze versus
+`[4,23,67,106,116,98,55,16]` in hidden Chrome on October 5. Its clipped shadow
+sample matches exactly: `[0,0,255,255]`. Whole-page layout/font parity is not
+inferred from these pixel samples.
 Normative references: [HTML Canvas 2D](https://html.spec.whatwg.org/multipage/canvas.html),
 [SVG 2 paths](https://www.w3.org/TR/SVG2/paths.html),
 [Geometry Interfaces](https://www.w3.org/TR/geometry-1/),

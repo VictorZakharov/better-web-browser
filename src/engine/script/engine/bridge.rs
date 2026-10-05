@@ -259,20 +259,15 @@ fn host_call_callback(
             return;
         }
     }
-    if operation == "arrayBufferDetach" {
-        let value = arguments.get(1);
-        let Ok(buffer) = v8::Local::<v8::ArrayBuffer>::try_from(value) else {
-            throw_error(
-                scope,
-                JsError {
-                    kind: JsErrorKind::Type,
-                    message: "transfer value is not an ArrayBuffer".into(),
-                },
-            );
-            return;
-        };
-        let _ = buffer.detach(None);
-        return_value.set(v8::undefined(scope).into());
+    if matches!(
+        operation.as_str(),
+        "arrayBufferDetach"
+            | "cloneBinaryEncode"
+            | "cloneBinaryDecode"
+            | "cloneBinaryView"
+            | "cloneBufferEncode"
+    ) {
+        super::binary_clone::dispatch(scope, &operation, arguments, return_value);
         return;
     }
     let Some(bridge) = scope.get_current_context().get_slot::<HostBridge>() else {

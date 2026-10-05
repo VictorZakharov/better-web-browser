@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Painting-time affine Canvas pen</title>
+<canvas width="80" height="80"></canvas><pre id="probe"></pre>
+<script>
+const canvas = document.querySelector('canvas');
+const context = canvas.getContext('2d');
+const samples = [];
+const alpha = (x, y) => context.getImageData(x, y, 1, 1).data[3];
+context.beginPath();
+context.moveTo(10, 30); context.lineTo(60, 30);
+context.scale(2, 3); context.lineWidth = 4; context.stroke();
+samples.push({case: 'paint-time-pen', alpha: [alpha(20, 25), alpha(20, 23), alpha(65, 30)]});
+context.resetTransform(); context.clearRect(0, 0, 80, 80);
+context.beginPath(); context.scale(2, 3);
+context.moveTo(5, 10); context.lineTo(30, 10);
+context.resetTransform(); context.stroke();
+samples.push({case: 'construction-time-path', alpha: [alpha(20, 29), alpha(20, 26), alpha(65, 30)]});
+context.clearRect(0, 0, 80, 80); context.scale(3, 1);
+context.beginPath(); context.moveTo(10, 30); context.lineTo(15, 30);
+context.lineWidth = 10; context.lineCap = 'round'; context.stroke();
+samples.push({case: 'elliptical-cap', alpha: [alpha(18, 30), alpha(30, 24), alpha(14, 30)]});
+context.resetTransform(); context.clearRect(0, 0, 80, 80);
+context.setTransform(1, 0, 0, 0, 0, 0); context.stroke();
+samples.push({case: 'singular-pen', nonzero: context.getImageData(0, 0, 80, 80).data.some(v => v !== 0), hit: context.isPointInStroke(30, 30)});
+document.querySelector('#probe').textContent = JSON.stringify(samples);
+document.querySelector('#probe').setAttribute('data-samples', JSON.stringify(samples));
+</script>

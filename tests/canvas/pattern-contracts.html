@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Opaque CanvasPattern snapshots and dictionary transforms</title>
+<pre id="probe">Testing live transforms and owned pattern source pixels.</pre>
+<script src="pattern-contracts.js"></script>
+<script>
+try {
+    const result=testPatternContracts(()=>document.createElement('canvas'));
+    probe.setAttribute('data-result',JSON.stringify(result));
+    probe.textContent='CanvasPattern snapshot, IDL and matrix tests passed.';
+} catch(error) {
+    probe.setAttribute('data-error',String(error));probe.textContent=String(error);throw error;
+}
+</script>

@@ -122,7 +122,8 @@ impl WebGl {
                 let core_blocks = !shader
                     && self.options.api == super::ApiVersion::Two
                     && [0x8a36, 0x8c7f, 0x8c83].contains(&pname);
-                if !allowed && !core_blocks {
+                let completion = pname == 0x91b1 && self.extensions.parallel_compile;
+                if !allowed && !core_blocks && !completion {
                     return Err(gl::INVALID_ENUM);
                 }
                 let object = self
@@ -138,13 +139,14 @@ impl WebGl {
                 }
                 self.driver_result()?;
                 return Ok(
-                    if [
-                        gl::DELETE_STATUS,
-                        gl::COMPILE_STATUS,
-                        gl::LINK_STATUS,
-                        gl::VALIDATE_STATUS,
-                    ]
-                    .contains(&pname)
+                    if completion
+                        || [
+                            gl::DELETE_STATUS,
+                            gl::COMPILE_STATUS,
+                            gl::LINK_STATUS,
+                            gl::VALIDATE_STATUS,
+                        ]
+                        .contains(&pname)
                     {
                         json!(value != 0)
                     } else {

@@ -18,6 +18,17 @@ impl WebGl {
         match c.op.as_str() {
             "supportedExtensions" => {
                 let mut names = Vec::new();
+                if self.options.api == super::ApiVersion::Two
+                    && self.extensions.available_indexed_blend
+                {
+                    names.push("OES_draw_buffers_indexed");
+                }
+                if self.extensions.available_multi_draw {
+                    names.push("WEBGL_multi_draw");
+                }
+                if self.extensions.available_parallel_compile {
+                    names.push("KHR_parallel_shader_compile");
+                }
                 for family in super::compressed_capabilities::Family::ALL {
                     if self.extensions.compressed.available(family) {
                         names.push(family.public_name());
@@ -62,6 +73,17 @@ impl WebGl {
                 Ok(json!(names))
             }
             "enableExtension" => {
+                if c.text == "OES_draw_buffers_indexed" {
+                    if self.options.api != super::ApiVersion::Two {
+                        return Ok(json!(false));
+                    }
+                    self.extensions.indexed_blend = self.extensions.enable_simple(
+                        c"GL_OES_draw_buffers_indexed",
+                        self.extensions.available_indexed_blend,
+                    );
+                    self.driver_result()?;
+                    return Ok(json!(self.extensions.indexed_blend));
+                }
                 if self.options.api == super::ApiVersion::Two && PROMOTED.contains(&c.text.as_str())
                 {
                     return Ok(json!(false));
@@ -113,6 +135,24 @@ impl WebGl {
                     }
                 } else {
                     match c.text.as_str() {
+                        "WEBGL_multi_draw" => {
+                            // WebGL's extension implicitly admits instancing;
+                            // WebGL2's instanced commands remain core methods.
+                            let instancing = self.extensions.enable_instancing();
+                            self.extensions.multi_draw = instancing
+                                && self.extensions.enable_simple(
+                                    c"GL_ANGLE_multi_draw",
+                                    self.extensions.available_multi_draw,
+                                );
+                            self.extensions.multi_draw
+                        }
+                        "KHR_parallel_shader_compile" => {
+                            self.extensions.parallel_compile = self.extensions.enable_simple(
+                                c"GL_KHR_parallel_shader_compile",
+                                self.extensions.available_parallel_compile,
+                            );
+                            self.extensions.parallel_compile
+                        }
                         "WEBGL_draw_buffers" => {
                             self.extensions.draw_buffers = self.extensions.enable_simple(
                                 c"GL_EXT_draw_buffers",

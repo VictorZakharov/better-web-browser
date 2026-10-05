@@ -62,7 +62,13 @@
         }
         return blurred;
     };
+    const canvasShadowHost = __hostCall;
     const canvasShadowLayer = (context, source, width, height) => {
+        const nativeLayer = canvasShadowHost('canvasShadowLayer', source, width, height,
+            context.__shadowBlur, context.__shadowOffsetX, context.__shadowOffsetY,
+            new Uint8Array(context.__shadowColor.channels));
+        if (nativeLayer) return new Uint8ClampedArray(nativeLayer.buffer,
+            nativeLayer.byteOffset, nativeLayer.byteLength);
         const mask = canvasBlurAlpha(source, width, height, context.__shadowBlur);
         const layer = new Uint8ClampedArray(source.length);
         const channels = context.__shadowColor.channels;

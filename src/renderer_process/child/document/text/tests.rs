@@ -213,7 +213,7 @@ fn registers_bounded_in_memory_font_bytes_under_the_css_family_alias() {
         family: "Breeze Test Alias".into(),
         weight: 600,
         italic: false,
-        sfnt: bytes,
+        sfnt: bytes.into(),
         source_url: "test-font:alias".into(),
         script_source_id: None,
     }]);

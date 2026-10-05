@@ -19,6 +19,10 @@ impl super::WebGl {
                     | "clearBufferuiv"
                     | "clearBufferfi"
                     | "drawArrays"
+                    | "multiDrawArraysWEBGL"
+                    | "multiDrawElementsWEBGL"
+                    | "multiDrawArraysInstancedWEBGL"
+                    | "multiDrawElementsInstancedWEBGL"
                     | "drawElements"
                     | "drawArraysInstanced"
                     | "drawElementsInstanced"
@@ -30,6 +34,7 @@ impl super::WebGl {
                     | "invalidateSubFramebuffer"
             )
         {
+            self.surface.presentation_dirty = true;
             self.surface.invalidate_resolve();
             self.readback_cache.invalidate();
         }

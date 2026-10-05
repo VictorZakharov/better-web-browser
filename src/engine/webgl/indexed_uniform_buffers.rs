@@ -37,6 +37,12 @@ impl WebGl {
             return self.transform_buffer_command(c);
         }
         if c.op == "getIndexedParameter" {
+            if super::indexed_blend::query_allowed(target) {
+                if !self.extensions.indexed_blend {
+                    return Err(gl::INVALID_ENUM);
+                }
+                return self.indexed_blend_command(c);
+            }
             if ![0x8a28, 0x8a29, 0x8a2a].contains(&target) {
                 return Err(gl::INVALID_ENUM);
             }

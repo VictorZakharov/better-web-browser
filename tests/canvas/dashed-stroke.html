@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Dashed stroke geometry</title>
+<canvas width="96" height="96"></canvas><pre id="probe"></pre>
+<script>
+const c=document.querySelector('canvas').getContext('2d'),results=[];
+const alpha=(x,y)=>c.getImageData(x,y,1,1).data[3];
+for(const cap of ['butt','round','square']) {
+    c.clearRect(0,0,96,96);c.lineWidth=4;c.lineCap=cap;c.lineJoin='miter';
+    c.setLineDash([8,8]);c.lineDashOffset=0;
+    c.beginPath();c.moveTo(8,20);c.lineTo(18,20);c.moveTo(8,40);c.lineTo(48,40);c.stroke();
+    results.push({cap,reset:[alpha(10,20),alpha(10,40)],gap:alpha(20,40),
+        capHit:c.isPointInStroke(17.5,40.5),squareCorner:c.isPointInStroke(17.5,41.5),
+        boundary:c.isPointInStroke(12,42)});
+}
+c.clearRect(0,0,96,96);c.lineCap='butt';c.setLineDash([8,24]);
+const corner=new Path2D();corner.moveTo(8,20);corner.lineTo(24,20);corner.lineTo(24,44);c.stroke(corner);
+results.push({removedJoin:[alpha(25,19),c.isPointInStroke(corner,25.5,19.5)]});
+c.setLineDash([24,8]);c.stroke(corner);
+results.push({retainedJoin:[alpha(25,19),c.isPointInStroke(corner,25.5,19.5)]});
+c.clearRect(0,0,96,96);
+const line=new Path2D();line.moveTo(8,20);line.lineTo(48,20);
+c.setLineDash([0,8]);c.lineCap='round';c.stroke(line);
+results.push({zeroOn:[alpha(17,20),alpha(12,20)],hit:[c.isPointInStroke(line,17.5,20.5),c.isPointInStroke(line,12.5,20.5)]});
+c.clearRect(0,0,96,96);c.setLineDash([0,0]);c.stroke(line);
+results.push({allZero:alpha(20,20)});
+c.clearRect(0,0,96,96);c.lineCap='butt';c.setLineDash([8,8]);
+c.lineDashOffset=-4;c.stroke(line);const negative=Array.from(c.getImageData(0,0,96,96).data);
+c.clearRect(0,0,96,96);c.lineDashOffset=12;c.stroke(line);
+results.push({negativePhase:Array.from(c.getImageData(0,0,96,96).data).every((v,i)=>v===negative[i])});
+document.querySelector('#probe').textContent=JSON.stringify(results);
+document.querySelector('#probe').setAttribute('data-samples',JSON.stringify(results));
+</script>

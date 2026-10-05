@@ -3,9 +3,17 @@
     // clipped surface. Per-pixel blending inside a shape cannot implement these modes.
     const canvasNeedsSourceLayer = new Set(['copy', 'source-in', 'source-out',
         'source-atop', 'destination-in', 'destination-out', 'destination-atop', 'xor']);
+    const canvasCompositeLayer = (context, destination, layer, width, height, operator) => {
+        for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+            if (!canvasClipAllows(context, x, y, width)) continue;
+            const offset = (y * width + x) * 4;
+            compositeCanvasPixelAt(destination, offset, layer, offset, 1, operator);
+        }
+    };
     const canvasCompositeSourceLayer = (context, draw, args) => {
         const operator = context.__compositeOperation;
-        const hasShadow = context.__shadowColor.channels[3] !== 0;
+        const hasShadow = context.__shadowColor.channels[3] !== 0 &&
+            (context.__shadowBlur !== 0 || context.__shadowOffsetX !== 0 || context.__shadowOffsetY !== 0);
         const hasFilter = context.__filterOperations.length !== 0;
         if (!canvasNeedsSourceLayer.has(operator) && !hasShadow && !hasFilter) {
             if (draw === canvasOriginalDrawImage) paintCanvasImage.apply(context, args);
@@ -22,6 +30,9 @@
                 new Uint8ClampedArray(destination)), ...args.slice(1)];
         }
         state.pixels = source;
+        const savedClip = context.__clipBits;
+        // The source and shadow are generated before the drawing clip is applied.
+        context.__clipBits = null;
         context.__compositeOperation = 'source-over';
         let painted = true;
         try {
@@ -30,21 +41,20 @@
         }
         finally {
             state.pixels = destination;
+            context.__clipBits = savedClip;
             context.__compositeOperation = operator;
         }
         if (!painted) return;
         if (hasFilter) source = applyCanvasFilters(source, state.width, state.height,
             context.__filterOperations);
-        const layer = hasShadow ? canvasShadowLayer(context, source, state.width, state.height) : source;
-        if (hasShadow) for (let offset = 0; offset < layer.length; offset += 4)
-            compositeCanvasPixel(layer, offset, source.subarray(offset, offset + 4),
-                1, 'source-over');
-        for (let y = 0; y < state.height; y++) for (let x = 0; x < state.width; x++) {
-            if (!canvasClipAllows(context, x, y, state.width)) continue;
-            const offset = (y * state.width + x) * 4;
-            compositeCanvasPixel(destination, offset,
-                layer.subarray(offset, offset + 4), 1, operator);
+        // HTML's drawing model composites the shadow and source separately using
+        // the selected operator. Flattening them with source-over breaks source-in,
+        // destination-in, copy and the other non-associative Porter-Duff modes.
+        if (hasShadow) {
+            const shadow = canvasShadowLayer(context, source, state.width, state.height);
+            canvasCompositeLayer(context, destination, shadow, state.width, state.height, operator);
         }
+        canvasCompositeLayer(context, destination, source, state.width, state.height, operator);
     };
     const canvasOriginalFillRect = CanvasRenderingContext2D.prototype.fillRect;
     const canvasOriginalFill = CanvasRenderingContext2D.prototype.fill;
@@ -53,7 +63,10 @@
     CanvasRenderingContext2D.prototype.fillRect = function(...args) {
         const rect = normalizedRectangle(...args);
         if (!rect || !rect.width || !rect.height) return;
-        return canvasCompositeSourceLayer(this, canvasOriginalFillRect, args);
+        // Web IDL conversions happen once, before the drawing operation. Reusing
+        // converted coordinates avoids calling author valueOf twice for fillRect.
+        return canvasCompositeSourceLayer(this, canvasOriginalFillRect,
+            [rect.x, rect.y, rect.width, rect.height]);
     };
     CanvasRenderingContext2D.prototype.fill = function(...args) {
         const path = canvasPathArgument(this, args[0]);

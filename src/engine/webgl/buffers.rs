@@ -1,7 +1,6 @@
 //! Buffer-only attributes with checked byte ranges before any driver draw call.
 use super::{Command, Kind, MAX_DRAW_VERTICES, MAX_UPLOAD_BYTES, Result, WebGl, gl};
 use serde_json::Value;
-use std::ptr;
 
 pub(super) use super::vertex_attributes::Attribute;
 impl WebGl {
@@ -143,11 +142,13 @@ impl WebGl {
                     )?;
                 }
                 self.validate_program()?;
+                let captured =
+                    self.prepare_transform_capture(mode, false, std::iter::once((count, 1)))?;
                 let _sampling = self.sampling_guard()?;
                 self.validate_framebuffer()?;
-                unsafe {
-                    gl::DrawArrays(mode, first as i32, count as i32);
-                }
+                self.native_draw_arrays(mode, first as i32, count as i32, None);
+                self.driver_result()?;
+                self.record_transform_capture(captured);
             }
             "drawElements" => {
                 let mode = checked_mode(c.u(0)?)?;
@@ -172,18 +173,7 @@ impl WebGl {
                 self.validate_program()?;
                 let _sampling = self.sampling_guard()?;
                 self.validate_framebuffer()?;
-                unsafe {
-                    gl::DrawElements(
-                        mode,
-                        count as i32,
-                        kind,
-                        if offset == 0 {
-                            ptr::null()
-                        } else {
-                            offset as *const _
-                        },
-                    );
-                }
+                self.native_draw_elements(mode, count as i32, kind, offset, None);
             }
             _ => return Err(gl::INVALID_OPERATION),
         }

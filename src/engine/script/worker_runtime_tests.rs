@@ -1,6 +1,16 @@
 use super::*;
 use crate::fetch::{Body, FetchResponse, FetchUrl, HeaderList, ResponseType};
 
+#[path = "worker_runtime_tests/binary_clone.rs"]
+mod binary_clone;
+
+#[path = "worker_runtime_tests/canvas_line_state.rs"]
+mod canvas_line_state;
+#[path = "worker_runtime_tests/canvas_patterns.rs"]
+mod canvas_patterns;
+#[path = "worker_runtime_tests/canvas_strokes.rs"]
+mod canvas_strokes;
+
 #[path = "worker_runtime_tests/cache_storage.rs"]
 mod cache_storage;
 #[path = "worker_runtime_tests/event_listener.rs"]
@@ -23,6 +33,12 @@ mod storage_manager;
 #[cfg(windows)]
 #[path = "worker_runtime_tests/webgl.rs"]
 mod webgl;
+#[cfg(windows)]
+#[path = "worker_runtime_tests/webgl_indexed_blend.rs"]
+mod webgl_indexed_blend;
+#[cfg(windows)]
+#[path = "worker_runtime_tests/webgl_multi_draw.rs"]
+mod webgl_multi_draw;
 #[cfg(windows)]
 #[path = "worker_runtime_tests/webgl_textures.rs"]
 mod webgl_textures;

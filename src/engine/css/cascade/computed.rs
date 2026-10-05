@@ -59,6 +59,7 @@ impl StyleSet {
                 matching: &matching,
                 inline_declarations: &inline_declarations,
                 animation_declarations: &animation_declarations,
+                element_presentation: true,
                 transition_declarations: &node
                     .transition_style()
                     .filter(|_| effects)

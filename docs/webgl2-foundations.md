@@ -379,6 +379,29 @@ owned binding slots; the query, owned arrays, shader validator and native ESSL
 built-ins retain the same driver limit. A larger unsupported limit rejects that
 backend instead of clamping only the public query.
 
+Context restoration retains the original converted adapter-admission options,
+including `powerPreference` and `failIfMajorPerformanceCaveat`. Initial creation
+and restoration share one native-options encoder; restoration does not reread
+author dictionary getters or fall back to software after hardware-only admission
+fails. Failed restoration remains lost and permits a later explicit retry under
+the same policy.
+
+Canvas presentation distinguishes author writes to the default drawing buffer
+from offscreen framebuffer work. The native owner tracks pending presentation
+independently of multisample resolve and CPU-readback caches. A paint checkpoint
+checks that state once after draining ordered commands; it does not query driver
+bindings per draw. FBO-only clears/draws cannot replace the last displayed Canvas
+bitmap with its implicitly cleared unpreserved backing buffer. Explicit exports
+and readback still observe the actual backing buffer, while resize and subsequent
+default-buffer writes schedule a new bitmap.
+
+The local `tests/webgl/framebuffer-presentation.html` capture checks both parts
+of this contract: the unpreserved default buffer reads transparent black after
+retirement, while the displayed Canvas remains red after a later offscreen green
+clear. October 5 hidden captures reproduce a blank displayed Canvas in the
+preceding release and retain red in the patched browser, matching Chromium.
+The fixture needs no external library or replaced implementation.
+
 Genuinely decoded 16-bit integer images retain a private precision sidecar for
 WebGL floating-point and high-precision packed uploads. The existing `image`
 decoder and `moxcms` color transforms are reused; ordinary page painting remains
@@ -398,6 +421,56 @@ changing the public API's permitted dimensions.
 
 ## Primary contracts and reuse
 
+Successful front-end shader validation has a per-native-context LRU cache,
+bounded to sixteen entries and four MiB of combined source/output bytes. Keys
+compare the complete source, shader stage, WebGL version and every admitted
+shader-compiler extension flag/draw-buffer limit. Native capabilities are fixed
+for the cache's owner; context restoration creates a new cache. Oversized entries
+still compile but are not cached, and failed validation remains retryable.
+This does not remove either compiler: every cache hit still submits source to
+ANGLE's native compiler, and actual compilation/link status and diagnostics
+remain native observations. Tests verify replacement, eviction, byte accounting,
+stage/extension isolation, invalid recompilation after a valid shader, and fresh
+native objects when identical source is reused.
+
+The hidden `tests/webgl/repeated-validation.html` fixture performs eight repeated
+validations and native compilations, querying actual compile status each time,
+then links and draws the final shader. Three fresh-profile runs on 2026-10-05
+measured a Breeze median of 14.9 ms before versus 9.3 ms after; Chrome measured
+6.1 ms. Every browser/run compiled all eight shaders, linked successfully, drew
+`[0,255,0,255]`, and returned `NO_ERROR`. These are small fixture measurements,
+not a claim that all shader compilation is asynchronous or that game startup is
+fixed. Cache reuse does not increase the HTML5test score or advertised features.
+
+`KHR_parallel_shader_compile` is advertised only where the pinned ANGLE context
+offers its native extension. Author admission enables real shader/program
+`COMPLETION_STATUS_KHR` queries, returning booleans from ANGLE's non-blocking
+completion state. Completion is distinct from compile/link success, including
+failed shaders. The WebGL interface deliberately omits native thread-count
+controls. After context loss completion queries return true so retained polling
+loops terminate; restoration requires fresh extension admission and objects.
+This does not move Breeze's own WebGL shader validation off-thread or claim that
+every compilation/linking call is stall-free. Native and public tests cover
+admission, successful/failed compilation, object ownership and restoration.
+See the [KHR extension contract](https://registry.khronos.org/webgl/extensions/KHR_parallel_shader_compile/).
+The local `tests/webgl/parallel-compile.html` fixture matches hidden Chrome in
+both context versions: the extension is available, completion is boolean,
+valid compilation succeeds, invalid compilation fails but completes, and the
+queries leave `NO_ERROR`. This fixture does not require a pending interval:
+a small shader may finish before the first poll.
+
+For full local WebGL unit runs, use `cargo test --locked --lib webgl --
+--test-threads=4`. These tests share the production GPU owner, whose intentional
+process-wide limit is 16 native contexts. Unrestricted Rust test concurrency on
+machines with more cores can exhaust that limit while unrelated tests hold
+contexts, causing correct context-admission rejection rather than a shader
+failure. The bounded run still executes every selected test concurrently; it
+does not increase the browser's resource limits or skip compliance tests.
+At eight threads a worker MRT fixture also exceeded its unchanged two-second
+watchdog under contention; it passed alone in 0.08 seconds and the complete
+535-test run passed at four threads. This is a local scheduling requirement,
+not permission to loosen worker execution limits or skip that fixture.
+
 - [WebGL2 specification](https://registry.khronos.org/webgl/specs/latest/2.0/)
 - [OpenGL ES API registry](https://registry.khronos.org/OpenGL/index_es.php)
 - [ANGLE explicit context version](https://github.com/google/angle/blob/main/extensions/EGL_ANGLE_create_context_backwards_compatible.txt)
@@ -407,3 +480,8 @@ shader compiler. The small typed entry-point adapters use the pinned Khronos
 GLES3 header ABIs; they do not resolve author-supplied symbols, add dependencies,
 copy a third-party renderer, or weaken native WebGL validation. Provenance and
 licensing are recorded in [the backend documentation](webgl-backend.md).
+
+The standards-based game-readiness batch also adds genuine
+[native multi-draw](webgl-multi-draw.md), including real draw IDs, atomic buffer
+validation and aggregate transform-feedback capacity. This does not claim that
+gd-clone is runnable or change HTML5test feature detection to manufacture points.

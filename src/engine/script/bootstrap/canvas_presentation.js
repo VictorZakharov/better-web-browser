@@ -132,6 +132,22 @@
                 dirtyCanvases.add(canvas);
             }
             if (!dirtyCanvases.has(canvas)) continue;
+            // Draw/clear wrappers conservatively schedule a checkpoint, including
+            // FBO-only passes. Ask the native owner once here, after its ordered
+            // command batch, rather than querying on every draw or trusting a
+            // JavaScript copy of framebuffer bindings. Export APIs still read
+            // the actual (possibly implicitly cleared) drawing buffer.
+            const cached = canvasStates.get(canvas);
+            const backing = cached?.placeholder && !cached.placeholder.__detached
+                ? canvasStates.get(cached.placeholder) : cached;
+            if (exportedBitmaps.has(canvas) && previous?.[0] === width && previous?.[1] === height &&
+                backing?.mode === 'webgl') {
+                const native = webGlContexts.get(backing.context);
+                if (native && !native.lost && webGlCall(backing.context, 'drawingBufferDirty') === false) {
+                    dirtyCanvases.delete(canvas);
+                    continue;
+                }
+            }
             const state = stateForCanvas(canvas);
             const placeholder = state.placeholder;
             const output = placeholder && !placeholder.__detached

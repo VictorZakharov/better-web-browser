@@ -1,16 +1,13 @@
 (() => {
     'use strict';
-    const bytesToBase64 = bytes => {
-        let binary = '';
-        for (let start = 0; start < bytes.length; start += 0x4000)
-            binary += String.fromCharCode(...bytes.subarray(start, start + 0x4000));
-        return btoa(binary);
-    };
-    const base64ToBytes = value => {
-        const binary = atob(value), bytes = new Uint8Array(binary.length);
-        for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
-        return bytes;
-    };
+    const binaryHost = globalThis.__hostCall;
+    const cloneBuffer = ArrayBuffer;
+    const cloneIsView = ArrayBuffer.isView;
+    const viewConstructors = new Map(['DataView','Uint8Array','Uint8ClampedArray','Int8Array',
+        'Uint16Array','Int16Array','Uint32Array','Int32Array','Float16Array','Float32Array',
+        'Float64Array','BigInt64Array','BigUint64Array'].map(name => [name, globalThis[name]]));
+    const bytesToBase64 = bytes => binaryHost('cloneBinaryEncode', bytes);
+    const base64ToBytes = value => binaryHost('cloneBinaryDecode', value);
     const fail = () => { throw new DOMException('The value could not be cloned', 'DataCloneError'); };
     const blobSnapshot = globalThis.__blobStructuredCloneSnapshot;
     delete globalThis.__blobStructuredCloneSnapshot;
@@ -111,13 +108,17 @@
             if (value instanceof RegExp) return { t: 'regexp', id, s: value.source, f: value.flags };
             if (value instanceof Map) return { t: 'map', id, v: [...value].map(([key, item]) => [encode(key), encode(item)]) };
             if (value instanceof Set) return { t: 'set', id, v: [...value].map(encode) };
-            if (value instanceof ArrayBuffer)
-                return { t: 'buffer', id, v: bytesToBase64(new Uint8Array(value)) };
-            if (ArrayBuffer.isView?.(value)) return {
-                t: 'view', id, c: value.constructor.name,
-                b: bytesToBase64(new Uint8Array(value.buffer)), o: value.byteOffset,
-                l: value instanceof DataView ? value.byteLength : value.length
-            };
+            if (value instanceof cloneBuffer) {
+                let bytes;
+                try { bytes = binaryHost('cloneBufferEncode', value); } catch { return fail(); }
+                return { t: 'buffer', id, v: bytes };
+            }
+            if (cloneIsView(value)) {
+                let metadata;
+                try { metadata = binaryHost('cloneBinaryView', value); } catch { return fail(); }
+                const [brand, backing, offset, length] = metadata;
+                return { t: 'view', id, c: brand, b: encode(backing), o: offset, l: length };
+            }
             const blob = blobSnapshot(value);
             if (blob) return {
                 t: blob.file ? 'file' : 'blob', id,
@@ -195,9 +196,11 @@
             else if (node.t === 'set') value = new Set();
             else if (node.t === 'buffer') value = base64ToBytes(node.v).buffer;
             else if (node.t === 'view') {
-                const bytes = base64ToBytes(node.b), constructor = globalThis[node.c];
-                if (node.c === 'DataView') value = new DataView(bytes.buffer, node.o, node.l);
-                else if (typeof constructor === 'function') value = new constructor(bytes.buffer, node.o, node.l);
+                // Accept the old persisted view envelope as well as the new
+                // graph edge, which preserves one backing buffer across views.
+                const buffer = typeof node.b === 'string' ? base64ToBytes(node.b).buffer : decode(node.b);
+                const constructor = viewConstructors.get(node.c);
+                if (typeof constructor === 'function') value = new constructor(buffer, node.o, node.l);
                 else return fail();
             } else if (node.t === 'blob') value = new Blob([base64ToBytes(node.v)], { type: node.y });
             else if (node.t === 'file') value = new File([base64ToBytes(node.v)], node.n, { type: node.y, lastModified: node.m });

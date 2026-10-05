@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Bounded repeating CanvasPattern painting</title>
+<canvas id="canvas" width="256" height="256"></canvas>
+<pre id="probe">Measuring genuine snapshot pattern painting.</pre>
+<script>
+const source=document.createElement('canvas');source.width=2;source.height=1;
+const s=source.getContext('2d');s.fillStyle='red';s.fillRect(0,0,1,1);s.fillStyle='blue';s.fillRect(1,0,1,1);
+const c=canvas.getContext('2d'),pattern=c.createPattern(source,'repeat');c.fillStyle=pattern;c.imageSmoothingEnabled=false;
+const start=performance.now();
+for(let index=0;index<8;index++){c.clearRect(0,0,256,256);pattern.setTransform({e:index});c.fillRect(0,0,256,256);}
+probe.setAttribute('data-ms',String(performance.now()-start));
+probe.setAttribute('data-samples',JSON.stringify([0,1,254,255].map(x=>Array.from(c.getImageData(x,128,1,1).data))));
+probe.textContent='Eight live-transform pattern fills completed.';
+</script>

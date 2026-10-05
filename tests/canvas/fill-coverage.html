@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Compound Canvas path source coverage</title>
+<canvas width="32" height="32"></canvas><pre id="probe"></pre>
+<script>
+const c=document.querySelector('canvas').getContext('2d'),results=[];
+const rgba=(x,y)=>Array.from(c.getImageData(x,y,1,1).data);
+const p=new Path2D();p.rect(.5,0,2,2);c.fillStyle='red';c.globalAlpha=.5;c.fill(p);
+results.push({half:[rgba(0,0),rgba(1,0),rgba(2,0),rgba(3,0)]});
+c.clearRect(0,0,32,32);p.rect(.5,0,2,2);c.fill(p);
+results.push({duplicate:[rgba(0,0),rgba(1,0)]});c.clearRect(0,0,32,32);c.fill(p,'evenodd');
+results.push({evenodd:[rgba(0,0),rgba(1,0)]});
+c.globalAlpha=1;c.clearRect(0,0,32,32);c.fill(new Path2D('M2 2a2 2 0 014 0l0 3h-4z'));
+results.push({arc:[rgba(4,0),rgba(4,4),rgba(4,5)]});
+c.clearRect(0,0,32,32);const round=new Path2D();round.roundRect(1,1,6,6,2);c.fill(round);
+results.push({round:[rgba(1,1),rgba(4,1),rgba(4,4),rgba(8,8)]});
+c.clearRect(0,0,32,32);c.beginPath();c.moveTo(2,2);c.lineTo(20,2);c.lineTo(20,20);c.fill();c.lineWidth=1;
+results.push({open:[rgba(18,10),c.isPointInStroke(10,10),c.isPointInPath(18,10)]});
+const probe=document.querySelector('#probe');probe.textContent=JSON.stringify(results);
+for(let i=0;i<results.length;i++)probe.setAttribute('data-samples-'+i,JSON.stringify(results[i]));
+</script>

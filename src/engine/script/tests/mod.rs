@@ -38,12 +38,26 @@ mod bitmap_pixels;
 mod bitmap_renderer;
 mod cache_storage;
 mod canvas;
+mod canvas_affine_stroke;
 mod canvas_bitmap;
 mod canvas_blend;
+mod canvas_curve_geometry;
+mod canvas_dashed_stroke;
+mod canvas_fill_coverage;
 mod canvas_filter;
 mod canvas_focus_ring;
+mod canvas_gradient_mask;
+mod canvas_gradients;
+mod canvas_image_data;
+mod canvas_line_state;
+mod canvas_mask_reuse;
+mod canvas_native_stroke;
+mod canvas_patterns;
 mod canvas_presentation;
+mod canvas_rect_coverage;
 mod canvas_shadow;
+mod canvas_solid_mask;
+mod canvas_stroke_coverage;
 mod canvas_stroke_styles;
 mod canvas_svg_path;
 #[cfg(windows)]
@@ -162,6 +176,7 @@ mod streams_compression;
 mod streams_encoding;
 mod streams_pipe;
 mod streams_transform;
+mod structured_clone_buffers;
 mod style_declaration;
 mod svg;
 mod table_geometry;
@@ -242,15 +257,21 @@ mod webgl_float_textures;
 #[cfg(windows)]
 mod webgl_fragment_depth;
 mod webgl_framebuffer_lifetimes;
+mod webgl_indexed_blend;
 #[cfg(windows)]
 mod webgl_instancing;
 mod webgl_khronos_reporter;
 #[cfg(windows)]
 mod webgl_lifecycle;
+mod webgl_multi_draw;
+mod webgl_multi_draw_capture;
 #[cfg(windows)]
 mod webgl_numeric_arguments;
 #[cfg(windows)]
 mod webgl_numeric_lists;
+#[cfg(windows)]
+mod webgl_offscreen_presentation;
+mod webgl_parallel_compile;
 #[cfg(windows)]
 mod webgl_presentation;
 #[cfg(windows)]

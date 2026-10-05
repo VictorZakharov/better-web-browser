@@ -94,6 +94,7 @@ mod drawing_buffer_extent;
 #[cfg(test)]
 mod drawing_buffer_extent_tests;
 mod extension_commands;
+mod extension_draw_dispatch;
 mod extensions;
 mod float_values;
 mod framebuffer_attachments;
@@ -116,11 +117,15 @@ mod image_uploads;
 #[cfg(test)]
 mod immutable_attachment_tests;
 mod index_ranges;
+mod indexed_blend;
+mod indexed_blend_entries;
 #[cfg(test)]
 mod indexed_range_admission_tests;
 mod indexed_uniform_buffers;
 mod instancing;
 mod legacy_mip_allocations;
+mod multi_draw;
+mod multi_draw_entries;
 mod multisample;
 #[cfg(test)]
 mod multisample_tests;
@@ -132,6 +137,8 @@ mod normalized_textures;
 mod object_deletion;
 mod object_queries;
 mod objects;
+#[cfg(test)]
+mod parallel_compile_tests;
 mod parameters;
 mod pixel_buffer_guard;
 #[cfg(test)]
@@ -172,6 +179,7 @@ mod shader_queries;
 #[cfg(test)]
 mod shader_source_budget_tests;
 mod shader_validation;
+mod shader_validation_cache;
 mod stencil_masks;
 mod surface;
 mod surface_multisample;
@@ -202,6 +210,7 @@ mod transform_array_tests;
 mod transform_buffers;
 #[cfg(test)]
 mod transform_builtin_tests;
+mod transform_capacity;
 #[cfg(test)]
 mod transform_delete_tests;
 mod transform_entries;
@@ -323,6 +332,7 @@ struct WebGl {
     core_buffer_bindings: HashMap<u32, u32>,
     surface: Surface,
     readback_cache: readback_cache::Cache,
+    shader_validation_cache: shader_validation_cache::Cache,
     objects: Objects,
     errors: VecDeque<u32>,
     options: Options,

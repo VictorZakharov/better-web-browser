@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Supersampled Canvas coverage with varying geometry</title>
+<canvas id="canvas" width="512" height="512"></canvas>
+<pre id="probe">Measuring varying thin strokes without reducing edge quality.</pre>
+<script>
+const c=canvas.getContext('2d'),path=new Path2D();path.rect(.5,.5,511,511);
+const start=performance.now();
+for(let index=0;index<40;index++){
+    c.clearRect(0,0,512,512);c.lineWidth=1+index*.01;c.stroke(path);
+}
+const elapsed=performance.now()-start;
+probe.setAttribute('data-ms',String(elapsed));
+probe.setAttribute('data-samples',JSON.stringify([0,1,2,256].map(x=>
+    Array.from(c.getImageData(x,256,1,1).data))));
+probe.textContent=`40 distinct stroke masks: ${elapsed.toFixed(2)} ms`;
+</script>

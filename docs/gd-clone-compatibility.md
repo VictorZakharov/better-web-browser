@@ -47,7 +47,7 @@ pixel contracts, not an acceptance run of the game's production build. See
 [the native contract](webgl2-foundations.md) for provider limitations and replay
 instructions. Sustained gameplay and application integration remain next steps.
 
-The current batching preference is approximately **20,000 useful added lines**,
+The current batching preference is approximately **15,000 useful added lines**,
 including focused tests and documentation, with separate reviewable commits for
 the constituent standards slices. Do not pad changes to meet the target. At the
 daily 9 p.m. America/Toronto boundary, publish a draft PR for completed work even
@@ -67,3 +67,68 @@ successful context creation or increased HTML5test score is not that milestone.
 Automated application checks must remain hidden, and generated builds/profiles
 must stay on G:. Do not modify or run the sibling's build scripts as part of a
 read-only requirements audit.
+
+### October 5 startup investigation
+
+The existing production build was copied without rebuilding or modifying the
+sibling, at HEAD `c36cbb223a1a0ccd54e7b1e7e3716e2e4e9522cd`. The copied asset set
+(`index-FyQsDf7S.js`, `index-CfGsp_J8.css`, unchanged Three.js 0.185.1) was held
+constant for hidden release-browser comparisons on this machine. Each run used
+a fresh profile and an eight-second settling period. These are single-run
+diagnostics, not a statistically stable gameplay benchmark.
+
+| Measurement | Preceding release | SVG input-cache fix |
+| --- | ---: | ---: |
+| First presentation | 1,834 ms | 831 ms |
+| Cumulative style/resource refresh | 9,331 ms | 1,151 ms |
+| Executed scripts | 1 | 2 |
+
+Animation sampling advances DOM mutation generations even when an SVG's
+serialized decoder input is unchanged. Raster-cache keys now use that actual
+input, including resolved `currentColor`, rather than treating every sample as
+a new drawing. This reuses the existing resvg decoder and does not bypass real
+attribute, text or inherited-color changes. Tests verify pixel allocation reuse
+for opacity/transform samples and replacement after a fill change.
+
+The module now executes, but startup still fails: texture-generation work in
+the document and a worker reaches the two-second JavaScript execution limit.
+The loading screen also has unresolved layout/SVG-definition differences. The
+Chromium reference reached "Lighting the lobby" in its earlier eight-second
+capture; neither capture proves sustained gameplay. Watchdog containment,
+worker scheduling and the remaining visual differences need investigation
+before claiming the unchanged game runs.
+
+The subsequent optimized-iteration build, with native clone-byte conversion and
+Canvas row copies, no longer reported a worker timeout in the eight-second
+capture. It still reported a document timeout. A temporary instrumented copy
+identified a 512-square Canvas `stroke()` as the active call when interrupted;
+the instrumentation was removed after diagnosis and is not part of the game or
+browser. Native stroke rasterization is the next investigation, not a reason
+to raise or disable the watchdog. Final performance claims require fresh
+release-mode measurements after the batch is complete.
+
+### October 5 wrap-up release capture
+
+The final batch replay uses that same unchanged production asset snapshot, a
+fresh profile, 125% device scale and twenty seconds of settling. The hidden
+release browser recorded first presentation at 897.520 ms and cumulative
+JavaScript time of 6,748.820 ms. It still reported a document timer promise-job
+execution-limit exception after 2,000 ms. A textured background, tip and loading
+shape were visible, but no accepted lobby/gameplay transition occurred. These
+single-run numbers do not establish sustained frame times or a startup-speed
+comparison with Chrome. Native adapter HLSL precision warnings were also
+recorded; they are not treated as proof of the JavaScript failure's cause.
+
+The completed work preserves the watchdog and adds generally useful native
+coverage/shading, clone transport, shader validation reuse and real multi-draw
+and indexed-blending contracts. Dedicated fixtures exercise actual pixels and
+invalid updates in Window and Worker, rather than relying on capability flags.
+The next game investigation should profile the remaining document texture
+generation and loading-screen differences against the unmodified reference.
+
+SVG text is not included in this batch: the pinned usvg layout does not correctly
+apply an ancestor's `textLength` across nested tspans. Its failing regression and
+prototype remain in ignored G: scratch files for follow-up; no test was weakened
+or ignored to ship it. Existing SVG raster/image/input-cache improvements remain
+included. The HTML5test release score is unchanged at 507 / 588 in the fresh
+before/after samples, versus 579 / 588 in the hidden Chrome reference.

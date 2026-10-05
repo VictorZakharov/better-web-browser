@@ -26,6 +26,7 @@ pub(super) struct AuthorCascadeInput<'a> {
     pub(super) inline_declarations: &'a [Declaration],
     pub(super) animation_declarations: &'a [Declaration],
     pub(super) transition_declarations: &'a [Declaration],
+    pub(super) element_presentation: bool,
 }
 
 impl StyleSet {
@@ -42,6 +43,7 @@ impl StyleSet {
             inline_declarations,
             animation_declarations,
             transition_declarations,
+            element_presentation,
         } = input;
         let mut cascaded = Vec::new();
         let scoped = matching
@@ -243,6 +245,20 @@ impl StyleSet {
                     .custom_properties
                     .values()
                     .any(|value| might_revert_layer(value)));
+        if element_presentation {
+            svg_presentation::apply(
+                node,
+                style,
+                DeclarationContext {
+                    parent,
+                    lower_origin,
+                    layer_start: lower_origin,
+                    base_url: &self.document_base_url,
+                    viewport_width: self.viewport_width,
+                    viewport_height: self.viewport_height,
+                },
+            );
+        }
         let property_origin = style.clone();
         normal_history.clear();
         normal_author_end = property_origin.clone();

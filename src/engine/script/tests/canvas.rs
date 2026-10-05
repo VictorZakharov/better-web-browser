@@ -264,7 +264,7 @@ fn canvas_gradients_interpolate_real_pixels_and_keep_live_color_stops() {
             context.fillRect(0, 0, 3, 1);
             const midpoint = pixel(1, 0);
             const checks = [linear instanceof CanvasGradient, context.fillStyle === linear,
-                pixel(0, 0)[3] === 0, midpoint[2] === 255,
+                pixel(0, 0)[3] === 0, midpoint[0] === 128 && midpoint[2] === 128,
                 midpoint[3] >= 127 && midpoint[3] <= 128,
                 pixel(2, 0).join(',') === '0,0,255,255'];
             let constructorError = '';

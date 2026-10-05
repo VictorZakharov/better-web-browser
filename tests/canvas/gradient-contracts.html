@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Canvas nonpremultiplied gradient and Web IDL contracts</title>
+<canvas id="canvas" width="64" height="64"></canvas>
+<pre id="probe">Checking gradient interpolation, duplicate stops and ordered errors.</pre>
+<script>
+const c=canvas.getContext('2d'),g=c.createLinearGradient(.5,0,2.5,0);
+const p=(x,y)=>Array.from(c.getImageData(x,y,1,1).data);
+g.addColorStop(0,'rgba(255,0,0,0)');g.addColorStop(1,'blue');
+c.fillStyle=g;c.fillRect(0,0,3,1);
+const midpoint=p(1,0);
+c.fillStyle='green';c.fillRect(0,2,3,1);c.fillStyle=g;c.fillRect(0,2,3,1);
+const blended=p(1,2);
+const duplicate=c.createLinearGradient(2.5,0,4.5,0);
+duplicate.addColorStop(.5,'red');duplicate.addColorStop(.5,'blue');
+c.fillStyle=duplicate;c.fillRect(0,4,8,1);
+const stops=[p(0,4),p(3,4),p(7,4)];
+const error=fn=>{try{fn();return 'none'}catch(e){return e.name}};
+const errors=[error(()=>g.addColorStop(NaN,'red')),error(()=>g.addColorStop(0n,'red')),
+    error(()=>g.addColorStop(0,Symbol())),error(()=>g.addColorStop(-1,'red')),
+    error(()=>c.createLinearGradient(0,0,Infinity,0)),
+    error(()=>CanvasGradient.prototype.addColorStop.call({},0,'red'))];
+const trace=[];
+const range=error(()=>g.addColorStop({valueOf(){trace.push('offset');return 2}},
+    {toString(){trace.push('color');return 'red'}}));
+probe.setAttribute('data-pixels',JSON.stringify({midpoint,blended,stops}));
+probe.setAttribute('data-errors',JSON.stringify({errors,range,trace}));
+probe.setAttribute('data-tag',Object.prototype.toString.call(g));
+probe.textContent=JSON.stringify({midpoint,blended,stops,errors,range,trace},null,2);
+</script>

@@ -5,7 +5,30 @@ use super::{MAX_SHADER_BYTES, MAX_SHADER_SOURCE_BYTES, WebGl, gl};
 use mozangle::shaders::{self, BuiltInResources, Output, ShaderValidator};
 
 impl WebGl {
-    pub(super) fn translate_shader(&self, kind: u32, source: &str) -> Result<String, String> {
+    pub(super) fn translate_shader(&mut self, kind: u32, source: &str) -> Result<String, String> {
+        let environment = super::shader_validation_cache::Environment {
+            api: self.options.api,
+            kind,
+            derivatives: self.extensions.derivatives,
+            frag_depth: self.extensions.frag_depth,
+            texture_lod: self.extensions.texture_lod,
+            draw_buffers: self.extensions.draw_buffers,
+            multi_draw: self.extensions.multi_draw,
+            max_draw_buffers: self.extensions.max_draw_buffers,
+        };
+        // Native capabilities are immutable for this context. Extension
+        // admission changes the explicit environment; restore constructs a new
+        // owner/cache. Reuse only successful validation, not transient failures.
+        if let Some(translated) = self.shader_validation_cache.lookup(environment, source) {
+            return Ok(translated);
+        }
+        let translated = self.translate_shader_uncached(kind, source)?;
+        self.shader_validation_cache
+            .insert(environment, source, &translated);
+        Ok(translated)
+    }
+
+    fn translate_shader_uncached(&self, kind: u32, source: &str) -> Result<String, String> {
         // ANGLE's driver also owns compiler initialization. Initialize is idempotent;
         // do not finalize here, while other current contexts may still need it.
         shaders::initialize().map_err(str::to_owned)?;
@@ -31,6 +54,7 @@ impl WebGl {
             EXT_frag_depth: i32::from(self.extensions.frag_depth),
             EXT_shader_texture_lod: i32::from(self.extensions.texture_lod),
             EXT_draw_buffers: i32::from(self.extensions.draw_buffers),
+            ANGLE_multi_draw: i32::from(self.extensions.multi_draw),
             MaxDrawBuffers: if self.extensions.draw_buffers {
                 self.extensions.max_draw_buffers as i32
             } else {
@@ -57,13 +81,21 @@ impl WebGl {
             ShaderValidator::for_webgl(kind, Output::Essl, &resources)
         }
         .ok_or_else(|| "Could not construct the WebGL shader validator".to_owned())?;
-        match validator.compile_and_translate(&[source]) {
+        // The pinned ANGLE translator only admits gl_DrawID with its explicit
+        // emulation option. The native compiler owns the real per-draw uniform;
+        // do not feed its translator's generated uniform back as author source.
+        let mut compile_options = shaders::CompileOptions::mozangle();
+        compile_options.set_emulateGLDrawID(u64::from(self.extensions.multi_draw));
+        let translated = validator
+            .compile(&[source], compile_options)
+            .map(|()| validator.object_code());
+        match translated {
             Ok(translated) if translated.len() <= MAX_SHADER_SOURCE_BYTES * 8 => {
-                if version_two {
-                    // Both validators enforce WebGL2 restrictions. Feed the native
-                    // WebGL2 compiler the validated original names: unlike WebGL1,
-                    // 1024-byte identifiers reach ANGLE's no-prefix boundary and
-                    // cannot be safely decoded by stripping a textual prefix.
+                if version_two || self.extensions.multi_draw {
+                    // Preserve native draw-ID ownership in either version. In
+                    // WebGL2, original names also avoid ANGLE's 1024-byte
+                    // no-prefix boundary, which cannot be safely decoded by
+                    // stripping a textual prefix. Native validation stays active.
                     return Ok(source.to_owned());
                 }
                 // Both compiler stages now use WebGL1's 256-byte token limit.

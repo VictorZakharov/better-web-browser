@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Repeated WebGL compiler validation</title>
+<canvas width="4" height="4"></canvas><pre id="probe"></pre>
+<script>
+const gl=document.querySelector('canvas').getContext('webgl2'),probe=document.querySelector('#probe');
+if(!gl){probe.setAttribute('data-result','unavailable');throw Error('real WebGL2 context unavailable');}
+const source='#version 300 es\nprecision highp float;out vec4 color;void main(){vec3 value=vec3(0);'+
+    Array.from({length:64},(_,i)=>'value+=sin(vec3('+i+'.0))*.0001;').join('')+
+    'color=vec4(value+vec3(0,1,0),1);}';
+const statuses=[],start=performance.now();let fragment;
+for(let i=0;i<8;i++){
+    fragment=gl.createShader(gl.FRAGMENT_SHADER);gl.shaderSource(fragment,source);gl.compileShader(fragment);
+    statuses.push(gl.getShaderParameter(fragment,gl.COMPILE_STATUS));
+    if(i!==7)gl.deleteShader(fragment);
+}
+const elapsed=performance.now()-start;
+const vertex=gl.createShader(gl.VERTEX_SHADER);
+gl.shaderSource(vertex,'#version 300 es\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.-1.,0,1);}');
+gl.compileShader(vertex);const program=gl.createProgram();gl.attachShader(program,vertex);gl.attachShader(program,fragment);gl.linkProgram(program);
+gl.useProgram(program);gl.drawArrays(gl.TRIANGLES,0,3);
+const pixel=new Uint8Array(4);gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);
+const result={statuses,linked:gl.getProgramParameter(program,gl.LINK_STATUS),pixel:Array.from(pixel),error:gl.getError()};
+probe.setAttribute('data-result',JSON.stringify(result));probe.setAttribute('data-compile-ms',String(elapsed));
+probe.textContent=JSON.stringify({result,elapsed});
+</script>
