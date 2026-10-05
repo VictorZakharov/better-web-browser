@@ -154,6 +154,7 @@ impl StyleSet {
                 inline_declarations: &[],
                 animation_declarations: &[],
                 transition_declarations: &[],
+                element_presentation: false,
             },
         );
         // Generated pseudo-elements are flex/grid items just like real children. CSS Display

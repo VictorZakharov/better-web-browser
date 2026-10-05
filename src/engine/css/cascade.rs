@@ -12,6 +12,7 @@ mod root_units;
 mod scope;
 mod sheets;
 mod sources;
+mod svg_presentation;
 pub use sources::StylesheetSource;
 #[cfg(test)]
 mod anonymous_text_tests;
