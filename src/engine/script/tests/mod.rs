@@ -46,6 +46,7 @@ mod canvas_dashed_stroke;
 mod canvas_fill_coverage;
 mod canvas_filter;
 mod canvas_focus_ring;
+mod canvas_gradient_mask;
 mod canvas_gradients;
 mod canvas_image_data;
 mod canvas_mask_reuse;

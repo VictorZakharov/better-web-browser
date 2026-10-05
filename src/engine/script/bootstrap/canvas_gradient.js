@@ -6,11 +6,17 @@
     const canvasGradientHas = Function.call.bind(WeakMap.prototype.has);
     const canvasGradientPush = Function.call.bind(Array.prototype.push);
     const canvasGradientSort = Function.call.bind(Array.prototype.sort);
+    const canvasGradientArray = Array;
+    const canvasGradientSetPrototype = Object.setPrototypeOf;
+    const canvasGradientOwnArray = length =>
+        canvasGradientSetPrototype(new canvasGradientArray(length), null);
     const canvasIsGradient = value => canvasGradientHas(canvasGradientStates, value);
     class CanvasGradient {
         constructor(token, kind, geometry) {
             if (token !== canvasGradientToken) throw new TypeError('Illegal constructor');
-            canvasGradientSet(canvasGradientStates, this, {kind, geometry, stops: []});
+            canvasGradientSet(canvasGradientStates, this, {
+                kind, geometry, stops: canvasGradientOwnArray(0)
+            });
         }
         addColorStop(offset, color) {
             const state = canvasGradientGet(canvasGradientStates, this);

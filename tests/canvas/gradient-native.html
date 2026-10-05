@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Native Canvas gradients with live paint and affine regions</title>
+<canvas id="canvas" width="256" height="256"></canvas>
+<pre id="probe">Measuring actual linear, radial and conic gradient pixels.</pre>
+<script>
+const c=canvas.getContext('2d');
+const gradients=[c.createLinearGradient(0,0,256,0),
+    c.createRadialGradient(128,128,0,128,128,128),c.createConicGradient(0,128,128)];
+for(const g of gradients){g.addColorStop(0,'red');g.addColorStop(1,'blue')}
+const start=performance.now();
+for(let index=0;index<12;index++){
+    c.clearRect(0,0,256,256);c.fillStyle=gradients[index%3];c.fillRect(0,0,256,256);
+}
+const elapsed=performance.now()-start;
+const samples=gradients.map(g=>{
+    c.clearRect(0,0,256,256);c.fillStyle=g;c.fillRect(0,0,256,256);
+    return Array.from(c.getImageData(192,128,1,1).data);
+});
+probe.setAttribute('data-ms',String(elapsed));
+probe.setAttribute('data-samples',JSON.stringify(samples));
+probe.textContent=`12 real gradient fills: ${elapsed.toFixed(2)} ms; ${JSON.stringify(samples)}`;
+</script>

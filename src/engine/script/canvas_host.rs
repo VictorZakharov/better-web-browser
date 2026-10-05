@@ -8,6 +8,7 @@ use std::io::Cursor;
 mod coverage;
 mod curves;
 mod fill;
+mod gradient_mask;
 mod mask_cache;
 mod path;
 mod shadow;
@@ -21,6 +22,9 @@ use crate::limits::MAX_CANVAS_PIXELS;
 const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
+    if operation == "canvasPaintGradientMask" {
+        return Ok(Some(gradient_mask::paint(args)));
+    }
     if operation == "canvasPaintSolidMask" {
         return Ok(Some(solid_mask::paint(args)));
     }

@@ -47,22 +47,26 @@ fn composite(mask: &[u8], destination: &[u8], color: [f64; 4], opacity: f64) -> 
         if *coverage == 0 {
             continue;
         }
-        let source_alpha = color[3] / 255.0 * (opacity * (f64::from(*coverage) / 255.0));
-        let backdrop_weight = f64::from(pixel[3]) / 255.0 * (1.0 - source_alpha);
-        let output_alpha = source_alpha + backdrop_weight;
-        if output_alpha == 0.0 {
-            pixel.fill(0);
-        } else if source_alpha != 0.0 {
-            for channel in 0..3 {
-                pixel[channel] = ((source_alpha * color[channel]
-                    + backdrop_weight * f64::from(pixel[channel]))
-                    / output_alpha)
-                    .round() as u8;
-            }
-            pixel[3] = (output_alpha * 255.0).round() as u8;
-        }
+        source_over(pixel, color, opacity * (f64::from(*coverage) / 255.0));
     }
     Some(output)
+}
+
+pub(super) fn source_over(pixel: &mut [u8], color: [f64; 4], opacity: f64) {
+    let source_alpha = color[3] / 255.0 * opacity;
+    let backdrop_weight = f64::from(pixel[3]) / 255.0 * (1.0 - source_alpha);
+    let output_alpha = source_alpha + backdrop_weight;
+    if output_alpha == 0.0 {
+        pixel.fill(0);
+    } else if source_alpha != 0.0 {
+        for channel in 0..3 {
+            pixel[channel] = ((source_alpha * color[channel]
+                + backdrop_weight * f64::from(pixel[channel]))
+                / output_alpha)
+                .round() as u8;
+        }
+        pixel[3] = (output_alpha * 255.0).round() as u8;
+    }
 }
 
 #[cfg(test)]

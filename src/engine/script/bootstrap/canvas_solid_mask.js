@@ -3,6 +3,8 @@
     const canvasSolidMaskHost = __hostCall;
     const canvasPaintSolidMask = (context, state, mask, style, left, top, right, bottom) => {
         const width = right - left, height = bottom - top, pixels = width * height;
+        if (canvasIsGradient(style))
+            return canvasPaintGradientMask(context, state, mask, style, left, top, right, bottom);
         if (pixels < 256 || pixels > MAX_CANVAS_PIXELS || context.__clipBits ||
             canvasIsGradient(style) || style instanceof CanvasPattern ||
             context.__compositeOperation !== 'source-over' || !style.channels ||
