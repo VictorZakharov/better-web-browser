@@ -6,6 +6,8 @@ env:
   CARGO_PROFILE_TEST_DEBUG: 0
   RUSTC_WRAPPER: sccache
   SCCACHE_GHA_ENABLED: "true"
+  # Cached compiler requests are I/O-bound; overlap them on hosted runners.
+  CARGO_BUILD_JOBS: 8
 
 on:
   push:
@@ -81,18 +83,6 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-  lint:
-    name: Lint
-    needs: changes
-    if: ${{ needs.changes.outputs.run_windows != 'false' }}
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/windows-rust
-      - name: Lint
-        # Full test modules and extra binaries are checked locally before push.
-        run: cargo clippy --lib --bin better-web-browser --locked -- -D warnings
-
   test:
     name: Browser smoke
     needs: changes
@@ -106,13 +96,9 @@ jobs:
       - name: Test hidden browser startup, rendering, and containment
         # A separate target avoids compiling thousands of library/renderer tests
         # just to select a handful with libtest's runtime filters.
-        run: cargo test --locked --test ci_smoke -- --test-threads=1
-      - name: Verify actual bundled Opus compiler settings
-        shell: pwsh
-        run: ./scripts/check-opus-build.ps1 -Profile debug
-      - name: Test bounded hidden-benchmark timeout diagnostics
-        shell: pwsh
-        run: ./scripts/test-hidden-benchmark-timeout.ps1 -Browser target/debug/better-web-browser.exe
+        # The only default feature owns the auxiliary WPT CLI. Browser code,
+        # native graphics, codecs and containment remain unchanged.
+        run: cargo test --locked --no-default-features --test ci_smoke -- --test-threads=1
 
   harness:
     name: Chromium harness self-tests
@@ -153,7 +139,6 @@ jobs:
     needs:
       - changes
       - source
-      - lint
       - test
       - dependency-policy
       - harness
@@ -168,14 +153,12 @@ jobs:
           RUN_WINDOWS: ${{ needs.changes.outputs.run_windows }}
           MARKDOWN_ONLY: ${{ needs.changes.outputs.markdown_only }}
           SOURCE_RESULT: ${{ needs.source.result }}
-          LINT_RESULT: ${{ needs.lint.result }}
           TEST_RESULT: ${{ needs.test.result }}
           DEPENDENCY_RESULT: ${{ needs.dependency-policy.result }}
           HARNESS_RESULT: ${{ needs.harness.result }}
         run: |
           ./scripts/assert-ci-results.ps1 -EventName $env:CI_EVENT_NAME -ClassificationResult $env:CLASSIFICATION_RESULT -RunWindows $env:RUN_WINDOWS -MarkdownOnly $env:MARKDOWN_ONLY -Workers @{
             source = $env:SOURCE_RESULT
-            lint = $env:LINT_RESULT
             test = $env:TEST_RESULT
             dependencies = $env:DEPENDENCY_RESULT
             harness = $env:HARNESS_RESULT

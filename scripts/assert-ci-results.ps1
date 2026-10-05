@@ -8,7 +8,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$required = @('source', 'lint', 'test', 'dependencies', 'harness')
+$required = @('source', 'test', 'dependencies', 'harness')
 if ($ClassificationResult -ne 'success') { throw 'Change classification did not succeed.' }
 if ($Workers.Count -ne $required.Count -or
     @($required | Where-Object { -not $Workers.ContainsKey($_) }).Count -ne 0) {

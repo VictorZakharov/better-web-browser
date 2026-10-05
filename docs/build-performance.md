@@ -76,7 +76,7 @@ kill grace, callback duration and frame-cadence assertions are unchanged.
 ### October 4 automatic smoke policy (#225)
 
 This supersedes the historical policies below: source PRs and main now run only
-production Clippy, source/format checks, dependency/security policy, harness
+source/format checks, dependency/security policy, harness
 self-tests, and the dedicated `ci_smoke` integration target. Its three hidden
 checks cover startup/ping/shutdown, AppContainer child/network restrictions,
 and a real HTML/CSS/JavaScript presentation with native WebGL2 clear/readback.
@@ -86,6 +86,14 @@ available and required locally for relevant changes; automatic main no longer
 runs standards compliance or the visual matrix. This deliberately trades
 hosted coverage for feedback time, at the user's request. Release packaging and
 the separate fuzz workflow are unchanged.
+
+Full-target Clippy also remains mandatory locally, rather than repeating
+production compilation for lint on another hosted VM. The smoke command uses
+`--no-default-features`: the sole default feature `wpt-harness` admits only the
+auxiliary WPT-runner binary. It does not disable any browser API, codec, native
+graphics backend or containment policy. Normal builds still include that tool.
+Eight Cargo workers overlap cached compiler I/O; additional benchmark-timeout
+and Opus build probes remain local rather than extending this smoke gate.
 
 The pre-change #225 run's core job took **10m16s**: compilation was **7m54s**
 and execution of 4,213 tests was **100.81s**. The renderer job took **7m26s**:
