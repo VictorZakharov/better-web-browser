@@ -3,7 +3,7 @@
 //! numeric ranges return null, selecting the bounded software fallback, not blank pixels.
 
 use super::*;
-use resvg::tiny_skia::{FillRule, Mask, Transform};
+use resvg::tiny_skia::FillRule;
 use serde::Deserialize;
 
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
@@ -79,64 +79,21 @@ pub(super) fn stroke_mask(args: &[JsValue]) -> JsValue {
 }
 
 fn rasterize(request: Request) -> Option<Vec<u8>> {
-    let pixels = (request.width as usize).checked_mul(request.height as usize)?;
-    if pixels == 0
-        || pixels > MAX_CANVAS_PIXELS
-        || request.width > 16384
-        || request.height > 16384
-        || request.left.unsigned_abs() > 16384
-        || request.top.unsigned_abs() > 16384
-    {
-        return None;
-    }
+    let region = super::coverage::Region {
+        width: request.width,
+        height: request.height,
+        left: request.left,
+        top: request.top,
+        antialias: request.antialias,
+    };
+    region.pixels()?;
     let path = super::stroke_outline::build(&request)?;
-    // tiny-skia uses a four-step scan conversion. A bounded higher-resolution
-    // mask reduces its coarse edge-alpha quantization without replacing the
-    // vetted path rasterizer. Fall back to its native resolution for large ROIs.
-    let mut scale = 1u32;
-    if request.antialias {
-        while scale < 4
-            && pixels.checked_mul((scale * 2).pow(2) as usize)? <= 8 * 1024 * 1024
-            && request.width.checked_mul(scale * 2)? < 8192
-            && request.height.checked_mul(scale * 2)? < 8192
-        {
-            scale *= 2;
+    match &path {
+        super::stroke_outline::Outline::Path(path) => {
+            region.rasterize(Some(path), FillRule::Winding)
         }
+        super::stroke_outline::Outline::Empty => region.rasterize(None, FillRule::Winding),
     }
-    let mut mask = Mask::new(request.width * scale, request.height * scale)?;
-    // The mask contains source coverage, not opacity or drawing-clip coverage.
-    // The Canvas owner combines these while painting its source/layer.
-    if let super::stroke_outline::Outline::Path(path) = path {
-        mask.fill_path(
-            &path,
-            FillRule::Winding,
-            request.antialias,
-            Transform::from_scale(scale as f32, scale as f32)
-                .pre_translate(-(request.left as f32), -(request.top as f32)),
-        );
-    }
-    let samples = mask.take();
-    if scale == 1 {
-        return Some(samples);
-    }
-    let mut coverage = vec![0; pixels];
-    let row_width = request.width as usize * scale as usize;
-    let sample_count = scale * scale;
-    for y in 0..request.height as usize {
-        for x in 0..request.width as usize {
-            let mut sum = 0u32;
-            for dy in 0..scale as usize {
-                let start = (y * scale as usize + dy) * row_width + x * scale as usize;
-                sum += samples[start..start + scale as usize]
-                    .iter()
-                    .map(|v| u32::from(*v))
-                    .sum::<u32>();
-            }
-            coverage[y * request.width as usize + x] =
-                ((sum + sample_count / 2) / sample_count) as u8;
-        }
-    }
-    Some(coverage)
 }
 
 fn identity() -> [f32; 6] {

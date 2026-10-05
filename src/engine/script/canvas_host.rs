@@ -5,6 +5,8 @@ use super::*;
 use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
 use std::io::Cursor;
 
+mod coverage;
+mod fill;
 mod path;
 mod shadow;
 mod stroke_outline;
@@ -18,6 +20,9 @@ const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
     if operation == "canvasStrokeMask" {
         return Ok(Some(path::stroke_mask(args)));
+    }
+    if operation == "canvasFillMask" {
+        return Ok(Some(fill::mask(args)));
     }
     if operation == "canvasStrokeContains" {
         return Ok(Some(path::stroke_contains(args)));

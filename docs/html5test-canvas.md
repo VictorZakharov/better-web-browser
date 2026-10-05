@@ -219,6 +219,24 @@ edge alpha differs by one. A quarter-offset square has exact-area alpha 143 in
 Breeze versus Chrome's rasterized 191. The implementation fixes coordinate
 truncation, but does not claim to match every rasterizer's antialiasing convention.
 
+Filled paths also reuse the existing tiny-skia compound-path rasterizer, with the
+same bounded coverage-mask owner as strokes. Nonzero/evenodd winding is applied
+to all contours together before opacity; duplicated overlapping subpaths do not
+darken twice. Open contours are implicitly closed for filling without altering
+their later stroke geometry. The stored default path remains in construction-time
+bitmap coordinates, while retained Path2D instances apply the painting transform.
+Paint sources, clips, source layers, filters and shadows retain their existing
+owners. Out-of-range native geometry selects the existing binary bounded fallback.
+
+Native admission tests cover invalid requests, point/mask budgets, empty geometry,
+opposite winding and ROI offsets. Window and worker tests cover fractional alpha,
+overlap, holes, transforms, open paths and effect ordering. In the hidden
+`fill-coverage.html` fixture, Breeze matches Chrome's half-covered edge (alpha 64
+at half opacity), duplicated-contour union, evenodd cancellation and open-path
+geometry. Curve tessellation remains a difference: the sampled filled arc has
+alpha 202 versus Chrome's 216, and the rounded corner has 63 versus 86. These
+are recorded limitations, not evidence of full curve or clipping parity.
+
 Source-over compositing uses scalar premultiplied-alpha arithmetic without
 allocating temporary arrays or per-pixel typed-array views. An independent
 alpha oracle, repeated 512-square closed paths and overlapping clipped strokes

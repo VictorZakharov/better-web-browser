@@ -127,6 +127,20 @@
         const style = fill ? context.__fill : context.__stroke;
         if (!paintInverse && (style instanceof CanvasGradient || style instanceof CanvasPattern)) return;
         if (fill) {
+            const nativeFill = canvasRasterHost('canvasFillMask', canvasRasterStringify({
+                width: right - left, height: bottom - top, left, top, rule,
+                parts: path.subpaths.map(part => ({points: part.points, closed: !!part.closed}))
+            }));
+            if (nativeFill) {
+                for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
+                    const coverage = nativeFill[(y - top) * (right - left) + x - left] / 255;
+                    if (coverage && canvasClipAllows(context, x, y, state.width))
+                        compositeCanvasPixel(state.pixels, (y * state.width + x) * 4,
+                            canvasPaintAt(style, x + .5, y + .5, paintInverse),
+                            context.__globalAlpha * coverage, context.__compositeOperation);
+                }
+                return;
+            }
             const edges = pathEdges(path);
             for (let y = top; y < bottom; y++) {
                 const intersections = [];
