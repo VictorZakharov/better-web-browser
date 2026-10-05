@@ -109,12 +109,15 @@
     const paintCanvasPath = (context, path, fill, rule) => {
         const state = stateForCanvas(context.canvas);
         if (!state.pixels) return;
+        const paintInverse = matrixInverse2D(context.__transform);
+        if (!fill && !paintInverse) return;
+        const [a, b, c, d] = context.__transform;
+        const penScale = Math.max(Math.hypot(a, c), Math.hypot(b, d));
         const inset = fill ? 0 : context.__lineWidth / 2 *
-            (context.__lineJoin === 'miter' ? context.__miterLimit : 1) + 1;
+            penScale * (context.__lineJoin === 'miter' ? context.__miterLimit : 1) + 1;
         const [left, top, right, bottom] = canvasPixelBounds(path, state, inset);
         if (!(left < right && top < bottom)) return;
         const style = fill ? context.__fill : context.__stroke;
-        const paintInverse = matrixInverse2D(context.__transform);
         if (!paintInverse && (style instanceof CanvasGradient || style instanceof CanvasPattern)) return;
         if (fill) {
             const edges = pathEdges(path);
@@ -142,14 +145,30 @@
         }
         // Mark coverage before compositing so joins or overlapping segments do not darken twice.
         const maskWidth = right - left;
+        // The default path already contains construction-time transformed points.
+        // Undo only the painting CTM, stroke with its pen, then transform back.
+        const strokePath = transformCanvasPath(path, paintInverse);
         const nativeCoverage = context.__lineDash.length ? null : canvasRasterHost('canvasStrokeMask', canvasRasterStringify({
             width: maskWidth, height: bottom - top, left, top,
             line_width: context.__lineWidth, miter_limit: context.__miterLimit,
             cap: context.__lineCap, join: context.__lineJoin,
-            parts: path.subpaths.map(part => ({ points: part.points, closed: !!part.closed }))
+            transform: context.__transform,
+            parts: strokePath.subpaths.map(part => ({ points: part.points, closed: !!part.closed }))
         }));
         const coverage = nativeCoverage || new Uint8Array(maskWidth * (bottom - top));
-        if (!nativeCoverage) {
+        if (!nativeCoverage && !canvasIsIdentity(context.__transform)) {
+            const segments = canvasStrokeSegments(strokePath);
+            const work = maskWidth * (bottom - top) * Math.max(1, strokePath.pointCount);
+            if (work > 50000000)
+                throw new DOMException('Canvas stroke exceeds the raster budget', 'NotSupportedError');
+            for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
+                const [px, py] = matrixPoint2D(paintInverse, x + .5, y + .5);
+                if (pointOnCanvasStroke(strokePath, segments, px, py, context.__lineWidth,
+                    context.__lineDash, context.__dashOffset, context.__lineCap,
+                    context.__lineJoin, context.__miterLimit))
+                    coverage[(y - top) * maskWidth + x - left] = 1;
+            }
+        } else if (!nativeCoverage) {
             let coverageWork = 0;
             for (const segment of canvasStrokeSegments(path)) {
                 const [[x0, y0], [x1, y1]] = [segment.start, segment.end];
@@ -213,6 +232,10 @@
         const path = canvasPathArgument(this, pathOrX);
         const px = Number(external ? xOrY : pathOrX), py = Number(external ? y : xOrY);
         if (!canvasPoint([px, py])) return false;
-        return pointOnCanvasStroke(path, canvasStrokeSegments(path), px, py, this.__lineWidth,
+        const inverse = matrixInverse2D(this.__transform);
+        if (!inverse) return false;
+        const strokePath = transformCanvasPath(path, inverse);
+        const [localX, localY] = matrixPoint2D(inverse, px, py);
+        return pointOnCanvasStroke(strokePath, canvasStrokeSegments(strokePath), localX, localY, this.__lineWidth,
             this.__lineDash, this.__dashOffset, this.__lineCap, this.__lineJoin, this.__miterLimit);
     };

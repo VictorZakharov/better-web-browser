@@ -141,6 +141,17 @@ The context still owns paint, clipping, alpha and compositing. Numeric ranges
 outside this native adapter's bounds select the existing bounded software path;
 they are not silently replaced with an empty image. This adapter preserves the
 current binary coverage contract, rather than claiming antialiased Canvas parity.
+Stroke outlines now use the painting-time affine pen, including non-uniform
+scale, rotation, reflection and shear. The current default path retains its
+construction-time geometry; a supplied `Path2D` is transformed without mutation.
+Inverse-coordinate hit testing and the bounded dashed software fallback use
+the same pen coordinate system. Singular painting transforms have no stroke
+area. Tests compare interior/exterior pixels with an independent inverse-matrix
+rectangle oracle, and separately check elliptical round caps and path retention.
+The `tests/canvas/affine-stroke.html` Chrome reference reports `[255,0,0]`
+for each scaled-width, retained-path and elliptical-cap sample triple; a singular
+pen produces neither nonzero pixels nor a hit. These samples match the unit
+tests, not a claim of full antialiasing parity.
 Source-over compositing uses scalar premultiplied-alpha arithmetic without
 allocating temporary arrays or per-pixel typed-array views. An independent
 alpha oracle, repeated 512-square closed paths and overlapping clipped strokes

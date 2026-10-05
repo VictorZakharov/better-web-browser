@@ -38,6 +38,7 @@ mod bitmap_pixels;
 mod bitmap_renderer;
 mod cache_storage;
 mod canvas;
+mod canvas_affine_stroke;
 mod canvas_bitmap;
 mod canvas_blend;
 mod canvas_filter;

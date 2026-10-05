@@ -21,6 +21,8 @@ struct Request {
     miter_limit: f32,
     cap: String,
     join: String,
+    #[serde(default = "identity")]
+    transform: [f32; 6],
     parts: Vec<Part>,
 }
 
@@ -61,6 +63,10 @@ fn rasterize(request: Request) -> Option<Vec<u8>> {
         || !request.miter_limit.is_finite()
         || !(1.0..=64.0).contains(&request.miter_limit)
         || request.parts.len() > MAX_POINTS
+        || request
+            .transform
+            .iter()
+            .any(|value| !value.is_finite() || value.abs() > MAX_COORDINATE)
     {
         return None;
     }
@@ -105,7 +111,22 @@ fn rasterize(request: Request) -> Option<Vec<u8>> {
         },
         dash: None,
     };
-    let path = builder.finish()?.stroke(&stroke, 1.0)?;
+    let [a, b, c, d, e, f] = request.transform;
+    let determinant = a * d - b * c;
+    if !determinant.is_finite() || determinant == 0.0 {
+        return None;
+    }
+    let transform = Transform::from_row(a, b, c, d, e, f);
+    if !transform.invert()?.is_finite() {
+        return None;
+    }
+    // Stroke in the painting coordinate system, then transform the outline.
+    // Applying the matrix to just the centerline loses non-uniform pen geometry.
+    let resolution = a.hypot(b).max(c.hypot(d)).clamp(1.0, 256.0);
+    let path = builder
+        .finish()?
+        .stroke(&stroke, resolution)?
+        .transform(transform)?;
     let mut mask = Mask::new(request.width, request.height)?;
     // Preserve the existing center-sample coverage contract for now. Native
     // antialiasing requires coordinating coverage with clips and layer effects.
@@ -116,6 +137,10 @@ fn rasterize(request: Request) -> Option<Vec<u8>> {
         Transform::from_translate(-(request.left as f32), -(request.top as f32)),
     );
     Some(mask.take())
+}
+
+fn identity() -> [f32; 6] {
+    [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
 }
 
 #[cfg(test)]
@@ -132,6 +157,7 @@ mod tests {
             miter_limit: 10.0,
             cap: "butt".into(),
             join: "miter".into(),
+            transform: identity(),
             parts: vec![Part {
                 points: vec![[4.0, 8.0], [12.0, 8.0]],
                 closed: false,
@@ -167,5 +193,31 @@ mod tests {
         let mut invalid = request();
         invalid.parts[0].points = vec![[1.0, 1.0]; MAX_POINTS + 1];
         assert!(rasterize(invalid).is_none());
+    }
+
+    #[test]
+    fn transformed_native_pen_is_rasterized_after_outline_construction() {
+        let mut scaled = request();
+        scaled.width = 32;
+        scaled.height = 48;
+        scaled.transform = [2.0, 0.0, 0.0, 3.0, 0.0, 0.0];
+        let mask = rasterize(scaled).unwrap();
+        assert_eq!(mask[19 * 32 + 16], 255);
+        assert_eq!(mask[17 * 32 + 16], 0);
+        assert_eq!(mask[24 * 32 + 25], 0);
+    }
+
+    #[test]
+    fn invalid_or_singular_native_transform_selects_bounded_fallback() {
+        for matrix in [
+            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [f32::NAN, 0.0, 0.0, 1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 1.0, f32::INFINITY, 0.0],
+            [MAX_COORDINATE + 1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        ] {
+            let mut invalid = request();
+            invalid.transform = matrix;
+            assert!(rasterize(invalid).is_none(), "{matrix:?}");
+        }
     }
 }
