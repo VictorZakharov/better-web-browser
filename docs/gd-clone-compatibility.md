@@ -97,3 +97,12 @@ Chromium reference reached "Lighting the lobby" in its earlier eight-second
 capture; neither capture proves sustained gameplay. Watchdog containment,
 worker scheduling and the remaining visual differences need investigation
 before claiming the unchanged game runs.
+
+The subsequent optimized-iteration build, with native clone-byte conversion and
+Canvas row copies, no longer reported a worker timeout in the eight-second
+capture. It still reported a document timeout. A temporary instrumented copy
+identified a 512-square Canvas `stroke()` as the active call when interrupted;
+the instrumentation was removed after diagnosis and is not part of the game or
+browser. Native stroke rasterization is the next investigation, not a reason
+to raise or disable the watchdog. Final performance claims require fresh
+release-mode measurements after the batch is complete.

@@ -104,15 +104,32 @@ and its [embedded-content rendering](https://html.spec.whatwg.org/multipage/rend
 
 ## Intentional limits
 
-This is not full Canvas 2D. Worker-transferred OffscreenCanvas placeholders do
-not yet deliver updates to the DOM display list. Text drawing,
-HTML image-element and video image sources, pixel antialiasing, color spaces
-other than sRGB, and CSS filter URLs are not implemented. Blur uses a bounded
+This is not full Canvas 2D. Pixel antialiasing, color spaces other than sRGB,
+and CSS filter URLs are not implemented. Blur uses a bounded
 box approximation; curves and arcs use bounded line-segment flattening.
 Large bitmaps, paths, and raster workloads fail with `NotSupportedError`
-rather than consuming unbounded renderer resources. WebGL/WebGPU remain a
-separate feature inside this repository ([issue #181](https://github.com/VictorZakharov/better-web-browser/issues/181));
-this work does not advertise a partial WebGL context.
+rather than consuming unbounded renderer resources. The independent native
+WebGL implementation is described in [its contract](webgl2-foundations.md);
+Canvas 2D feature probes are not evidence of WebGL or WebGPU completeness.
+
+## Raw pixel transfer
+
+`getImageData` and `putImageData` copy clipped contiguous row spans rather than
+allocating a temporary typed-array view for each pixel. Readback outside the
+bitmap remains transparent black. Dirty rectangles are normalized and
+intersected with both source and destination before copying. These operations
+still bypass transforms, drawing clips and compositing.
+
+Pixel coordinates use the HTML interface's `[EnforceRange] long` conversion:
+truncate finite fractional values and reject non-finite, out-of-range, BigInt
+and Symbol inputs with `TypeError`. Detached ImageData storage instead raises
+`InvalidStateError`. Source data and context identity come from private owners;
+forged prototypes or author-replaced byte getters cannot select another bitmap.
+The retained 4-megapixel bitmap budget bounds both copies and temporary memory.
+
+Regression tests compare an independent pixel-by-pixel clipping oracle with
+row copying, check overload selection and error behavior, and exercise repeated
+1024-square texture-map round trips under the unchanged script watchdog.
 
 Behavioral tests cover encoding, bitmap ownership/transfer, worker parity,
 path construction, pixel paint and compositing, clipping, stroke geometry,
