@@ -28,6 +28,8 @@ pub(super) struct Request {
     pub dash: Vec<f64>,
     #[serde(default)]
     pub dash_offset: f64,
+    #[serde(default)]
+    antialias: bool,
 }
 
 #[derive(Deserialize)]
@@ -88,18 +90,53 @@ fn rasterize(request: Request) -> Option<Vec<u8>> {
         return None;
     }
     let path = super::stroke_outline::build(&request)?;
-    let mut mask = Mask::new(request.width, request.height)?;
-    // Preserve the existing center-sample coverage contract for now. Native
-    // antialiasing requires coordinating coverage with clips and layer effects.
+    // tiny-skia uses a four-step scan conversion. A bounded higher-resolution
+    // mask reduces its coarse edge-alpha quantization without replacing the
+    // vetted path rasterizer. Fall back to its native resolution for large ROIs.
+    let mut scale = 1u32;
+    if request.antialias {
+        while scale < 4
+            && pixels.checked_mul((scale * 2).pow(2) as usize)? <= 8 * 1024 * 1024
+            && request.width.checked_mul(scale * 2)? < 8192
+            && request.height.checked_mul(scale * 2)? < 8192
+        {
+            scale *= 2;
+        }
+    }
+    let mut mask = Mask::new(request.width * scale, request.height * scale)?;
+    // The mask contains source coverage, not opacity or drawing-clip coverage.
+    // The Canvas owner combines these while painting its source/layer.
     if let super::stroke_outline::Outline::Path(path) = path {
         mask.fill_path(
             &path,
             FillRule::Winding,
-            false,
-            Transform::from_translate(-(request.left as f32), -(request.top as f32)),
+            request.antialias,
+            Transform::from_scale(scale as f32, scale as f32)
+                .pre_translate(-(request.left as f32), -(request.top as f32)),
         );
     }
-    Some(mask.take())
+    let samples = mask.take();
+    if scale == 1 {
+        return Some(samples);
+    }
+    let mut coverage = vec![0; pixels];
+    let row_width = request.width as usize * scale as usize;
+    let sample_count = scale * scale;
+    for y in 0..request.height as usize {
+        for x in 0..request.width as usize {
+            let mut sum = 0u32;
+            for dy in 0..scale as usize {
+                let start = (y * scale as usize + dy) * row_width + x * scale as usize;
+                sum += samples[start..start + scale as usize]
+                    .iter()
+                    .map(|v| u32::from(*v))
+                    .sum::<u32>();
+            }
+            coverage[y * request.width as usize + x] =
+                ((sum + sample_count / 2) / sample_count) as u8;
+        }
+    }
+    Some(coverage)
 }
 
 fn identity() -> [f32; 6] {
@@ -123,6 +160,7 @@ mod tests {
             transform: identity(),
             dash: vec![],
             dash_offset: 0.0,
+            antialias: false,
             parts: vec![Part {
                 points: vec![[4.0, 8.0], [12.0, 8.0]],
                 closed: false,
@@ -184,5 +222,41 @@ mod tests {
             invalid.transform = matrix;
             assert!(rasterize(invalid).is_none(), "{matrix:?}");
         }
+    }
+
+    #[test]
+    fn antialiased_mask_preserves_fractional_source_coverage_and_roi_origin() {
+        let mut req = request();
+        req.antialias = true;
+        req.line_width = 1.0;
+        let mask = rasterize(req).unwrap();
+        assert!((127..=128).contains(&mask[7 * 16 + 8]));
+        assert!((127..=128).contains(&mask[8 * 16 + 8]));
+        assert_eq!(mask[6 * 16 + 8], 0);
+        assert_eq!(mask[9 * 16 + 8], 0);
+        let mut shifted = request();
+        shifted.antialias = true;
+        shifted.line_width = 1.0;
+        shifted.left = 4;
+        shifted.top = 4;
+        let shifted = rasterize(shifted).unwrap();
+        assert_eq!(shifted[3 * 16 + 4], mask[7 * 16 + 8]);
+        assert_eq!(shifted[4 * 16 + 4], mask[8 * 16 + 8]);
+    }
+
+    #[test]
+    fn edge_coverage_is_unioned_before_source_opacity_is_applied() {
+        let mut single = request();
+        single.antialias = true;
+        single.line_width = 1.0;
+        let expected = rasterize(single).unwrap();
+        let mut repeated = request();
+        repeated.antialias = true;
+        repeated.line_width = 1.0;
+        repeated.parts.push(Part {
+            points: vec![[4.0, 8.0], [12.0, 8.0]],
+            closed: false,
+        });
+        assert_eq!(rasterize(repeated).unwrap(), expected);
     }
 }

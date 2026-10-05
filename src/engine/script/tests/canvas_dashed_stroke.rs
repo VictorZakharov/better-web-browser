@@ -49,7 +49,8 @@ fn dash_offsets_all_zero_patterns_and_round_zero_runs_are_real_pixels() {
     c.clearRect(0,0,96,96);c.setLineDash([0,0]);c.stroke(p);
     if(c.getImageData(20,20,1,1).data[3]!==255)throw Error('all zero is solid');
     c.clearRect(0,0,96,96);c.lineDashOffset=0;c.lineCap='round';c.setLineDash([0,8]);c.stroke(p);
-    if(c.getImageData(17,20,1,1).data[3]!==255||c.getImageData(12,20,1,1).data[3]!==0)throw Error('zero-on round caps');
+    const edge=c.getImageData(17,20,1,1).data[3];
+    if(!(edge>0&&edge<255)||c.getImageData(12,20,1,1).data[3]!==0)throw Error('zero-on round coverage');
     if(!c.isPointInStroke(p,17.5,20.5)||c.isPointInStroke(p,12.5,20.5))throw Error('zero-on hit regions');
     "#);
 }

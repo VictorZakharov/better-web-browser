@@ -139,8 +139,8 @@ Stroke coverage reuses the existing BSD-3-Clause `tiny-skia` rasterizer
 through `resvg`, with bounded path serialization, point count and mask dimensions.
 The context still owns paint, clipping, alpha and compositing. Numeric ranges
 outside this native adapter's bounds select the existing bounded software path;
-they are not silently replaced with an empty image. This adapter preserves the
-current binary coverage contract, rather than claiming antialiased Canvas parity.
+they are not silently replaced with an empty image. Native masks now carry
+fractional stroke coverage; the extreme-range software fallback remains binary.
 Stroke outlines now use the painting-time affine pen, including non-uniform
 scale, rotation, reflection and shear. The current default path retains its
 construction-time geometry; a supplied `Path2D` is transformed without mutation.
@@ -170,8 +170,29 @@ Native, window and worker tests cover caps, joins, subpath phase, negative
 offsets, empty off runs, affine pens, state ownership and path retention. The
 local `tests/canvas/dashed-stroke.html` fixture matches Chrome's cap/corner hit
 results, reset/gap samples and equivalent negative phase. Chrome's zero-on round
-dot edge has alpha 213 where Breeze's binary mask has 255; antialiasing remains
-separate work rather than being hidden by a loose screenshot threshold.
+dot edge had alpha 213 where Breeze's preceding binary mask had 255. The native
+coverage change described below supersedes that binary edge result.
+
+Antialiased strokes combine geometric coverage with source opacity exactly once,
+before filters/shadow generation and full-surface Porter-Duff composition.
+The same rule applies to ordinary paints, gradients and patterns. A bounded
+higher-resolution tiny-skia mask reduces the library's coarse scan-conversion
+steps, then area-averages to source coverage. Scratch is capped at 8,388,608 mask
+bytes; large regions retain native-resolution antialiasing. Integer clips remain
+packed binary regions, and very large native masks may retain the provider's
+binary fallback. This is not full antialiased clipping/fill/image parity.
+
+Tests use an independent polygon/pixel intersection-area oracle for affine pens,
+including edge pixels, instead of a center-hit/binary-alpha approximation.
+Separate tests verify fractional opacity, overlapping-outline union, source-layer
+operators, clips and shadow alpha. In the hidden `stroke-coverage.html` fixture,
+the half-covered one-pixel stroke has alpha 128 in Breeze versus 127 in Chrome;
+both produce 64 at half global opacity and 255 when pixel-aligned.
+Remaining differences are recorded rather than ignored: existing straight-alpha
+bitmap arithmetic differs from Chrome's premultiplied quantization in some blend
+channels, and the sampled `arcTo` edge has alpha 191 versus Chrome's 170.
+Curve flattening/raster coverage and premultiplied bitmap storage remain follow-up
+work; these fixtures are not a claim of pixel-perfect Canvas rendering.
 Source-over compositing uses scalar premultiplied-alpha arithmetic without
 allocating temporary arrays or per-pixel typed-array views. An independent
 alpha oracle, repeated 512-square closed paths and overlapping clipped strokes

@@ -85,8 +85,9 @@ fn rounded_rect_and_arc_to_have_real_bounded_geometry() {
             ctx.clearRect(0, 0, 10, 10);
             const arc = new Path2D(); arc.moveTo(0, 0); arc.arcTo(4, 0, 4, 4, 2);
             ctx.lineWidth = 1; ctx.stroke(arc);
-            checks.push(alpha(2, 0) === 255, alpha(3, 1) === 255,
-                alpha(4, 0) === 0);
+            checks.push(Math.abs(alpha(1, 0) - 128) <= 1, alpha(3, 1) > 0 && alpha(3, 1) < 255,
+                alpha(4, 0) > 0 && alpha(4, 0) < 255, alpha(5, 0) === 0,
+                !ctx.isPointInStroke(arc, 4.5, 0.5));
             let negative = false, empty = false;
             try { new Path2D().roundRect(0, 0, 2, 2, -1); }
             catch (error) { negative = error instanceof RangeError; }

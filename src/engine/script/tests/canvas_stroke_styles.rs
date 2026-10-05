@@ -12,7 +12,7 @@ fn canvas_line_caps_extend_stroke_ends_and_hit_testing() {
             const checks = [alpha(1, 2) === 0, !ctx.isPointInStroke(path, 1.5, 2.5)];
             ctx.clearRect(0, 0, 10, 6);
             ctx.lineCap = 'round'; ctx.stroke(path);
-            checks.push(alpha(1, 2) === 255, ctx.isPointInStroke(path, 1.5, 2.5));
+            checks.push(alpha(1, 2) > 0 && alpha(1, 2) < 255, ctx.isPointInStroke(path, 1.5, 2.5));
             ctx.clearRect(0, 0, 10, 6);
             ctx.lineCap = 'square'; ctx.stroke(path);
             checks.push(alpha(1, 2) === 255, ctx.isPointInStroke(path, 1.5, 2.5));

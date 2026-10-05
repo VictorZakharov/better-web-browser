@@ -7,6 +7,31 @@ fn affine_pen_matches_independent_inverse_rectangle_oracle() {
         const c=document.querySelector('canvas').getContext('2d');
         const matrices=[[2,0,0,3,10,5],[0,2,-3,0,80,10],
             [1,.5,.75,1,15,10],[-2,0,0,2,80,5],[.5,0,0,.75,20,20]];
+        const clipAxis=(polygon,axis,value,greater)=>{
+            const result=[];let previous=polygon[polygon.length-1];
+            for(const point of polygon) {
+                const keep=q=>greater?q[axis]>=value:q[axis]<=value;
+                if(keep(point)!==keep(previous)) {
+                    const fraction=(value-previous[axis])/(point[axis]-previous[axis]);
+                    result.push([previous[0]+fraction*(point[0]-previous[0]),
+                        previous[1]+fraction*(point[1]-previous[1])]);
+                }
+                if(keep(point))result.push(point);previous=point;
+            }
+            return result;
+        };
+        const areaInPixel=(polygon,x,y)=>{
+            for(const [axis,value,greater] of [[0,x,true],[0,x+1,false],[1,y,true],[1,y+1,false]]) {
+                if(!polygon.length)return 0;
+                polygon=clipAxis(polygon,axis,value,greater);
+            }
+            let twiceArea=0;
+            for(let i=0;i<polygon.length;i++) {
+                const p=polygon[i],q=polygon[(i+1)%polygon.length];
+                twiceArea+=p[0]*q[1]-p[1]*q[0];
+            }
+            return Math.min(1,Math.abs(twiceArea)/2);
+        };
         for(const m of matrices) for(const external of [false,true]) {
             c.resetTransform();c.clearRect(0,0,96,96);c.setTransform(...m);
             c.lineWidth=6;c.lineCap='butt';c.strokeStyle='red';
@@ -14,16 +39,19 @@ fn affine_pen_matches_independent_inverse_rectangle_oracle() {
             if(!external)c.beginPath();path.moveTo(5,15);path.lineTo(25,15);
             external?c.stroke(path):c.stroke();
             const [a,b,k,d,e,f]=m,det=a*d-b*k;
+            const polygon=[[5,12],[25,12],[25,18],[5,18]].map(([x,y])=>[a*x+k*y+e,b*x+d*y+f]);
             const data=c.getImageData(0,0,96,96).data;
             for(let y=0;y<96;y++)for(let x=0;x<96;x++) {
                 const dx=x+.5-e,dy=y+.5-f;
                 const u=(d*dx-k*dy)/det,v=(-b*dx+a*dy)/det;
-                // Exclude edge-adjacent samples: binary rasterizers differ in
-                // tie handling, but must agree throughout the interior/exterior.
+                // Pixel coverage is an independent polygon/square intersection
+                // area, not whether its center lies inside the analytic pen.
+                const expected=Math.round(areaInPixel(polygon,x,y)*255);
+                if(Math.abs(data[(y*96+x)*4+3]-expected)>2)
+                    throw Error('affine coverage '+m+' at '+x+','+y+' actual '+data[(y*96+x)*4+3]+' expected '+expected);
+                // Geometric hit testing remains independent of raster coverage.
                 if(Math.min(Math.abs(u-5),Math.abs(u-25),Math.abs(v-12),Math.abs(v-18))<.2)continue;
                 const inside=u>5&&u<25&&v>12&&v<18;
-                if((data[(y*96+x)*4+3]!==0)!==inside)
-                    throw Error(`affine pen ${m} / ${external} at ${x},${y}`);
                 if(c.isPointInStroke(...(external?[path,x+.5,y+.5]:[x+.5,y+.5]))!==inside)
                     throw Error(`affine hit test ${m} / ${external} at ${x},${y}`);
             }

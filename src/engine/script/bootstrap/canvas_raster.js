@@ -110,6 +110,7 @@
         width, height, left, top, line_width: context.__lineWidth, miter_limit: context.__miterLimit,
         cap: context.__lineCap, join: context.__lineJoin, transform: context.__transform,
         dash: context.__lineDash, dash_offset: context.__dashOffset,
+        antialias: true,
         parts: path.subpaths.map(part => ({ points: part.points, closed: !!part.closed }))
     });
     const paintCanvasPath = (context, path, fill, rule) => {
@@ -211,7 +212,9 @@
                 canvasClipAllows(context, x, y, state.width))
                 compositeCanvasPixel(state.pixels, (y * state.width + x) * 4,
                     canvasPaintAt(style, x + 0.5, y + 0.5, paintInverse),
-                    context.__globalAlpha, context.__compositeOperation);
+                    context.__globalAlpha * (nativeCoverage ?
+                        coverage[(y - top) * maskWidth + x - left] / 255 : 1),
+                    context.__compositeOperation);
         }
     };
     CanvasRenderingContext2D.prototype.fill = function(pathOrRule, rule) {
