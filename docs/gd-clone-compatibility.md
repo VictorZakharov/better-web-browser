@@ -106,3 +106,29 @@ the instrumentation was removed after diagnosis and is not part of the game or
 browser. Native stroke rasterization is the next investigation, not a reason
 to raise or disable the watchdog. Final performance claims require fresh
 release-mode measurements after the batch is complete.
+
+### October 5 wrap-up release capture
+
+The final batch replay uses that same unchanged production asset snapshot, a
+fresh profile, 125% device scale and twenty seconds of settling. The hidden
+release browser recorded first presentation at 897.520 ms and cumulative
+JavaScript time of 6,748.820 ms. It still reported a document timer promise-job
+execution-limit exception after 2,000 ms. A textured background, tip and loading
+shape were visible, but no accepted lobby/gameplay transition occurred. These
+single-run numbers do not establish sustained frame times or a startup-speed
+comparison with Chrome. Native adapter HLSL precision warnings were also
+recorded; they are not treated as proof of the JavaScript failure's cause.
+
+The completed work preserves the watchdog and adds generally useful native
+coverage/shading, clone transport, shader validation reuse and real multi-draw
+and indexed-blending contracts. Dedicated fixtures exercise actual pixels and
+invalid updates in Window and Worker, rather than relying on capability flags.
+The next game investigation should profile the remaining document texture
+generation and loading-screen differences against the unmodified reference.
+
+SVG text is not included in this batch: the pinned usvg layout does not correctly
+apply an ancestor's `textLength` across nested tspans. Its failing regression and
+prototype remain in ignored G: scratch files for follow-up; no test was weakened
+or ignored to ship it. Existing SVG raster/image/input-cache improvements remain
+included. The HTML5test release score is unchanged at 507 / 588 in the fresh
+before/after samples, versus 579 / 588 in the hidden Chrome reference.

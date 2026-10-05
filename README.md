@@ -1037,6 +1037,45 @@ HTML5test layout differences still exist. Full WebGL2 conformance, an upstream
 ANGLE immutable-NPOT storage fix, and unchanged gd-clone gameplay acceptance
 remain open; the documented framework fixture is not proof that the game runs.
 
+### October 5: Canvas and WebGL game-readiness batch
+
+This batch adds native ANGLE parallel-shader completion, multi-draw with draw-ID
+semantics, and independent indexed blending, including shared Window/Worker
+pixel and invalid-input contracts. Canvas reuses existing tiny-skia and kurbo
+for bounded coverage, adaptive curves, affine/dashed strokes, shadows and
+solid/gradient/repeating-pattern shading. Worker byte transport and SVG input
+reuse avoid repeated allocations; paint brands, matrix dictionaries and line
+styles now follow their shared conversion contracts. These are general browser
+changes, not patches to the sibling game or HTML5test-only detection behavior.
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| HTML5test rendered score, one fresh release sample each | 507 / 588 | 507 / 588 |
+| Repeated eight-shader validation median | 14.9 ms | 9.3 ms |
+| Repeated curved fill/stroke fixture | 135.9 ms | 45.5 ms |
+| Forty changing-pen strokes without coverage reuse | 153.4 ms | 116.1 ms |
+| Twelve 256-square gradient fills | 102.4 ms | 28.2 ms |
+| Eight 256-square repeating-pattern fills | 102.7 ms | 14.5 ms |
+
+The fresh hidden Chrome 154 score sample remains 579 / 588. The score comparison
+uses main `054ad9f` and this batch with fresh profiles, 125% device scale and a
+ten-second settling period; it does not measure time to score completion.
+Other rows use their individual preceding implementations on the same machine
+and are targeted samples, not general browser/game throughput. Chrome matched
+the indexed-blend and pattern samples; fractional Canvas edge/gradient pixels
+are not universally identical. Chrome can defer Canvas work beyond a timed
+method call, so call timings alone are not a rendering-throughput comparison.
+
+The unchanged gd-clone production build still times out in document texture
+generation and has loading-screen layout/SVG differences. It is **not yet
+playable**. SVG text was deferred rather than shipping incorrect nested
+`textLength` behavior. See [game evidence](docs/gd-clone-compatibility.md),
+[coverage measurements](docs/canvas-coverage-reuse.md),
+[gradient contracts](docs/canvas-gradients.md),
+[pattern/matrix contracts](docs/canvas-pattern-matrices.md), and
+[indexed blending](docs/webgl-indexed-blending.md). No HTML5test point gain is
+claimed for this batch.
+
 YouTube remains work in progress: non-DRM video/audio can play, but startup, seeking/recovery,
 video frame cadence, layout fidelity, and memory use are not an accepted browser baseline.
 Passing media fixtures does not establish usable live-site playback. Wikipedia has dedicated
