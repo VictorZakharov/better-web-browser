@@ -144,9 +144,9 @@ impl DocumentRuntime {
                         crate::engine::page::MediaElementKind::Audio => "audio/mpeg".into(),
                         crate::engine::page::MediaElementKind::Video => "video/mp4".into(),
                     });
-                    let result = connection
-                        .decode_media(&bytes)
-                        .and_then(|decode| self.install_media_decode(node, decode, mime_type));
+                    let result = connection.decode_media(&bytes).and_then(|decode| {
+                        self.install_media_decode(node, decode, mime_type, eligible)
+                    });
                     if let Err(error) = &result {
                         self.record_media_failure(error.clone());
                     }

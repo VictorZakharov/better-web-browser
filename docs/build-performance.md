@@ -73,6 +73,75 @@ a two-second per-event receive timeout before sending the deliberate busy callba
 The receive now uses the remaining setup deadline. The 500 ms watchdog, 150 ms
 kill grace, callback duration and frame-cadence assertions are unchanged.
 
+### October 4 automatic smoke policy (#225)
+
+This supersedes the historical policies below: source PRs and main now run only
+source/format checks, dependency/security policy, harness
+self-tests, and the dedicated `ci_smoke` integration target. Its three hidden
+checks cover startup/ping/shutdown, AppContainer child/network restrictions,
+and a real HTML/CSS/JavaScript presentation with native WebGL2 clear/readback.
+It does not import the full renderer suite or compile the library's unit-test
+configuration. Full unit/integration, WPT/Khronos and visual suites remain
+available and required locally for relevant changes; automatic main no longer
+runs standards compliance or the visual matrix. This deliberately trades
+hosted coverage for feedback time, at the user's request. Release packaging and
+the separate fuzz workflow are unchanged.
+
+Full-target Clippy also remains mandatory locally, rather than repeating
+production compilation for lint on another hosted VM. The smoke command uses
+`--no-default-features`: the sole default feature `wpt-harness` admits only the
+auxiliary WPT-runner binary. It does not disable any browser API, codec, native
+graphics backend or containment policy. Normal builds still include that tool.
+Eight Cargo workers overlap cached compiler I/O; additional benchmark-timeout
+and Opus build probes remain local rather than extending this smoke gate.
+
+The pre-change #225 run's core job took **10m16s**: compilation was **7m54s**
+and execution of 4,213 tests was **100.81s**. The renderer job took **7m26s**:
+compilation was **6m20s**, while its 27 selected tests ran in **15.21s**.
+Compiler cache hits were about 90%, so this was not solely a missing registry
+cache. Runtime test filters cannot remove test-module compilation/linking cost.
+The replacement keeps sccache and Cargo caches, never caches `target`, and
+keeps the protected `windows` and `Linear PR history` names. Gate policy rejects
+failed, cancelled, missing or incorrectly skipped smoke workers. Only verified
+Markdown-only PRs may skip them; main always runs them.
+
+The under-three-minute goal must be checked against the new hosted run, not
+inferred from the one-second local smoke execution. Production compilation,
+native dependencies, linking and runner queues still contribute to wall clock.
+
+The initial smoke-only hosted run still spent 6m41s compiling and just 1.71s
+executing its three checks. Its cache statistics contained Rust hits only.
+The locked cc-rs MSVC discovery path does not apply its `RUSTC_WRAPPER`
+fallback. The Windows action now loads the installed Microsoft developer-shell
+module and explicitly selects `sccache cl.exe` for C++ compilation, including
+ANGLE. It exports only an allowlist of compiler environment variables to later
+steps, not credentials; compiler, headers, native flags and graphics code are
+unchanged. The local cold wrapped rebuild completed in 1m55s with 395 cached
+C/C++ compilations and zero compiler/cache errors. This is local evidence, not
+a hosted under-three-minute claim. A forced warm native rebuild used identical
+compiler arguments (only wrapper-setting whitespace changed to invalidate
+Cargo freshness): 395 C/C++ hits, zero misses/errors, 51.44s compilation and
+1.40s smoke execution. First cache population and changes to the native
+toolchain/dependencies can still exceed the warm-run target. See the [sccache compiler-wrapper usage](https://github.com/mozilla/sccache/tree/v0.17.0#usage)
+and locked cc-rs `get_base_compiler` / `env_tool` paths for the distinction.
+
+The first hosted native-cache attempt failed during bindgen: its selected
+standalone LLVM library was paired with Visual Studio's older Clang intrinsic
+headers after the developer shell changed PATH. `prepare-angle.ps1` now
+requires the matching `clang.exe` alongside `libclang.dll` and exports both
+`CLANG_PATH` and `LIBCLANG_PATH` to subsequent steps. This selects coherent
+include discovery without suppressing intrinsic errors or modifying ANGLE.
+Failed attempts are not counted as successful timing evidence.
+
+Main run `37197706177` independently failed one assertion in
+`sdk/tests/conformance/extensions/s3tc-and-rgtc.html`; the general WPT pass was
+554 cases / 6,086 assertions, and the graphics suite was 19/20 cases. The
+workflow did not retain the failing JSON report, so the exact assertion is not
+available from its summary log. The current branch passes all 755 assertions
+of that case in both local release and debug. This is not a claim that the
+hosted-only failure's cause has been established, nor justification to weaken
+its local assertions or remove it from the retained Khronos manifest.
+
 ### September 15 PR policy (#155)
 
 The required `windows` and `Linear PR history` names remain unchanged. Source-changing PRs retain

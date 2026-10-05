@@ -59,7 +59,7 @@ fn webgl2_native_version_and_robust_zero_initialization_are_real() {
         let version = unsafe { std::ffi::CStr::from_ptr(gl::GetString(gl::VERSION).cast()) }
             .to_str()
             .unwrap();
-        assert!(version.starts_with("OpenGL ES 3.0"), "{version}");
+        assert!(version.starts_with("OpenGL ES 3.1"), "{version}");
         let extensions = unsafe { std::ffi::CStr::from_ptr(gl::GetString(gl::EXTENSIONS).cast()) }
             .to_str()
             .unwrap();
@@ -79,6 +79,62 @@ fn webgl2_native_version_and_robust_zero_initialization_are_real() {
         assert_eq!(
             call(&mut context, "getParameter", &[gl::VERSION as i64], ""),
             json!("WebGL 2.0 (ANGLE)")
+        );
+        assert_eq!(call(&mut context, "getError", &[], ""), json!(0));
+    });
+}
+
+#[test]
+fn webgl2_combined_texture_limit_agrees_with_native_slots_and_shader_builtins() {
+    session::run_native_test(|| {
+        let mut context = version_two();
+        let mut native = 0;
+        unsafe { gl::GetIntegerv(gl::MAX_COMBINED_TEXTURE_IMAGE_UNITS, &mut native) };
+        assert!((8..=256).contains(&native));
+        assert_eq!(context.textures.len(), native as usize);
+        assert_eq!(
+            call(
+                &mut context,
+                "getParameter",
+                &[gl::MAX_COMBINED_TEXTURE_IMAGE_UNITS as i64],
+                ""
+            ),
+            json!(native)
+        );
+        let vertex = compile(
+            &mut context,
+            gl::VERTEX_SHADER,
+            "#version 300 es\nvoid main(){uint i=uint(gl_VertexID);vec2 p=vec2(float((i<<1u)&2u),float(i&2u));gl_Position=vec4(p*2.0-1.0,0,1);}",
+        );
+        let source = format!(
+            "#version 300 es\nprecision highp float;out vec4 color;void main(){{color=gl_MaxCombinedTextureImageUnits=={native}?vec4(0,1,0,1):vec4(1,0,0,1);}}"
+        );
+        let fragment = compile(&mut context, gl::FRAGMENT_SHADER, &source);
+        assert!(compiled(&mut context, vertex) && compiled(&mut context, fragment));
+        let program = link(&mut context, vertex, fragment);
+        assert_eq!(
+            call(
+                &mut context,
+                "getProgramParameter",
+                &[program as i64, gl::LINK_STATUS as i64],
+                ""
+            ),
+            json!(true)
+        );
+        call(&mut context, "useProgram", &[program as i64], "");
+        call(
+            &mut context,
+            "drawArrays",
+            &[gl::TRIANGLES as i64, 0, 3],
+            "",
+        );
+        assert!(
+            context
+                .surface
+                .snapshot()
+                .unwrap()
+                .chunks_exact(4)
+                .all(|pixel| pixel == [0, 255, 0, 255])
         );
         assert_eq!(call(&mut context, "getError", &[], ""), json!(0));
     });

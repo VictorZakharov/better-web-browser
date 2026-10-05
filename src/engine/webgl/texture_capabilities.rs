@@ -13,10 +13,12 @@ pub(super) enum TextureCapability {
     Depth,
     Srgb,
     Anisotropy,
+    FloatBlend,
+    Norm16,
 }
 
 impl TextureCapability {
-    pub(super) const ALL: [Self; 9] = [
+    pub(super) const ALL: [Self; 11] = [
         Self::Float,
         Self::HalfFloat,
         Self::FloatLinear,
@@ -26,6 +28,8 @@ impl TextureCapability {
         Self::Depth,
         Self::Srgb,
         Self::Anisotropy,
+        Self::FloatBlend,
+        Self::Norm16,
     ];
 
     pub(super) fn native_name(self) -> &'static CStr {
@@ -41,6 +45,8 @@ impl TextureCapability {
             Self::Depth => c"GL_ANGLE_depth_texture",
             Self::Srgb => c"GL_EXT_sRGB",
             Self::Anisotropy => c"GL_EXT_texture_filter_anisotropic",
+            Self::FloatBlend => c"GL_EXT_float_blend",
+            Self::Norm16 => c"GL_EXT_texture_norm16",
         }
     }
 
@@ -55,10 +61,15 @@ impl TextureCapability {
             Self::Depth => "WEBGL_depth_texture",
             Self::Srgb => "EXT_sRGB",
             Self::Anisotropy => "EXT_texture_filter_anisotropic",
+            Self::FloatBlend => "EXT_float_blend",
+            Self::Norm16 => "EXT_texture_norm16",
         }
     }
 
     pub(super) fn exposed_in(self, api: super::ApiVersion) -> bool {
+        if self == Self::Norm16 {
+            return api == super::ApiVersion::Two;
+        }
         api == super::ApiVersion::One
             || !matches!(
                 self,
@@ -78,8 +89,8 @@ impl TextureCapability {
 
 #[derive(Default)]
 pub(super) struct TextureCapabilities {
-    available: [bool; 9],
-    enabled: [bool; 9],
+    available: [bool; 11],
+    enabled: [bool; 11],
 }
 
 impl super::extensions::Extensions {
@@ -107,7 +118,18 @@ impl super::extensions::Extensions {
         {
             return false;
         }
+        if base == Float && !self.enable_implicit_float_blend() {
+            return false;
+        }
         self.textures.enabled(capability)
+    }
+
+    pub(super) fn enable_implicit_float_blend(&mut self) -> bool {
+        // EXT_float_blend's implicit-enable rule preserves pre-extension HDR
+        // content. Unsupported blending does not disable float renderability.
+        // https://registry.khronos.org/webgl/extensions/EXT_float_blend/
+        !self.textures.available(TextureCapability::FloatBlend)
+            || self.request_texture(TextureCapability::FloatBlend)
     }
 
     fn request_texture(&mut self, capability: TextureCapability) -> bool {

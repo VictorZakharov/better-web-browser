@@ -10,11 +10,18 @@ fn checked_in_webgl_gate_requires_native_capabilities_and_real_passes() {
     let manifest = curated();
     manifest.validate().unwrap();
     assert_eq!(manifest.policy.expectations, ExpectationsPolicy::Forbidden);
-    assert!(manifest.policy.minimum_subtests >= 350);
+    assert!(manifest.policy.minimum_subtests >= 6000);
     for test in &manifest.tests {
         assert_eq!(test.harness, HarnessKind::Khronos);
         assert_eq!(test.expected, ExpectedStatus::Pass);
-        assert!(test.required_extension.is_some());
+        if test.path.starts_with("sdk/tests/conformance/extensions/")
+            || test.path.starts_with("sdk/tests/conformance2/extensions/")
+        {
+            assert!(test.required_extension.is_some());
+        } else {
+            assert!(test.path.starts_with("sdk/tests/conformance2/"));
+            assert!(test.required_extension.is_none());
+        }
         assert!(test.reason.is_none());
     }
 }

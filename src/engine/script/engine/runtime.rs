@@ -8,8 +8,45 @@ use std::rc::Rc;
 use std::sync::{Once, OnceLock};
 mod dynamic_imports;
 mod frames;
+#[cfg(all(test, windows))]
+mod gpu_task_tests;
+mod gpu_tasks;
 mod hooks;
 mod module_preparation;
+#[cfg(all(test, windows))]
+mod webgl2_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_data_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_framebuffer_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_image_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_lifecycle_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_multisample_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_name_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_norm16_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_pixel_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_precise_bitmap_tests;
+#[cfg(all(test, windows))]
+mod webgl2_precise_image_tests;
+#[cfg(all(test, windows))]
+mod webgl2_sync_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_texture_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl2_uniform_bindings_tests;
+#[cfg(test)]
+mod webgl2_view_transform_tests;
+#[cfg(all(test, windows))]
+mod webgl_reflection_bindings_tests;
+#[cfg(all(test, windows))]
+mod webgl_video_source_tests;
 
 static INITIALIZE_V8: Once = Once::new();
 static V8_PLATFORM: OnceLock<v8::SharedRef<v8::Platform>> = OnceLock::new();
@@ -20,6 +57,7 @@ pub(in crate::engine::script) struct Context {
     private_hooks: HashMap<String, v8::Global<v8::Function>>,
     imports: Rc<super::dynamic_imports::Imports>,
     _frames: Rc<super::frames::FrameTree>,
+    gpu_host: std::rc::Weak<HostBridge>,
     next_module_promise: u64,
     module_promises: HashMap<u64, v8::Global<v8::Promise>>,
     agent: Rc<RefCell<Agent>>,
@@ -41,6 +79,8 @@ impl Context {
         isolate.set_host_import_module_dynamically_callback(super::dynamic_imports::request);
         let imports = Rc::new(super::dynamic_imports::Imports::default());
         let frames = Rc::new(super::frames::FrameTree::default());
+        let bridge = Rc::new(bridge);
+        let gpu_host = Rc::downgrade(&bridge);
         isolate.set_host_initialize_import_meta_object_callback(
             super::modules::initialize_import_meta,
         );
@@ -54,7 +94,7 @@ impl Context {
                     ..Default::default()
                 },
             );
-            context.set_slot(Rc::new(bridge));
+            context.set_slot(bridge);
             context.set_slot(Rc::clone(&imports));
             super::frames::register(context, &frames);
             let scope = &mut v8::ContextScope::new(scope, context);
@@ -68,6 +108,7 @@ impl Context {
             private_hooks: HashMap::new(),
             imports,
             _frames: frames,
+            gpu_host,
             next_module_promise: 1,
             module_promises: HashMap::new(),
             agent,

@@ -92,10 +92,13 @@ impl WebGl {
                     c.i.get(4)
                         .and_then(|value| usize::try_from(*value).ok())
                         .ok_or(gl::INVALID_VALUE)?;
+                // GLES3 permits specifying the indexed range before allocating
+                // bufferData. Storage sufficiency is validated when drawing,
+                // not when binding. Keep pointer-size arithmetic representable.
                 if size == 0
                     || offset
                         .checked_add(size)
-                        .is_none_or(|end| end > object.bytes.len())
+                        .is_none_or(|end| end > isize::MAX as usize)
                 {
                     return Err(gl::INVALID_VALUE);
                 }

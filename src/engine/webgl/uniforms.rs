@@ -1,28 +1,17 @@
 //! Uniform names retain both their owning program and its link generation.
 use super::{Command, Kind, Result, WebGl, gl, json};
 use serde_json::Value;
-use std::ffi::CString;
 
 impl WebGl {
     pub(super) fn uniform_command(&mut self, c: &Command) -> Result<Value> {
         if c.op == "getUniformLocation" {
             let owner = c.u(0)?;
             let object = self.objects.get(owner, Kind::Program)?;
-            if c.text.len() > self.options.api.query_name_budget()
-                || !c.text.is_ascii()
-                || c.text.starts_with("gl_")
-            {
-                return Err(gl::INVALID_VALUE);
+            let name = super::shader_names::location(&c.text, self.options.api)?;
+            super::shader_names::linked(object.native)?;
+            if super::shader_names::reserved(&c.text) {
+                return Ok(Value::Null);
             }
-            let mut linked = 0;
-            unsafe {
-                gl::GetProgramiv(object.native, gl::LINK_STATUS, &mut linked);
-            }
-            if linked == 0 {
-                return Err(gl::INVALID_OPERATION);
-            }
-            let name = CString::new(super::shader_validation::driver_name(&c.text))
-                .map_err(|_| gl::INVALID_VALUE)?;
             let location = unsafe { gl::GetUniformLocation(object.native, name.as_ptr()) };
             let generation = object.generation;
             let native = object.native;

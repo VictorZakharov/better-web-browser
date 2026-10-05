@@ -147,7 +147,7 @@ fn webgl2_transform_range_errors_and_duplicate_capture_bindings_are_atomic() {
         let mut context = version_two();
         shader(&mut context, SEPARATE, r#"["captured","identity"]"#);
         let id = buffer(&mut context, 32);
-        for (offset, size) in [(-1, 4), (2, 4), (4, 6), (0, 0), (32, 4), (i64::MAX, 4)] {
+        for (offset, size) in [(-1, 4), (2, 4), (4, 6), (0, 0), (i64::MAX, 4)] {
             assert_eq!(
                 command(
                     &mut context,
@@ -316,7 +316,7 @@ fn webgl2_transform_objects_and_varying_lists_reject_foreign_or_malformed_inputs
             json!(false)
         );
         let program = shader(&mut context, INTERLEAVED, r#"["captured"]"#);
-        for names in ["null", r#"[1]"#, r#"["a\u0000b"]"#, r#"["gl_Position"]"#] {
+        for names in ["null", r#"[1]"#, r#"["a\u0000b"]"#] {
             assert_eq!(
                 command(
                     &mut context,

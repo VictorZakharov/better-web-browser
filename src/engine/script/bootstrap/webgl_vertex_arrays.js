@@ -1,4 +1,4 @@
-    const webGlVertexArrayExtensions = new WeakMap();
+    const webGlVertexArrayExtensions = webGlPrivateBrands();
     class WebGLVertexArrayObjectOES {
         constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
     }

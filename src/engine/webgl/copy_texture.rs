@@ -3,6 +3,9 @@ use super::{Command, Kind, Result, WebGl, gl};
 use serde_json::Value;
 impl WebGl {
     pub(super) fn copy_texture(&mut self, c: &Command) -> Result<Value> {
+        if self.options.api == super::ApiVersion::Two {
+            return self.copy_core_texture(c);
+        }
         let target = c.u(0)?;
         let slot = if target == gl::TEXTURE_2D {
             0

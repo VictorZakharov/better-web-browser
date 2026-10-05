@@ -107,6 +107,11 @@ impl WebGl {
                 self.objects.get_mut(destination, Kind::Buffer)?.bytes
                     [destination_offset..destination_end]
                     .copy_from_slice(&copied);
+                let valid = self.objects.get(source, Kind::Buffer)?.buffer_mirror_valid;
+                let destination = self.objects.get_mut(destination, Kind::Buffer)?;
+                destination.buffer_mirror_valid = valid
+                    && (destination.buffer_mirror_valid
+                        || (destination_offset == 0 && destination_end == destination.bytes.len()));
                 Ok(Value::Null)
             }
             "getBufferSubData" => Ok(json!(self.read_buffer(command)?)),
@@ -137,6 +142,13 @@ impl WebGl {
         if size == 0 {
             return Ok(Vec::new());
         }
+        let object = self.objects.get(id, Kind::Buffer)?;
+        if object.buffer_mirror_valid {
+            // This is the same initialized storage used for index validation,
+            // not a guessed GPU result. Avoid a driver map/stall for buffers
+            // whose contents have only been written through CPU uploads/copies.
+            return Ok(object.bytes[offset..offset + size].to_vec());
+        }
         let entries = self.core.as_ref().ok_or(gl::INVALID_OPERATION)?;
         let (map, unmap) = (entries.map_buffer, entries.unmap_buffer);
         // GL_MAP_READ_BIT only. The pointer stays on the native owner thread;
@@ -152,6 +164,11 @@ impl WebGl {
         self.driver_result()?;
         if valid == 0 {
             return Err(gl::INVALID_OPERATION);
+        }
+        let object = self.objects.get_mut(id, Kind::Buffer)?;
+        if offset == 0 && size == object.bytes.len() {
+            object.bytes.copy_from_slice(&bytes);
+            object.buffer_mirror_valid = true;
         }
         Ok(bytes)
     }

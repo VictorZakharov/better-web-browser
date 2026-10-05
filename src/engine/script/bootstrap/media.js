@@ -290,6 +290,7 @@
     });
 
     class HTMLVideoElement extends HTMLMediaElement {
+        constructor(...args) { super(...args); videoElementBrands.add(this); }
         get videoWidth() { return mediaStateFor(this).videoWidth; }
         get videoHeight() { return mediaStateFor(this).videoHeight; }
     }

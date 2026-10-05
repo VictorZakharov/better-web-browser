@@ -37,6 +37,7 @@ pub(super) struct MediaPlayback {
     encoded_bytes: u64,
     frames_submitted: u64,
     dropped_frames: u64,
+    origin_clean: bool,
 }
 
 impl DocumentRuntime {
@@ -98,6 +99,9 @@ impl DocumentRuntime {
             connection.set_media_playback(source_id, false, 0)?;
         }
         connection.clear_video();
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            runtime.clear_media_image(node);
+        }
         self.media.take();
         Ok(())
     }

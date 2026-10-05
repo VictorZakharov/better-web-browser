@@ -29,15 +29,16 @@
             [premultiplied[0] / alpha, premultiplied[1] / alpha,
                 premultiplied[2] / alpha, alpha];
     };
-    const resampleCanvasBitmap = (source, width, height, smooth) => {
+    const resampleCanvasBitmap = (source, width, height, smooth, precise = false) => {
         if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0 ||
             width * height > MAX_CANVAS_PIXELS)
             throw new DOMException('Image resize exceeds the bitmap budget', 'NotSupportedError');
-        const pixels = new Uint8ClampedArray(width * height * 4);
+        const pixels = precise ? new preciseBitmapWords(width * height * 4) : new Uint8ClampedArray(width * height * 4);
         for (let row = 0; row < height; row++) for (let column = 0; column < width; column++) {
             const x = (column + 0.5) * source.width / width - 0.5;
             const y = (row + 0.5) * source.height / height - 0.5;
-            pixels.set(sampleCanvasBitmap(source, x, y, smooth), (row * width + column) * 4);
+            const sample=sampleCanvasBitmap(source,x,y,smooth);
+            pixels.set(precise?Array.from(sample,value=>Math.round(value)):sample,(row*width+column)*4);
         }
         return { width, height, pixels };
     };

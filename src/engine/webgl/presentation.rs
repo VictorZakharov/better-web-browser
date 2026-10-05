@@ -9,6 +9,8 @@ impl WebGl {
         self.clear_default_surface();
     }
     pub(super) fn clear_default_surface(&mut self) {
+        self.readback_cache.invalidate();
+        self.surface.invalidate_resolve();
         let _framebuffer = super::framebuffer_guard::FramebufferGuard::bind(
             self.options.api,
             super::framebuffer_guard::Direction::Draw,
@@ -28,6 +30,13 @@ impl WebGl {
             gl::GetBooleanv(gl::COLOR_WRITEMASK, color_mask.as_mut_ptr());
             gl::GetBooleanv(gl::DEPTH_WRITEMASK, &mut depth_mask);
             let scissor = gl::IsEnabled(gl::SCISSOR_TEST);
+            // GLES3 ignores clears while rasterizer discard is enabled.
+            // WebGL's implicit drawing-buffer retirement must clear regardless
+            // of author state (WebGL2: RASTERIZER_DISCARD restriction).
+            let discard = self.options.api == super::ApiVersion::Two && gl::IsEnabled(0x8c89) != 0;
+            if discard {
+                gl::Disable(0x8c89);
+            }
             if self.default_draw_buffer == gl::NONE
                 && let Some(entry) = self.extensions.draw_buffers_entry
             {
@@ -55,6 +64,9 @@ impl WebGl {
             gl::StencilMaskSeparate(gl::BACK, self.stencil_masks.write[1]);
             if scissor != 0 {
                 gl::Enable(gl::SCISSOR_TEST);
+            }
+            if discard {
+                gl::Enable(0x8c89);
             }
         }
     }

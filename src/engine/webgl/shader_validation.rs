@@ -1,7 +1,7 @@
 //! Use ANGLE's explicit WebGL validator before its native GLES compiler.
 //! ESSL output encodes public names and lifts extension directives legally;
 //! author source remains separate from the translated driver source.
-use super::{MAX_SHADER_BYTES, WebGl, gl};
+use super::{MAX_SHADER_BYTES, MAX_SHADER_SOURCE_BYTES, WebGl, gl};
 use mozangle::shaders::{self, BuiltInResources, Output, ShaderValidator};
 
 impl WebGl {
@@ -24,7 +24,7 @@ impl WebGl {
             MaxVertexUniformVectors: limit(gl::MAX_VERTEX_UNIFORM_VECTORS),
             MaxVaryingVectors: limit(gl::MAX_VARYING_VECTORS),
             MaxVertexTextureImageUnits: limit(gl::MAX_VERTEX_TEXTURE_IMAGE_UNITS),
-            MaxCombinedTextureImageUnits: limit(gl::MAX_COMBINED_TEXTURE_IMAGE_UNITS),
+            MaxCombinedTextureImageUnits: self.textures.len() as i32,
             MaxTextureImageUnits: limit(gl::MAX_TEXTURE_IMAGE_UNITS),
             MaxFragmentUniformVectors: limit(gl::MAX_FRAGMENT_UNIFORM_VECTORS),
             OES_standard_derivatives: i32::from(self.extensions.derivatives),
@@ -58,7 +58,7 @@ impl WebGl {
         }
         .ok_or_else(|| "Could not construct the WebGL shader validator".to_owned())?;
         match validator.compile_and_translate(&[source]) {
-            Ok(translated) if translated.len() <= MAX_SHADER_BYTES * 8 => {
+            Ok(translated) if translated.len() <= MAX_SHADER_SOURCE_BYTES * 8 => {
                 if version_two {
                     // Both validators enforce WebGL2 restrictions. Feed the native
                     // WebGL2 compiler the validated original names: unlike WebGL1,
@@ -103,10 +103,6 @@ pub(super) fn truncate_log(log: &mut String) {
 
 // The native API receives public names after the validated translator prefix
 // is undone. Its own internal compiler mangling is not visible in reflection.
-pub(super) fn driver_name(name: &str) -> String {
-    name.to_owned()
-}
-
 pub(super) fn public_name(name: &str) -> String {
     name.to_owned()
 }
@@ -152,12 +148,10 @@ mod tests {
 
     #[test]
     fn shader_name_mapping_preserves_identifier_components_and_subscripts() {
-        assert_eq!(driver_name("lights[12]._utint"), "lights[12]._utint");
         assert_eq!(
             translated_names("_ulights[12]._u_utint"),
             "lights[12]._utint"
         );
-        assert_eq!(driver_name("gl_Position"), "gl_Position");
         assert_eq!(public_name("gl_Position"), "gl_Position");
         assert_eq!(public_name("_ucolors[2]"), "_ucolors[2]");
         assert_eq!(translated_names("_ucolors[2]"), "colors[2]");

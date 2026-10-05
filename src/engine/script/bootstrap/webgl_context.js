@@ -1,10 +1,10 @@
     // Private context/object brands keep driver IDs out of author-visible properties.
     // https://registry.khronos.org/webgl/specs/latest/1.0/
     const webGlToken = Symbol('WebGL native construction');
-    const webGlContexts = new WeakMap();
-    const webGlObjects = new WeakMap();
+    const webGlContexts = webGlPrivateBrands();
+    const webGlObjects = webGlPrivateBrands();
     const webGlObjectClasses = {};
-    const webGlEventMessages = new WeakMap();
+    const webGlEventMessages = webGlPrivateBrands();
     class WebGLContextEvent extends Event {
         constructor(type, options = {}) {
             super(type, options);
@@ -16,7 +16,14 @@
         }
     }
     Object.defineProperty(WebGLContextEvent.prototype, Symbol.toStringTag, {value:'WebGLContextEvent'});
+    Object.defineProperty(WebGLContextEvent.prototype, 'statusMessage', {enumerable:true});
     Object.defineProperty(globalThis, 'WebGLContextEvent', {configurable:true, writable:true, value:WebGLContextEvent});
+    class WebGLObject {
+        constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
+    }
+    Object.defineProperty(WebGLObject.prototype, Symbol.toStringTag, {value:'WebGLObject'});
+    Object.defineProperty(WebGLObject, 'length', {value:0});
+    Object.defineProperty(globalThis, 'WebGLObject', {configurable:true, writable:true, value:WebGLObject});
     for (const name of ['WebGLBuffer', 'WebGLShader', 'WebGLProgram', 'WebGLTexture',
         'WebGLFramebuffer', 'WebGLRenderbuffer', 'WebGLUniformLocation', 'WebGLActiveInfo',
         'WebGLShaderPrecisionFormat']) {
@@ -24,6 +31,13 @@
             constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
         };
         Object.defineProperty(constructor, 'name', {value:name});
+        Object.defineProperty(constructor, 'length', {value:0});
+        // Resource interfaces inherit WebGLObject; reflection records and
+        // uniform locations are separate IDL interfaces, not GPU resources.
+        if (!['WebGLUniformLocation','WebGLActiveInfo','WebGLShaderPrecisionFormat'].includes(name)) {
+            Object.setPrototypeOf(constructor.prototype,WebGLObject.prototype);
+            Object.setPrototypeOf(constructor,WebGLObject);
+        }
         Object.defineProperty(constructor.prototype, Symbol.toStringTag, {value:name});
         webGlObjectClasses[name] = constructor;
         Object.defineProperty(globalThis, name, {configurable:true, writable:true, value:constructor});
@@ -46,7 +60,7 @@
             webGlError(context, 0x0501); return null;
         }
         const encoded = f.map(value => Object.is(value, -0) ? '-0' : Number.isFinite(value) ? value : Number.isNaN(value) ? 'nan' : value > 0 ? 'inf' : '-inf');
-        const raw = host(op==='readPixels'?'webglReadPixels':'webglCommand', state.id, JSON.stringify({op, i, f:encoded, text}), bytes);
+        const raw = host(op==='readPixels'||op==='getBufferSubData'?'webglReadPixels':'webglCommand', state.id, JSON.stringify({op, i, f:encoded, text}), bytes);
         if (raw instanceof Uint8Array) return raw;
         // Ordinary scalar/array replies do not need a recursive reviver walk.
         // Only native non-JSON float sentinels require the special conversion.
@@ -90,8 +104,8 @@
     class WebGLRenderingContext {
         constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
         get canvas() { return webGlState(this).canvas; }
-        get drawingBufferWidth() { const s = webGlState(this); stateForCanvas(s.canvas); return s.lost ? 0 : Math.max(1, s.canvas.width); }
-        get drawingBufferHeight() { const s = webGlState(this); stateForCanvas(s.canvas); return s.lost ? 0 : Math.max(1, s.canvas.height); }
+        get drawingBufferWidth() { const s = webGlState(this); stateForCanvas(s.canvas); return s.lost ? 0 : (webGlCall(this, 'drawingBufferSize')?.[0] ?? 0); }
+        get drawingBufferHeight() { const s = webGlState(this); stateForCanvas(s.canvas); return s.lost ? 0 : (webGlCall(this, 'drawingBufferSize')?.[1] ?? 0); }
         getContextAttributes() { const s = webGlState(this); return s.lost ? null : {...s.attributes}; }
         isContextLost() { return webGlState(this).lost; }
         getSupportedExtensions() {
@@ -114,23 +128,31 @@
         }
     }
     Object.defineProperty(WebGLRenderingContext.prototype, Symbol.toStringTag, {value:'WebGLRenderingContext'});
+    Object.defineProperty(WebGLRenderingContext, 'length', {value:0});
+    // JavaScript class syntax defaults to non-enumerable members; Web IDL
+    // operations and regular attributes are enumerable on the prototype.
+    for (const name of Object.getOwnPropertyNames(WebGLRenderingContext.prototype)) {
+        if (name !== 'constructor') Object.defineProperty(WebGLRenderingContext.prototype, name, {enumerable:true});
+    }
     Object.defineProperty(globalThis, 'WebGLRenderingContext', {configurable:true, writable:true, value:WebGLRenderingContext});
-    const createWebGlContext = (canvas, requested = {}) => {
-        const attributes = webGlContextAttributes(requested);
-        // WARP is a real software GLES driver, not a promise of hardware acceleration.
+    const createWebGlContext = (canvas, requested = {}, api = 'webgl1') => {
+        const attributes = webGlContextAttributes(requested, api);
         const creationFailed = message => {
             canvas.dispatchEvent(markTrusted(new WebGLContextEvent('webglcontextcreationerror',
                 {statusMessage:message, cancelable:true})));
             return null;
         };
-        if (attributes.failIfMajorPerformanceCaveat)
-            return creationFailed('The available ANGLE/WARP backend is software rendered');
         const id = host('webglCreate', Math.max(1, canvas.width), Math.max(1, canvas.height),
-            JSON.stringify({alpha:attributes.alpha, depth:attributes.depth,
-                stencil:attributes.stencil, preserve:attributes.preserveDrawingBuffer}));
-        if (!id) return creationFailed('ANGLE/WARP is unavailable or the WebGL context/drawing-buffer budget was exceeded');
-        const context = new WebGLRenderingContext(webGlToken);
-        webGlContexts.set(context, {id, canvas, attributes, objects:new Map(), lost:false, epoch:0,
+            JSON.stringify({api, alpha:attributes.alpha, depth:attributes.depth,
+                stencil:attributes.stencil, antialias:attributes.antialias,
+                preserve:attributes.preserveDrawingBuffer,
+                fail_if_major_performance_caveat:attributes.failIfMajorPerformanceCaveat,
+                power_preference:attributes.powerPreference}));
+        if (!id) return creationFailed(attributes.failIfMajorPerformanceCaveat
+            ? 'No suitable hardware ANGLE context is available within the drawing-buffer budget; software fallback is disabled by failIfMajorPerformanceCaveat'
+            : 'No ANGLE backend satisfies the requested WebGL attributes and context/drawing-buffer budget');
+        const context = api === 'webgl2' ? new WebGL2RenderingContext(webGlToken) : new WebGLRenderingContext(webGlToken);
+        webGlContexts.set(context, {id, api, canvas, attributes, objects:new Map(), lost:false, epoch:0,
             extensions:new Map(), lossReported:false, lossError:0,
             dirty:true, unpackFlip:false, unpackPremultiply:false, unpackColorSpace:0x9244});
         return context;
@@ -148,13 +170,17 @@
                     pixels[offset + channel] = alpha ? Math.min(255, Math.round(pixels[offset + channel] * 255 / alpha)) : 0;
             }
         }
+        // Native allocation can be smaller than the unchanged canvas content
+        // attributes. Every bitmap consumer must use the snapshot's extent.
+        state.width = snapshot[0];
+        state.height = snapshot[1];
         state.pixels = pixels;
         native.dirty = false;
     };
     resetWebGlCanvas = state => {
         const native = webGlContexts.get(state.context);
         if (!native || native.lost) return;
-        webGlCall(state.context, 'resize', [native.canvas.width, native.canvas.height]);
+        webGlCall(state.context, 'resizeCanvas', [native.canvas.width, native.canvas.height]);
         native.dirty = true;
     };
     const webGlPresented = state => {

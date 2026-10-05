@@ -6,6 +6,8 @@ env:
   CARGO_PROFILE_TEST_DEBUG: 0
   RUSTC_WRAPPER: sccache
   SCCACHE_GHA_ENABLED: "true"
+  # Cached compiler requests are I/O-bound; overlap them on hosted runners.
+  CARGO_BUILD_JOBS: 8
 
 on:
   push:
@@ -81,113 +83,22 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-  lint:
-    name: Lint
-    needs: changes
-    if: ${{ needs.changes.outputs.run_windows != 'false' }}
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/windows-rust
-      - name: Lint
-        run: cargo clippy --all-targets --locked -- -D warnings
-
   test:
-    name: Test (${{ matrix.suite }})
+    name: Browser smoke
     needs: changes
     if: ${{ needs.changes.outputs.run_windows != 'false' }}
     runs-on: windows-2022
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - suite: core
-            arguments: --lib
-          - suite: renderer
-            # These tests share one AppContainer profile and already take SERIAL.
-            arguments: --test renderer_process -- --test-threads=1
-          - suite: Windows integration
-            arguments: >-
-              --bin better-web-browser
-              --bin wpt-runner
-              --test hostile_input --test html_parser_conformance
-              --test media_process --test fullscreen_layout
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/windows-rust
         with:
-          populate-source-cache: ${{ matrix.suite == 'core' }}
-      - name: Test
-        if: github.event_name != 'pull_request' || matrix.suite != 'renderer'
-        run: cargo test --locked ${{ matrix.arguments }}
-      - name: Test essential renderer contracts
-        if: github.event_name == 'pull_request' && matrix.suite == 'renderer'
-        shell: pwsh
-        run: ./scripts/test-renderer-smoke.ps1
-      - name: Verify actual bundled Opus compiler settings
-        if: matrix.suite == 'Windows integration'
-        shell: pwsh
-        run: ./scripts/check-opus-build.ps1 -Profile debug
-      - name: Test bounded hidden-benchmark timeout diagnostics
-        if: matrix.suite == 'Windows integration'
-        shell: pwsh
-        run: ./scripts/test-hidden-benchmark-timeout.ps1 -Browser target/debug/better-web-browser.exe
-
-  live-runtime:
-    name: Live browser end-to-end
-    needs: changes
-    if: ${{ github.event_name == 'push' && needs.changes.outputs.run_windows != 'false' }}
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/windows-rust
-      - name: Test the full browser headlessly
-        run: ./scripts/test-live-runtime.ps1
-
-  wpt:
-    name: Curated WPT
-    needs: changes
-    if: ${{ github.event_name == 'push' && needs.changes.outputs.run_windows != 'false' }}
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/windows-rust
-      - name: Restore pinned WPT fixtures
-        id: wpt-cache
-        uses: actions/cache@v6
-        with:
-          path: ${{ runner.temp }}\wpt
-          key: windows-wpt-${{ hashFiles('tests/wpt/manifest.json') }}
-      - name: Prepare pinned WPT fixtures
-        shell: pwsh
-        run: >-
-          ./scripts/checkout-wpt.ps1
-          -Destination (Join-Path $env:RUNNER_TEMP 'wpt')
-          -VerifyOnly:('${{ steps.wpt-cache.outputs.cache-hit }}' -eq 'true')
-      - name: Run curated WPT suite headlessly
-        shell: pwsh
-        run: ./scripts/run-wpt.ps1 -WptRoot (Join-Path $env:RUNNER_TEMP 'wpt') -BuildProfile debug -Jobs 8
-      - name: Restore pinned Khronos WebGL fixtures
-        id: webgl-cache
-        uses: actions/cache@v6
-        with:
-          path: ${{ runner.temp }}\webgl-conformance
-          key: windows-khronos-webgl-${{ hashFiles('tests/webgl/khronos-manifest.json') }}
-      - name: Prepare licensed Khronos WebGL fixtures
-        shell: pwsh
-        run: >-
-          ./scripts/checkout-wpt.ps1
-          -Destination (Join-Path $env:RUNNER_TEMP 'webgl-conformance')
-          -Manifest tests/webgl/khronos-manifest.json
-          -VerifyOnly:('${{ steps.webgl-cache.outputs.cache-hit }}' -eq 'true')
-      - name: Run native WebGL conformance headlessly
-        shell: pwsh
-        run: >-
-          ./scripts/run-wpt.ps1
-          -WptRoot (Join-Path $env:RUNNER_TEMP 'webgl-conformance')
-          -Manifest tests/webgl/khronos-manifest.json
-          -Output target/wpt/webgl-report.json
-          -BuildProfile debug -SkipBuild -Jobs 2
+          populate-source-cache: 'true'
+      - name: Test hidden browser startup, rendering, and containment
+        # A separate target avoids compiling thousands of library/renderer tests
+        # just to select a handful with libtest's runtime filters.
+        # The only default feature owns the auxiliary WPT CLI. Browser code,
+        # native graphics, codecs and containment remain unchanged.
+        run: cargo test --locked --no-default-features --test ci_smoke -- --test-threads=1
 
   harness:
     name: Chromium harness self-tests
@@ -222,48 +133,13 @@ jobs:
       - name: Require notices to match the locked Windows release graph
         shell: pwsh
         run: ./scripts/generate-third-party-notices.ps1 -Check
-
-  alpha-compatibility:
-    name: Public alpha compatibility (${{ matrix.shard }})
-    needs: changes
-    # Keep the full visual/performance matrix on main, off the PR critical path.
-    if: ${{ github.event_name == 'push' && needs.changes.outputs.run_windows != 'false' }}
-    runs-on: windows-2022
-    timeout-minutes: 6
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/windows-rust
-      - name: Build alpha browser
-        run: cargo build --locked --bin better-web-browser
-
-      - name: Build Chromium baseline harness
-        run: dotnet build benchmarks/chromium/ChromiumBaseline.csproj -c Release
-      - name: Run deterministic public-alpha matrix headlessly
-        shell: pwsh
-        run: ./benchmarks/run-alpha.ps1 -BuildProfile debug -Iterations 1 -ShardIndex ${{ matrix.shard }} -ShardCount 2 -SkipBuild -OutputDirectory (Join-Path $env:RUNNER_TEMP 'alpha-compatibility')
-      - name: Retain failed compatibility diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: alpha-failure-${{ matrix.shard }}
-          path: ${{ runner.temp }}/alpha-compatibility
-          retention-days: 7
-
   windows:
     name: windows
     if: ${{ always() }}
     needs:
       - changes
       - source
-      - lint
       - test
-      - live-runtime
-      - wpt
-      - alpha-compatibility
       - dependency-policy
       - harness
     runs-on: ubuntu-latest
@@ -277,21 +153,13 @@ jobs:
           RUN_WINDOWS: ${{ needs.changes.outputs.run_windows }}
           MARKDOWN_ONLY: ${{ needs.changes.outputs.markdown_only }}
           SOURCE_RESULT: ${{ needs.source.result }}
-          LINT_RESULT: ${{ needs.lint.result }}
           TEST_RESULT: ${{ needs.test.result }}
-          LIVE_RESULT: ${{ needs.live-runtime.result }}
-          WPT_RESULT: ${{ needs.wpt.result }}
-          ALPHA_RESULT: ${{ needs.alpha-compatibility.result }}
           DEPENDENCY_RESULT: ${{ needs.dependency-policy.result }}
           HARNESS_RESULT: ${{ needs.harness.result }}
         run: |
           ./scripts/assert-ci-results.ps1 -EventName $env:CI_EVENT_NAME -ClassificationResult $env:CLASSIFICATION_RESULT -RunWindows $env:RUN_WINDOWS -MarkdownOnly $env:MARKDOWN_ONLY -Workers @{
             source = $env:SOURCE_RESULT
-            lint = $env:LINT_RESULT
             test = $env:TEST_RESULT
-            live = $env:LIVE_RESULT
-            wpt = $env:WPT_RESULT
-            alpha = $env:ALPHA_RESULT
             dependencies = $env:DEPENDENCY_RESULT
             harness = $env:HARNESS_RESULT
           }

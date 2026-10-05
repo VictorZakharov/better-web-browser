@@ -1,5 +1,5 @@
     const webGlExtensionFactories = new Map();
-    const webGlInstancingExtensions = new WeakMap();
+    const webGlInstancingExtensions = webGlPrivateBrands();
     const webGlExtensionReceiver = (receiver, map, arity, args, name) => {
         const record = map.get(receiver);
         if (!record) throw new TypeError('Illegal ' + name + ' receiver');

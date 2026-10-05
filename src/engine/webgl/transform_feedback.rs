@@ -165,6 +165,21 @@ impl WebGl {
         }
         self.driver_result()?;
         let old_program = self.transform_feedback.records[&bound].program;
+        if matches!(
+            c.op.as_str(),
+            "beginTransformFeedback" | "resumeTransformFeedback"
+        ) {
+            // Capture can overwrite any bound range. Conservatively invalidate
+            // the whole mirror before draws; paused uploads can become valid
+            // again, so resume must invalidate too. No synchronous GPU map here.
+            for binding in &self.transform_feedback.records[&bound].bindings {
+                if binding.id != 0 {
+                    self.objects
+                        .get_mut(binding.id, Kind::Buffer)?
+                        .buffer_mirror_valid = false;
+                }
+            }
+        }
         if c.op == "beginTransformFeedback" {
             self.objects.retain(self.program, Kind::Program)?;
         } else if c.op == "endTransformFeedback" {

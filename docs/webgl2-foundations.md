@@ -1,11 +1,13 @@
-# Internal WebGL2 foundation
+# WebGL2 native baseline
 
-This is a staged native implementation, not an advertised canvas context.
-`canvas.getContext('webgl2')` still returns null. The ordinary WebGL1 creation
-dictionary does not forward arbitrary author options into the native creation
-protocol. Do not add an interface merely to satisfy a feature probe.
+Windows Canvas and OffscreenCanvas now admit `getContext('webgl2')` through
+the real ANGLE backend. This is a bounded baseline, not full conformance
+certification or evidence that the sibling game runs. A canvas locks to its
+first successfully created context type; failed creation consumes no mode.
+`experimental-webgl2` remains unsupported. Ordinary creation dictionaries do
+not forward arbitrary author options into the native creation protocol.
 
-The closed internal `api` value selects an exact GLES2 or GLES3 provider through
+The closed internal `api` value selects a GLES2 or GLES3.1 provider through
 the existing pinned ANGLE dependency. Both retain WebGL compatibility, robust
 resource initialization, disabled client arrays, thread affinity, ownership
 budgets and hidden execution. A newer native driver must not silently change
@@ -13,7 +15,7 @@ WebGL1's shader rules or extension admission.
 
 ## Completed native contracts
 
-- Exact GLES3 construction, private initialized drawing buffer and versioned
+- Explicit GLES3.1 construction, private initialized drawing buffer and versioned
   state strings. Failed/unknown creation versions consume no public context.
 - WebGL2 front-end shader validation with actual GLES3 limits, followed by
   ANGLE's native WebGL2 compiler. ESSL300 `gl_VertexID`, integer operations,
@@ -24,7 +26,8 @@ WebGL1's shader rules or extension admission.
   no-prefix threshold, so WebGL1's textual prefix decoder is not applicable.
   Tests resolve uniforms at 1022, 1023 and 1024 bytes and reject 1025-byte tokens.
 - Core copy, uniform, pixel-pack, pixel-unpack and transform-feedback buffer
-  targets, additional usage enums, and neutral copy-target classification.
+  targets and additional usage enums. A first copy-target binding establishes
+  other-data classification; later copy bindings preserve an existing type.
   Element/non-element classification and cross-context ownership remain strict.
 - Native buffer copies check both ranges and same-buffer overlap before writing;
   successful copies also update the browser-owned index-validation mirror.
@@ -86,7 +89,7 @@ WebGL1's shader rules or extension admission.
   previously bound unit. Cross-context handles and invalid shapes are rejected.
 - Uniform blocks reflect actual std140 member offsets, matrix strides, shader
   references and active indices. Indexed uniform base/range bindings retain
-  buffers, validate alignment and bounds, and preserve unrelated generic state
+  buffers, validate alignment and integer domains, and preserve unrelated generic state
   during deletion. Base sizes track reallocation; explicit ranges do not. Native
   draw validation rejects missing/undersized block storage before changing pixels.
 - Owned pixel transfers account for aligned row lengths, skip rows/pixels and
@@ -113,8 +116,8 @@ WebGL1's shader rules or extension admission.
   enablement; the linear S3TC extension requires every native DXT family.
   Owned 2D/cube uploads enforce exact block footprints and family-specific mip
   and subregion rules. These complete public WebGL1 slices also run through the
-  shared Window/Worker bindings and contained renderer. They do not depend on
-  admitting an incomplete WebGL2 canvas interface.
+  shared Window/Worker bindings and contained renderer. Their WebGL1 admission
+  is independent of the separate public WebGL2 interface.
 - Staged core compressed storage covers immutable 2D/cube mip chains and array
   layers. Every level/layer is explicitly initialized in bounded encoded tiles;
   BC1 RGBA uses transparent blocks rather than treating opaque zero blocks as
@@ -138,9 +141,11 @@ WebGL1's shader rules or extension admission.
 - GPU framebuffer copies update checked array-layer subregions without changing
   immutable definitions, charging new image storage, or interpreting author
   pixel-store/PBO state. Read and draw framebuffer identities remain separate.
-  True 3D copies are deliberately rejected by this internal opcode: the pinned
-  provider can overwrite untouched slices with stale native debug-fill bytes.
-  This restriction must be removed before coherent public WebGL2 admission.
+  Renderable 3D destination slices use private native framebuffer blits, avoiding
+  the pinned provider's corrupting 2D-to-3D staging path. The provider still
+  validates copy formats, read routes, multisample sources and feedback through
+  its fully validated zero-extent operation, which never executes a copy.
+  Non-renderable destinations remain rejected pending a GPU conversion path.
 - Requesting a promoted WebGL1 extension cannot disable its GLES3 core facility.
   Geometry/shader names are neither advertised nor admitted as legacy objects;
   core derivatives, fragment depth and other operations remain enabled.
@@ -154,34 +159,242 @@ WebGL1's shader rules or extension admission.
 
 These features are tested with native byte/pixel assertions, malformed commands,
 failed-update atomicity, stale locations and peer-context handles. Their internal
-presence is not a complete WebGL2 conformance result or a new HTML5test score.
+presence is not a complete WebGL2 conformance result. Public admission and the
+separately measured HTML5test score are described in the README.
 
-## Remaining admission work
+## Public bindings and remaining verification
 
-The pinned provider also permits undefined contents after framebuffer
-invalidation, which WebGL forbids. No native discard opcode is admitted here.
-Resolve provider initialization/synchronization for both discard and true 3D
-framebuffer copies, and retain the neighboring-slice pixel tests as acceptance.
+Framebuffer invalidation validates its target, attachment domain and signed
+rectangle, then preserves contents. This is the explicitly permitted WebGL no-op
+policy, not a discard optimization; native undefined-content hints are not
+forwarded. Real integer, HDR, depth/stencil, multisample and separate read/draw
+tests establish preservation. True 3D copies now preserve neighboring slices
+through private GPU blits; non-renderable RGB float/integer destinations use
+the bounded native readback and upload path described below.
 
-Queries and sync currently use an internal simulated task-completion opcode in
-native tests. No realm forwards that opcode. Public admission needs a trusted
-host completion hook after the task and its microtask checkpoint; `finish`,
-capture and compositor presentation must not stand in for event-loop completion.
+Queries and sync use a typed owner-thread task boundary, never an author command.
+The host publishes ready native results after document/worker tasks and their
+jobs, including between callbacks in a timer batch. Related document realms
+share the boundary; unrelated workers do not. Owner enumeration uses weak Rust
+bridge references and does not enter V8 merely to publish native results.
+`finish`, nested checkpoints,
+capture and compositor presentation cannot publish results. Tests cover both
+real native fences/queries and task/promise ordering before public admission.
 Error replies from `clientWaitSync` must become `WAIT_FAILED` at the realm boundary.
 
-Transform feedback still rejects deletion of a buffer attached to an active
-capture: the retained native-name model needs a deletion path which preserves
-other objects while allowing native active detachment. The exact GLES3.0 provider
-also rejects array capture at link time; no CPU-generated capture result conceals
-that limitation. These require further admission tests and provider decisions.
+Transform-feedback buffer deletion uses native active detachment while retaining
+inactive containers' storage. A generated, never-bound name reservation prevents
+the pinned ANGLE backend's numeric-ID detachment from aliasing older allocations.
+The reservation retires with the final container reference, without rebuilding
+GPU-written storage from a CPU mirror. Allocation failure loses only its owner
+context. The existing ANGLE backend
+supports transform-feedback arrays when its internal context is GLES3.1. The
+WebGL2 provider now requests that version, while the separate WebGL2 shader
+validator still rejects ESSL310 and the closed command dispatcher exposes no
+GLES3.1-only operations. Array results come from native GPU buffer storage,
+not CPU-generated substitutes. Broader conformance verification remains open.
 
-Coherent realm overloads need their own bindings. Public core entry points need
-versioned realm bindings, not WebGL1 extension objects under new names.
+Core entry points use versioned realm bindings and coherent overloads, not
+WebGL1 extension objects exposed under new names.
 
-Only after the coherent interface is admitted should shared Window/Worker tests,
-unchanged upstream WebGL2 cases and hidden Chromium fixtures establish public
-availability. Running the unchanged sibling game remains a separate end-to-end
+The public realm has a distinct WebGL2 prototype and genuinely branded
+query, sampler, sync, transform-feedback and vertex-array objects. All resource
+interfaces inherit `WebGLObject`; reflection records and uniform locations do
+not. Rejected native deletions do not prematurely retire the JavaScript brand.
+Shared shader reflection records now expose readonly, enumerable prototype
+getters backed by private native-result snapshots. Forged and proxy receivers
+cannot read those slots; deleting a program or losing its context does not
+invalidate an existing record. WebGL operations use Web IDL property descriptors
+in both versions, including the compressed-texture overloads.
+Window and Worker unit tests use ordinary public `getContext('webgl2')`, not
+a private admission shortcut. Native interface constructors remain illegal
+for author code. Captured WeakMap operations protect context/resource/extension
+brands from author replacements of built-in WeakMap methods.
+
+Implemented bindings include indexed buffers, owned-byte buffer readback,
+uniform-block reflection, unsigned/non-square uniforms, integer attributes,
+independent framebuffer routes, typed clears, multisample queries/resolves,
+invalidation, and opaque fences. Buffer and uniform ranges use source elements;
+pixel-buffer transfers use byte offsets. Intrinsic view validation rejects
+detached and out-of-bounds resizable buffers and accepts genuine shared views
+without consulting shadowed author properties or typed-array iterators.
+Native fragment-output reflection uses a fixed ANGLE entry point and bounded
+NUL-free names. Connected-canvas drawing uses the normal paint checkpoint.
+
+Framebuffer-to-volume copies retain ANGLE's complete copy-format, read-route,
+feedback and multisample validation. Renderable destinations use private GPU
+blits. The pinned provider's direct and alternate RGB-float 3D copy paths
+corrupt neighboring layers, so non-renderable RGB float/integer destinations
+use bounded native readback and regional upload instead. This path preserves
+HDR and integer values, clips reads without replacing destination neighbors,
+and restores native pack/unpack/PBO state without changing author bindings.
+It allocates only the copied rectangle and accounts for both simultaneous
+buffers against the context resource budget; it is not a GPU-only fast path.
+
+WebGL2 creation honors `antialias` through real four-sample native
+color and optional depth/stencil renderbuffers. A private single-sample color
+surface receives GLES3 resolves for presentation, client/PBO pixel reads and
+texture copies. Explicit author multisample framebuffers retain their ordinary
+resolve requirements. Queries and granted attributes agree with actual samples;
+the shared restoration path recreates the same kind of drawing buffer. Native
+allocation failure rejects creation rather than claiming ungranted antialiasing.
+All multisample and resolve attachments count against the existing storage
+budgets, including temporary old/new overlap during resize. WebGL1's current
+single-sample admission is unchanged. Native and realm tests measure partial
+diagonal-edge coverage instead of relying on the antialias attribute alone.
+
+Canvas creation and resize requests negotiate a smaller native extent when
+the requested dimensions exceed the bitmap or attachment-storage budget.
+The integer size policy includes multisample storage and resize overlap;
+texture/renderbuffer allocations keep their strict validation. Canvas content
+attributes remain unchanged, while `drawingBufferWidth`/`drawingBufferHeight`
+report actual native storage and bitmap transfers use the snapshot's extent.
+Every successful assignment clears the native bitmap without resetting the
+viewport. If no overlapping storage is available, a smaller existing buffer
+may be reused and cleared; an unsatisfiable shrink retains the existing buffer
+and reports `OUT_OF_MEMORY`. Tests cover zero dimensions, bounded oversized
+requests, memory accounting and preservation of author masks/scissor. Hidden
+Chrome reference captures confirm native-size bitmap transfer and the 1×1
+minimum for zero-sized canvas requests; implementation size caps can differ.
+
+Texture binding work includes typed 2D/volume uploads, immutable storage,
+layer attachments, compressed element-offset/length and PBO overloads, and
+typed pixel readback. The WebGL2 numeric constants are derived from
+the Khronos IDL's literal declarations, with its compatible permission notice
+retained in the table. No executable upstream code was imported. DOM image
+sources now support subrectangles, slice strides, flip/premultiplication, and
+unsigned-byte/float/half-float conversions using the existing decoded Canvas
+snapshots. The private native upload guard restores every unpack scalar and
+rejects a bound PBO rather than changing overloads silently. Packed DOM-image
+uploads now include RGB565, RGBA4, RGB5_A1, RGB10_A2, and R11F_G11F_B10F.
+Synthetic color/low-alpha pixel results are checked against hidden Chrome,
+including the eight-bit intermediate used by packed premultiplied uploads.
+The DOM-upload table is validated natively and remains narrower than the
+application-owned typed-buffer table. `RGBA8`, omitted from the current generated
+Khronos IDL but required by GLES3 storage and the WebGL2 2.0.0 specification,
+is included explicitly. Genuine ImageData and OffscreenCanvas sources have
+private brands; prototype-forged objects cannot become upload sources, including
+during context loss. The existing WebGL1 regression suite must stay green
+throughout; public context availability is not a full-conformance claim.
+
+Shared Window/Worker tests, unchanged upstream WebGL2 cases and hidden Chromium
+fixtures exercise public availability. Running the unchanged sibling game remains a separate end-to-end
 acceptance milestone; see [the game roadmap](gd-clone-compatibility.md).
+
+Indexed uniform and transform-feedback ranges may be declared before allocating
+buffer storage, and may extend beyond it. They are metadata, not permission to
+access nonexistent bytes: real native draws still reject undersized storage.
+Capacity checks use widened arithmetic before admitting oversized point capture.
+
+Repeated reads avoid redundant multisample resolves until a default-buffer write.
+A separate cache retains at most 64 KiB of actual, successfully read GPU pixels
+for an exact tight RGBA8 default-buffer rectangle. Its retained capacity is
+charged against context/process budgets; exhausted optional cache capacity falls
+back to native reads without changing the result. Author FBOs, pack-buffer
+writes, padded and out-of-bounds reads never use this cache. Drawing, clearing,
+resize and unpreserved presentation invalidate pixels. A bounded caller-side
+fence-poll cache retains only successful task-stable status and side-effect-free
+zero-time waits. The trusted task boundary clears it; flush waits always reach
+ANGLE. Query-availability polls follow the same task-stable rule. Repeated
+`finish()` calls may reuse a successful native finish only while no new non-poll
+command has intervened; the first finish still drains real native work. Neither
+finish nor these caches publish completion from inside an author task.
+
+Built-in transform-feedback outputs such as `gl_Position` and `gl_PointSize`
+are admitted as capture names. The reserved-name restriction for author GLSL
+declarations does not apply to selecting existing built-in outputs; ANGLE
+validates their availability at link time. Focused tests read actual captured
+values and require active capture bindings to remain unchanged after errors.
+
+Generated shader sources have a separate 256 KiB admission budget. Logs and
+reflection scratch remain bounded to 32 KiB, translated output to eight times
+the source cap, and retained source/driver storage to the existing aggregate
+resource budgets. Command transport accounts for worst-case JSON escaping
+without truncating author source. Oversized or unbudgeted replacements leave
+previous source and compiler state intact. This is a browser-wide policy, not a
+Three.js-specific exception.
+
+Location queries follow their own reserved-name rules: linked programs return
+`-1` for reserved attribute names and `null` for reserved uniform names, without
+an error. Attempting to bind those names remains `INVALID_OPERATION`; unlinked
+program queries still fail before the absent-location result. Query names use
+the GLSL source character set, rather than accepting every ASCII control or
+rejecting valid array/structure punctuation. This is shared by both context
+versions and checked at the native boundary as well as through public bindings.
+`TexImage`'s integer internal-format parameter uses `INVALID_VALUE` for
+unsupported values; immutable `TexStorage` retains its distinct `INVALID_ENUM`
+contract. Invalid redefinitions preserve storage and accounting.
+
+### Unmodified framework acceptance
+
+The optional [Three.js fixture](../tests/webgl/three-rendering.html) imports a
+caller-supplied, same-origin installed release through its `module` query
+parameter. It does not bundle, patch, downgrade or depend on a CDN copy of the
+library. The locally inspected Three.js 0.185.1 package identifies its upstream
+as `mrdoob/three.js` and includes the MIT license; retain that provenance and
+license when preparing a reference checkout. The fixture itself contains only
+our small acceptance scenes, not copied third-party renderer/shader sources.
+
+Serve the repository and the checked library from one loopback fixture root.
+For example, a URL ending in
+`/better-web-browser/tests/webgl/three-rendering.html?module=/reference-three/build/three.module.js`
+uses an untouched reference checkout beside this repository. Run it with
+`scripts/run-hidden-benchmark.ps1 -FreshProfile -SettleMs 3000`, collecting
+`#results` and `.contract`, then the unified-headless Chromium harness against
+the same URL. All profiles and reports belong in a task-specific G: directory;
+use the owned fixture-server lifecycle and stop it in `finally`.
+
+The cases exercise indexed data textures, instancing, multisampled and float
+targets, volume/array sampling, shadowed and physical material shaders, morph
+targets, half-float multisample resolve followed by post-processing, and resize.
+Every case requires real pixels and no GL error. A successful context lookup or
+the library's own capability flag is not accepted as evidence of rendering.
+This remains a bounded framework test, not proof of sustained game performance
+or that the unchanged sibling game already runs.
+
+The required pinned Khronos manifest keeps the preceding WebGL1 extension cases
+and adds WebGL2 public interfaces, buffers, samplers, queries/fences, vertex
+arrays, uniforms, transform feedback, texture storage/uploads, readback and
+blits. Expectations remain forbidden, and the combined suite must report at
+least 6,000 real assertions. This curated gate is not the entire upstream suite.
+The final local release replay passes 74 cases and 8,696 assertions, including
+the original normalized-16 extension and decoded 10bpc image tests. Upstream
+resources are pinned in the manifest so a fresh CI checkout includes their real
+helper scripts and PNG data; no local replacement helper is served.
+The wider investigation also records gaps in synchronous XHR and blob/nested
+worker loading, rather than marking their tests as expected failures. A layered
+depth/stencil attachment query conflicts with the latest WebGL2 specification's
+different-image rule; the implementation retains that rule rather than changing
+it merely to match a legacy assertion. Those cases are not presented as passes.
+
+### Adapter selection and source precision
+
+Production creation tries a suitable hardware D3D11 adapter before software
+WARP. `powerPreference` uses trusted DXGI adapter selection when ANGLE exposes
+its LUID selection extension; unsupported hints do not prevent ordinary hardware
+creation. `failIfMajorPerformanceCaveat` disables the software fallback. A failed
+attempt never locks a canvas into a context mode. Native unit tests explicitly
+use WARP for reproducibility. Combined texture-unit admission is bounded to 256
+owned binding slots; the query, owned arrays, shader validator and native ESSL
+built-ins retain the same driver limit. A larger unsupported limit rejects that
+backend instead of clamping only the public query.
+
+Genuinely decoded 16-bit integer images retain a private precision sidecar for
+WebGL floating-point and high-precision packed uploads. The existing `image`
+decoder and `moxcms` color transforms are reused; ordinary page painting remains
+RGBA8. Color conversion, bitmap cropping/resizing, alpha handling, structured
+clone and transfer preserve the decoded words before destination quantization.
+Author-visible properties cannot fabricate this provenance. Decode and resize
+scratch remain bounded. This does not add float16 ImageData, HDR display output
+or a higher-precision decoder for every supported image codec.
+
+The pinned ANGLE provider still has an immutable NPOT base-level storage bug
+that can lose the D3D device. Its upstream
+[storage-retention fix](https://chromium.googlesource.com/angle/angle.git/+/248abdcad1e48f1753a5ecba1575e38494afe695%5E%21/)
+has not been backported here. The wider investigation retains this failure;
+the curated gate does not claim coverage of that case. A dependency refresh or
+licensed, reviewed backport remains required rather than padding textures or
+changing the public API's permitted dimensions.
 
 ## Primary contracts and reuse
 

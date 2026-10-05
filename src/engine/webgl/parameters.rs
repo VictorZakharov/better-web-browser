@@ -15,6 +15,9 @@ impl WebGl {
     }
 
     pub(super) fn parameter(&mut self, pname: u32) -> Result<Value> {
+        if pname == gl::MAX_COMBINED_TEXTURE_IMAGE_UNITS {
+            return Ok(json!(self.textures.len()));
+        }
         if self.options.api == super::ApiVersion::Two && [0x8b9a, 0x8b9b].contains(&pname) {
             self.validate_read_framebuffer().map_err(|error| {
                 if error == gl::INVALID_FRAMEBUFFER_OPERATION {

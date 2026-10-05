@@ -78,7 +78,8 @@ impl DocumentRuntime {
                 return Ok(Some("media-error"));
             }
             return match connection.decode_media(bytes).and_then(|decode| {
-                self.install_media_decode(action.node, decode, mime_type.clone())
+                // MSE bytes are supplied by the owning script, not an opaque fetch.
+                self.install_media_decode(action.node, decode, mime_type.clone(), true)
             }) {
                 Ok(()) => Ok(Some("committed")),
                 Err(error) => {
@@ -223,14 +224,17 @@ impl DocumentRuntime {
                 self.apply_playback_state(state);
                 if let Some(frame) = frame {
                     let metadata = frame.metadata;
-                    let key = self.page.install_media_frame(
-                        action.node,
-                        DecodedImage {
-                            width: metadata.width,
-                            height: metadata.height,
-                            bgra: frame.bgra,
-                        },
-                    )?;
+                    let image = DecodedImage {
+                        width: metadata.width,
+                        height: metadata.height,
+                        bgra: frame.bgra,
+                    };
+                    let key = self.page.install_media_frame(action.node, image.clone())?;
+                    if let Some(runtime) = self.script_runtime.as_mut() {
+                        let origin_clean =
+                            self.media.as_ref().is_some_and(|media| media.origin_clean);
+                        runtime.set_media_image(action.node, image, origin_clean);
+                    }
                     self.sent_images.remove(&key);
                     if let Some(playback) = self.media.as_mut() {
                         playback.frame_end_100ns = frame_end(metadata);

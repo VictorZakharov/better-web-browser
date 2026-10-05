@@ -5,6 +5,12 @@ edition = "2024"
 description = "A performance-first browser engine MVP"
 license = "MIT"
 
+[features]
+# Keep the auxiliary runner available in normal developer/release builds.
+# A smoke-only build omits this CLI, not any production browser capability.
+default = ["wpt-harness"]
+wpt-harness = []
+
 [dependencies]
 base64 = "0.22.1"
 # MPL-2.0 AVIF container parser; decode remains in the contained renderer.
@@ -71,6 +77,8 @@ harfrust = "0.5.2"
 swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"] }
 unicode-script = "0.5.8"
 windows = { version = "0.62.2", features = [
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
     "Devices_Enumeration",
     "Devices_Geolocation",
     "Foundation",
@@ -135,6 +143,7 @@ path = "src/main.rs"
 [[bin]]
 name = "wpt-runner"
 path = "src/bin/wpt_runner/main.rs"
+required-features = ["wpt-harness"]
 
 [profile.release]
 opt-level = 3

@@ -19,6 +19,8 @@ mod media_capture;
 mod media_capture_membership;
 mod media_devices;
 mod media_recorder;
+#[cfg(windows)]
+mod media_texture_capture;
 mod notification;
 mod permission;
 mod protocol_handler;

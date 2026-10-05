@@ -55,7 +55,24 @@ impl WebGl {
         Ok(Value::Null)
     }
     pub(super) fn core_framebuffer_status(&self, target: u32) -> Result<u32> {
-        self.core_framebuffer_id(target)?;
+        let framebuffer = self.core_framebuffer_id(target)?;
+        if framebuffer != 0 {
+            for entry in self
+                .objects
+                .get(framebuffer, Kind::Framebuffer)?
+                .framebuffer_attachments
+                .values()
+            {
+                if entry.kind == Kind::Texture {
+                    let texture = self.objects.get(entry.id, Kind::Texture)?;
+                    if texture.immutable_levels != 0
+                        && entry.level as u32 >= texture.immutable_levels
+                    {
+                        return Ok(gl::FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+                    }
+                }
+            }
+        }
         // ANGLE's WebGL2 compatibility validator enforces native format and
         // depth/stencil-image constraints. This path must not inherit WebGL1's
         // legacy-format whitelist or its three independent depth/stencil slots.
@@ -73,6 +90,14 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         let source = c.u(0)?;
+        // GLES3.0 §4.3.1 distinguishes an unknown enum from a recognized
+        // read selector which is incompatible with this framebuffer.
+        if source != gl::NONE
+            && source != gl::BACK
+            && !(gl::COLOR_ATTACHMENT0..=gl::COLOR_ATTACHMENT0 + 31).contains(&source)
+        {
+            return Err(gl::INVALID_ENUM);
+        }
         let native = if self.read_framebuffer == 0 {
             if ![gl::BACK, gl::NONE].contains(&source) {
                 return Err(gl::INVALID_OPERATION);
@@ -84,7 +109,7 @@ impl WebGl {
             }
         } else {
             if source != gl::NONE && !self.color_attachment_allowed(source) {
-                return Err(gl::INVALID_ENUM);
+                return Err(gl::INVALID_OPERATION);
             }
             source
         };

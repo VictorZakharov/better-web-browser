@@ -7,7 +7,14 @@ impl DocumentRuntime {
         node: NodeId,
         decode: RendererMediaDecode,
         mime_type: String,
+        origin_clean: bool,
     ) -> Result<(), String> {
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            if let Some(previous) = self.media.as_ref() {
+                runtime.clear_media_image(previous.node);
+            }
+            runtime.clear_media_image(node);
+        }
         if self.page.select_media_video_track(node, true) {
             self.rendering.dirty = true;
         }
@@ -15,14 +22,15 @@ impl DocumentRuntime {
         let (clock, frame_end, width, height, frames_submitted) = if let Some(frame) = decode.frame
         {
             let metadata = frame.metadata;
-            let key = self.page.install_media_frame(
-                node,
-                DecodedImage {
-                    width: metadata.width,
-                    height: metadata.height,
-                    bgra: frame.bgra,
-                },
-            )?;
+            let image = DecodedImage {
+                width: metadata.width,
+                height: metadata.height,
+                bgra: frame.bgra,
+            };
+            let key = self.page.install_media_frame(node, image.clone())?;
+            if let Some(runtime) = self.script_runtime.as_mut() {
+                runtime.set_media_image(node, image, origin_clean);
+            }
             self.sent_images.remove(&key);
             (
                 metadata.timestamp_100ns.max(0) as u64,
@@ -58,6 +66,7 @@ impl DocumentRuntime {
             encoded_bytes: report.encoded_bytes,
             frames_submitted,
             dropped_frames: 0,
+            origin_clean,
         });
         self.media_failure = None;
         self.dispatch_media_state(0, "loaded")?;
@@ -110,14 +119,17 @@ impl DocumentRuntime {
             playback.width = metadata.width;
             playback.height = metadata.height;
             playback.frame_end_100ns = frame_end(metadata);
-            let key = self.page.install_media_frame(
-                playback.node,
-                DecodedImage {
-                    width: metadata.width,
-                    height: metadata.height,
-                    bgra: frame.bgra,
-                },
-            )?;
+            let image = DecodedImage {
+                width: metadata.width,
+                height: metadata.height,
+                bgra: frame.bgra,
+            };
+            let key = self
+                .page
+                .install_media_frame(playback.node, image.clone())?;
+            if let Some(runtime) = self.script_runtime.as_mut() {
+                runtime.set_media_image(playback.node, image, playback.origin_clean);
+            }
             self.sent_images.remove(&key);
         }
         let ended = playback.ended;

@@ -97,9 +97,11 @@ impl WebGl {
             )
         };
         self.driver_result()?;
+        let id = *self.core_buffer_bindings.get(&PIXEL_PACK).unwrap_or(&0);
+        self.objects.get_mut(id, Kind::Buffer)?.buffer_mirror_valid = false;
         // This deliberately does not synchronously map the GPU buffer. The
         // CPU mirror is used for element-index checks; a pixel buffer cannot
-        // belong to that class. getBufferSubData reads the native truth on demand.
+        // belong to that class. getBufferSubData reads native truth on demand.
         Ok(Value::Null)
     }
 }

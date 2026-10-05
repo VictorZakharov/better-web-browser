@@ -11,6 +11,7 @@ pub(crate) struct Contexts;
 #[cfg(not(windows))]
 impl Contexts {
     pub(crate) fn clear(&mut self) {}
+    pub(crate) fn complete_task(&mut self) {}
 }
 
 pub(crate) fn dispatch(

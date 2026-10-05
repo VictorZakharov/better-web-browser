@@ -7,13 +7,33 @@ impl WebGl {
         height: u32,
         options: Options,
     ) -> std::result::Result<Self, String> {
-        let native = NativeContext::for_api(options.api)?;
+        // Unit tests retain the same real WARP provider on every machine.
+        // Release browser/harness runs exercise production hardware selection.
+        let software_only = cfg!(test);
+        let preferred = if software_only {
+            None
+        } else {
+            adapter_selection::preferred(options.power_preference)
+        };
+        backend_policy::admit(options, software_only, preferred, |backend| {
+            Self::new_with_backend(width, height, options, backend)
+        })
+    }
+
+    fn new_with_backend(
+        width: u32,
+        height: u32,
+        options: Options,
+        backend: backend_policy::Backend,
+    ) -> std::result::Result<Self, String> {
+        let native = NativeContext::for_backend(options.api, backend)?;
         let core = if options.api == ApiVersion::Two {
             Some(core_entries::CoreEntries::load()?)
         } else {
             None
         };
-        let surface = Surface::new(width, height, options)?;
+        let surface = Surface::new(width, height, options, core.as_ref())?;
+        let surface_bytes = surface.bytes();
         unsafe {
             gl::ClearColor(0.0, 0.0, 0.0, 0.0);
         }
@@ -24,26 +44,24 @@ impl WebGl {
             gl::GetIntegerv(gl::MAX_VERTEX_ATTRIBS, &mut count);
             gl::GetIntegerv(gl::MAX_COMBINED_TEXTURE_IMAGE_UNITS, &mut units);
         }
-        if !(8..=32).contains(&count) || !(8..=64).contains(&units) {
+        if !(8..=32).contains(&count) || !(8..=256).contains(&units) {
             return Err("ANGLE resource limits are outside the admitted WebGL baseline".into());
         }
+        // Keep the query, owned slots and shader built-ins on the same native
+        // limit. Admission above bounds the arrays to 256 slots; clamping only
+        // the JavaScript query would disagree with the native ESSL compiler.
         let mut context = Self {
             native,
             core,
             core_buffer_bindings: HashMap::new(),
             surface,
+            readback_cache: readback_cache::Cache::default(),
             objects: Objects::new(options.api),
             default_draw_buffer: gl::BACK,
             errors: VecDeque::new(),
             options,
             stencil_masks: stencil_masks::StencilMasks::default(),
-            resource_bytes: width as usize
-                * height as usize
-                * if options.depth || options.stencil {
-                    8
-                } else {
-                    4
-                },
+            resource_bytes: surface_bytes,
             resource_limit: MAX_RESOURCE_BYTES,
             array_buffer: 0,
             element_buffer: 0,

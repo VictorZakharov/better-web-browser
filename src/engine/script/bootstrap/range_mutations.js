@@ -53,7 +53,7 @@
     };
     const rangeBeforeMergingText = (kept, removed, appendedAt) => {
         const parent = removed.parentNode;
-        const index = Array.from(parent.childNodes).indexOf(removed);
+        const index = host('indexOfChild', nodeId(parent), nodeId(removed));
         forEachLiveRangeBoundary(boundary => {
             if (boundary.node === removed) {
                 boundary.node = kept;

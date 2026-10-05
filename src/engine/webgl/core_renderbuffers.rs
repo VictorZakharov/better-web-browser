@@ -19,6 +19,9 @@ pub(super) fn storage_bytes(format: u32) -> Result<usize> {
 }
 impl WebGl {
     pub(super) fn core_renderbuffer_bytes(&self, format: u32) -> Result<usize> {
+        if let Some(bytes) = self.normalized_renderbuffer_bytes(format)? {
+            return Ok(bytes);
+        }
         if [0x822d, 0x822e, 0x822f, 0x8230, 0x881a, 0x8814, 0x8c3a].contains(&format) {
             let half = [0x822d, 0x822f, 0x881a].contains(&format)
                 && self

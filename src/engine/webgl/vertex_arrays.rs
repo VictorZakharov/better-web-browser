@@ -141,6 +141,13 @@ impl WebGl {
         if self.objects.get(id, Kind::Buffer)?.pending_delete {
             return Ok(Value::Null);
         }
+        if self.options.api == super::ApiVersion::Two {
+            // Native GLES3 deletion detaches even an active transform-feedback
+            // binding. Inactive VAO/feedback objects retain their native storage;
+            // do not rebuild them from a deleted, potentially recycled name.
+            self.objects.delete_native_buffer_name(id)?;
+            self.driver_result()?;
+        }
         self.detach_transform_buffer(id)?;
         // Mark deletion only after detaching current-array references. Inactive
         // arrays keep both driver storage and the matching CPU validation mirror.
@@ -165,7 +172,7 @@ impl WebGl {
                 self.objects.switch_buffer(id, 0)?;
             }
         }
-        if self.vertex_arrays.default_native != 0 {
+        if self.vertex_arrays.default_native != 0 && self.options.api == super::ApiVersion::One {
             // GLES2 cannot set an attribute's buffer binding to zero without
             // client arrays. Rebuild this array from checked browser state;
             // this avoids prematurely deleting storage still used by peers.

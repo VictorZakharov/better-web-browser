@@ -16,6 +16,14 @@ library, custom GLSL parser, or validation-only NULL renderer. ANGLE provides th
 GLSL compiler and D3D11 renderer. The initial policy uses D3D11 WARP, which performs
 actual software rendering and supports hidden CI without a native window.
 
+Production now prefers a real hardware D3D11 adapter and falls back to WARP
+when hardware admission fails. Trusted DXGI adapter enumeration supplies power
+preference hints where ANGLE supports LUID selection; author code never supplies
+an adapter handle or native display attribute. Strict
+`failIfMajorPerformanceCaveat` creation disables software fallback. Native unit
+tests remain deterministic WARP runs. See the
+[adapter policy and current limits](webgl2-foundations.md#adapter-selection-and-source-precision).
+
 The published package's `UPSTREAM`, root license, native ANGLE license, Cargo
 manifest, build script and relevant shader/context implementations were inspected.
 That is a provenance/build-policy review, not a claim of a comprehensive native
@@ -47,9 +55,9 @@ float/half-float and sRGB formats use their GLES2 extension tokens directly.
 The separate WebGL1 validator enforces author extension admission. Its reversible
 name prefix is removed from validated ESSL before native recompilation, preserving
 legal 256-byte identifiers and public reflection without doubling their length.
-WebGL2 remains unavailable pending its separate API and backend contract. Its
-[internal GLES3 foundations](webgl2-foundations.md) are tested without advertising
-a partial context. See the
+WebGL2 has a separate [public GLES3 baseline](webgl2-foundations.md), with
+version-locked Canvas/OffscreenCanvas admission and real native rendering. Neither
+version claims full upstream conformance. See the
 [texture/HDR contract](webgl-texture-formats.md) for storage and validation details.
 
 ## Implemented native boundary
@@ -75,7 +83,8 @@ a partial context. See the
   author's framebuffer, clear values, scissor and write masks afterward.
 
 Initial limits: eight contexts per realm and sixteen per native owner, 1,024 live objects per context,
-64 MiB resource budget per context and 128 MiB across native contexts, 16 MiB uploads, 32 KiB shader source,
+64 MiB resource budget per context and 128 MiB across native contexts, 16 MiB uploads,
+256 KiB shader source, independently capped 32 KiB logs/reflection scratch,
 one million vertices per draw, four million drawing-buffer pixels and maximum
 admitted dimensions of 4,096. The budget includes drawing-buffer attachments and both native buffer
 storage and its CPU mirror. Charges are not reclaimed on deletion because GLES can retain references after
@@ -120,7 +129,7 @@ contracts against unified-headless Chrome, including indexed textured geometry
 and Canvas-copy orientation. A required renderer smoke test runs the same eighteen
 checks inside the AppContainer and verifies both owned bitmaps across IPC.
 Full upstream WebGL conformance, accelerated adapters
-and wider resource limits remain follow-up work. No WebGL 2, WebGPU, WebVR, WebXR
+and wider resource limits remain follow-up work. No WebGPU, WebVR, WebXR
 or unsupported extension is advertised. Measurements are recorded in the README
 and PR; there is no score-specific browser behavior.
 

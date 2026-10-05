@@ -14,7 +14,8 @@
     const webGlImagePixels = (context, source, format, type) => {
         // Canvas imageSourceSnapshot admits only decoded same-origin/CORS-readable images.
         // WebGL never obtains opaque network pixels through a separate native decoding path.
-        const snapshot = imageSourceSnapshot(source, true);
+        const snapshot = webGlSourceSnapshot(context, source);
+        if (!snapshot) return null;
         if (![0x1401,0x1406,0x8d61].includes(type) || ![0x1908, 0x1907, 0x1906, 0x1909, 0x190a,0x8c40,0x8c42].includes(format)) {
             webGlError(context, 0x0502); return null;
         }

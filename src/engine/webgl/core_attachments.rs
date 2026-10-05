@@ -48,6 +48,20 @@ impl WebGl {
             return Err(gl::INVALID_OPERATION);
         }
         let point = c.u(1)?;
+        let layered = c.op == "framebufferTextureLayer";
+        if (gl::COLOR_ATTACHMENT0..=gl::COLOR_ATTACHMENT0 + 31).contains(&point)
+            && !self.color_attachment_allowed(point)
+        {
+            // GLES3's layered attachment command distinguishes a recognized
+            // but unavailable color slot. Texture2D/Renderbuffer instead use
+            // INVALID_ENUM for points outside MAX_COLOR_ATTACHMENTS.
+            // Khronos ES3 reference pages: glFramebufferTexture2D/Layer.
+            return Err(if layered {
+                gl::INVALID_OPERATION
+            } else {
+                gl::INVALID_ENUM
+            });
+        }
         if !self.color_attachment_allowed(point)
             && ![
                 gl::DEPTH_ATTACHMENT,
@@ -58,7 +72,6 @@ impl WebGl {
         {
             return Err(gl::INVALID_ENUM);
         }
-        let layered = c.op == "framebufferTextureLayer";
         let texture = layered || c.op == "framebufferTexture2D";
         let kind = if texture {
             Kind::Texture
@@ -66,7 +79,9 @@ impl WebGl {
             Kind::Renderbuffer
         };
         let id = c.u(if layered { 2 } else { 3 })?;
-        let level = if texture {
+        // GLES3.0 §4.4.2: null texture detachment ignores level, face and
+        // layer, including negative or otherwise impossible image indices.
+        let level = if texture && id != 0 {
             c.n(if layered { 3 } else { 4 })?
         } else {
             0
@@ -74,7 +89,11 @@ impl WebGl {
         if !(0..=12).contains(&level) {
             return Err(gl::INVALID_VALUE);
         }
-        let layer = if layered { Some(c.n(4)?) } else { None };
+        let layer = if layered && id != 0 {
+            Some(c.n(4)?)
+        } else {
+            None
+        };
         if layer.is_some_and(|layer| layer < 0) {
             return Err(gl::INVALID_VALUE);
         }
@@ -87,7 +106,7 @@ impl WebGl {
         } else {
             c.u(2)?
         };
-        if texture {
+        if texture && id != 0 {
             if layered {
                 if ![VOLUME, ARRAY].contains(&image_target) {
                     return Err(gl::INVALID_OPERATION);
@@ -98,7 +117,7 @@ impl WebGl {
             } else if image_target != gl::TEXTURE_2D && !(0x8515..=0x851a).contains(&image_target) {
                 return Err(gl::INVALID_ENUM);
             }
-        } else if image_target != gl::RENDERBUFFER {
+        } else if !texture && image_target != gl::RENDERBUFFER {
             return Err(gl::INVALID_ENUM);
         }
         let attachment = if id == 0 {
@@ -163,6 +182,25 @@ impl WebGl {
         point: u32,
         entry: Option<Attachment>,
     ) -> Result<()> {
+        // WebGL2 inherits GLES3.0 attachment semantics. Our GLES3.1 provider
+        // additionally rejects immutable levels outside allocated storage;
+        // GLES3.0 permits the attachment and makes the framebuffer incomplete.
+        // Keep the exact browser image identity, but detach this nonexistent
+        // native image so the stricter provider cannot retain an old image.
+        let entry = if let Some(entry) = entry {
+            if entry.kind == Kind::Texture {
+                let object = self.objects.get(entry.id, Kind::Texture)?;
+                if object.immutable_levels != 0 && entry.level as u32 >= object.immutable_levels {
+                    None
+                } else {
+                    Some(entry)
+                }
+            } else {
+                Some(entry)
+            }
+        } else {
+            None
+        };
         unsafe {
             match entry {
                 Some(entry) if entry.kind == Kind::Texture && entry.layer.is_some() => {

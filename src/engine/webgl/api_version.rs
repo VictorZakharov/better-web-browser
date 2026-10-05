@@ -26,6 +26,16 @@ impl ApiVersion {
         }
     }
 
+    pub(super) fn provider_minor(self) -> i32 {
+        match self {
+            Self::One => 0,
+            // ANGLE gates native transform-feedback array capture on GLES3.1.
+            // The separate SH_WEBGL2_SPEC validator still rejects ESSL310, and
+            // the command whitelist never grants GLES3.1 author entry points.
+            Self::Two => 1,
+        }
+    }
+
     pub(super) fn renderable_bit(self) -> i32 {
         match self {
             Self::One => 0x0004, // EGL_OPENGL_ES2_BIT
@@ -70,6 +80,8 @@ mod tests {
         }
         assert_eq!(ApiVersion::One.client_version(), 2);
         assert_eq!(ApiVersion::Two.client_version(), 3);
+        assert_eq!(ApiVersion::One.provider_minor(), 0);
+        assert_eq!(ApiVersion::Two.provider_minor(), 1);
         assert_eq!(ApiVersion::One.renderable_bit(), 4);
         assert_eq!(ApiVersion::Two.renderable_bit(), 64);
     }

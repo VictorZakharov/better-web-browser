@@ -54,23 +54,27 @@
             throw new DOMException('ImageBitmap exceeds the bitmap budget', 'NotSupportedError');
     };
     const flipBitmapVertically = source => {
+        const pixels16=flipBitmapWords(source);
         const pixels = new Uint8ClampedArray(source.pixels.length);
         const stride = source.width * 4;
         for (let row = 0; row < source.height; row++)
             pixels.set(source.pixels.subarray(row * stride, (row + 1) * stride),
                 (source.height - row - 1) * stride);
-        return {width: source.width, height: source.height, pixels};
+        return {width: source.width, height: source.height,
+            pixels:pixels16?narrowBitmapWords(pixels16):pixels,pixels16};
     };
     const applyBitmapPremultiplication = source => {
+        const pixels16=premultiplyBitmapWords(source);
         const pixels = new Uint8ClampedArray(source.pixels);
         for (let offset = 0; offset < pixels.length; offset += 4) {
             const alpha = pixels[offset + 3];
             for (let channel = 0; channel < 3; channel++)
                 pixels[offset + channel] = Math.floor((pixels[offset + channel] * alpha + 127) / 255);
         }
-        return {...source, pixels, premultiplied: true};
+        return {...source, pixels:pixels16?narrowBitmapWords(pixels16):pixels,pixels16,premultiplied:true};
     };
     const bitmapStraightPixels = state => {
+        if (state.pixels16) return narrowBitmapWords(copyBitmapWords(state));
         const pixels = new Uint8ClampedArray(state.pixels);
         if (state.premultiplied) for (let offset = 0; offset < pixels.length; offset += 4) {
             const alpha = pixels[offset + 3];
@@ -82,15 +86,15 @@
     };
     const resizeImageBitmap = (source, width, height, quality) => {
         if (width === source.width && height === source.height) return source;
-        if (quality !== 'pixelated') return resampleCanvasBitmap(source, width, height, true);
+        if (quality !== 'pixelated') return resizeBitmapSamples(source, width, height, true);
         // HTML's pixelated filter: nearest-neighbor to the closest positive
         // integer multiple, then bilinear to the exact requested dimensions.
         const intermediateWidth = source.width * Math.max(1, Math.round(width / source.width));
         const intermediateHeight = source.height * Math.max(1, Math.round(height / source.height));
         bitmapPixelBudget(intermediateWidth, intermediateHeight);
-        const intermediate = resampleCanvasBitmap(source, intermediateWidth, intermediateHeight, false);
+        const intermediate = resizeBitmapSamples(source, intermediateWidth, intermediateHeight, false);
         return width === intermediateWidth && height === intermediateHeight ? intermediate :
-            resampleCanvasBitmap(intermediate, width, height, true);
+            resizeBitmapSamples(intermediate, width, height, true);
     };
     const formatImageBitmap = (source, options) => {
         const width = options.resizeWidth ?? (options.resizeHeight === undefined ? source.width :

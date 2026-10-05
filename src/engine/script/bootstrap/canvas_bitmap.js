@@ -12,12 +12,12 @@
     };
     const closeImageBitmap = bitmap => {
         const state = imageBitmapState(bitmap);
-        state.width = 0; state.height = 0; state.pixels = null;
+        state.width = 0; state.height = 0; state.pixels = null; state.pixels16 = null;
     };
     class ImageBitmap {
-        constructor(token, width, height, pixels, premultiplied) {
+        constructor(token, width, height, pixels, premultiplied, pixels16) {
             if (token !== imageBitmapToken) throw new TypeError('Illegal constructor');
-            imageBitmapStates.set(this, { width, height, pixels, premultiplied });
+            imageBitmapStates.set(this, { width, height, pixels, premultiplied, pixels16 });
         }
         get width() { const state = imageBitmapState(this); return state.pixels ? state.width : 0; }
         get height() { const state = imageBitmapState(this); return state.pixels ? state.height : 0; }
@@ -28,11 +28,12 @@
         if (!state.pixels) throw new DOMException('ImageBitmap is closed', 'InvalidStateError');
         return state;
     };
-    const makeImageBitmap = (width, height, pixels, premultiplied = false) => {
+    const makeImageBitmap = (width, height, pixels, premultiplied = false, pixels16 = null) => {
         if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0 ||
-            width * height > MAX_CANVAS_PIXELS || pixels.length !== width * height * 4)
+            width * height > MAX_CANVAS_PIXELS || pixels.length !== width * height * 4 ||
+            pixels16 && pixels16.length !== pixels.length)
             throw new DOMException('ImageBitmap exceeds the bitmap budget', 'NotSupportedError');
-        return new ImageBitmap(imageBitmapToken, width, height, pixels, premultiplied);
+        return new ImageBitmap(imageBitmapToken, width, height, pixels, premultiplied, pixels16);
     };
     const canvasBitmapSnapshot = canvas => {
         const state = stateForCanvas(canvas);
@@ -45,23 +46,28 @@
         if (videoFrameStates.has(source)) return videoFrameSnapshot(source);
         if (imageBitmapStates.has(source)) {
             const state = imageBitmapPixels(source);
-            return { width: state.width, height: state.height, pixels: bitmapStraightPixels(state) };
+            const pixels16=copyBitmapWords(state);
+            return { width: state.width, height: state.height,
+                pixels: pixels16?narrowBitmapWords(pixels16):bitmapStraightPixels(state), pixels16 };
         }
-        if (source instanceof HTMLCanvasElement || source instanceof OffscreenCanvas)
+        if (offscreenCanvasBrands.has(source) || source instanceof HTMLCanvasElement &&
+            typeof nodeHandles !== 'undefined' && nodeHandles.has(source))
             return canvasBitmapSnapshot(source);
-        if (source instanceof HTMLImageElement) {
+        if (typeof HTMLImageElement !== 'undefined' && source instanceof HTMLImageElement &&
+            nodeHandles.has(source)) {
             // Only decoded, same-origin/CORS-readable bytes may enter Canvas.
             // Opaque image responses remain inaccessible through this path.
             const decoded = detachedImageLoads.get(source)?.decoded;
             if (!decoded || !source.complete)
                 throw new DOMException('Image has no available bitmap', 'InvalidStateError');
             return { width: decoded.width, height: decoded.height,
-                pixels: new Uint8ClampedArray(decoded.pixels) };
+                pixels: new Uint8ClampedArray(decoded.pixels), pixels16: decoded.pixels16 };
         }
-        if (allowImageData && source instanceof ImageData) {
-            if (!source.data.byteLength)
+        if (allowImageData && imageDataStates.has(source)) {
+            const state=imageDataStates.get(source);
+            if (!state.data.byteLength)
                 throw new DOMException('ImageData buffer is detached', 'InvalidStateError');
-            return { width: source.width, height: source.height, pixels: new Uint8ClampedArray(source.data) };
+            return { width: state.width, height: state.height, pixels: new Uint8ClampedArray(state.data) };
         }
         throw new TypeError('Unsupported Canvas image source');
     };
@@ -70,6 +76,7 @@
         if (width < 0) { x += width; width = -width; }
         if (height < 0) { y += height; height = -height; }
         bitmapPixelBudget(width, height);
+        const pixels16=cropBitmapWords(source,x,y,width,height);
         const pixels = new Uint8ClampedArray(width * height * 4);
         for (let row = 0; row < height; row++) for (let column = 0; column < width; column++) {
             const fromX = x + column, fromY = y + row;
@@ -78,7 +85,7 @@
             pixels.set(source.pixels.subarray((fromY * source.width + fromX) * 4,
                 (fromY * source.width + fromX) * 4 + 4), offset);
         }
-        return { width, height, pixels };
+        return { width, height, pixels:pixels16?narrowBitmapWords(pixels16):pixels, pixels16 };
     };
     globalThis.createImageBitmap = function createImageBitmap(source, ...arguments_) {
         if (arguments.length === 0) throw new TypeError('createImageBitmap requires an image source');
@@ -96,14 +103,19 @@
             const finish = snapshot => {
                 const region = rectangle ? cropImageBitmap(snapshot, ...rectangle) : snapshot;
                 const output = formatImageBitmap(region, options);
-                return makeImageBitmap(output.width, output.height, output.pixels, output.premultiplied);
+                // No-transform creation still owns a snapshot, not the image's
+                // decoder storage. Closing/transferring one bitmap cannot affect peers.
+                bitmapPrecisionBudget(output,output.width,output.height);
+                return makeImageBitmap(output.width, output.height, output.pixels, output.premultiplied,
+                    output.pixels16?new preciseBitmapWords(output.pixels16):null);
             };
             const bytes = readImageBitmapBlob(source);
             if (bytes) return Promise.resolve().then(() => {
                 const decoded = host('canvasDecode', bytes,
-                    options.imageOrientation !== 'from-image', options.colorSpaceConversion === 'none');
+                    options.imageOrientation !== 'from-image', options.colorSpaceConversion === 'none', true);
                 if (!decoded) throw new DOMException('Image could not be decoded', 'InvalidStateError');
-                return finish({ width: decoded[0], height: decoded[1], pixels: decoded[2] });
+                return finish({ width: decoded[0], height: decoded[1], pixels: decoded[2],
+                    pixels16:decodedBitmapWords(decoded[3]) });
             });
             const snapshot = imageSourceSnapshot(source, true);
             return Promise.resolve().then(() => finish(snapshot));

@@ -6,6 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 mod creation;
+mod gpu_tasks;
 mod navigation;
 mod observer_geometry;
 mod relations;
@@ -19,6 +20,7 @@ pub(super) struct FrameTree {
     children: RefCell<HashMap<NodeId, ChildRealm>>,
     wrappers: Rc<super::node_wrappers::Wrappers>,
     documents: RefCell<HashMap<NodeId, v8::Weak<v8::Context>>>,
+    gpu_hosts: RefCell<HashMap<NodeId, Weak<HostBridge>>>,
     pub(super) messages: super::messaging::Messages,
     pub(super) ports: Rc<super::ports::Ports>,
     pub(super) prefer_port_message: Cell<bool>,
@@ -151,6 +153,11 @@ pub(super) fn register_document(
     tree: &FrameTree,
 ) {
     if let Some(host) = super::node_wrappers::host(context) {
+        if let Some(bridge) = context.get_slot::<HostBridge>() {
+            tree.gpu_hosts
+                .borrow_mut()
+                .insert(host.borrow().document.id(), Rc::downgrade(&bridge));
+        }
         tree.documents
             .borrow_mut()
             .insert(host.borrow().document.id(), v8::Weak::new(scope, context));

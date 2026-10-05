@@ -12,6 +12,7 @@
             super(canvas);
         }
     }
+    const offscreenCanvasBrands = new WeakSet();
     class OffscreenCanvas extends EventTarget {
         constructor(width, height) {
             super();
@@ -19,6 +20,7 @@
             this.__width = canvasUnsignedDimension(width);
             this.__height = canvasUnsignedDimension(height);
             this.__detached = false;
+            offscreenCanvasBrands.add(this);
             stateForCanvas(this);
         }
         get width() { return this.__detached ? 0 : this.__width; }
@@ -36,12 +38,13 @@
         getContext(contextId, options = undefined) {
             if (this.__detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
             const requested = String(contextId);
-            const mode = requested === 'experimental-webgl' ? 'webgl' : requested;
+            const mode = ['experimental-webgl','webgl2'].includes(requested) ? 'webgl' : requested;
             if (!['2d', 'bitmaprenderer', 'webgl'].includes(mode)) return null;
             const state = stateForCanvas(this);
             if (state.mode !== 'none' && state.mode !== mode) return null;
-            if (state.context) return state.context;
-            const context = mode === 'webgl' ? createWebGlContext(this, options) : mode === '2d' ?
+            if (state.context) return mode === 'webgl' &&
+                webGlState(state.context).api !== (requested === 'webgl2' ? 'webgl2' : 'webgl1') ? null : state.context;
+            const context = mode === 'webgl' ? createWebGlContext(this, options, requested === 'webgl2' ? 'webgl2' : 'webgl1') : mode === '2d' ?
                 new OffscreenCanvasRenderingContext2D(offscreenContextToken, this) :
                 new ImageBitmapRenderingContext(canvasBitmapContextToken, this, options);
             if (!context) return null;
@@ -105,7 +108,9 @@
                     mode: state.mode, kind: 'offscreencanvas' };
             }
             const state = imageBitmapPixels(value);
+            bitmapPrecisionBudget(state,state.width,state.height);
             return { width: state.width, height: state.height, pixels: state.pixels,
+                precise:encodedBitmapWords(state.pixels16),
                 premultiplied: state.premultiplied, kind: 'imagebitmap' };
         },
         detach(value) {
@@ -115,13 +120,16 @@
                 if (state) { state.pixels = null; state.context = null; }
             } else closeImageBitmap(value);
         },
-        receive(record, bytes) {
+        receive(record, bytes, preciseBytes = null) {
             const width = Number(record.w), height = Number(record.h);
             if (!Number.isInteger(width) || !Number.isInteger(height) || width < 0 || height < 0 ||
                 width * height > MAX_CANVAS_PIXELS || bytes.length !== width * height * 4)
                 throw new DOMException('Invalid bitmap transfer', 'DataCloneError');
             const pixels = new Uint8ClampedArray(bytes);
-            if (record.t === 'imagebitmap') return makeImageBitmap(width, height, pixels, record.a === true);
+            if (preciseBytes && (record.t !== 'imagebitmap' || preciseBytes.byteLength!==width*height*8))
+                throw new DOMException('Invalid precise bitmap transfer','DataCloneError');
+            if (record.t === 'imagebitmap') return makeImageBitmap(width, height, pixels,
+                record.a === true,decodedBitmapWords(preciseBytes));
             if (record.t !== 'offscreencanvas')
                 throw new DOMException('Unknown bitmap transfer', 'DataCloneError');
             const canvasWidth = record.cw ?? width, canvasHeight = record.ch ?? height;

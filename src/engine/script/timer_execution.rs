@@ -150,6 +150,11 @@ pub(super) fn settle_timer_slice(
         outcome.record_timing("JavaScript timer promise jobs", jobs_started.elapsed());
         super::module_lifecycle::drain(context, host, outcome);
         drain_dynamic_scripts(context, host, outcome, dynamic_script_loader, total_bytes);
+        if let Err(error) = context.complete_gpu_task() {
+            outcome.errors.push(format!(
+                "JavaScript timer {timer_id} GPU task boundary: {error}"
+            ));
+        }
         // A mutation is not itself a rendering opportunity. The bounded slice may run several
         // ready tasks; CSSOM View reads synchronously flush pending invalidation when needed.
         // https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model

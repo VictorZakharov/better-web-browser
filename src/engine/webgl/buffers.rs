@@ -19,15 +19,33 @@ impl WebGl {
                 if ![gl::ARRAY_BUFFER, gl::ELEMENT_ARRAY_BUFFER].contains(&target) && !extra {
                     return Err(gl::INVALID_ENUM);
                 }
-                if id != 0 {
-                    let object = self.objects.get_mut(id, Kind::Buffer)?;
-                    let class = super::core_buffers::classification(target);
-                    if object.buffer_target != 0 && class != 0 && object.buffer_target != class {
+                let class = if id == 0 {
+                    0
+                } else {
+                    let previous = self.objects.get(id, Kind::Buffer)?.buffer_target;
+                    let requested = super::core_buffers::classification(target);
+                    if previous != 0 && requested != 0 && previous != requested {
                         return Err(gl::INVALID_OPERATION);
                     }
-                    if class != 0 {
-                        object.buffer_target = class;
+                    // Copy targets preserve an established class, but a first
+                    // copy-target binding establishes the "other data" class.
+                    // WebGL2 §5.1 Buffer Object Binding.
+                    if requested == 0 {
+                        if previous == 0 {
+                            gl::ARRAY_BUFFER
+                        } else {
+                            previous
+                        }
+                    } else {
+                        requested
                     }
+                };
+                unsafe {
+                    gl::BindBuffer(target, native);
+                }
+                self.driver_result()?;
+                if id != 0 {
+                    self.objects.get_mut(id, Kind::Buffer)?.buffer_target = class;
                 }
                 match target {
                     gl::ARRAY_BUFFER => self.array_buffer = id,
@@ -39,9 +57,6 @@ impl WebGl {
                         self.core_buffer_bindings.insert(target, id);
                     }
                     _ => return Err(gl::INVALID_ENUM),
-                }
-                unsafe {
-                    gl::BindBuffer(target, native);
                 }
             }
             "bufferData" => {
@@ -71,6 +86,7 @@ impl WebGl {
                 let object = self.objects.get_mut(id, Kind::Buffer)?;
                 object.capacity = previous.max(size);
                 object.bytes = data;
+                object.buffer_mirror_valid = true;
             }
             "bufferSubData" => {
                 let target = c.u(0)?;
@@ -91,7 +107,11 @@ impl WebGl {
                     );
                 }
                 self.driver_result()?;
-                self.objects.get_mut(id, Kind::Buffer)?.bytes[offset..end].copy_from_slice(data);
+                let object = self.objects.get_mut(id, Kind::Buffer)?;
+                object.bytes[offset..end].copy_from_slice(data);
+                if offset == 0 && end == object.bytes.len() {
+                    object.buffer_mirror_valid = true;
+                }
             }
             "vertexAttribPointer" => return self.vertex_pointer(c),
             "enableVertexAttribArray" | "disableVertexAttribArray" => {
@@ -112,7 +132,7 @@ impl WebGl {
                 let count = c.u(2)?;
                 if count > MAX_DRAW_VERTICES
                     || first
-                        .checked_add(count)
+                        .checked_add(count.saturating_sub(1))
                         .is_none_or(|end| end > i32::MAX as u32)
                 {
                     return Err(gl::INVALID_VALUE);

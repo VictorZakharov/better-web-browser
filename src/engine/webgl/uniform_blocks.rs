@@ -4,9 +4,7 @@ use serde_json::{Value, json};
 use std::ffi::CString;
 
 pub(super) fn name(value: &str) -> Result<CString> {
-    if value.len() > 1024 {
-        return Err(gl::INVALID_VALUE);
-    }
+    super::shader_names::validate(value, 1024)?;
     CString::new(value).map_err(|_| gl::INVALID_VALUE)
 }
 pub(super) fn program_count(program: u32, pname: u32) -> Result<u32> {
@@ -26,6 +24,12 @@ impl WebGl {
         let program = self.objects.get(c.u(0)?, Kind::Program)?.native;
         let core = self.core.as_ref().ok_or(gl::INVALID_OPERATION)?;
         match c.op.as_str() {
+            "getFragDataLocation" => {
+                let name = name(&c.text)?;
+                let location = unsafe { (core.frag_data_location)(program, name.as_ptr()) };
+                self.driver_result()?;
+                Ok(json!(location))
+            }
             "getUniformIndices" => {
                 let names: Vec<String> =
                     serde_json::from_str(&c.text).map_err(|_| gl::INVALID_VALUE)?;

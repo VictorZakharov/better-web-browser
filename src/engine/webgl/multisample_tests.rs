@@ -3,14 +3,14 @@ use super::api_version_tests::{call, version_two};
 use super::framebuffer_guard::{DRAW, READ};
 use super::*;
 
-fn framebuffer(context: &mut WebGl, target: u32) -> u32 {
+pub(super) fn framebuffer(context: &mut WebGl, target: u32) -> u32 {
     let id = call(context, "createFramebuffer", &[], "")
         .as_u64()
         .unwrap() as u32;
     call(context, "bindFramebuffer", &[target as i64, id as i64], "");
     id
 }
-fn renderbuffer(context: &mut WebGl, samples: i64) -> u32 {
+pub(super) fn renderbuffer(context: &mut WebGl, samples: i64) -> u32 {
     let id = call(context, "createRenderbuffer", &[], "")
         .as_u64()
         .unwrap() as u32;
@@ -28,7 +28,7 @@ fn renderbuffer(context: &mut WebGl, samples: i64) -> u32 {
     );
     id
 }
-fn attach(context: &mut WebGl, target: u32, id: u32) {
+pub(super) fn attach(context: &mut WebGl, target: u32, id: u32) {
     call(
         context,
         "framebufferRenderbuffer",
@@ -41,7 +41,7 @@ fn attach(context: &mut WebGl, target: u32, id: u32) {
         "",
     );
 }
-fn pixels(context: &mut WebGl) -> Vec<u8> {
+pub(super) fn pixels(context: &mut WebGl) -> Vec<u8> {
     context
         .read_pixels(
             &Command {
@@ -54,7 +54,7 @@ fn pixels(context: &mut WebGl) -> Vec<u8> {
         )
         .unwrap()
 }
-fn color(context: &mut WebGl, value: [f64; 4]) {
+pub(super) fn color(context: &mut WebGl, value: [f64; 4]) {
     context
         .dispatch(
             &Command {

@@ -3,12 +3,16 @@
 use super::binding_helpers::argument_id;
 use super::*;
 pub(super) mod capabilities;
+pub(in crate::engine::script) mod images;
 
 pub(super) fn media_host_call(
     operation: &str,
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if let Some(value) = images::dispatch(operation, args, state) {
+        return Ok(Some(value));
+    }
     if let Some(value) = capabilities::dispatch(operation, args) {
         return Ok(Some(value));
     }
@@ -183,7 +187,12 @@ pub(super) fn media_host_call(
                 }
             }
         }
-        "reset" => ScriptMediaCommand::Reset,
+        "reset" => {
+            // load()/srcObject replacement revokes old pixels synchronously,
+            // before the queued decoder reset can be processed by the renderer.
+            state.media_images.remove(node.id());
+            ScriptMediaCommand::Reset
+        }
         "reload" => ScriptMediaCommand::Reload,
         _ => return Ok(Some(JsValue::undefined())),
     };

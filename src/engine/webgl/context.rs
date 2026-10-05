@@ -13,14 +13,17 @@ pub(super) struct NativeContext {
 impl NativeContext {
     #[cfg(test)]
     pub(super) fn new() -> Result<Self, String> {
-        Self::for_api(super::ApiVersion::One)
+        Self::for_backend(
+            super::ApiVersion::One,
+            super::backend_policy::Backend::Software,
+        )
     }
 
-    pub(super) fn for_api(api: super::ApiVersion) -> Result<Self, String> {
-        // WARP is an actual D3D11 software renderer and works on headless CI. Do not
-        // use ANGLE's NULL backend (which validates commands but cannot produce pixels).
-        // https://github.com/google/angle/blob/main/extensions/EGL_ANGLE_platform_angle.txt
-        let attributes = [0x3203, 0x3208, 0x3209, 0x320B, egl::NONE as i32];
+    pub(super) fn for_backend(
+        api: super::ApiVersion,
+        backend: super::backend_policy::Backend,
+    ) -> Result<Self, String> {
+        let attributes = backend.attributes();
         // SAFETY: terminated integer attribute array; no native window/display pointer.
         let display =
             unsafe { egl::GetPlatformDisplayEXT(0x3202, ptr::null_mut(), attributes.as_ptr()) };
@@ -79,6 +82,8 @@ impl NativeContext {
             let attributes = [
                 egl::CONTEXT_CLIENT_VERSION as i32,
                 api.client_version(),
+                0x30fb, // EGL_CONTEXT_MINOR_VERSION_KHR, trusted provider selection only.
+                api.provider_minor(),
                 // Match WebGL1's native shader rules, including EXT_draw_buffers.
                 // A silently upgraded GLES3 compatibility context instead uses
                 // WebGL2's one-element gl_FragData rule for ESSL100.

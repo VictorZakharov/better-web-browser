@@ -3,7 +3,7 @@
     // turn native resource retirement into reentrant script execution.
     // https://registry.khronos.org/webgl/specs/latest/1.0/#5.15.2
     const webGlQueueTask = callback => queueWebGlContextTask(callback);
-    const webGlLoseExtensions = new WeakMap();
+    const webGlLoseExtensions = webGlPrivateBrands();
     const loseWebGlContext = (context, simulated) => {
         const state = webGlState(context);
         if (state.lost) { webGlError(context, 0x0502); return; }
@@ -47,8 +47,9 @@
             state.restoreQueued = false;
             const attributes = state.attributes;
             const id = host('webglCreate', Math.max(1, state.canvas.width), Math.max(1, state.canvas.height),
-                JSON.stringify({alpha:attributes.alpha, depth:attributes.depth,
-                    stencil:attributes.stencil, preserve:attributes.preserveDrawingBuffer}));
+                JSON.stringify({api:state.api, alpha:attributes.alpha, depth:attributes.depth,
+                    stencil:attributes.stencil, antialias:attributes.antialias,
+                    preserve:attributes.preserveDrawingBuffer}));
             // Native admission failure cannot expose a half-restored context.
             // An explicit extension request can be retried after releasing peers.
             if (!id) return;

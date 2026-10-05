@@ -26,8 +26,9 @@ requirements should be rechecked when that application changes.
    use `isnan` and `isinf`, requiring the correct GLSL ES 3 compiler path.
 4. **Sustained rendering.** Evaluate hardware ANGLE adapters, safe resource
    budgets for a real scene and post-processing chain, batching/transport cost,
-   animation scheduling and compositor presentation. Current WARP software
-   rendering and 64 MiB per-context budget are baseline containment policies,
+   animation scheduling and compositor presentation. Hardware-first ANGLE
+   admission now has WARP fallback, but the 64 MiB per-context budget and current
+   transport/compositor policies are baseline containment policies,
    not evidence of acceptable gameplay performance. Change limits only with
    accounting, pressure behavior and containment tests.
 5. **Application integration.** Exercise module loading, image/Canvas texture
@@ -37,6 +38,14 @@ requirements should be rechecked when that application changes.
    assessed separately from single-player rendering.
 
 ## Acceptance and verification
+
+The October 4 batch admits real public WebGL2 contexts and includes an optional
+fixture importing unchanged Three.js 0.185.1. Its twelve scenes cover indexed
+textures, instancing, volume/array sampling, shadows, physical materials, morph
+targets, HDR multisample resolve/post-processing and resize. These are bounded
+pixel contracts, not an acceptance run of the game's production build. See
+[the native contract](webgl2-foundations.md) for provider limitations and replay
+instructions. Sustained gameplay and application integration remain next steps.
 
 The current batching preference is approximately **20,000 useful added lines**,
 including focused tests and documentation, with separate reviewable commits for

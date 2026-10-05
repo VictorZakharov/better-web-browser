@@ -3,13 +3,15 @@
 (() => {
     'use strict';
     const requiredExtension = globalThis.__breezeRequiredWebGlExtension;
+    const requiredVersion = globalThis.__breezeRequiredWebGlVersion;
     delete globalThis.__breezeRequiredWebGlExtension;
+    delete globalThis.__breezeRequiredWebGlVersion;
     // Optional-extension upstream tests may legitimately skip. Require the
     // selected capability independently without wrapping any tested API or
     // retaining a native context that could affect the test's admission budget.
     const requiredAvailable = !requiredExtension || (() => {
         const canvas = document.createElement('canvas');
-        const gl = canvas.getContext('webgl');
+        const gl = canvas.getContext(requiredVersion === 2 ? 'webgl2' : 'webgl');
         if (!gl) return false;
         const available = Boolean(gl.getExtension(requiredExtension));
         gl.getExtension('WEBGL_lose_context')?.loseContext();

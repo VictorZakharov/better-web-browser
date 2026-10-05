@@ -14,6 +14,7 @@ mod legacy_tests;
 #[cfg(test)]
 mod modern_tests;
 mod orientation;
+mod precision;
 #[cfg(test)]
 mod tests;
 
@@ -89,6 +90,8 @@ pub(crate) struct RasterImage {
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
+    /// Optional straight-alpha sRGB source precision; never synthesized from RGBA8.
+    pub rgba16: Option<Vec<u16>>,
 }
 
 impl RasterImage {
@@ -103,6 +106,7 @@ impl RasterImage {
             width,
             height,
             rgba,
+            rgba16: None,
         })
     }
 
@@ -126,6 +130,23 @@ pub(crate) fn decode(
     bytes: &[u8],
     limits: DecodeLimits,
     options: DecodeOptions,
+) -> DecodeResult<RasterImage> {
+    decode_internal(bytes, limits, options, false)
+}
+
+pub(crate) fn decode_precise(
+    bytes: &[u8],
+    limits: DecodeLimits,
+    options: DecodeOptions,
+) -> DecodeResult<RasterImage> {
+    decode_internal(bytes, limits, options, true)
+}
+
+fn decode_internal(
+    bytes: &[u8],
+    limits: DecodeLimits,
+    options: DecodeOptions,
+    preserve_precision: bool,
 ) -> DecodeResult<RasterImage> {
     limits.check_source(bytes)?;
     if jxl::matches(bytes) {
@@ -164,7 +185,18 @@ pub(crate) fn decode(
         image.apply_orientation(orientation);
     }
     let (width, height) = (image.width(), image.height());
-    let mut image = RasterImage::new(width, height, image.into_rgba8().into_raw(), limits)?;
+    let mut image = if preserve_precision
+        && matches!(
+            image.color(),
+            image::ColorType::L16
+                | image::ColorType::La16
+                | image::ColorType::Rgb16
+                | image::ColorType::Rgba16
+        ) {
+        precision::from_dynamic(image, limits)?
+    } else {
+        RasterImage::new(width, height, image.into_rgba8().into_raw(), limits)?
+    };
     if let Some(profile) = profile {
         color::apply_icc(&mut image, &profile)?;
     }

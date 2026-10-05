@@ -4,12 +4,22 @@ use mozangle::gles::ffi as gl;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 
+mod adapter_selection;
 mod api_version;
 #[cfg(test)]
 mod api_version_tests;
 #[cfg(test)]
 mod array_copy_boundary_tests;
+mod backend_policy;
+#[cfg(test)]
+mod buffer_mirror_tests;
+mod buffer_retirement;
+#[cfg(test)]
+mod buffer_retirement_tests;
 mod buffers;
+mod command_batch;
+#[cfg(test)]
+mod command_batch_tests;
 mod commands;
 #[cfg(test)]
 mod compressed_buffer_tests;
@@ -39,6 +49,14 @@ mod core_attachments;
 mod core_buffer_tests;
 mod core_buffers;
 #[cfg(test)]
+mod core_color_admission_tests;
+#[cfg(test)]
+mod core_copy_boundary_tests;
+mod core_copy_conversion;
+mod core_copy_texture;
+#[cfg(test)]
+mod core_copy_texture_tests;
+#[cfg(test)]
 mod core_draw_tests;
 mod core_draws;
 mod core_entries;
@@ -60,32 +78,58 @@ mod core_texture_mip_tests;
 mod core_texture_mips;
 #[cfg(test)]
 mod core_texture_tests;
+#[cfg(test)]
+mod core_texture_value_tests;
 mod core_textures;
 #[cfg(test)]
 mod core_uniform_tests;
 mod core_uniforms;
+mod creation_options;
 mod default_attachment_queries;
 #[cfg(test)]
 mod default_attachment_tests;
 mod depth_textures;
 mod draw_buffers;
+mod drawing_buffer_extent;
+#[cfg(test)]
+mod drawing_buffer_extent_tests;
 mod extension_commands;
 mod extensions;
 mod float_values;
 mod framebuffer_attachments;
 mod framebuffer_completeness;
+#[cfg(test)]
+mod framebuffer_contract_tests;
 mod framebuffer_guard;
 #[cfg(test)]
 mod framebuffer_guard_tests;
+mod framebuffer_invalidation;
+#[cfg(test)]
+mod framebuffer_invalidation_pixel_tests;
+#[cfg(test)]
+mod framebuffer_invalidation_storage_tests;
+#[cfg(test)]
+mod framebuffer_invalidation_tests;
 mod framebuffer_queries;
 mod framebuffers;
+mod image_uploads;
+#[cfg(test)]
+mod immutable_attachment_tests;
 mod index_ranges;
+#[cfg(test)]
+mod indexed_range_admission_tests;
 mod indexed_uniform_buffers;
 mod instancing;
 mod legacy_mip_allocations;
 mod multisample;
 #[cfg(test)]
 mod multisample_tests;
+#[cfg(test)]
+mod normalized_texture_pixel_tests;
+#[cfg(test)]
+mod normalized_texture_tests;
+mod normalized_textures;
+mod object_deletion;
 mod object_queries;
 mod objects;
 mod parameters;
@@ -102,10 +146,17 @@ mod pixel_store_guard;
 mod pixel_transfer_tests;
 mod pixel_transport;
 mod presentation;
+#[cfg(test)]
+mod presentation_state_tests;
 mod queries;
 #[cfg(test)]
 mod query_object_tests;
 mod query_objects;
+#[cfg(test)]
+mod read_pair_validation_tests;
+mod readback_cache;
+#[cfg(test)]
+mod readback_cache_tests;
 mod resize;
 #[cfg(test)]
 mod same_size_resize_tests;
@@ -114,14 +165,26 @@ mod sampler_tests;
 mod samplers;
 mod session;
 mod shader_commands;
+#[cfg(test)]
+mod shader_name_tests;
+mod shader_names;
 mod shader_queries;
+#[cfg(test)]
+mod shader_source_budget_tests;
 mod shader_validation;
 mod stencil_masks;
 mod surface;
+mod surface_multisample;
+#[cfg(test)]
+mod surface_multisample_tests;
 mod sync_entries;
 #[cfg(test)]
 mod sync_object_tests;
 mod sync_objects;
+mod sync_reply_cache;
+mod task_completion;
+#[cfg(test)]
+mod task_completion_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -129,11 +192,18 @@ mod texture_allocation_tests;
 mod texture_allocations;
 mod texture_capabilities;
 mod texture_color_space;
+mod texture_dispatch;
 mod texture_formats;
 mod texture_sampling;
 mod texture_targets;
 mod textures;
+#[cfg(test)]
+mod transform_array_tests;
 mod transform_buffers;
+#[cfg(test)]
+mod transform_builtin_tests;
+#[cfg(test)]
+mod transform_delete_tests;
 mod transform_entries;
 mod transform_feedback;
 #[cfg(test)]
@@ -162,9 +232,23 @@ mod vertex_attribute_queries;
 #[cfg(test)]
 mod vertex_attribute_tests;
 mod vertex_attributes;
+#[cfg(test)]
+mod vertex_id_boundary_tests;
+#[cfg(test)]
+mod volume_blit_tests;
 mod volume_copy;
 #[cfg(test)]
+mod volume_copy_alias_tests;
+mod volume_copy_blit;
+mod volume_copy_conversion;
+#[cfg(test)]
+mod volume_copy_conversion_tests;
+mod volume_copy_region;
+mod volume_copy_staging;
+#[cfg(test)]
 mod volume_copy_tests;
+#[cfg(test)]
+mod volume_copy_transfer_tests;
 mod volume_initialization;
 #[cfg(test)]
 mod volume_mip_tests;
@@ -176,6 +260,7 @@ pub(crate) use session::Contexts;
 
 use api_version::ApiVersion;
 use context::NativeContext;
+use creation_options::Options;
 use objects::{Kind, Objects};
 use surface::Surface;
 
@@ -186,115 +271,15 @@ const MAX_PROCESS_RESOURCE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_NATIVE_CONTEXTS: usize = 16;
 const MAX_UPLOAD_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SHADER_BYTES: usize = 32 * 1024;
+// Generated standards-compliant materials routinely exceed the log/reflection
+// budget. Keep source admission independent, with bounded JSON escape expansion.
+const MAX_SHADER_SOURCE_BYTES: usize = 256 * 1024;
+const MAX_COMMAND_BYTES: usize = MAX_SHADER_SOURCE_BYTES * 6 + 4096;
 const MAX_DRAW_VERTICES: u32 = 1_000_000;
 type Result<T> = std::result::Result<T, u32>;
 
-/// The enclosing realm owns this registry and drops it on navigation/worker shutdown.
-#[derive(Default)]
-struct BackendContexts {
-    contexts: HashMap<u32, WebGl>,
-    next: u32,
-}
-
-impl BackendContexts {
-    pub(crate) fn create(&mut self, width: u32, height: u32, options: &str) -> Option<u32> {
-        if self.contexts.len() >= MAX_NATIVE_CONTEXTS {
-            return None;
-        }
-        let options: Options = serde_json::from_str(options).ok()?;
-        let surface_bytes = (width as usize).checked_mul(height as usize)?.checked_mul(
-            if options.depth || options.stencil {
-                8
-            } else {
-                4
-            },
-        )?;
-        let existing: usize = self
-            .contexts
-            .values()
-            .map(|context| context.resource_bytes)
-            .sum();
-        if existing.checked_add(surface_bytes)? > MAX_PROCESS_RESOURCE_BYTES {
-            return None;
-        }
-        let next = self.next.checked_add(1)?;
-        let context = WebGl::new(width, height, options).ok()?;
-        self.next = next;
-        self.contexts.insert(self.next, context);
-        Some(self.next)
-    }
-    pub(crate) fn remove(&mut self, id: u32) {
-        self.contexts.remove(&id);
-    }
-    pub(crate) fn execute(&mut self, id: u32, command: &str, bytes: Option<&[u8]>) -> Value {
-        let other_bytes: usize = self
-            .contexts
-            .iter()
-            .filter(|(key, _)| **key != id)
-            .map(|(_, context)| context.resource_bytes)
-            .sum();
-        let Some(context) = self.contexts.get_mut(&id) else {
-            return json!({"lost":true});
-        };
-        context.resource_limit =
-            MAX_RESOURCE_BYTES.min(MAX_PROCESS_RESOURCE_BYTES.saturating_sub(other_bytes));
-        if command.len() > MAX_SHADER_BYTES + 4096
-            || bytes.is_some_and(|b| b.len() > MAX_UPLOAD_BYTES)
-        {
-            context.error(gl::OUT_OF_MEMORY);
-            return Value::Null;
-        }
-        let command = match serde_json::from_str::<Command>(command) {
-            Ok(command) => command,
-            Err(_) => {
-                context.error(gl::INVALID_VALUE);
-                return Value::Null;
-            }
-        };
-        if context.native.make_current().is_err() {
-            return json!({"lost":true});
-        }
-        match context.dispatch(&command, bytes) {
-            Ok(value) => value,
-            Err(error) => {
-                context.error(error);
-                Value::Null
-            }
-        }
-    }
-    pub(crate) fn snapshot(&mut self, id: u32) -> Option<(u32, u32, Vec<u8>)> {
-        let context = self.contexts.get_mut(&id)?;
-        context.native.make_current().ok()?;
-        let mut pixels = context.surface.snapshot().ok()?;
-        if !context.options.alpha {
-            for pixel in pixels.chunks_exact_mut(4) {
-                pixel[3] = 255;
-            }
-        }
-        Some((context.surface.width, context.surface.height, pixels))
-    }
-}
-
-#[derive(Clone, Copy, serde::Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct Options {
-    api: ApiVersion,
-    alpha: bool,
-    depth: bool,
-    stencil: bool,
-    preserve: bool,
-}
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            api: ApiVersion::One,
-            alpha: true,
-            depth: true,
-            stencil: false,
-            preserve: false,
-        }
-    }
-}
+mod backend;
+use backend::BackendContexts;
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -337,6 +322,7 @@ struct WebGl {
     core: Option<core_entries::CoreEntries>,
     core_buffer_bindings: HashMap<u32, u32>,
     surface: Surface,
+    readback_cache: readback_cache::Cache,
     objects: Objects,
     errors: VecDeque<u32>,
     options: Options,

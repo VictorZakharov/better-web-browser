@@ -82,7 +82,6 @@
         }
     };
     const childCollection = (node, elements) => {
-        const version = childCollectionVersions.get(node) || 0;
         let records = childCollectionCache.get(node);
         if (!records) childCollectionCache.set(node, records = {});
         const key = elements ? 'elements' : 'nodes';
@@ -91,18 +90,26 @@
             if (!record) {
                 const value = liveHtmlCollection(() =>
                     list(host('elementChildren', nodeId(node))));
-                records[key] = record = { version, value, parserEpoch: parserCollectionEpoch };
+                records[key] = record = { value };
             }
             return record.value;
         }
         if (!record) {
-            const value = list(host('children', nodeId(node)));
-            records[key] = record = { version, value, parserEpoch: parserCollectionEpoch };
-        } else if (record.version !== version || record.parserEpoch !== parserCollectionEpoch) {
-            const next = list(host('children', nodeId(node)));
-            record.value.splice(0, record.value.length, ...next);
-            record.version = version;
-            record.parserEpoch = parserCollectionEpoch;
+            // DOM childNodes is a SameObject live NodeList. Resolve lazily on
+            // collection access, including references retained across mutations;
+            // merely obtaining the collection must not serialize the whole tree.
+            // https://dom.spec.whatwg.org/#dom-node-childnodes
+            record = { version: -1, parserEpoch: -1, items: [] };
+            record.value = liveNodeList(() => {
+                const version = childCollectionVersions.get(node) || 0;
+                if (record.version !== version || record.parserEpoch !== parserCollectionEpoch) {
+                    record.items = list(host('children', nodeId(node)));
+                    record.version = version;
+                    record.parserEpoch = parserCollectionEpoch;
+                }
+                return record.items;
+            });
+            records[key] = record;
         }
         return record.value;
     };

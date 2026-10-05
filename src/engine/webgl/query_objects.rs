@@ -47,13 +47,6 @@ impl WebGl {
         if self.options.api != ApiVersion::Two {
             return Err(gl::INVALID_OPERATION);
         }
-        if c.op == "completeGpuTask" {
-            // Internal foundation protocol only. No public realm binding forwards
-            // this opcode. Admission needs a trusted host event-loop completion
-            // hook; presentation/flush/finish are NOT task-completion substitutes.
-            self.publish_sync_results()?;
-            return self.publish_query_results();
-        }
         if c.op == "createQuery" {
             let mut native = 0;
             unsafe { (self.core.as_ref().unwrap().gen_queries)(1, &mut native) };
@@ -153,7 +146,7 @@ impl WebGl {
             _ => Err(gl::INVALID_ENUM),
         }
     }
-    fn publish_query_results(&mut self) -> Result<Value> {
+    pub(super) fn publish_query_results(&mut self) -> Result<Value> {
         let function = self
             .core
             .as_ref()

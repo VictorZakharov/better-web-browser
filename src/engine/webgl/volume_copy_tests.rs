@@ -5,7 +5,7 @@ use super::core_uniform_tests::{VERTEX, program};
 use super::texture_targets::{ARRAY, VOLUME};
 use super::*;
 
-fn clear(context: &mut WebGl, color: [f64; 4]) {
+pub(super) fn clear(context: &mut WebGl, color: [f64; 4]) {
     context
         .dispatch(
             &Command {
@@ -20,7 +20,7 @@ fn clear(context: &mut WebGl, color: [f64; 4]) {
     call(context, "clear", &[gl::COLOR_BUFFER_BIT as i64], "");
 }
 
-fn storage(context: &mut WebGl, target: u32) -> u32 {
+pub(super) fn storage(context: &mut WebGl, target: u32) -> u32 {
     let id = texture(context, target);
     call(
         context,
@@ -31,7 +31,7 @@ fn storage(context: &mut WebGl, target: u32) -> u32 {
     id
 }
 
-fn sample(context: &mut WebGl, target: u32, uv: &str, level: i32) -> Vec<u8> {
+pub(super) fn sample(context: &mut WebGl, target: u32, uv: &str, level: i32) -> Vec<u8> {
     call(context, "bindFramebuffer", &[gl::FRAMEBUFFER as i64, 0], "");
     let sampler = if target == VOLUME {
         "sampler3D"
@@ -88,7 +88,7 @@ fn framebuffer_copy_updates_only_the_selected_array_slice() {
 }
 
 #[test]
-fn pinned_provider_volume_copy_is_fail_closed_before_touching_native_storage() {
+fn webgl2_volume_copy_preserves_neighboring_native_slices() {
     session::run_native_test(|| {
         let mut context = version_two();
         let id = storage(&mut context, VOLUME);
@@ -101,11 +101,22 @@ fn pinned_provider_volume_copy_is_fail_closed_before_touching_native_storage() {
                 &[VOLUME as i64, 0, 0, 0, 1, 0, 0, 4, 4],
                 None
             ),
-            Err(gl::INVALID_OPERATION)
+            Ok(Value::Null)
         );
         assert_eq!(context.resource_bytes, charged);
-        let pixels = sample(&mut context, VOLUME, "vec3(0.5,0.5,0.5)", 0);
-        assert!(pixels.chunks_exact(4).all(|pixel| pixel == [0, 0, 0, 0]));
+        for layer in 0..3 {
+            let z = (layer as f64 + 0.5) / 3.0;
+            let pixels = sample(&mut context, VOLUME, &format!("vec3(0.5,0.5,{z})"), 0);
+            let expected = if layer == 1 {
+                [255, 0, 0, 255]
+            } else {
+                [0, 0, 0, 0]
+            };
+            assert!(
+                pixels.chunks_exact(4).all(|pixel| pixel == expected),
+                "layer {layer}: {pixels:?}"
+            );
+        }
         assert_eq!(
             context.objects.get(id, Kind::Texture).unwrap().core_images[&(VOLUME, 0)].depth,
             3

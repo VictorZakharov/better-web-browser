@@ -2,7 +2,7 @@
 use super::api_version_tests::{call, version_two};
 use super::*;
 
-fn image(context: &mut WebGl, format: u32) {
+pub(super) fn image(context: &mut WebGl, format: u32) {
     let texture = call(context, "createTexture", &[], "").as_u64().unwrap();
     call(
         context,
@@ -47,7 +47,7 @@ fn image(context: &mut WebGl, format: u32) {
         json!(gl::FRAMEBUFFER_COMPLETE)
     );
 }
-fn read(context: &mut WebGl, format: u32, kind: u32, size: i64) -> Result<Vec<u8>> {
+pub(super) fn read(context: &mut WebGl, format: u32, kind: u32, size: i64) -> Result<Vec<u8>> {
     context.read_pixels(
         &Command {
             op: "readPixels".into(),
@@ -58,7 +58,12 @@ fn read(context: &mut WebGl, format: u32, kind: u32, size: i64) -> Result<Vec<u8
         None,
     )
 }
-fn clear(context: &mut WebGl, op: &str, integers: &[i64], floats: &[f64]) -> Result<Value> {
+pub(super) fn clear(
+    context: &mut WebGl,
+    op: &str,
+    integers: &[i64],
+    floats: &[f64],
+) -> Result<Value> {
     context.dispatch(
         &Command {
             op: op.into(),

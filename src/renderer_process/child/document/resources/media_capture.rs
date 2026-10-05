@@ -58,30 +58,9 @@ impl DocumentRuntime {
                 connection,
             );
         }
-        let mut outcome = self
-            .script_runtime
-            .as_mut()
-            .filter(|_| frame.kind == MediaCaptureFrameKind::VideoNv12)
-            .map(|runtime| {
-                runtime.deliver_media_capture_frame_info(
-                    frame.request_id,
-                    frame.width_or_rate,
-                    frame.height_or_frames,
-                    frame.timestamp_100ns,
-                )
-            })
-            .unwrap_or_default();
-        // Frame events run author script. A loadeddata/timeupdate listener may detach
-        // srcObject, stop the track, or disable it before this sample is painted.
-        // Read the live bindings after that callback, never from a stale snapshot.
-        let nodes = self
-            .script_runtime
-            .as_ref()
-            .map(|runtime| runtime.capture_video_nodes(frame.request_id))
-            .unwrap_or_default();
-        if frame.kind != MediaCaptureFrameKind::VideoNv12 || nodes.is_empty() {
+        if frame.kind != MediaCaptureFrameKind::VideoNv12 {
             return self.complete_network_script_outcome(
-                outcome,
+                Default::default(),
                 false,
                 previous_timer_micros,
                 started,
@@ -104,6 +83,31 @@ impl DocumentRuntime {
         };
         let decoded = nv12_to_bgra(metadata, &frame.bytes)
             .map_err(|error| format!("capture NV12 conversion failed: {error}"))?;
+        // A loadeddata listener may upload the very first camera frame. Install
+        // its granted, current track pixels before calling any author callback.
+        let mut outcome = self
+            .script_runtime
+            .as_mut()
+            .map(|runtime| {
+                runtime.set_capture_media_images(frame.request_id, &decoded);
+                runtime.deliver_media_capture_frame_info(
+                    frame.request_id,
+                    frame.width_or_rate,
+                    frame.height_or_frames,
+                    frame.timestamp_100ns,
+                )
+            })
+            .unwrap_or_default();
+        // Callbacks may detach srcObject, remove/disable tracks, or replace the
+        // source. Re-read membership before painting or publishing new pixels.
+        let nodes = self
+            .script_runtime
+            .as_ref()
+            .map(|runtime| runtime.capture_video_nodes(frame.request_id))
+            .unwrap_or_default();
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            runtime.set_capture_media_images(frame.request_id, &decoded);
+        }
         let black = nodes.iter().any(|(_, enabled)| !enabled).then(|| {
             let mut pixels = vec![0_u8; decoded.bgra.len()];
             for alpha in pixels[3..].iter_mut().step_by(4) {

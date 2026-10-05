@@ -12,6 +12,7 @@
         return Math.min(0xffffffff, Number(raw));
     };
 
+    const imageDataStates = new WeakMap();
     class ImageData {
         constructor(dataOrWidth, widthOrHeight, heightOrSettings, settings = {}) {
             let data;
@@ -47,6 +48,7 @@
                 height: { enumerable: true, value: height },
                 colorSpace: { enumerable: true, value: 'srgb' }
             });
+            imageDataStates.set(this,{data,width,height});
         }
     }
 
@@ -73,7 +75,7 @@
             state.inputHeight = height;
             state.width = width;
             state.height = height;
-            state.pixels = width * height <= MAX_CANVAS_PIXELS
+            state.pixels = state.mode !== 'webgl' && width * height <= MAX_CANVAS_PIXELS
                 ? new Uint8ClampedArray(width * height * 4)
                 : null;
             if (state.mode === 'bitmaprenderer') resetCanvasBitmapRenderer(state.context);
@@ -297,12 +299,13 @@
         }
         getContext(contextId, options = undefined) {
             const requested = String(contextId);
-            const mode = requested === 'experimental-webgl' ? 'webgl' : requested;
+            const mode = ['experimental-webgl','webgl2'].includes(requested) ? 'webgl' : requested;
             if (!['2d', 'bitmaprenderer', 'webgl'].includes(mode)) return null;
             const state = stateForCanvas(this);
             if (state.mode !== 'none' && state.mode !== mode) return null;
-            if (state.context) return state.context;
-            const context = mode === 'webgl' ? createWebGlContext(this, options) : mode === '2d' ? new CanvasRenderingContext2D(this) :
+            if (state.context) return mode === 'webgl' &&
+                webGlState(state.context).api !== (requested === 'webgl2' ? 'webgl2' : 'webgl1') ? null : state.context;
+            const context = mode === 'webgl' ? createWebGlContext(this, options, requested === 'webgl2' ? 'webgl2' : 'webgl1') : mode === '2d' ? new CanvasRenderingContext2D(this) :
                 new ImageBitmapRenderingContext(canvasBitmapContextToken, this, options);
             if (!context) return null;
             state.context = context;

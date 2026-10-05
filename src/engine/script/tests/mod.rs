@@ -52,6 +52,7 @@ mod canvas_transform;
 mod channel_messaging;
 mod check_visibility;
 mod checkable;
+mod child_collections;
 mod collections;
 mod compatibility;
 mod conditional_query_integration;
@@ -233,6 +234,8 @@ pub(super) mod webgl_compressed_textures;
 mod webgl_contracts;
 mod webgl_depth_textures;
 pub(super) mod webgl_draw_buffers;
+#[cfg(windows)]
+mod webgl_float_blend;
 mod webgl_float_copy;
 mod webgl_float_sampling;
 mod webgl_float_textures;

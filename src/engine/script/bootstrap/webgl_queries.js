@@ -23,10 +23,8 @@
         if (args[0] < 0) return null;
         const result = webGlCall(this, name, args);
         if (!result) return null;
-        const value = new webGlObjectClasses[name === 'getShaderPrecisionFormat' ?
-            'WebGLShaderPrecisionFormat' : 'WebGLActiveInfo'](webGlToken);
-        for (const [key, entry] of Object.entries(result)) Object.defineProperty(value, key, {enumerable:true, value:entry});
-        return value;
+        return webGlReflectionRecord(name === 'getShaderPrecisionFormat' ?
+            'WebGLShaderPrecisionFormat' : 'WebGLActiveInfo', result);
     });
     webGlMethod('getVertexAttrib', function(index, pname) {
         const result = webGlCall(this, 'getVertexAttrib', [webGlUnsigned(index), webGlUnsigned(pname)]);

@@ -33,6 +33,14 @@ pub(super) fn storage(internal: u32) -> Result<StorageFormat> {
         0x8f95 => (RG, &[gl::BYTE], 4),
         0x8f96 => (gl::RGB, &[gl::BYTE], 4),
         0x8f97 => (gl::RGBA, &[gl::BYTE], 4),
+        0x822a => (RED, &[gl::UNSIGNED_SHORT], 8),
+        0x822c => (RG, &[gl::UNSIGNED_SHORT], 8),
+        0x8054 => (gl::RGB, &[gl::UNSIGNED_SHORT], 8),
+        0x805b => (gl::RGBA, &[gl::UNSIGNED_SHORT], 8),
+        0x8f98 => (RED, &[gl::SHORT], 8),
+        0x8f99 => (RG, &[gl::SHORT], 8),
+        0x8f9a => (gl::RGB, &[gl::SHORT], 8),
+        0x8f9b => (gl::RGBA, &[gl::SHORT], 8),
         0x822d => (RED, &[HALF, gl::FLOAT], 8),
         0x822f => (RG, &[HALF, gl::FLOAT], 8),
         0x881b => (gl::RGB, &[HALF, gl::FLOAT], 8),
@@ -114,7 +122,10 @@ pub(super) fn upload(internal: u32, format: u32, kind: u32) -> Result<(usize, us
             Err(gl::INVALID_OPERATION)
         };
     }
-    let storage = storage(internal)?;
+    // TexImage's internalformat is GLint, unlike TexStorage's GLenum. Preserve
+    // its INVALID_VALUE contract for unsupported values (GLES2 §3.7.1 and
+    // Chromium ValidateTexFuncFormatAndType); storage queries retain ENUM.
+    let storage = storage(internal).map_err(|_| gl::INVALID_VALUE)?;
     if storage.base != format || !storage.types.contains(&kind) {
         return Err(gl::INVALID_OPERATION);
     }
@@ -143,4 +154,40 @@ fn upload_bytes(format: u32, kind: u32) -> Result<usize> {
 
 pub(super) fn read_bytes(format: u32, kind: u32) -> Result<usize> {
     upload_bytes(format, kind)
+}
+
+pub(super) fn validate_read_enums(format: u32, kind: u32) -> Result<()> {
+    if ![
+        RED,
+        RG,
+        gl::RGB,
+        gl::RGBA,
+        gl::ALPHA,
+        RED_INTEGER,
+        RG_INTEGER,
+        RGB_INTEGER,
+        RGBA_INTEGER,
+    ]
+    .contains(&format)
+        || ![
+            gl::BYTE,
+            gl::UNSIGNED_BYTE,
+            gl::SHORT,
+            gl::UNSIGNED_SHORT,
+            gl::INT,
+            gl::UNSIGNED_INT,
+            HALF,
+            gl::FLOAT,
+            gl::UNSIGNED_SHORT_5_6_5,
+            gl::UNSIGNED_SHORT_4_4_4_4,
+            gl::UNSIGNED_SHORT_5_5_5_1,
+            UINT_2101010,
+            UINT_101111,
+            UINT_5999,
+        ]
+        .contains(&kind)
+    {
+        return Err(gl::INVALID_ENUM);
+    }
+    Ok(())
 }

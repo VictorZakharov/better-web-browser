@@ -31,11 +31,17 @@ pub(super) struct Object {
     pub kind: Kind,
     pub native: u32,
     pub bytes: Vec<u8>,
+    // Only initialized CPU uploads/copies are authoritative. GPU capture and
+    // pixel-pack writes invalidate this mirror until a full native readback.
+    pub buffer_mirror_valid: bool,
     pub capacity: usize,
     pub buffer_target: u32,
     pub owner: u32,
     pub generation: u32,
     pub pending_delete: bool,
+    // GLES3 detaches current bindings. An uninstantiated reservation prevents
+    // ANGLE from recycling the numeric name while inactive containers retain it.
+    pub native_deleted: bool,
     pub shader_log: String,
     pub uniform_type: u32,
     pub texture_images: HashMap<(u32, i32), (u32, u32)>,
@@ -51,12 +57,14 @@ pub(super) struct Object {
 }
 #[derive(Default)]
 pub(super) struct Objects {
+    pub(super) poisoned: bool,
     api: super::ApiVersion,
     entries: HashMap<u32, Object>,
 }
 impl Objects {
     pub(super) fn new(api: super::ApiVersion) -> Self {
         Self {
+            poisoned: false,
             api,
             entries: HashMap::new(),
         }
@@ -82,11 +90,13 @@ impl Objects {
                 kind,
                 native,
                 bytes: Vec::new(),
+                buffer_mirror_valid: true,
                 capacity: 0,
                 buffer_target: 0,
                 owner: 0,
                 generation: 0,
                 pending_delete: false,
+                native_deleted: false,
                 shader_log: String::new(),
                 uniform_type: 0,
                 texture_images: HashMap::new(),
@@ -119,8 +129,29 @@ impl Objects {
         if id == 0 {
             Ok(0)
         } else {
-            Ok(self.get(id, kind)?.native)
+            let object = self.get(id, kind)?;
+            if object.native_deleted {
+                Err(gl::INVALID_OPERATION)
+            } else {
+                Ok(object.native)
+            }
         }
+    }
+    pub(super) fn delete_native_buffer_name(&mut self, id: u32) -> Result<()> {
+        let object = self.get_mut(id, Kind::Buffer)?;
+        if !object.native_deleted {
+            unsafe {
+                gl::DeleteBuffers(1, &object.native);
+            }
+            object.native_deleted = true;
+            if let Err(error) = super::buffer_retirement::reserve_deleted_name(object.native) {
+                // A provider allocation failure after deletion cannot be rolled
+                // back. Lose the owner context rather than permit ID aliasing.
+                self.poisoned = true;
+                return Err(error);
+            }
+        }
+        Ok(())
     }
     pub fn delete(&mut self, id: u32, kind: Kind) -> Result<()> {
         if id == 0 {
@@ -247,6 +278,8 @@ fn destroy(object: Object, api: super::ApiVersion) {
     // SAFETY: called only with the owning context current and a typed live driver name.
     unsafe {
         match object.kind {
+            // For native_deleted this releases only a generated, never-bound
+            // reservation; ANGLE therefore performs no second detachment.
             Kind::Buffer => gl::DeleteBuffers(1, &object.native),
             Kind::Shader if !object.pending_delete => gl::DeleteShader(object.native),
             Kind::Program if !object.pending_delete => gl::DeleteProgram(object.native),
