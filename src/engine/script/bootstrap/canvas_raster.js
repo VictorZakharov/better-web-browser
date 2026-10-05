@@ -14,20 +14,6 @@
             const color = normalizedColor(value); if (color) this.__stroke = color;
         }
     });
-    Object.defineProperty(CanvasRenderingContext2D.prototype, 'lineWidth', {
-        get() { return this.__lineWidth; },
-        set(value) { value = Number(value); if (Number.isFinite(value) && value > 0) this.__lineWidth = value; }
-    });
-    Object.defineProperty(CanvasRenderingContext2D.prototype, 'lineDashOffset', {
-        get() { return this.__dashOffset; },
-        set(value) { value = Number(value); if (Number.isFinite(value)) this.__dashOffset = value; }
-    });
-    CanvasRenderingContext2D.prototype.setLineDash = function(segments) {
-        const values = [...segments].map(Number);
-        if (values.some(value => !Number.isFinite(value) || value < 0)) return;
-        this.__lineDash = values.length % 2 ? values.concat(values) : values;
-    };
-    CanvasRenderingContext2D.prototype.getLineDash = function() { return [...this.__lineDash]; };
     const canvasPathArgument = (context, candidate) => candidate instanceof Path2D ?
         transformCanvasPath(canvasPathData.get(candidate), context.__transform) : context.__path;
     const canvasFillRule = value => value === 'evenodd' ? 'evenodd' : 'nonzero';

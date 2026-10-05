@@ -12,6 +12,11 @@
             super(canvas);
         }
     }
+    // CanvasPathDrawingStyles is included by both context interfaces. Its IDL
+    // members belong to each prototype, even while painting shares the base.
+    for(const name of ['lineWidth','miterLimit','lineDashOffset','lineCap','lineJoin','setLineDash','getLineDash'])
+        Object.defineProperty(OffscreenCanvasRenderingContext2D.prototype,name,
+            Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype,name));
     const offscreenCanvasBrands = new WeakSet();
     class OffscreenCanvas extends EventTarget {
         constructor(width, height) {

@@ -49,6 +49,7 @@ mod canvas_focus_ring;
 mod canvas_gradient_mask;
 mod canvas_gradients;
 mod canvas_image_data;
+mod canvas_line_state;
 mod canvas_mask_reuse;
 mod canvas_native_stroke;
 mod canvas_patterns;

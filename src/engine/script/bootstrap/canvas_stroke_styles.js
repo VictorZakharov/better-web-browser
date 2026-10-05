@@ -1,20 +1,3 @@
-    Object.defineProperties(CanvasRenderingContext2D.prototype, {
-        lineCap: {
-            get() { return this.__lineCap; },
-            set(value) { if (['butt', 'round', 'square'].includes(value)) this.__lineCap = value; }
-        },
-        lineJoin: {
-            get() { return this.__lineJoin; },
-            set(value) { if (['round', 'bevel', 'miter'].includes(value)) this.__lineJoin = value; }
-        },
-        miterLimit: {
-            get() { return this.__miterLimit; },
-            set(value) {
-                value = Number(value);
-                if (Number.isFinite(value) && value > 0) this.__miterLimit = value;
-            }
-        }
-    });
     const canvasStrokeSegmentContains = (segment, x, y, radius, cap) => {
         const [x0, y0] = segment.start, [x1, y1] = segment.end;
         const dx = x1 - x0, dy = y1 - y0;

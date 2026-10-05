@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Canvas line-state conversion and real dashed strokes</title>
+<pre id="probe">Testing line styles, iterator conversion and owned dash state.</pre>
+<script src="line-state.js"></script>
+<script>
+try{probe.setAttribute('data-result',JSON.stringify(testCanvasLineState(()=>document.createElement('canvas'))));}
+catch(error){probe.setAttribute('data-error',String(error));throw error;}
+</script>
