@@ -132,6 +132,8 @@ mod normalized_textures;
 mod object_deletion;
 mod object_queries;
 mod objects;
+#[cfg(test)]
+mod parallel_compile_tests;
 mod parameters;
 mod pixel_buffer_guard;
 #[cfg(test)]

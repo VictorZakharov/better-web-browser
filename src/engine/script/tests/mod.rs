@@ -257,6 +257,7 @@ mod webgl_numeric_arguments;
 mod webgl_numeric_lists;
 #[cfg(windows)]
 mod webgl_offscreen_presentation;
+mod webgl_parallel_compile;
 #[cfg(windows)]
 mod webgl_presentation;
 #[cfg(windows)]

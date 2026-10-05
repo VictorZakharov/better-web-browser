@@ -18,6 +18,9 @@ impl WebGl {
         match c.op.as_str() {
             "supportedExtensions" => {
                 let mut names = Vec::new();
+                if self.extensions.available_parallel_compile {
+                    names.push("KHR_parallel_shader_compile");
+                }
                 for family in super::compressed_capabilities::Family::ALL {
                     if self.extensions.compressed.available(family) {
                         names.push(family.public_name());
@@ -113,6 +116,13 @@ impl WebGl {
                     }
                 } else {
                     match c.text.as_str() {
+                        "KHR_parallel_shader_compile" => {
+                            self.extensions.parallel_compile = self.extensions.enable_simple(
+                                c"GL_KHR_parallel_shader_compile",
+                                self.extensions.available_parallel_compile,
+                            );
+                            self.extensions.parallel_compile
+                        }
                         "WEBGL_draw_buffers" => {
                             self.extensions.draw_buffers = self.extensions.enable_simple(
                                 c"GL_EXT_draw_buffers",

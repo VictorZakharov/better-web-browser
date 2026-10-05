@@ -17,6 +17,8 @@ pub(super) type IsArray = unsafe extern "system" fn(u32) -> u8;
 pub(super) type DrawBuffers = unsafe extern "system" fn(i32, *const u32);
 
 pub(super) struct Extensions {
+    pub available_parallel_compile: bool,
+    pub parallel_compile: bool,
     pub available_core_color_float: bool,
     pub core_color_float: bool,
     pub textures: TextureCapabilities,
@@ -126,6 +128,11 @@ impl Extensions {
             && max_draw_buffers >= 4
             && max_color_attachments >= max_draw_buffers;
         Self {
+            available_parallel_compile: enabled
+                .iter()
+                .chain(&requestable)
+                .any(|name| name == "GL_KHR_parallel_shader_compile"),
+            parallel_compile: false,
             available_core_color_float: enabled
                 .iter()
                 .chain(&requestable)

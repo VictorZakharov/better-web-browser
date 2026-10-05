@@ -421,6 +421,31 @@ changing the public API's permitted dimensions.
 
 ## Primary contracts and reuse
 
+`KHR_parallel_shader_compile` is advertised only where the pinned ANGLE context
+offers its native extension. Author admission enables real shader/program
+`COMPLETION_STATUS_KHR` queries, returning booleans from ANGLE's non-blocking
+completion state. Completion is distinct from compile/link success, including
+failed shaders. The WebGL interface deliberately omits native thread-count
+controls. After context loss completion queries return true so retained polling
+loops terminate; restoration requires fresh extension admission and objects.
+This does not move Breeze's own WebGL shader validation off-thread or claim that
+every compilation/linking call is stall-free. Native and public tests cover
+admission, successful/failed compilation, object ownership and restoration.
+See the [KHR extension contract](https://registry.khronos.org/webgl/extensions/KHR_parallel_shader_compile/).
+The local `tests/webgl/parallel-compile.html` fixture matches hidden Chrome in
+both context versions: the extension is available, completion is boolean,
+valid compilation succeeds, invalid compilation fails but completes, and the
+queries leave `NO_ERROR`. This fixture does not require a pending interval:
+a small shader may finish before the first poll.
+
+For full local WebGL unit runs, use `cargo test --locked --lib webgl --
+--test-threads=8`. These tests share the production GPU owner, whose intentional
+process-wide limit is 16 native contexts. Unrestricted Rust test concurrency on
+machines with more cores can exhaust that limit while unrelated tests hold
+contexts, causing correct context-admission rejection rather than a shader
+failure. The bounded run still executes every selected test concurrently; it
+does not increase the browser's resource limits or skip compliance tests.
+
 - [WebGL2 specification](https://registry.khronos.org/webgl/specs/latest/2.0/)
 - [OpenGL ES API registry](https://registry.khronos.org/OpenGL/index_es.php)
 - [ANGLE explicit context version](https://github.com/google/angle/blob/main/extensions/EGL_ANGLE_create_context_backwards_compatible.txt)

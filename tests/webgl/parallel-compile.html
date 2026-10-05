@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Native parallel shader completion</title>
+<pre id="probe"></pre>
+<script>
+const results=[];
+for(const api of ['webgl','webgl2']) {
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=4;
+    document.body.appendChild(canvas);
+    const gl=canvas.getContext(api),ext=gl.getExtension('KHR_parallel_shader_compile');
+    const result={api,available:!!ext};results.push(result);
+    if(!ext)continue;
+    const source=api==='webgl2'?'#version 300 es\nvoid main(){gl_Position=vec4(0.0);}':
+        'void main(){gl_Position=vec4(0.0);}';
+    const shader=gl.createShader(gl.VERTEX_SHADER);gl.shaderSource(shader,source);gl.compileShader(shader);
+    result.pollType=typeof gl.getShaderParameter(shader,ext.COMPLETION_STATUS_KHR);
+    result.success=gl.getShaderParameter(shader,gl.COMPILE_STATUS);
+    result.finished=gl.getShaderParameter(shader,ext.COMPLETION_STATUS_KHR);
+    const bad=gl.createShader(gl.VERTEX_SHADER);gl.shaderSource(bad,'invalid shader');gl.compileShader(bad);
+    result.invalidSuccess=gl.getShaderParameter(bad,gl.COMPILE_STATUS);
+    result.invalidFinished=gl.getShaderParameter(bad,ext.COMPLETION_STATUS_KHR);
+    result.error=gl.getError();
+}
+document.querySelector('#probe').textContent=JSON.stringify(results);
+document.querySelector('#probe').setAttribute('data-samples',JSON.stringify(results));
+</script>

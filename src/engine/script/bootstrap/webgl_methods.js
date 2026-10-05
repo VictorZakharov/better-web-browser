@@ -38,6 +38,10 @@
             if (args.length < arity) throw new TypeError(name + ' requires at least ' + arity + ' arguments');
             webGlConvertArguments(name, args);
             if (webGlState(this).lost) {
+                // KHR_parallel_shader_compile requires true after loss so a
+                // retained extension's polling loop cannot wait forever.
+                if ((name === 'getProgramParameter' || name === 'getShaderParameter') && args[1] === 0x91b1)
+                    return true;
                 if (name === 'getAttribLocation') return -1;
                 if (name === 'checkFramebufferStatus') return 0x8cdd;
                 if (name === 'getVertexAttribOffset') return 0;
