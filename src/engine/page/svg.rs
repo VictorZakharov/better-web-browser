@@ -4,6 +4,7 @@ use crate::engine::dom::{Node, NodeData, NodeRef};
 use crate::limits::MAX_SVG_SOURCE_BYTES;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
+mod decoder;
 #[cfg(test)]
 mod tests;
 
@@ -118,8 +119,9 @@ pub(crate) fn decode_svg_with_limits(
             "{description} exceeds the {MAX_SVG_SOURCE_BYTES}-byte limit"
         ));
     }
-    let options = resvg::usvg::Options::default();
-    let tree = resvg::usvg::Tree::from_data(source, &options)
+    let source = decoder::payload(source)?;
+    let options = decoder::options(limits);
+    let tree = resvg::usvg::Tree::from_data(&source, &options)
         .map_err(|error| format!("parse {description}: {error}"))?;
     let size = tree.size().to_int_size();
     let width = size.width();
