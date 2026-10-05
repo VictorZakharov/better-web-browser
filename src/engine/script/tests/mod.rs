@@ -42,6 +42,7 @@ mod canvas_bitmap;
 mod canvas_blend;
 mod canvas_filter;
 mod canvas_focus_ring;
+mod canvas_image_data;
 mod canvas_presentation;
 mod canvas_shadow;
 mod canvas_stroke_styles;

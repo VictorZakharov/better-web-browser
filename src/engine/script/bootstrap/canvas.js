@@ -2,6 +2,7 @@
     // operations backed by real pixels; unsupported context types and APIs continue to fail closed.
     const MAX_CANVAS_PIXELS = 4 * 1024 * 1024;
     const canvasStates = new WeakMap();
+    const canvas2dOwners = new WeakMap();
     let synchronizeWebGlCanvas = () => {};
     let resetWebGlCanvas = () => {};
     let dirtyWebGlCanvas = () => {};
@@ -100,6 +101,7 @@
     class CanvasRenderingContext2D {
         constructor(canvas) {
             Object.defineProperty(this, 'canvas', { enumerable: true, value: canvas });
+            canvas2dOwners.set(this, canvas);
             this.__reset();
         }
         __reset() {
@@ -235,47 +237,10 @@
             return new ImageData(Math.abs(Number(widthOrImageData)), Math.abs(Number(height)), settings);
         }
         getImageData(x, y, width, height, settings) {
-            const rect = normalizedRectangle(x, y, width, height);
-            if (!rect || rect.width === 0 || rect.height === 0)
-                throw new DOMException('ImageData dimensions must be non-zero', 'IndexSizeError');
-            const state = stateForCanvas(this.canvas);
-            if (!state.pixels || rect.width * rect.height > MAX_CANVAS_PIXELS)
-                throw new DOMException('The requested bitmap exceeds the canvas budget', 'NotSupportedError');
-            const result = new ImageData(rect.width, rect.height, settings);
-            for (let row = 0; row < rect.height; row++) for (let column = 0; column < rect.width; column++) {
-                const sourceX = rect.x + column;
-                const sourceY = rect.y + row;
-                if (sourceX < 0 || sourceY < 0 || sourceX >= state.width || sourceY >= state.height) continue;
-                const source = (sourceY * state.width + sourceX) * 4;
-                const destination = (row * rect.width + column) * 4;
-                result.data.set(state.pixels.subarray(source, source + 4), destination);
-            }
-            return result;
+            return readCanvasImageData(this, x, y, width, height, settings);
         }
-        putImageData(imageData, x, y, dirtyX = 0, dirtyY = 0,
-            dirtyWidth = imageData?.width, dirtyHeight = imageData?.height) {
-            if (!(imageData instanceof ImageData)) throw new TypeError('putImageData requires ImageData');
-            const state = stateForCanvas(this.canvas);
-            if (!state.pixels) return;
-            x = Math.trunc(Number(x));
-            y = Math.trunc(Number(y));
-            dirtyX = Math.trunc(Number(dirtyX)); dirtyY = Math.trunc(Number(dirtyY));
-            dirtyWidth = Math.trunc(Number(dirtyWidth));
-            dirtyHeight = Math.trunc(Number(dirtyHeight));
-            if (![x, y, dirtyX, dirtyY, dirtyWidth, dirtyHeight].every(Number.isFinite)) return;
-            if (dirtyWidth < 0) { dirtyX += dirtyWidth; dirtyWidth = -dirtyWidth; }
-            if (dirtyHeight < 0) { dirtyY += dirtyHeight; dirtyHeight = -dirtyHeight; }
-            const left = Math.max(0, dirtyX), top = Math.max(0, dirtyY);
-            const right = Math.min(imageData.width, dirtyX + dirtyWidth);
-            const bottom = Math.min(imageData.height, dirtyY + dirtyHeight);
-            for (let row = top; row < bottom; row++) for (let column = left; column < right; column++) {
-                const destinationX = x + column;
-                const destinationY = y + row;
-                if (destinationX < 0 || destinationY < 0 || destinationX >= state.width || destinationY >= state.height) continue;
-                const source = (row * imageData.width + column) * 4;
-                const destination = (destinationY * state.width + destinationX) * 4;
-                state.pixels.set(imageData.data.subarray(source, source + 4), destination);
-            }
+        putImageData(imageData, x, y, ...dirty) {
+            writeCanvasImageData(this, imageData, x, y, dirty);
         }
         getContextAttributes() { return { alpha: true, colorSpace: 'srgb', desynchronized: false, willReadFrequently: false }; }
         reset() {
