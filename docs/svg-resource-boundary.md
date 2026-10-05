@@ -30,3 +30,36 @@ feature-detection special cases. References:
 [SVG secure processing modes](https://svgwg.org/svg2-draft/conform.html),
 [SVG resource linking](https://svgwg.org/svg2-draft/linking.html), and
 [the upstream image resolver](https://github.com/linebender/resvg/blob/v0.48.1/crates/usvg/src/parser/image.rs).
+
+## Inline shared definitions
+
+An inline SVG raster includes the dependency closure of fragment-only rendering
+references from its own DOM tree, including definitions in sibling SVGs. The
+first element with an ID wins; a matching non-SVG element is not skipped in favor
+of a later SVG duplicate. Shadow trees are separate lookup scopes. Navigation
+anchors and external URLs do not acquire decoder-side fetching authority.
+
+CSS URL tokenization reuses the existing `cssparser` dependency. XLink attribute
+namespaces survive serialization, and unprefixed SVG2 `href` takes precedence.
+Imported definitions keep their author attributes without freezing inherited
+`currentColor` from the definition's original parent onto a use instance.
+Raster cache keys include imported definitions, so changes outside the local SVG
+invalidate its pixels while compositor-only animation still reuses the raster.
+Fragment percent-decoding shares HTML navigation's byte decoder (without form
+decoding: `+` remains literal). CSS escapes are resolved by `cssparser`, and the
+isolated decoder receives normalized URLs, using that same parser's string writer
+when quoting is necessary. Ordinary fragment IDs keep the unquoted form accepted
+by upstream's filter parser.
+
+Serialization checks the 4 MiB byte ceiling while XML-escaping, with a 256-level
+depth ceiling and 100,000-node budget. Reference discovery limits distinct IDs
+and queue bytes; use expansion has independent node and pending-work budgets.
+Cyclic use edges are omitted before entering upstream's parser. A small acyclic
+but exponentially expanding use graph is also rejected before materialization.
+
+This is not complete SVG styling support: document stylesheet rules affecting
+imported geometry, remote use resources,
+and SVG text remain separate work. The renderer's text feature is still disabled;
+importing a game's text-only logo definitions does not claim that logo is drawn.
+See [SVG use instances](https://svgwg.org/svg2-draft/struct.html#UseElement) and
+[SVG URL processing](https://svgwg.org/svg2-draft/linking.html#URLReference).

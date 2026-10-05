@@ -40,6 +40,15 @@ pub(crate) fn select(document: &NodeRef, url: &str) -> Option<FragmentTarget> {
     if let Some(node) = find(fragment) {
         return Some(FragmentTarget::Element(node));
     }
+    let decoded = decode_fragment(fragment);
+    find(&decoded).map(FragmentTarget::Element).or_else(|| {
+        decoded
+            .eq_ignore_ascii_case("top")
+            .then_some(FragmentTarget::Top)
+    })
+}
+
+pub(crate) fn decode_fragment(fragment: &str) -> String {
     // Percent-decode bytes without form decoding: '+' is a literal fragment character.
     let mut bytes = Vec::with_capacity(fragment.len());
     let mut input = fragment.as_bytes().iter().copied().peekable();
@@ -58,12 +67,7 @@ pub(crate) fn select(document: &NodeRef, url: &str) -> Option<FragmentTarget> {
             bytes.push(byte);
         }
     }
-    let decoded = String::from_utf8_lossy(&bytes);
-    find(&decoded).map(FragmentTarget::Element).or_else(|| {
-        decoded
-            .eq_ignore_ascii_case("top")
-            .then_some(FragmentTarget::Top)
-    })
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 pub(crate) fn scroll_to_fragment(
