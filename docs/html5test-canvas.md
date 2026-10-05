@@ -190,8 +190,8 @@ the half-covered one-pixel stroke has alpha 128 in Breeze versus 127 in Chrome;
 both produce 64 at half global opacity and 255 when pixel-aligned.
 Remaining differences are recorded rather than ignored: existing straight-alpha
 bitmap arithmetic differs from Chrome's premultiplied quantization in some blend
-channels, and the sampled `arcTo` edge has alpha 191 versus Chrome's 170.
-Curve flattening/raster coverage and premultiplied bitmap storage remain follow-up
+channels, and the sampled `arcTo` edge has alpha 160 versus Chrome's 170 after
+adaptive curve flattening (previously 191). Raster coverage and premultiplied bitmap storage remain follow-up
 work; these fixtures are not a claim of pixel-perfect Canvas rendering.
 
 Rectangle drawing retains Web IDL double coordinates, normalizes negative sizes,
@@ -233,9 +233,27 @@ opposite winding and ROI offsets. Window and worker tests cover fractional alpha
 overlap, holes, transforms, open paths and effect ordering. In the hidden
 `fill-coverage.html` fixture, Breeze matches Chrome's half-covered edge (alpha 64
 at half opacity), duplicated-contour union, evenodd cancellation and open-path
-geometry. Curve tessellation remains a difference: the sampled filled arc has
-alpha 202 versus Chrome's 216, and the rounded corner has 63 versus 86. These
+geometry. With adaptive curves, the sampled filled arc has alpha 231 versus
+Chrome's 216 (previously 202), and the rounded corner has 79 versus 86 (previously 63). These
 are recorded limitations, not evidence of full curve or clipping parity.
+
+Curve construction reuses the existing MIT/Apache-2.0 kurbo dependency instead
+of fixed 24-segment Béziers and coarse small-arc sampling. The bounded native
+adapter flattens transformed quadratic/cubic curves and ellipses with a 0.025
+bitmap-coordinate error budget. Arc-to-cubic and cubic-to-line approximation
+split that budget; transformed controls are checked before adaptive work.
+Requests cap their serialized input at 2 KiB, coordinates at 16,384, and retained
+points at the existing 8,192-point path limit. Out-of-range requests retain the
+bounded software fallback. Path2D stores author-coordinate geometry; scaling an
+already-flattened retained path can still magnify its approximation error.
+
+An empty Bézier subpath begins at its first control point, and a curve following
+closePath starts from the closed contour's first point. Arc angles normalize with
+modulo rather than repeated turn subtraction, so very large finite inputs cannot
+spin indefinitely. Native tests measure distance from independently sampled
+analytic curves; window/worker tests cover origins, construction transforms,
+closed-contour continuation, degenerate arcs and geometry budgets. These changes
+improve real Canvas behavior without introducing a new feature-detection claim.
 
 Source-over compositing uses scalar premultiplied-alpha arithmetic without
 allocating temporary arrays or per-pixel typed-array views. An independent

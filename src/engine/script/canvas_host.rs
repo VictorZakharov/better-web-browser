@@ -6,6 +6,7 @@ use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
 use std::io::Cursor;
 
 mod coverage;
+mod curves;
 mod fill;
 mod path;
 mod shadow;
@@ -18,6 +19,9 @@ use crate::limits::MAX_CANVAS_PIXELS;
 const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
+    if operation == "canvasCurvePoints" {
+        return Ok(Some(curves::points(args)));
+    }
     if operation == "canvasStrokeMask" {
         return Ok(Some(path::stroke_mask(args)));
     }

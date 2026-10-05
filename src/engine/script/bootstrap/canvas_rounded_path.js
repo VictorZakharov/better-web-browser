@@ -41,7 +41,7 @@
             const paint = (x, y) => transform ? matrixPoint2D(transform, x, y) : [x, y];
             if (path.current === null) { moveCanvasPath(path, ...paint(x1, y1)); return; }
             const points = path.subpaths[path.current].points;
-            const previous = points[points.length - 1];
+            const previous = path.subpaths[path.current].closed ? points[0] : points[points.length - 1];
             const inverse = transform ? matrixInverse2D(transform) : null;
             if (transform && !inverse) return;
             const [x0, y0] = inverse ? matrixPoint2D(inverse, ...previous) : previous;

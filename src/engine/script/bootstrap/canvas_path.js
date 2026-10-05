@@ -1,6 +1,8 @@
     // A path is a list of bounded, flattened subpaths. Curves are subdivided before rasterization;
     // the original Canvas current path is deliberately not part of the save/restore drawing state.
     const MAX_CANVAS_PATH_POINTS = 8192;
+    const canvasCurveHost = __hostCall;
+    const canvasCurveStringify = JSON.stringify;
     const canvasPathData = new WeakMap();
     const newCanvasPath = () => ({ subpaths: [], current: null, pointCount: 0 });
     const copyCanvasPath = path => ({
@@ -53,8 +55,27 @@
         let sweep = endAngle - startAngle;
         if (!counterclockwise && sweep >= tau) sweep = tau;
         else if (counterclockwise && -sweep >= tau) sweep = -tau;
-        else if (!counterclockwise) { while (sweep < 0) sweep += tau; }
-        else { while (sweep > 0) sweep -= tau; }
+        else {
+            // Modulo normalization cannot spin forever for very large finite
+            // angles whose subtraction overflows or cannot change by one turn.
+            sweep = ((endAngle % tau - startAngle % tau) % tau + tau) % tau;
+            if (counterclockwise && sweep !== 0) sweep -= tau;
+        }
+        startAngle %= tau; rotation %= tau;
+        const native = canvasCurveHost('canvasCurvePoints', canvasCurveStringify({kind:'arc', arc:{
+            center:[x,y], radii:[radiusX,radiusY], start:startAngle, sweep, rotation,
+            transform:transform || [1,0,0,1,0,0]
+        }}));
+        if (native) {
+            const reopen = path.current !== null && path.subpaths[path.current].closed ? 1 : 0;
+            if (path.pointCount + native.length + reopen > MAX_CANVAS_PATH_POINTS)
+                throw new DOMException('Canvas path exceeds the geometry budget', 'NotSupportedError');
+            for (let index=0;index<native.length;index++) {
+                if (index === 0 && path.current === null) moveCanvasPath(path, ...native[index]);
+                else lineCanvasPath(path, ...native[index]);
+            }
+            return;
+        }
         const steps = Math.max(1, Math.min(256, Math.ceil(Math.abs(sweep) * Math.max(radiusX, radiusY) / 2)));
         const cosine = Math.cos(rotation), sine = Math.sin(rotation);
         for (let step = 0; step <= steps; step++) {
@@ -67,12 +88,26 @@
             else lineCanvasPath(path, paintX, paintY);
         }
     };
-    const curveCanvasPath = (path, controls, cubic, origin = [0, 0]) => {
+    const curveCanvasPath = (path, controls, cubic) => {
         const values = controls.map(Number);
         if (!canvasPoint(values)) return;
-        if (path.current === null) moveCanvasPath(path, ...origin);
+        // An empty path starts at the first control point, not (0,0). Closing
+        // a contour leaves its first point as the current point for the next one.
+        if (path.current === null) moveCanvasPath(path, values[0], values[1]);
+        else if (path.subpaths[path.current].closed)
+            moveCanvasPath(path, ...path.subpaths[path.current].points[0]);
         const points = path.subpaths[path.current].points;
         const [x0, y0] = points[points.length - 1];
+        const native = canvasCurveHost('canvasCurvePoints', canvasCurveStringify({
+            kind:cubic?'cubic':'quadratic', points:[[x0,y0],...Array.from({length:values.length/2},
+                (_,index)=>values.slice(index*2,index*2+2))]
+        }));
+        if (native) {
+            if (path.pointCount + native.length - 1 > MAX_CANVAS_PATH_POINTS)
+                throw new DOMException('Canvas path exceeds the geometry budget', 'NotSupportedError');
+            for (let index=1;index<native.length;index++) lineCanvasPath(path, ...native[index]);
+            return;
+        }
         const steps = 24;
         for (let step = 1; step <= steps; step++) {
             const t = step / steps, u = 1 - t;
@@ -110,12 +145,12 @@
         };
         prototype.quadraticCurveTo = function(cpx, cpy, x, y) {
             const controls = [...point(this, cpx, cpy), ...point(this, x, y)];
-            curveCanvasPath(pathFor(this), controls, false, point(this, 0, 0));
+            curveCanvasPath(pathFor(this), controls, false);
         };
         prototype.bezierCurveTo = function(cp1x, cp1y, cp2x, cp2y, x, y) {
             const controls = [...point(this, cp1x, cp1y), ...point(this, cp2x, cp2y),
                 ...point(this, x, y)];
-            curveCanvasPath(pathFor(this), controls, true, point(this, 0, 0));
+            curveCanvasPath(pathFor(this), controls, true);
         };
     };
     class Path2D {

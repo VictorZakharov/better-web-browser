@@ -1,6 +1,31 @@
 use super::*;
 
 #[test]
+fn offscreen_curves_share_adaptive_geometry_and_subpath_origins() {
+    let (runtime, initial) = WorkerRuntime::start(
+        "https://example.test/curves.js",
+        r#"
+        const c=new OffscreenCanvas(64,64).getContext('2d');c.lineWidth=1;
+        c.quadraticCurveTo(10,10,30,10);
+        if(c.isPointInStroke(0,0)||!c.isPointInStroke(20,10))throw Error('worker curve origin');
+        c.beginPath();c.rect(10,10,4,4);c.bezierCurveTo(16,10,20,10,30,10);
+        if(!c.isPointInStroke(19,10)||c.isPointInStroke(19,11))throw Error('worker closed curve');
+        c.beginPath();c.arc(20,20,2,0,Math.PI*2);c.fill();
+        if(c.getImageData(20,20,1,1).data[3]!==255)throw Error('worker adaptive arc');
+        c.beginPath();c.arc(20,20,4,1e300,-1e300,true);
+        postMessage('passed');
+        "#,
+        "",
+        ScriptKind::Classic,
+        Arc::new(|url, _| Err(format!("unexpected worker fetch {url}"))),
+    );
+    assert!(runtime.is_some());
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert_eq!(initial.messages, ["\"passed\""]);
+    assert!(initial.fetch_actions.is_empty());
+}
+
+#[test]
 fn offscreen_fills_union_compound_coverage_before_opacity() {
     let (runtime, initial) = WorkerRuntime::start(
         "https://example.test/fills.js",
