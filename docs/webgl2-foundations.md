@@ -421,6 +421,27 @@ changing the public API's permitted dimensions.
 
 ## Primary contracts and reuse
 
+Successful front-end shader validation has a per-native-context LRU cache,
+bounded to sixteen entries and four MiB of combined source/output bytes. Keys
+compare the complete source, shader stage, WebGL version and every admitted
+shader-compiler extension flag/draw-buffer limit. Native capabilities are fixed
+for the cache's owner; context restoration creates a new cache. Oversized entries
+still compile but are not cached, and failed validation remains retryable.
+This does not remove either compiler: every cache hit still submits source to
+ANGLE's native compiler, and actual compilation/link status and diagnostics
+remain native observations. Tests verify replacement, eviction, byte accounting,
+stage/extension isolation, invalid recompilation after a valid shader, and fresh
+native objects when identical source is reused.
+
+The hidden `tests/webgl/repeated-validation.html` fixture performs eight repeated
+validations and native compilations, querying actual compile status each time,
+then links and draws the final shader. Three fresh-profile runs on 2026-10-05
+measured a Breeze median of 14.9 ms before versus 9.3 ms after; Chrome measured
+6.1 ms. Every browser/run compiled all eight shaders, linked successfully, drew
+`[0,255,0,255]`, and returned `NO_ERROR`. These are small fixture measurements,
+not a claim that all shader compilation is asynchronous or that game startup is
+fixed. Cache reuse does not increase the HTML5test score or advertised features.
+
 `KHR_parallel_shader_compile` is advertised only where the pinned ANGLE context
 offers its native extension. Author admission enables real shader/program
 `COMPLETION_STATUS_KHR` queries, returning booleans from ANGLE's non-blocking
@@ -439,12 +460,16 @@ queries leave `NO_ERROR`. This fixture does not require a pending interval:
 a small shader may finish before the first poll.
 
 For full local WebGL unit runs, use `cargo test --locked --lib webgl --
---test-threads=8`. These tests share the production GPU owner, whose intentional
+--test-threads=4`. These tests share the production GPU owner, whose intentional
 process-wide limit is 16 native contexts. Unrestricted Rust test concurrency on
 machines with more cores can exhaust that limit while unrelated tests hold
 contexts, causing correct context-admission rejection rather than a shader
 failure. The bounded run still executes every selected test concurrently; it
 does not increase the browser's resource limits or skip compliance tests.
+At eight threads a worker MRT fixture also exceeded its unchanged two-second
+watchdog under contention; it passed alone in 0.08 seconds and the complete
+535-test run passed at four threads. This is a local scheduling requirement,
+not permission to loosen worker execution limits or skip that fixture.
 
 - [WebGL2 specification](https://registry.khronos.org/webgl/specs/latest/2.0/)
 - [OpenGL ES API registry](https://registry.khronos.org/OpenGL/index_es.php)

@@ -5,7 +5,29 @@ use super::{MAX_SHADER_BYTES, MAX_SHADER_SOURCE_BYTES, WebGl, gl};
 use mozangle::shaders::{self, BuiltInResources, Output, ShaderValidator};
 
 impl WebGl {
-    pub(super) fn translate_shader(&self, kind: u32, source: &str) -> Result<String, String> {
+    pub(super) fn translate_shader(&mut self, kind: u32, source: &str) -> Result<String, String> {
+        let environment = super::shader_validation_cache::Environment {
+            api: self.options.api,
+            kind,
+            derivatives: self.extensions.derivatives,
+            frag_depth: self.extensions.frag_depth,
+            texture_lod: self.extensions.texture_lod,
+            draw_buffers: self.extensions.draw_buffers,
+            max_draw_buffers: self.extensions.max_draw_buffers,
+        };
+        // Native capabilities are immutable for this context. Extension
+        // admission changes the explicit environment; restore constructs a new
+        // owner/cache. Reuse only successful validation, not transient failures.
+        if let Some(translated) = self.shader_validation_cache.lookup(environment, source) {
+            return Ok(translated);
+        }
+        let translated = self.translate_shader_uncached(kind, source)?;
+        self.shader_validation_cache
+            .insert(environment, source, &translated);
+        Ok(translated)
+    }
+
+    fn translate_shader_uncached(&self, kind: u32, source: &str) -> Result<String, String> {
         // ANGLE's driver also owns compiler initialization. Initialize is idempotent;
         // do not finalize here, while other current contexts may still need it.
         shaders::initialize().map_err(str::to_owned)?;

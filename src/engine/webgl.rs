@@ -174,6 +174,7 @@ mod shader_queries;
 #[cfg(test)]
 mod shader_source_budget_tests;
 mod shader_validation;
+mod shader_validation_cache;
 mod stencil_masks;
 mod surface;
 mod surface_multisample;
@@ -325,6 +326,7 @@ struct WebGl {
     core_buffer_bindings: HashMap<u32, u32>,
     surface: Surface,
     readback_cache: readback_cache::Cache,
+    shader_validation_cache: shader_validation_cache::Cache,
     objects: Objects,
     errors: VecDeque<u32>,
     options: Options,
