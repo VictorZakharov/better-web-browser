@@ -6,6 +6,7 @@ use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
 use std::io::Cursor;
 
 mod path;
+mod shadow;
 #[cfg(windows)]
 mod text;
 pub(crate) mod webgl;
@@ -16,6 +17,9 @@ const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
     if operation == "canvasStrokeMask" {
         return Ok(Some(path::stroke_mask(args)));
+    }
+    if operation == "canvasShadowLayer" {
+        return Ok(Some(shadow::render(args)));
     }
     if operation == "canvasTextAvailable" {
         return Ok(Some(JsValue::Boolean(cfg!(windows))));

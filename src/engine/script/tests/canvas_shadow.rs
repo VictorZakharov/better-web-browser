@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+fn canvas_shadow_source_is_not_clipped_before_shadow_generation() {
+    let (_, outcome) = execute_html(
+        r#"<canvas width=8 height=4></canvas><script>
+        const c=document.querySelector('canvas').getContext('2d');
+        c.rect(3,0,2,4);c.clip();c.shadowColor='#0000ff';c.shadowOffsetX=2;
+        c.fillStyle='#ff0000';c.fillRect(1,1,1,1);
+        const pixel=Array.from(c.getImageData(3,1,1,1).data).join(',');
+        if(pixel!=='0,0,255,255')throw Error('shadow source was clipped too early: '+pixel);
+        if(c.getImageData(1,1,1,1).data[3]!==0)throw Error('source ignored final clip');
+    </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+}
+
+#[test]
+fn canvas_shadow_eligibility_and_two_pass_copy_follow_drawing_model() {
+    let (_, outcome) = execute_html(
+        r#"<canvas width=8 height=4></canvas><script>
+        const c=document.querySelector('canvas').getContext('2d');
+        c.shadowColor='#0000ff';c.fillStyle='rgba(255,0,0,.5)';c.fillRect(1,1,1,1);
+        if(c.getImageData(1,1,1,1).data[3]!==128)throw Error('zero offset and blur must not draw a shadow');
+        c.clearRect(0,0,8,4);c.shadowOffsetX=2;c.globalCompositeOperation='copy';
+        c.fillRect(1,1,1,1);
+        if(c.getImageData(3,1,1,1).data[3]!==0)throw Error('copy must overwrite its shadow');
+        if(c.getImageData(1,1,1,1).data[0]!==255)throw Error('copy source missing');
+    </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+}
+
+#[test]
 fn canvas_shadows_follow_source_alpha_and_saved_state() {
     let (dom, outcome) = execute_html(
         r#"<canvas width=6 height=4></canvas><output>no</output><script>

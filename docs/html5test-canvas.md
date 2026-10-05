@@ -145,6 +145,23 @@ Source-over compositing uses scalar premultiplied-alpha arithmetic without
 allocating temporary arrays or per-pixel typed-array views. An independent
 alpha oracle, repeated 512-square closed paths and overlapping clipped strokes
 cover the optimized paths.
+
+Canvas shadow generation reuses the existing MIT/Apache-2.0 `image` library's
+separable Gaussian filter, with the HTML `shadowBlur / 2` deviation. Alpha is
+normalized floating point, padded with transparent pixels, and filtered only
+over its occupied region. The native adapter caps sigma at 64 and working
+storage at 8,388,608 pixels; requests outside its storage/dimension bounds
+retain the older bounded software fallback. This is not a claim that every
+Canvas filter or out-of-bitmap shadow source is fully conformant.
+
+Shadow eligibility requires nonzero blur or offset, not just a nontransparent
+shadow color. The drawing clip is applied after source/shadow generation, and
+the shadow and source are composited separately using the selected operator.
+The local `tests/canvas/shadow-gaussian.html` fixture produced alpha samples
+`[4,23,67,106,117,99,55,16]` in Breeze versus
+`[4,23,67,106,116,98,55,16]` in hidden Chrome on October 5. Its clipped shadow
+sample matches exactly: `[0,0,255,255]`. Whole-page layout/font parity is not
+inferred from these pixel samples.
 Normative references: [HTML Canvas 2D](https://html.spec.whatwg.org/multipage/canvas.html),
 [SVG 2 paths](https://www.w3.org/TR/SVG2/paths.html),
 [Geometry Interfaces](https://www.w3.org/TR/geometry-1/),

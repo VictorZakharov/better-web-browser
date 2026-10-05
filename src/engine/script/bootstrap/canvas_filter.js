@@ -167,8 +167,7 @@
                     __shadowOffsetX: value.x, __shadowOffsetY: value.y,
                     __shadowColor: value.color}, result, width, height);
                 for (let offset = 0; offset < result.length; offset += 4)
-                    compositeCanvasPixel(shadow, offset, result.subarray(offset, offset + 4),
-                        1, 'source-over');
+                    compositeCanvasPixelAt(shadow, offset, result, offset, 1, 'source-over');
                 result = shadow;
                 continue;
             }

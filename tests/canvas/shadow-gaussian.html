@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Canvas Gaussian shadow and post-shadow clipping</title>
+<style>body { margin: 16px; background: white; font: 16px sans-serif; } canvas { border: 1px solid #888; }</style>
+<canvas id="gaussian" width="160" height="80"></canvas>
+<canvas id="clipped" width="80" height="80"></canvas>
+<output id="samples"></output>
+<script>
+const gaussian = document.getElementById('gaussian').getContext('2d');
+gaussian.fillStyle = '#ff0000';
+gaussian.shadowColor = 'rgba(0,0,255,.5)';
+gaussian.shadowBlur = 8;
+gaussian.shadowOffsetX = 48;
+gaussian.fillRect(24,24,16,16);
+const clipped = document.getElementById('clipped').getContext('2d');
+clipped.rect(40,0,40,80); clipped.clip();
+clipped.shadowColor = '#0000ff'; clipped.shadowOffsetX = 32;
+clipped.fillStyle = '#ff0000'; clipped.fillRect(8,24,16,16);
+const samples = {alpha: [64,68,72,76,80,84,88,92].map(x =>
+    gaussian.getImageData(x,32,1,1).data[3]),
+    clipped: Array.from(clipped.getImageData(44,32,1,1).data)};
+document.getElementById('samples').textContent = JSON.stringify(samples);
+document.getElementById('samples').setAttribute('data-shadow-samples', JSON.stringify(samples));
+document.documentElement.setAttribute('data-fixture-ready', 'true');
+</script>
