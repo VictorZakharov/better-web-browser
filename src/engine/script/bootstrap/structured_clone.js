@@ -1,16 +1,8 @@
 (() => {
     'use strict';
-    const bytesToBase64 = bytes => {
-        let binary = '';
-        for (let start = 0; start < bytes.length; start += 0x4000)
-            binary += String.fromCharCode(...bytes.subarray(start, start + 0x4000));
-        return btoa(binary);
-    };
-    const base64ToBytes = value => {
-        const binary = atob(value), bytes = new Uint8Array(binary.length);
-        for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
-        return bytes;
-    };
+    const binaryHost = globalThis.__hostCall;
+    const bytesToBase64 = bytes => binaryHost('cloneBinaryEncode', bytes);
+    const base64ToBytes = value => binaryHost('cloneBinaryDecode', value);
     const fail = () => { throw new DOMException('The value could not be cloned', 'DataCloneError'); };
     const blobSnapshot = globalThis.__blobStructuredCloneSnapshot;
     delete globalThis.__blobStructuredCloneSnapshot;
