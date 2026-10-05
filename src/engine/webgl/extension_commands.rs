@@ -18,6 +18,11 @@ impl WebGl {
         match c.op.as_str() {
             "supportedExtensions" => {
                 let mut names = Vec::new();
+                if self.options.api == super::ApiVersion::Two
+                    && self.extensions.available_indexed_blend
+                {
+                    names.push("OES_draw_buffers_indexed");
+                }
                 if self.extensions.available_multi_draw {
                     names.push("WEBGL_multi_draw");
                 }
@@ -68,6 +73,17 @@ impl WebGl {
                 Ok(json!(names))
             }
             "enableExtension" => {
+                if c.text == "OES_draw_buffers_indexed" {
+                    if self.options.api != super::ApiVersion::Two {
+                        return Ok(json!(false));
+                    }
+                    self.extensions.indexed_blend = self.extensions.enable_simple(
+                        c"GL_OES_draw_buffers_indexed",
+                        self.extensions.available_indexed_blend,
+                    );
+                    self.driver_result()?;
+                    return Ok(json!(self.extensions.indexed_blend));
+                }
                 if self.options.api == super::ApiVersion::Two && PROMOTED.contains(&c.text.as_str())
                 {
                     return Ok(json!(false));

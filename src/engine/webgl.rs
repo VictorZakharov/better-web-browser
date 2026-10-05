@@ -94,6 +94,7 @@ mod drawing_buffer_extent;
 #[cfg(test)]
 mod drawing_buffer_extent_tests;
 mod extension_commands;
+mod extension_draw_dispatch;
 mod extensions;
 mod float_values;
 mod framebuffer_attachments;
@@ -116,6 +117,8 @@ mod image_uploads;
 #[cfg(test)]
 mod immutable_attachment_tests;
 mod index_ranges;
+mod indexed_blend;
+mod indexed_blend_entries;
 #[cfg(test)]
 mod indexed_range_admission_tests;
 mod indexed_uniform_buffers;

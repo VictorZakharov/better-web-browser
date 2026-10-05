@@ -46,7 +46,11 @@ impl WebGl {
                 entry(1, &gl::COLOR_ATTACHMENT0);
             }
             gl::Disable(gl::SCISSOR_TEST);
-            gl::ColorMask(1, 1, 1, 1);
+            if self.extensions.indexed_blend {
+                (self.extensions.indexed_blend_entries.unwrap().mask)(0, 1, 1, 1, 1);
+            } else {
+                gl::ColorMask(1, 1, 1, 1);
+            }
             gl::DepthMask(1);
             gl::StencilMask(u32::MAX);
             gl::ClearColor(0.0, 0.0, 0.0, if self.options.alpha { 0.0 } else { 1.0 });
@@ -61,7 +65,17 @@ impl WebGl {
             gl::ClearColor(color[0], color[1], color[2], color[3]);
             gl::ClearDepthf(depth);
             gl::ClearStencil(stencil);
-            gl::ColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+            if self.extensions.indexed_blend {
+                (self.extensions.indexed_blend_entries.unwrap().mask)(
+                    0,
+                    color_mask[0],
+                    color_mask[1],
+                    color_mask[2],
+                    color_mask[3],
+                );
+            } else {
+                gl::ColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+            }
             gl::DepthMask(depth_mask);
             gl::StencilMaskSeparate(gl::FRONT, self.stencil_masks.write[0]);
             gl::StencilMaskSeparate(gl::BACK, self.stencil_masks.write[1]);

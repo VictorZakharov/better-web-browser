@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Independent WebGL2 draw-buffer blending</title>
+<pre id="probe">Testing genuine indexed blend and mask state.</pre>
+<script src="indexed-blend.js"></script>
+<script>
+try {
+    const result=testIndexedBlend(()=>document.createElement('canvas'));
+    probe.setAttribute('data-result',JSON.stringify(result));
+    probe.textContent='Indexed blending: complete shader, MRT pixel and validation checks passed.';
+} catch(error) {
+    probe.setAttribute('data-error',String(error));
+    probe.textContent='Indexed blending failed: '+String(error);
+    throw error;
+}
+</script>

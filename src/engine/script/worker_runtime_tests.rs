@@ -30,6 +30,9 @@ mod storage_manager;
 #[path = "worker_runtime_tests/webgl.rs"]
 mod webgl;
 #[cfg(windows)]
+#[path = "worker_runtime_tests/webgl_indexed_blend.rs"]
+mod webgl_indexed_blend;
+#[cfg(windows)]
 #[path = "worker_runtime_tests/webgl_multi_draw.rs"]
 mod webgl_multi_draw;
 #[cfg(windows)]

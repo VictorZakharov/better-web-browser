@@ -255,6 +255,7 @@ mod webgl_float_textures;
 #[cfg(windows)]
 mod webgl_fragment_depth;
 mod webgl_framebuffer_lifetimes;
+mod webgl_indexed_blend;
 #[cfg(windows)]
 mod webgl_instancing;
 mod webgl_khronos_reporter;

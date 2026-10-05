@@ -17,6 +17,9 @@ pub(super) type IsArray = unsafe extern "system" fn(u32) -> u8;
 pub(super) type DrawBuffers = unsafe extern "system" fn(i32, *const u32);
 
 pub(super) struct Extensions {
+    pub indexed_blend_entries: Option<super::indexed_blend_entries::Entries>,
+    pub available_indexed_blend: bool,
+    pub indexed_blend: bool,
     pub multi_draw_entries: Option<super::multi_draw_entries::Entries>,
     pub available_multi_draw: bool,
     pub multi_draw: bool,
@@ -131,7 +134,15 @@ impl Extensions {
             && max_draw_buffers >= 4
             && max_color_attachments >= max_draw_buffers;
         let multi_draw_entries = super::multi_draw_entries::Entries::load();
+        let indexed_blend_entries = super::indexed_blend_entries::Entries::load();
         Self {
+            indexed_blend_entries,
+            available_indexed_blend: indexed_blend_entries.is_some()
+                && enabled
+                    .iter()
+                    .chain(&requestable)
+                    .any(|name| name == "GL_OES_draw_buffers_indexed"),
+            indexed_blend: false,
             multi_draw_entries,
             available_multi_draw: enabled
                 .iter()
