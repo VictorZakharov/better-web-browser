@@ -88,10 +88,10 @@
     };
 
     const normalizedRectangle = (x, y, width, height) => {
-        x = Math.trunc(Number(x));
-        y = Math.trunc(Number(y));
-        width = Math.trunc(Number(width));
-        height = Math.trunc(Number(height));
+        x = +x;
+        y = +y;
+        width = +width;
+        height = +height;
         if (![x, y, width, height].every(Number.isFinite)) return null;
         if (width < 0) { x += width; width = -width; }
         if (height < 0) { y += height; height = -height; }
@@ -211,25 +211,8 @@
         __paintRect(x, y, width, height, style) {
             const rect = normalizedRectangle(x, y, width, height);
             const state = stateForCanvas(this.canvas);
-            if (!rect || !state.pixels) return;
-            if (!canvasIsIdentity(this.__transform)) {
-                paintTransformedCanvasRect(this, state, rect, style);
-                return;
-            }
-            const left = Math.max(0, rect.x);
-            const top = Math.max(0, rect.y);
-            const right = Math.min(state.width, rect.x + rect.width);
-            const bottom = Math.min(state.height, rect.y + rect.height);
-            for (let row = top; row < bottom; row++) for (let column = left; column < right; column++) {
-                if (!canvasClipAllows(this, column, row, state.width)) continue;
-                const offset = (row * state.width + column) * 4;
-                if (!style) {
-                    state.pixels.fill(0, offset, offset + 4);
-                    continue;
-                }
-                compositeCanvasPixel(state.pixels, offset, canvasPaintAt(style, column + 0.5, row + 0.5),
-                    this.__globalAlpha, this.__compositeOperation);
-            }
+            if (!rect || !rect.width || !rect.height || !state.pixels) return;
+            paintTransformedCanvasRect(this, state, rect, style);
         }
         createImageData(widthOrImageData, height, settings) {
             if (widthOrImageData instanceof ImageData)

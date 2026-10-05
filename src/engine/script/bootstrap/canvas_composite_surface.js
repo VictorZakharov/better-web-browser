@@ -63,7 +63,10 @@
     CanvasRenderingContext2D.prototype.fillRect = function(...args) {
         const rect = normalizedRectangle(...args);
         if (!rect || !rect.width || !rect.height) return;
-        return canvasCompositeSourceLayer(this, canvasOriginalFillRect, args);
+        // Web IDL conversions happen once, before the drawing operation. Reusing
+        // converted coordinates avoids calling author valueOf twice for fillRect.
+        return canvasCompositeSourceLayer(this, canvasOriginalFillRect,
+            [rect.x, rect.y, rect.width, rect.height]);
     };
     CanvasRenderingContext2D.prototype.fill = function(...args) {
         const path = canvasPathArgument(this, args[0]);

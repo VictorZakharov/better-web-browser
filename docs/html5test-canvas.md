@@ -193,6 +193,32 @@ bitmap arithmetic differs from Chrome's premultiplied quantization in some blend
 channels, and the sampled `arcTo` edge has alpha 191 versus Chrome's 170.
 Curve flattening/raster coverage and premultiplied bitmap storage remain follow-up
 work; these fixtures are not a claim of pixel-perfect Canvas rendering.
+
+Rectangle drawing retains Web IDL double coordinates, normalizes negative sizes,
+and converts author arguments once in order. Axis-aligned fill coverage is interval
+overlap; general affine rectangles integrate their convex polygon over each pixel
+square. This does not change the current path or ImageData's integer coordinates.
+`clearRect` ignores paint effects and erases whole pixels, with nearest-edge
+intervals for axis-aligned clears matching the hidden Chrome reference. Saved
+integer clips remain binary, including for fractional rectangles.
+
+Opaque, integer-aligned solid fills and clears use bounded typed-array row copies,
+including axis swaps/reflections. Translucency, blends, clips, gradients/patterns
+and fractional edges retain the general painting path; source-layer generation
+still precedes shadows, filters and compositing. No bitmap ownership or resource
+limit changes are required. Captured copy/fill intrinsics avoid invoking replaced
+author prototype methods during these row operations.
+
+The hidden `rectangle-coverage.html` probe draws twenty 256-square opaque fills
+and includes a final pixel readback in the timed interval. Three fresh-profile
+runs on 2026-10-05 measured Breeze medians of 72.7 ms before and 1.1 ms after;
+Chrome measured 0.2 ms. These tiny fixture timings are not game throughput or
+end-to-end startup measurements. Both produce the correct final red pixel.
+Chrome matches clear erasure, shear coverage and conversion order; reflected
+edge alpha differs by one. A quarter-offset square has exact-area alpha 143 in
+Breeze versus Chrome's rasterized 191. The implementation fixes coordinate
+truncation, but does not claim to match every rasterizer's antialiasing convention.
+
 Source-over compositing uses scalar premultiplied-alpha arithmetic without
 allocating temporary arrays or per-pixel typed-array views. An independent
 alpha oracle, repeated 512-square closed paths and overlapping clipped strokes

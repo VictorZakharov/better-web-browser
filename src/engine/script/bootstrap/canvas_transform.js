@@ -11,24 +11,6 @@
             Math.min(state.width, Math.ceil(Math.max(...xs))),
             Math.min(state.height, Math.ceil(Math.max(...ys)))];
     };
-    const paintTransformedCanvasRect = (context, state, rect, style) => {
-        const inverse = matrixInverse2D(context.__transform);
-        const bounds = canvasTransformedBounds(context.__transform,
-            rect.x, rect.y, rect.width, rect.height, state);
-        if (!inverse || !bounds) return;
-        const [left, top, right, bottom] = bounds;
-        for (let row = top; row < bottom; row++) for (let column = left; column < right; column++) {
-            if (!canvasClipAllows(context, column, row, state.width)) continue;
-            const [x, y] = matrixPoint2D(inverse, column + 0.5, row + 0.5);
-            if (x < rect.x || y < rect.y || x >= rect.x + rect.width || y >= rect.y + rect.height)
-                continue;
-            const offset = (row * state.width + column) * 4;
-            if (!style) state.pixels.fill(0, offset, offset + 4);
-            else compositeCanvasPixel(state.pixels, offset,
-                canvasPaintAt(style, column + 0.5, row + 0.5, inverse),
-                context.__globalAlpha, context.__compositeOperation);
-        }
-    };
     const transformCanvasPath = (path, matrix) => {
         if (canvasIsIdentity(matrix)) return path;
         const transformed = copyCanvasPath(path);

@@ -100,6 +100,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/canvas_pattern.js"),
     include_str!("bootstrap/canvas_image_draw.js"),
     include_str!("bootstrap/canvas_transform.js"),
+    include_str!("bootstrap/canvas_rect.js"),
     include_str!("bootstrap/canvas_clip.js"),
     include_str!("bootstrap/canvas_offscreen.js"),
     include_str!("bootstrap/canvas_shadow.js"),

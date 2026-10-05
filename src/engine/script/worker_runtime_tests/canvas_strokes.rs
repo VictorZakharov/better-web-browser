@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn offscreen_rectangles_preserve_double_geometry_and_whole_pixel_erasure() {
+    let (runtime, initial) = WorkerRuntime::start(
+        "https://example.test/rectangles.js",
+        r#"
+        const c=new OffscreenCanvas(32,32).getContext('2d');
+        const alpha=(x,y)=>c.getImageData(x,y,1,1).data[3];
+        c.fillRect(.25,.25,1.5,1.5);
+        if(Math.abs(alpha(0,0)-143)>1||Math.abs(alpha(1,1)-143)>1)throw Error('worker fractional fill');
+        c.clearRect(0,0,32,32);c.fillStyle='red';c.fillRect(0,0,32,32);
+        c.globalAlpha=.1;c.globalCompositeOperation='copy';c.clearRect(.5,0,1,1);
+        if(alpha(0,0)!==255||alpha(1,0))throw Error('worker fractional clear');
+        c.globalCompositeOperation='source-over';c.globalAlpha=1;c.clearRect(0,0,32,32);
+        c.setTransform(1,0,1,1,0,0);c.fillRect(0,0,1,1);
+        if(Math.abs(alpha(0,0)-128)>1||Math.abs(alpha(1,0)-128)>1)throw Error('worker shear coverage');
+        postMessage('passed');
+        "#,
+        "",
+        ScriptKind::Classic,
+        Arc::new(|url, _| Err(format!("unexpected worker fetch {url}"))),
+    );
+    assert!(runtime.is_some());
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert_eq!(initial.messages, ["\"passed\""]);
+    assert!(initial.fetch_actions.is_empty());
+}
+
+#[test]
 fn offscreen_canvas_uses_the_same_native_dash_caps_joins_and_phase_resets() {
     let (runtime, initial) = WorkerRuntime::start(
         "https://example.test/strokes.js",

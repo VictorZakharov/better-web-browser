@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Rectangle subpixel coverage and solid rows</title>
+<canvas width="256" height="256"></canvas><pre id="probe"></pre>
+<script>
+const c=document.querySelector('canvas').getContext('2d'),results=[];
+const rgba=(x,y)=>Array.from(c.getImageData(x,y,1,1).data);
+c.fillStyle='red';c.fillRect(.25,.25,1.5,1.5);
+results.push({fractional:[rgba(0,0),rgba(1,0),rgba(1,1),rgba(2,0)]});
+c.clearRect(0,0,256,256);c.fillRect(0,0,4,4);c.clearRect(.5,0,1,1);
+results.push({clear:[rgba(0,0),rgba(1,0),rgba(2,0)]});
+c.clearRect(0,0,256,256);c.setTransform(1,0,1,1,0,0);c.fillRect(0,0,1,1);
+results.push({shear:[rgba(0,0),rgba(1,0),rgba(2,0)]});
+c.resetTransform();c.clearRect(0,0,256,256);c.setTransform(-1,0,0,1,2.5,0);c.fillRect(0,0,2,1);
+results.push({reflection:[rgba(0,0),rgba(1,0),rgba(2,0)]});c.resetTransform();
+const order=[],value=(name,n)=>({valueOf(){order.push(name);return n;}});
+c.fillRect(value('x',8),value('y',8),value('w',2),value('h',2));
+results.push({conversions:order.join(',')});
+const start=performance.now();
+for(let i=0;i<20;i++){c.fillStyle=i%2?'red':'blue';c.fillRect(0,0,256,256);}
+// Force reference-browser readback inside the measured interval, rather than
+// timing only submission of deferred GPU drawing commands.
+const lastPixel=rgba(255,255);
+const elapsed=performance.now()-start;
+const probe=document.querySelector('#probe');
+probe.setAttribute('data-elapsed-ms',String(elapsed));
+probe.textContent=JSON.stringify({results,elapsed,lastPixel});
+for(let i=0;i<results.length;i++)probe.setAttribute('data-samples-'+i,JSON.stringify(results[i]));
+probe.setAttribute('data-last-pixel',JSON.stringify(lastPixel));
+</script>
