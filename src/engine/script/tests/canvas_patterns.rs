@@ -1,6 +1,15 @@
 use super::*;
 
 #[test]
+fn canvas_patterns_native_batch_matches_managed_clip_fallback() {
+    let source = include_str!("../../../../tests/canvas/pattern-paint.js");
+    let (_, outcome) = execute_html(&format!(
+        "<script>{source}\ntestPatternPainting(()=>document.createElement('canvas'));</script>"
+    ));
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+}
+
+#[test]
 fn canvas_and_path_transforms_share_exact_dictionary_and_numeric_conversion() {
     let source = include_str!("../../../../tests/canvas/matrix-contracts.js");
     let (_, outcome) = execute_html(&format!(

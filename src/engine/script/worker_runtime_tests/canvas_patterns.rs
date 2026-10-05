@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn offscreen_patterns_native_batch_matches_managed_clip_fallback() {
+    let source = format!(
+        "{}\ntestPatternPainting(()=>new OffscreenCanvas(1,1));postMessage('passed');",
+        include_str!("../../../../tests/canvas/pattern-paint.js")
+    );
+    let (runtime, initial) = WorkerRuntime::start(
+        "https://example.test/canvas-pattern-paint.js",
+        &source,
+        "",
+        ScriptKind::Classic,
+        Arc::new(|url, _| Err(format!("unexpected worker fetch {url}"))),
+    );
+    assert!(runtime.is_some());
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert_eq!(initial.messages, ["\"passed\""]);
+}
+
+#[test]
 fn offscreen_canvas_and_path_transforms_share_dictionary_and_numeric_conversion() {
     let source = format!(
         "{}\ntestMatrixContracts(()=>new OffscreenCanvas(1,1));postMessage('passed');",

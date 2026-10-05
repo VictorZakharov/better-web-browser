@@ -11,6 +11,8 @@ mod fill;
 mod gradient_mask;
 mod mask_cache;
 mod path;
+mod pattern_mask;
+mod shader_mask;
 mod shadow;
 mod solid_mask;
 mod stroke_outline;
@@ -24,6 +26,9 @@ const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
     if operation == "canvasPaintGradientMask" {
         return Ok(Some(gradient_mask::paint(args)));
+    }
+    if operation == "canvasPaintPatternMask" {
+        return Ok(Some(pattern_mask::paint(args)));
     }
     if operation == "canvasPaintSolidMask" {
         return Ok(Some(solid_mask::paint(args)));

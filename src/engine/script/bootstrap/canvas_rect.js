@@ -78,7 +78,8 @@
         if (aligned && [minX, maxX, minY, maxY].every(Number.isInteger) &&
             canvasRectSolidRows(context, state, style, left, top, right, bottom)) return;
         if (aligned && [minX, maxX, minY, maxY].every(Number.isInteger) && style &&
-            canvasIsGradient(style) && canvasPaintGradientMask(context, state, null, style,
+            (canvasIsGradient(style)||canvasIsPattern(style)) &&
+            (canvasIsPattern(style)?canvasPaintPatternMask:canvasPaintGradientMask)(context, state, null, style,
                 left, top, right, bottom)) return;
         for (let row = top; row < bottom; row++) for (let column = left; column < right; column++) {
             if (!canvasClipAllows(context, column, row, state.width)) continue;

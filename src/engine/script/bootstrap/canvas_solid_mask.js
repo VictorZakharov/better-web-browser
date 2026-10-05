@@ -1,10 +1,12 @@
-    // Geometry and painting stay separate. Batch only solid source-over regions;
-    // gradients, patterns, clipping and other operators retain the scalar path.
+    // Geometry and painting stay separate. Bounded source-over shaders batch;
+    // unsupported patterns, clipping and other operators retain the scalar path.
     const canvasSolidMaskHost = __hostCall;
     const canvasPaintSolidMask = (context, state, mask, style, left, top, right, bottom) => {
         const width = right - left, height = bottom - top, pixels = width * height;
         if (canvasIsGradient(style))
             return canvasPaintGradientMask(context, state, mask, style, left, top, right, bottom);
+        if (canvasIsPattern(style))
+            return canvasPaintPatternMask(context, state, mask, style, left, top, right, bottom);
         if (pixels < 256 || pixels > MAX_CANVAS_PIXELS || context.__clipBits ||
             canvasIsGradient(style) || canvasIsPattern(style) ||
             context.__compositeOperation !== 'source-over' || !style.channels ||

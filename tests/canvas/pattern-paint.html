@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Repeating bitmap shaders and managed fallback</title>
+<pre id="probe">Checking Canvas pattern affine transforms and coverage.</pre>
+<script src="pattern-paint.js"></script>
+<script>
+try{probe.setAttribute('data-result',JSON.stringify(testPatternPainting(()=>document.createElement('canvas'))));}
+catch(error){probe.setAttribute('data-error',String(error));throw error;}
+</script>

@@ -4,8 +4,8 @@
 
 use super::*;
 use resvg::tiny_skia::{
-    Color, GradientStop, LinearGradient, Paint, Pixmap, Point, RadialGradient, Rect, Shader,
-    SpreadMode, SweepGradient, Transform,
+    Color, GradientStop, LinearGradient, Point, RadialGradient, Shader, SpreadMode, SweepGradient,
+    Transform,
 };
 use serde::Deserialize;
 
@@ -86,33 +86,14 @@ fn render(request: &Request, destination: &[u8], mask: Option<&[u8]>) -> Option<
         // Preserve the scalar implementation rather than silently flatten it.
         return None;
     }
-    let mut source = Pixmap::new(request.width, request.height)?;
-    let paint = Paint {
+    super::shader_mask::render(
+        request.width,
+        request.height,
         shader,
-        anti_alias: false,
-        force_hq_pipeline: true,
-        ..Paint::default()
-    };
-    source.fill_rect(
-        Rect::from_xywh(0.0, 0.0, request.width as f32, request.height as f32)?,
-        &paint,
-        Transform::identity(),
-        None,
-    );
-    let mut output = destination.to_vec();
-    for (index, (pixel, source)) in output.chunks_exact_mut(4).zip(source.pixels()).enumerate() {
-        let coverage = mask.map_or(255, |mask| mask[index]);
-        if coverage == 0 {
-            continue;
-        }
-        let color = source.demultiply();
-        super::solid_mask::source_over(
-            pixel,
-            [color.red(), color.green(), color.blue(), color.alpha()].map(f64::from),
-            request.opacity * (f64::from(coverage) / 255.0),
-        );
-    }
-    Some(output)
+        destination,
+        mask,
+        request.opacity,
+    )
 }
 
 fn shader(request: &Request) -> Option<Shader<'static>> {

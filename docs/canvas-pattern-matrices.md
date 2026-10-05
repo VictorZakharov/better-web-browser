@@ -32,3 +32,29 @@ state, method descriptors, conversion order/errors, aliases and real path/pixel
 results. Both fixtures passed a fresh hidden Chrome reference run with their
 complete expected result payloads. This slice does not add an HTML5test-only
 capability or claim complete image-source/filtering support.
+
+## Bounded native bitmap painting
+
+Repeating RGBA8 snapshots now use the existing BSD-3-Clause tiny-skia bitmap
+shader for source-over regions of at least 256 pixels, without a clip. The
+context and live pattern matrices compose before converting to region-local
+coordinates. Geometry coverage and global opacity are applied exactly once by
+the shared owned shader compositor, also used by gradients. Native input uses
+closed requests, checked buffer sizes, a one-megapixel source limit and the
+existing four-megapixel destination limit. Unsupported repetition, float16,
+clipping, operators and unsafe transforms retain the managed fallback.
+
+Sampling remains nearest-neighbor; this does not claim complete image filtering.
+The native RGBA8 shader stores premultiplied pixels, so translucent source colors
+can incur the usual premultiplication/demultiplication quantization. Tests cover
+repeat phase, scaling, region origins, masks, opacity, closed malformed requests,
+owned input preservation, and Window/Worker agreement with clipped fallback.
+The shared affine/opacity fixture passed hidden Chrome with identical sample
+pixels and no failed assertions.
+
+In a fresh-profile optimized-iteration measurement on October 5, eight 256-square
+fills with changing live transforms took 102.7 ms before and 14.5 ms after.
+All four sampled pixels were unchanged and matched Chrome. These are single-run
+Canvas-call timings, not sustained rendering throughput: Chrome measured 0.1 ms
+but may defer bitmap work until the untimed readback. No HTML5test score change
+or playable-game milestone is claimed from this optimization.
