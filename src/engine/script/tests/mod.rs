@@ -252,6 +252,8 @@ mod webgl_numeric_arguments;
 #[cfg(windows)]
 mod webgl_numeric_lists;
 #[cfg(windows)]
+mod webgl_offscreen_presentation;
+#[cfg(windows)]
 mod webgl_presentation;
 #[cfg(windows)]
 mod webgl_shader_extensions;

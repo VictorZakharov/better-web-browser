@@ -47,7 +47,7 @@ pixel contracts, not an acceptance run of the game's production build. See
 [the native contract](webgl2-foundations.md) for provider limitations and replay
 instructions. Sustained gameplay and application integration remain next steps.
 
-The current batching preference is approximately **20,000 useful added lines**,
+The current batching preference is approximately **15,000 useful added lines**,
 including focused tests and documentation, with separate reviewable commits for
 the constituent standards slices. Do not pad changes to meet the target. At the
 daily 9 p.m. America/Toronto boundary, publish a draft PR for completed work even

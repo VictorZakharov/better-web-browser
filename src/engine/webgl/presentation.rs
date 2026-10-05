@@ -3,6 +3,9 @@ use super::{WebGl, gl};
 
 impl WebGl {
     pub(super) fn presented(&mut self) {
+        // Retirement changes the readable unpreserved buffer, not the last
+        // displayed bitmap. FBO-only work must not publish that implicit clear.
+        self.surface.presentation_dirty = false;
         if self.options.preserve {
             return;
         }

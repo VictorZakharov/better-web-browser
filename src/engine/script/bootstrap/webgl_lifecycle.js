@@ -47,9 +47,7 @@
             state.restoreQueued = false;
             const attributes = state.attributes;
             const id = host('webglCreate', Math.max(1, state.canvas.width), Math.max(1, state.canvas.height),
-                JSON.stringify({api:state.api, alpha:attributes.alpha, depth:attributes.depth,
-                    stencil:attributes.stencil, antialias:attributes.antialias,
-                    preserve:attributes.preserveDrawingBuffer}));
+                webGlNativeOptions(attributes, state.api));
             // Native admission failure cannot expose a half-restored context.
             // An explicit extension request can be retried after releasing peers.
             if (!id) return;

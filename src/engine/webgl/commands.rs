@@ -20,6 +20,7 @@ impl WebGl {
         }
         match c.op.as_str() {
             "drawingBufferSize" => return Ok(json!([self.surface.width, self.surface.height])),
+            "drawingBufferDirty" => return Ok(json!(self.surface.presentation_dirty)),
             "resizeCanvas" => return self.resize_canvas(c),
             "deleteWebGl2Object" => return self.delete_core_object_checked(c),
             "createTransformFeedback"

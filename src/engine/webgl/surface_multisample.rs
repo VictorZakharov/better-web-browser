@@ -30,6 +30,7 @@ impl super::WebGl {
                     | "invalidateSubFramebuffer"
             )
         {
+            self.surface.presentation_dirty = true;
             self.surface.invalidate_resolve();
             self.readback_cache.invalidate();
         }

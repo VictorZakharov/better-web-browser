@@ -46,6 +46,7 @@ impl WebGl {
             // author GL state while performing the mandatory default clear.
             self.clear_default_surface();
             self.driver_result()?;
+            self.surface.presentation_dirty = true;
             return Ok(Value::Null);
         }
         let previous_bytes = self.surface.bytes();

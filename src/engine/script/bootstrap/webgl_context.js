@@ -143,11 +143,7 @@
             return null;
         };
         const id = host('webglCreate', Math.max(1, canvas.width), Math.max(1, canvas.height),
-            JSON.stringify({api, alpha:attributes.alpha, depth:attributes.depth,
-                stencil:attributes.stencil, antialias:attributes.antialias,
-                preserve:attributes.preserveDrawingBuffer,
-                fail_if_major_performance_caveat:attributes.failIfMajorPerformanceCaveat,
-                power_preference:attributes.powerPreference}));
+            webGlNativeOptions(attributes, api));
         if (!id) return creationFailed(attributes.failIfMajorPerformanceCaveat
             ? 'No suitable hardware ANGLE context is available within the drawing-buffer budget; software fallback is disabled by failIfMajorPerformanceCaveat'
             : 'No ANGLE backend satisfies the requested WebGL attributes and context/drawing-buffer budget');
@@ -185,7 +181,7 @@
     };
     const webGlPresented = state => {
         const native = webGlContexts.get(state.context);
-        if (!native || native.lost || native.attributes.preserveDrawingBuffer) return;
+        if (!native || native.lost) return;
         webGlCall(state.context, 'presented');
-        native.dirty = true;
+        if (!native.attributes.preserveDrawingBuffer) native.dirty = true;
     };

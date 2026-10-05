@@ -46,6 +46,8 @@ mod webgl2_view_transform_tests;
 #[cfg(all(test, windows))]
 mod webgl_reflection_bindings_tests;
 #[cfg(all(test, windows))]
+mod webgl_restoration_policy_tests;
+#[cfg(all(test, windows))]
 mod webgl_video_source_tests;
 
 static INITIALIZE_V8: Once = Once::new();

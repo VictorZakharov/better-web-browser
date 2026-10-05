@@ -25,3 +25,12 @@
         converted.desynchronized = false;
         return converted;
     };
+    // Restoration reuses converted, privately owned attributes. Never revisit
+    // the author's dictionary or silently relax hardware-only admission.
+    const webGlNativeOptions = (attributes, api) => JSON.stringify({
+        api, alpha:attributes.alpha, depth:attributes.depth,
+        stencil:attributes.stencil, antialias:attributes.antialias,
+        preserve:attributes.preserveDrawingBuffer,
+        fail_if_major_performance_caveat:attributes.failIfMajorPerformanceCaveat,
+        power_preference:attributes.powerPreference
+    });

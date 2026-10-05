@@ -379,6 +379,29 @@ owned binding slots; the query, owned arrays, shader validator and native ESSL
 built-ins retain the same driver limit. A larger unsupported limit rejects that
 backend instead of clamping only the public query.
 
+Context restoration retains the original converted adapter-admission options,
+including `powerPreference` and `failIfMajorPerformanceCaveat`. Initial creation
+and restoration share one native-options encoder; restoration does not reread
+author dictionary getters or fall back to software after hardware-only admission
+fails. Failed restoration remains lost and permits a later explicit retry under
+the same policy.
+
+Canvas presentation distinguishes author writes to the default drawing buffer
+from offscreen framebuffer work. The native owner tracks pending presentation
+independently of multisample resolve and CPU-readback caches. A paint checkpoint
+checks that state once after draining ordered commands; it does not query driver
+bindings per draw. FBO-only clears/draws cannot replace the last displayed Canvas
+bitmap with its implicitly cleared unpreserved backing buffer. Explicit exports
+and readback still observe the actual backing buffer, while resize and subsequent
+default-buffer writes schedule a new bitmap.
+
+The local `tests/webgl/framebuffer-presentation.html` capture checks both parts
+of this contract: the unpreserved default buffer reads transparent black after
+retirement, while the displayed Canvas remains red after a later offscreen green
+clear. October 5 hidden captures reproduce a blank displayed Canvas in the
+preceding release and retain red in the patched browser, matching Chromium.
+The fixture needs no external library or replaced implementation.
+
 Genuinely decoded 16-bit integer images retain a private precision sidecar for
 WebGL floating-point and high-precision packed uploads. The existing `image`
 decoder and `moxcms` color transforms are reused; ordinary page painting remains

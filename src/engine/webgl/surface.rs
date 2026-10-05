@@ -13,6 +13,7 @@ pub(super) struct Surface {
     multisample: Option<super::surface_multisample::Multisample>,
     allocated_bytes: usize,
     resolve_dirty: std::cell::Cell<bool>,
+    pub(super) presentation_dirty: bool,
 }
 impl Surface {
     pub fn new(
@@ -42,6 +43,7 @@ impl Surface {
             multisample: None,
             allocated_bytes,
             resolve_dirty: std::cell::Cell::new(true),
+            presentation_dirty: true,
             read_buffer: if options.api == super::ApiVersion::Two {
                 Some(super::core_entries::CoreEntries::read_buffer_entry()?)
             } else {
