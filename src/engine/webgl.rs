@@ -121,6 +121,8 @@ mod indexed_range_admission_tests;
 mod indexed_uniform_buffers;
 mod instancing;
 mod legacy_mip_allocations;
+mod multi_draw;
+mod multi_draw_entries;
 mod multisample;
 #[cfg(test)]
 mod multisample_tests;
@@ -205,6 +207,7 @@ mod transform_array_tests;
 mod transform_buffers;
 #[cfg(test)]
 mod transform_builtin_tests;
+mod transform_capacity;
 #[cfg(test)]
 mod transform_delete_tests;
 mod transform_entries;

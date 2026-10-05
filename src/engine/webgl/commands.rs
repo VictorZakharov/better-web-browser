@@ -19,6 +19,10 @@ impl WebGl {
             return result;
         }
         match c.op.as_str() {
+            "multiDrawArraysWEBGL"
+            | "multiDrawElementsWEBGL"
+            | "multiDrawArraysInstancedWEBGL"
+            | "multiDrawElementsInstancedWEBGL" => return self.multi_draw_command(c),
             "drawingBufferSize" => return Ok(json!([self.surface.width, self.surface.height])),
             "drawingBufferDirty" => return Ok(json!(self.surface.presentation_dirty)),
             "resizeCanvas" => return self.resize_canvas(c),

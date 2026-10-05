@@ -17,6 +17,9 @@ pub(super) type IsArray = unsafe extern "system" fn(u32) -> u8;
 pub(super) type DrawBuffers = unsafe extern "system" fn(i32, *const u32);
 
 pub(super) struct Extensions {
+    pub multi_draw_entries: Option<super::multi_draw_entries::Entries>,
+    pub available_multi_draw: bool,
+    pub multi_draw: bool,
     pub available_parallel_compile: bool,
     pub parallel_compile: bool,
     pub available_core_color_float: bool,
@@ -127,7 +130,19 @@ impl Extensions {
             && draw_buffers_entry.is_some()
             && max_draw_buffers >= 4
             && max_color_attachments >= max_draw_buffers;
+        let multi_draw_entries = super::multi_draw_entries::Entries::load();
         Self {
+            multi_draw_entries,
+            available_multi_draw: enabled
+                .iter()
+                .chain(&requestable)
+                .any(|name| name == "GL_ANGLE_multi_draw")
+                && multi_draw_entries.is_some()
+                && advertised
+                && arrays.is_some()
+                && elements.is_some()
+                && divisor.is_some(),
+            multi_draw: false,
             available_parallel_compile: enabled
                 .iter()
                 .chain(&requestable)

@@ -42,6 +42,8 @@ impl WebGl {
         }
         self.validate_program()?;
         self.validate_framebuffer()?;
+        let captured =
+            self.prepare_transform_capture(mode, indexed, std::iter::once((count, instances)))?;
         if indexed {
             let kind = c.u(2)?;
             let offset = c.u(3)? as usize;
@@ -56,17 +58,9 @@ impl WebGl {
             if let Some(maximum) = maximum {
                 self.validate_instance_attributes(maximum, instances, true)?;
             }
-            let function = self.extensions.elements.ok_or(gl::INVALID_OPERATION)?;
+            self.extensions.elements.ok_or(gl::INVALID_OPERATION)?;
             let _sampling = self.sampling_guard()?;
-            unsafe {
-                function(
-                    mode,
-                    count as i32,
-                    kind,
-                    offset as *const _,
-                    instances as i32,
-                );
-            }
+            self.native_draw_elements(mode, count as i32, kind, offset, Some(instances as i32));
         } else {
             let first = c.u(1)?;
             let end = first
@@ -77,13 +71,12 @@ impl WebGl {
                 return Ok(Value::Null);
             }
             self.validate_instance_attributes(end - 1, instances, true)?;
-            let function = self.extensions.arrays.ok_or(gl::INVALID_OPERATION)?;
+            self.extensions.arrays.ok_or(gl::INVALID_OPERATION)?;
             let _sampling = self.sampling_guard()?;
-            unsafe {
-                function(mode, first as i32, count as i32, instances as i32);
-            }
+            self.native_draw_arrays(mode, first as i32, count as i32, Some(instances as i32));
         }
         self.driver_result()?;
+        self.record_transform_capture(captured);
         Ok(Value::Null)
     }
 }

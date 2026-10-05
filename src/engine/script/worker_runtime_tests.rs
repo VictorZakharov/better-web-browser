@@ -30,6 +30,9 @@ mod storage_manager;
 #[path = "worker_runtime_tests/webgl.rs"]
 mod webgl;
 #[cfg(windows)]
+#[path = "worker_runtime_tests/webgl_multi_draw.rs"]
+mod webgl_multi_draw;
+#[cfg(windows)]
 #[path = "worker_runtime_tests/webgl_textures.rs"]
 mod webgl_textures;
 #[path = "worker_runtime_tests/websocket.rs"]

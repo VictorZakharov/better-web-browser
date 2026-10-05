@@ -256,6 +256,8 @@ mod webgl_instancing;
 mod webgl_khronos_reporter;
 #[cfg(windows)]
 mod webgl_lifecycle;
+mod webgl_multi_draw;
+mod webgl_multi_draw_capture;
 #[cfg(windows)]
 mod webgl_numeric_arguments;
 #[cfg(windows)]

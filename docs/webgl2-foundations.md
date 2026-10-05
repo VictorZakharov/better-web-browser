@@ -480,3 +480,8 @@ shader compiler. The small typed entry-point adapters use the pinned Khronos
 GLES3 header ABIs; they do not resolve author-supplied symbols, add dependencies,
 copy a third-party renderer, or weaken native WebGL validation. Provenance and
 licensing are recorded in [the backend documentation](webgl-backend.md).
+
+The standards-based game-readiness batch also adds genuine
+[native multi-draw](webgl-multi-draw.md), including real draw IDs, atomic buffer
+validation and aggregate transform-feedback capacity. This does not claim that
+gd-clone is runnable or change HTML5test feature detection to manufacture points.

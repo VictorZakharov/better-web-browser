@@ -16,6 +16,7 @@ pub(super) struct Environment {
     pub frag_depth: bool,
     pub texture_lod: bool,
     pub draw_buffers: bool,
+    pub multi_draw: bool,
     pub max_draw_buffers: u32,
 }
 

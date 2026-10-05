@@ -8,6 +8,7 @@ fn environment() -> Environment {
         frag_depth: false,
         texture_lod: false,
         draw_buffers: false,
+        multi_draw: false,
         max_draw_buffers: 4,
     }
 }
@@ -20,6 +21,10 @@ fn compiler_environment_and_exact_source_both_identify_cache_entries() {
     assert_eq!(cache.lookup(key, "shader"), Some("validated".into()));
     assert_eq!(cache.lookup(key, "shader "), None);
     let variants = [
+        Environment {
+            multi_draw: true,
+            ..key
+        },
         Environment {
             api: ApiVersion::Two,
             ..key
