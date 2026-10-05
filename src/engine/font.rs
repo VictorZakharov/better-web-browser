@@ -25,7 +25,8 @@ pub struct WebFont {
     pub family: String,
     pub weight: u16,
     pub italic: bool,
-    pub sfnt: Vec<u8>,
+    /// Validated immutable font bytes shared by page snapshots and font catalogs.
+    pub sfnt: std::sync::Arc<[u8]>,
     pub source_url: String,
     /// Script-owned FontFaceSet membership; stylesheet faces have no source ID.
     pub script_source_id: Option<u32>,
@@ -104,7 +105,7 @@ pub fn decode_web_font(face: &WebFontFace, bytes: &[u8]) -> Result<WebFont, Stri
         family: face.family.clone(),
         weight: face.weight,
         italic: face.italic,
-        sfnt,
+        sfnt: sfnt.into(),
         source_url: face.url.clone(),
         script_source_id: None,
     })

@@ -77,7 +77,7 @@ impl FontCatalog {
                 FontStyle::Normal
             };
             self.collection.register_fonts(
-                Blob::from(font.sfnt.clone()),
+                Blob::new(std::sync::Arc::new(font.sfnt.clone())),
                 Some(FontInfoOverride {
                     family_name: Some(&font.family),
                     style: Some(style),
