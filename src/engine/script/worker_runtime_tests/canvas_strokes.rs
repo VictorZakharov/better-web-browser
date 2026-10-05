@@ -1,6 +1,28 @@
 use super::*;
 
 #[test]
+fn offscreen_canvas_batches_owned_solid_masks_with_live_color_and_alpha() {
+    let (runtime, initial) = WorkerRuntime::start(
+        "https://example.test/solid-mask.js",
+        r#"
+        const c=new OffscreenCanvas(64,64).getContext('2d'),p=new Path2D();p.rect(8,8,40,40);
+        c.fillStyle='red';c.fill(p);c.clearRect(0,0,64,64);
+        c.fillStyle='blue';c.globalAlpha=.5;c.fill(p);
+        if(Array.from(c.getImageData(16,16,1,1).data).join()!=='0,0,255,128')throw Error('worker solid');
+        if(c.getImageData(0,0,1,1).data[3])throw Error('worker outside');
+        postMessage('passed');
+        "#,
+        "",
+        ScriptKind::Classic,
+        Arc::new(|url, _| Err(format!("unexpected worker fetch {url}"))),
+    );
+    assert!(runtime.is_some());
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert_eq!(initial.messages, ["\"passed\""]);
+    assert!(initial.fetch_actions.is_empty());
+}
+
+#[test]
 fn offscreen_curves_share_adaptive_geometry_and_subpath_origins() {
     let (runtime, initial) = WorkerRuntime::start(
         "https://example.test/curves.js",

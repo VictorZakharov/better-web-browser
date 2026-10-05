@@ -132,6 +132,7 @@
                 parts: path.subpaths.map(part => ({points: part.points, closed: !!part.closed}))
             }));
             if (nativeFill) {
+                if (canvasPaintSolidMask(context, state, nativeFill, style, left, top, right, bottom)) return;
                 for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
                     const coverage = nativeFill[(y - top) * (right - left) + x - left] / 255;
                     if (coverage && canvasClipAllows(context, x, y, state.width))
@@ -172,6 +173,8 @@
         const nativeCoverage = canvasRasterHost('canvasStrokeMask',
             canvasNativeStrokeRequest(context, strokePath, maskWidth, bottom - top, left, top));
         const coverage = nativeCoverage || new Uint8Array(maskWidth * (bottom - top));
+        if (nativeCoverage && canvasPaintSolidMask(context, state, nativeCoverage, style,
+            left, top, right, bottom)) return;
         if (!nativeCoverage && !canvasIsIdentity(context.__transform)) {
             const segments = canvasStrokeSegments(strokePath);
             const work = maskWidth * (bottom - top) * Math.max(1, strokePath.pointCount);

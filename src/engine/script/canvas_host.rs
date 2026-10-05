@@ -11,6 +11,7 @@ mod fill;
 mod mask_cache;
 mod path;
 mod shadow;
+mod solid_mask;
 mod stroke_outline;
 #[cfg(windows)]
 mod text;
@@ -20,6 +21,9 @@ use crate::limits::MAX_CANVAS_PIXELS;
 const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
+    if operation == "canvasPaintSolidMask" {
+        return Ok(Some(solid_mask::paint(args)));
+    }
     if operation == "canvasCurvePoints" {
         return Ok(Some(curves::points(args)));
     }

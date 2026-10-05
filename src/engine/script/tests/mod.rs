@@ -52,6 +52,7 @@ mod canvas_native_stroke;
 mod canvas_presentation;
 mod canvas_rect_coverage;
 mod canvas_shadow;
+mod canvas_solid_mask;
 mod canvas_stroke_coverage;
 mod canvas_stroke_styles;
 mod canvas_svg_path;
