@@ -45,3 +45,18 @@ Native tests use an independent integer alpha oracle, and OffscreenCanvas tests
 verify owned destination regions and live paint. The same targeted single run
 with batched painting took 45.5 ms; its interior/outside samples were unchanged.
 The extra owned-copy/host-call overhead is deliberately avoided for tiny regions.
+
+## Exact supersample reduction
+
+Changing geometry still needs fresh rasterization. Its 2-by-2 and 4-by-4 coverage
+reduction now accumulates source rows rather than repeatedly indexing individual
+samples. Four-byte integer lane sums avoid carries between pairs; the final
+rounding remains exactly `(sum + sample_count / 2) / sample_count`. Independent
+tests compare every output byte against the original nested-sample equation,
+including odd row widths and constant coverage extremes. Sample counts, quality,
+allocation limits and raster budgets are unchanged.
+
+One fresh hidden run of `tests/canvas/coverage-reduction.html`, which changes the
+pen width for all 40 strokes to avoid reuse hits, took 153.4 ms before and 116.1 ms
+after. The sampled alpha values remained `[255, 48, 0, 0]`. This is a targeted
+single-run measurement, not a claim that game startup is fixed.

@@ -50,23 +50,85 @@ impl Region {
         if scale == 1 {
             return Some(samples);
         }
-        let mut coverage = vec![0; pixels];
-        let row_width = self.width as usize * scale as usize;
-        let sample_count = scale * scale;
-        for y in 0..self.height as usize {
-            for x in 0..self.width as usize {
-                let mut sum = 0u32;
-                for dy in 0..scale as usize {
-                    let start = (y * scale as usize + dy) * row_width + x * scale as usize;
-                    sum += samples[start..start + scale as usize]
-                        .iter()
-                        .map(|v| u32::from(*v))
-                        .sum::<u32>();
-                }
-                coverage[y * self.width as usize + x] =
-                    ((sum + sample_count / 2) / sample_count) as u8;
+        Some(match scale {
+            2 => downsample::<2>(&samples, self.width as usize, self.height as usize),
+            4 => downsample::<4>(&samples, self.width as usize, self.height as usize),
+            _ => unreachable!("bounded power-of-two raster scale"),
+        })
+    }
+}
+
+fn downsample<const SCALE: usize>(samples: &[u8], width: usize, height: usize) -> Vec<u8> {
+    debug_assert!(SCALE == 2 || SCALE == 4);
+    let source_stride = width * SCALE;
+    debug_assert_eq!(samples.len(), source_stride * height * SCALE);
+    let mut output = vec![0; width * height];
+    let mut sums = vec![0u16; width];
+    for (source, destination) in samples
+        .chunks_exact(source_stride * SCALE)
+        .zip(output.chunks_exact_mut(width))
+    {
+        sums.fill(0);
+        for row in source.chunks_exact(source_stride) {
+            for (sum, group) in sums.iter_mut().zip(row.chunks_exact(SCALE)) {
+                let horizontal = if SCALE == 4 {
+                    // Two independent 16-bit lanes sum byte pairs without
+                    // carry between lanes; each pair is at most 510.
+                    let packed = u32::from_ne_bytes([group[0], group[1], group[2], group[3]]);
+                    let pairs = (packed & 0x00ff_00ff) + ((packed >> 8) & 0x00ff_00ff);
+                    ((pairs & 0xffff) + (pairs >> 16)) as u16
+                } else {
+                    u16::from(group[0]) + u16::from(group[1])
+                };
+                // The largest 4x4 total is 4080, comfortably within u16.
+                *sum += horizontal;
             }
         }
-        Some(coverage)
+        for (pixel, sum) in destination.iter_mut().zip(&sums) {
+            *pixel = ((*sum + (SCALE * SCALE / 2) as u16) / (SCALE * SCALE) as u16) as u8;
+        }
+    }
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn verify<const SCALE: usize>() {
+        let (width, height) = (7, 5);
+        let samples: Vec<_> = (0..width * height * SCALE * SCALE)
+            .map(|index| (index * 73 + index / 11 * 19) as u8)
+            .collect();
+        let actual = downsample::<SCALE>(&samples, width, height);
+        for y in 0..height {
+            for x in 0..width {
+                let mut total = 0u32;
+                for dy in 0..SCALE {
+                    for dx in 0..SCALE {
+                        total +=
+                            u32::from(samples[(y * SCALE + dy) * width * SCALE + x * SCALE + dx]);
+                    }
+                }
+                let expected = (total + (SCALE * SCALE / 2) as u32) / (SCALE * SCALE) as u32;
+                assert_eq!(u32::from(actual[y * width + x]), expected);
+            }
+        }
+        for value in [0, 1, 127, 128, 254, 255] {
+            assert_eq!(
+                downsample::<SCALE>(&vec![value; samples.len()], width, height),
+                vec![value; width * height]
+            );
+        }
+    }
+
+    #[test]
+    fn two_by_two_reduction_matches_independent_sample_sum() {
+        verify::<2>();
+    }
+
+    #[test]
+    fn four_by_four_reduction_matches_independent_sample_sum() {
+        verify::<4>();
     }
 }
