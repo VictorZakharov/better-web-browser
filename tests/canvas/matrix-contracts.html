@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Shared Canvas matrix dictionary and numeric conversion</title>
+<pre id="probe">Testing genuine matrix conversion and Path2D geometry.</pre>
+<script src="matrix-contracts.js"></script>
+<script>
+try {
+    const result=testMatrixContracts(()=>document.createElement('canvas'));
+    probe.setAttribute('data-result',JSON.stringify(result));
+    probe.textContent='Canvas matrix and Path2D tests passed.';
+} catch(error) {
+    probe.setAttribute('data-error',String(error));probe.textContent=String(error);throw error;
+}
+</script>

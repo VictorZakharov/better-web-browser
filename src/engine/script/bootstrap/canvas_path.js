@@ -161,14 +161,14 @@
             else throw new TypeError('Path2D requires a path or SVG path string');
         }
         addPath(path, transform = {}) {
-            if (!(path instanceof Path2D)) throw new TypeError('addPath requires Path2D');
+            if(!canvasPathData.has(this))throw new TypeError('addPath requires a Path2D receiver');
+            if (arguments.length<1||!canvasPathData.has(path)) throw new TypeError('addPath requires Path2D');
+            const matrix=matrixDictionary2D(transform);
+            if(!canvasPoint(matrix))return;
             const target = canvasPathData.get(this);
             const addition = copyCanvasPath(canvasPathData.get(path));
             if (target.pointCount + addition.pointCount > MAX_CANVAS_PATH_POINTS)
                 throw new DOMException('Canvas path exceeds the geometry budget', 'NotSupportedError');
-            const { a = 1, b = 0, c = 0, d = 1, e = 0, f = 0 } = transform;
-            const matrix = [a, b, c, d, e, f].map(Number);
-            if (!canvasPoint(matrix)) throw new TypeError('Path transform components must be finite');
             for (const part of addition.subpaths) for (const point of part.points) {
                 const [x, y] = point;
                 point[0] = matrix[0] * x + matrix[2] * y + matrix[4];
@@ -179,4 +179,5 @@
             target.current = target.subpaths.length ? target.subpaths.length - 1 : null;
         }
     }
+    Object.defineProperty(Path2D.prototype,'addPath',{enumerable:true});
     installCanvasPathMethods(Path2D.prototype, path => canvasPathData.get(path));

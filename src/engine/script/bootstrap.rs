@@ -170,6 +170,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/resize_observer_entries.js"),
     include_str!("bootstrap/geometry_interfaces.js"),
     include_str!("bootstrap/geometry_matrix.js"),
+    include_str!("bootstrap/geometry_matrix_dictionary.js"),
     include_str!("bootstrap/geometry_matrix_ops.js"),
     include_str!("bootstrap/geometry_matrix_classes.js"),
     include_str!("bootstrap/geometry_quad.js"),

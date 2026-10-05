@@ -20,35 +20,3 @@
         matrix[0] * x + matrix[2] * y + matrix[4],
         matrix[1] * x + matrix[3] * y + matrix[5]
     ];
-    const matrixComponents2D = source => {
-        if (source === undefined || source === null) return identity2D();
-        if (source instanceof DOMMatrixReadOnly) {
-            if (!source.is2D) throw new TypeError('Canvas requires a 2D matrix');
-            return [source.a, source.b, source.c, source.d, source.e, source.f];
-        }
-        if (typeof source === 'string') {
-            const match = /^matrix\(\s*([^)]*)\s*\)$/i.exec(source.trim());
-            if (!match) throw new DOMException('Invalid 2D matrix string', 'SyntaxError');
-            const values = match[1].split(/\s*,\s*/).map(Number);
-            if (values.length !== 6 || !values.every(Number.isFinite))
-                throw new DOMException('Invalid 2D matrix string', 'SyntaxError');
-            return values;
-        }
-        if (typeof source[Symbol.iterator] === 'function') {
-            const values = Array.from(source, Number);
-            if (values.length !== 6) throw new TypeError('A 2D matrix sequence must have six entries');
-            return values;
-        }
-        if (typeof source !== 'object') throw new TypeError('Invalid matrix initializer');
-        if (matrixDictionaryIs3D(source)) throw new TypeError('Canvas requires a 2D matrix');
-        const aliases = [['a', 'm11'], ['b', 'm12'], ['c', 'm21'],
-            ['d', 'm22'], ['e', 'm41'], ['f', 'm42']];
-        return aliases.map(([short, long], index) => {
-            const fallback = index === 0 || index === 3 ? 1 : 0;
-            const left = source[short] === undefined ? undefined : Number(source[short]);
-            const right = source[long] === undefined ? undefined : Number(source[long]);
-            if (left !== undefined && right !== undefined && left !== right)
-                throw new TypeError('Conflicting matrix component aliases');
-            return left ?? right ?? fallback;
-        });
-    };

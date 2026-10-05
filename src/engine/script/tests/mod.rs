@@ -51,6 +51,7 @@ mod canvas_gradients;
 mod canvas_image_data;
 mod canvas_mask_reuse;
 mod canvas_native_stroke;
+mod canvas_patterns;
 mod canvas_presentation;
 mod canvas_rect_coverage;
 mod canvas_shadow;

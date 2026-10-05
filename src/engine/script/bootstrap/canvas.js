@@ -134,9 +134,9 @@
             this.__stack = [];
         }
         get fillStyle() { return canvasIsGradient(this.__fill) ||
-            this.__fill instanceof CanvasPattern ? this.__fill : this.__fill.serialized; }
+            canvasIsPattern(this.__fill) ? this.__fill : this.__fill.serialized; }
         set fillStyle(value) {
-            if (canvasIsGradient(value) || value instanceof CanvasPattern) {
+            if (canvasIsGradient(value) || canvasIsPattern(value)) {
                 this.__fill = value; return;
             }
             const color = normalizedColor(value);

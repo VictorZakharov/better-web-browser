@@ -75,9 +75,9 @@
         return valid.length ? Math.max(...valid) : null;
     };
     const canvasPaintAt = (style, x, y, inverse = null) => {
-        if (inverse && (canvasIsGradient(style) || style instanceof CanvasPattern))
+        if (inverse && (canvasIsGradient(style) || canvasIsPattern(style)))
             [x, y] = matrixPoint2D(inverse, x, y);
-        if (style instanceof CanvasPattern) return sampleCanvasPattern(style, x, y);
+        if (canvasIsPattern(style)) return sampleCanvasPattern(style, x, y);
         const gradient = canvasGradientGet(canvasGradientStates, style);
         if (!gradient) return style.channels;
         const stops = gradient.stops;

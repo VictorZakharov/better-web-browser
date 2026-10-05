@@ -20,33 +20,46 @@
         }
         return transformed;
     };
-    const canvasTransformValues = args => args.length === 1 ? matrixComponents2D(args[0]) :
-        args.length === 6 ? args.map(Number) : (() => { throw new TypeError('Expected a matrix or six components'); })();
+    const canvasTransformValues = args => args.length <= 1 ? matrixDictionary2D(args[0]) :
+        args.length >= 6 ? args.slice(0,6).map(value=>+value) :
+            (() => { throw new TypeError('Expected a matrix dictionary or six components'); })();
     CanvasRenderingContext2D.prototype.getTransform = function() {
+        canvasImageDataContext(this);
         return new DOMMatrix(this.__transform);
     };
     CanvasRenderingContext2D.prototype.resetTransform = function() {
+        canvasImageDataContext(this);
         this.__transform = identity2D();
     };
     CanvasRenderingContext2D.prototype.setTransform = function(...args) {
-        const values = args.length ? canvasTransformValues(args) : identity2D();
+        canvasImageDataContext(this);
+        const values = canvasTransformValues(args);
         if (values.every(Number.isFinite)) this.__transform = values;
     };
-    CanvasRenderingContext2D.prototype.transform = function(...args) {
-        if (args.length !== 6) throw new TypeError('transform requires six components');
-        const values = args.map(Number);
+    CanvasRenderingContext2D.prototype.transform = function(a,b,c,d,e,f) {
+        canvasImageDataContext(this);
+        if (arguments.length < 6) throw new TypeError('transform requires six components');
+        const values = [a,b,c,d,e,f].map(value=>+value);
         if (values.every(Number.isFinite))
             this.__transform = matrixMultiply2D(this.__transform, values);
     };
     CanvasRenderingContext2D.prototype.translate = function(x, y) {
-        this.transform(1, 0, 0, 1, x, y);
+        canvasImageDataContext(this);
+        if(arguments.length<2)throw new TypeError('translate requires two arguments');
+        const values=[+x,+y];
+        if(values.every(Number.isFinite))this.__transform=matrixMultiply2D(this.__transform,[1,0,0,1,...values]);
     };
-    CanvasRenderingContext2D.prototype.scale = function(x, y = x) {
-        this.transform(x, 0, 0, y, 0, 0);
+    CanvasRenderingContext2D.prototype.scale = function(x, y) {
+        canvasImageDataContext(this);
+        if(arguments.length<2)throw new TypeError('scale requires two arguments');
+        const values=[+x,+y];
+        if(values.every(Number.isFinite))this.__transform=matrixMultiply2D(this.__transform,[values[0],0,0,values[1],0,0]);
     };
     CanvasRenderingContext2D.prototype.rotate = function(angle) {
-        angle = Number(angle);
+        canvasImageDataContext(this);
+        if(arguments.length<1)throw new TypeError('rotate requires an argument');
+        angle = +angle;
         if (!Number.isFinite(angle)) return;
         const cosine = Math.cos(angle), sine = Math.sin(angle);
-        this.transform(cosine, sine, -sine, cosine, 0, 0);
+        this.__transform=matrixMultiply2D(this.__transform,[cosine,sine,-sine,cosine,0,0]);
     };

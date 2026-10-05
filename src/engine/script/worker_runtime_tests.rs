@@ -4,6 +4,8 @@ use crate::fetch::{Body, FetchResponse, FetchUrl, HeaderList, ResponseType};
 #[path = "worker_runtime_tests/binary_clone.rs"]
 mod binary_clone;
 
+#[path = "worker_runtime_tests/canvas_patterns.rs"]
+mod canvas_patterns;
 #[path = "worker_runtime_tests/canvas_strokes.rs"]
 mod canvas_strokes;
 

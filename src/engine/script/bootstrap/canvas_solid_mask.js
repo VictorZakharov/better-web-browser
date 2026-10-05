@@ -6,7 +6,7 @@
         if (canvasIsGradient(style))
             return canvasPaintGradientMask(context, state, mask, style, left, top, right, bottom);
         if (pixels < 256 || pixels > MAX_CANVAS_PIXELS || context.__clipBits ||
-            canvasIsGradient(style) || style instanceof CanvasPattern ||
+            canvasIsGradient(style) || canvasIsPattern(style) ||
             context.__compositeOperation !== 'source-over' || !style.channels ||
             canvasPixelLength(mask) !== pixels) return false;
         const region = new canvasPixelArray(pixels * 4);
