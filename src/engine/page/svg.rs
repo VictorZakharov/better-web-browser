@@ -42,13 +42,14 @@ impl Page {
         for svg in svgs {
             let key = inline_svg_key(&svg);
             let styles = self.cached_styles.as_ref().map(|(_, _, styles)| styles);
-            let version = inline_svg_version(&svg, styles);
+            let input = InlineSvgInput::new(&svg, styles);
+            let version = input.version;
             let changed = self.inline_svg_versions.get(&svg.id()).copied() != Some(version);
             if !changed {
                 continue;
             }
             self.inline_svg_versions.insert(svg.id(), version);
-            match decode_inline_svg(&svg, styles) {
+            match input.decode() {
                 Ok(image) => {
                     let _ = self.install_decoded_image(key, image);
                 }
@@ -78,24 +79,40 @@ pub(crate) fn inline_svg_key(node: &NodeRef) -> String {
     format!("inline-svg:{:032x}", node.id().to_wire())
 }
 
-pub(super) fn inline_svg_version(node: &NodeRef, styles: Option<&StyleSet>) -> u64 {
-    let mut hash = std::collections::hash_map::DefaultHasher::new();
-    // Key the raster by its actual decoder input. DOM mutation generations also
-    // advance for animation samples (including compositor opacity/transform)
-    // that do not change this SVG drawing. Re-rasterizing filters for every such
-    // sample stalls the rendering checkpoint and the document's script tasks.
-    // Serialization includes author attributes, text and resolved currentColor,
-    // so real drawing changes still invalidate the cached pixels.
-    serialize::source(node, styles).hash(&mut hash);
-    hash.finish()
+pub(super) struct InlineSvgInput {
+    pub version: u64,
+    source: Result<String, String>,
 }
 
+impl InlineSvgInput {
+    pub fn new(node: &NodeRef, styles: Option<&StyleSet>) -> Self {
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        // Key the raster by its actual decoder input. DOM mutation generations also
+        // advance for animation samples (including compositor opacity/transform)
+        // that do not change this SVG drawing. Re-rasterizing filters for every such
+        // sample stalls the rendering checkpoint and the document's script tasks.
+        // Serialization includes author attributes, text and resolved currentColor,
+        // so real drawing changes still invalidate the cached pixels.
+        let source = serialize::source(node, styles);
+        source.hash(&mut hash);
+        Self {
+            version: hash.finish(),
+            source,
+        }
+    }
+
+    pub fn decode(self) -> Result<DecodedImage, String> {
+        let source = self.source?;
+        decode_svg(source.as_bytes(), "inline SVG")
+    }
+}
+
+#[cfg(test)]
 pub(super) fn decode_inline_svg(
     node: &NodeRef,
     styles: Option<&StyleSet>,
 ) -> Result<DecodedImage, String> {
-    let source = serialize::source(node, styles)?;
-    decode_svg(source.as_bytes(), "inline SVG")
+    InlineSvgInput::new(node, styles).decode()
 }
 
 pub(crate) fn looks_like_svg(bytes: &[u8]) -> bool {

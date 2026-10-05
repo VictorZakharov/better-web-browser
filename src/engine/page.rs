@@ -31,7 +31,7 @@ pub(crate) use self::media::MEDIA_VIDEO_PLACEHOLDER;
 pub(crate) use self::preload::discover_script_preloads;
 use self::resources::{discover_resources, document_base_url, resolve_image_url};
 pub(crate) use self::svg::inline_svg_key;
-use self::svg::{decode_inline_svg, decode_svg, looks_like_svg};
+use self::svg::{decode_svg, looks_like_svg};
 pub(crate) use self::svg::{
     decode_svg_with_limits as decode_svg_image_with_limits, looks_like_svg as looks_like_svg_image,
 };
@@ -128,8 +128,9 @@ impl Page {
             .filter(|node| node.tag_name() == Some("svg"))
             .take(MAX_INLINE_SVGS)
         {
-            inline_svg_versions.insert(svg.id(), svg::inline_svg_version(&svg, None));
-            if let Ok(image) = decode_inline_svg(&svg, None) {
+            let input = svg::InlineSvgInput::new(&svg, None);
+            inline_svg_versions.insert(svg.id(), input.version);
+            if let Ok(image) = input.decode() {
                 let _ =
                     media::install_initial_decoded_image(&mut images, inline_svg_key(&svg), image);
             }

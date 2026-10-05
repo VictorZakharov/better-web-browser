@@ -184,3 +184,24 @@ fn percent_encoded_and_css_escaped_fragments_share_dom_lookup() {
     assert_eq!(&image.bgra[8..12], [0, 0, 255, 255]);
     assert_eq!(&image.bgra[28..32], [0, 0, 0, 0]);
 }
+
+#[test]
+fn cache_stamp_and_decode_share_the_same_immutable_input() {
+    let page = Page::parse(
+        r##"<svg><defs><rect id=shape width=10 height=10 fill=red /></defs></svg>
+        <svg width=10 height=10><use href="#shape" /></svg>"##,
+        "https://example.test/",
+    );
+    let node = page.dom.elements_named("svg").last().unwrap();
+    let input = InlineSvgInput::new(&node, None);
+    let version = input.version;
+    page.dom
+        .elements_named("rect")
+        .next()
+        .unwrap()
+        .set_attr("fill", "blue");
+    assert_eq!(&input.decode().unwrap().bgra[20..24], [0, 0, 255, 255]);
+    let changed = InlineSvgInput::new(&node, None);
+    assert_ne!(changed.version, version);
+    assert_eq!(&changed.decode().unwrap().bgra[20..24], [255, 0, 0, 255]);
+}
