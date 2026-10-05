@@ -1,3 +1,5 @@
+    const canvasRasterHost = __hostCall;
+    const canvasRasterStringify = JSON.stringify;
     const contextCanvasPath = context => context.__path;
     installCanvasPathMethods(CanvasRenderingContext2D.prototype, contextCanvasPath,
         context => context.__transform);
@@ -140,41 +142,49 @@
         }
         // Mark coverage before compositing so joins or overlapping segments do not darken twice.
         const maskWidth = right - left;
-        const coverage = new Uint8Array(maskWidth * (bottom - top));
-        let coverageWork = 0;
-        for (const segment of canvasStrokeSegments(path)) {
-            const [[x0, y0], [x1, y1]] = [segment.start, segment.end];
-            const radius = context.__lineWidth / 2;
-            const minX = Math.max(left, Math.floor(Math.min(x0, x1) - radius));
-            const maxX = Math.min(right, Math.ceil(Math.max(x0, x1) + radius));
-            const minY = Math.max(top, Math.floor(Math.min(y0, y1) - radius));
-            const maxY = Math.min(bottom, Math.ceil(Math.max(y0, y1) + radius));
-            coverageWork += Math.max(0, maxX - minX) * Math.max(0, maxY - minY);
-            if (coverageWork > 50000000)
-                throw new DOMException('Canvas stroke exceeds the raster budget', 'NotSupportedError');
-            for (let y = minY; y < maxY; y++) for (let x = minX; x < maxX; x++) {
-                const projection = canvasStrokeSegmentContains(segment,
-                    x + 0.5, y + 0.5, radius, context.__lineCap);
-                if (projection === null ||
-                    !canvasDashVisible(context.__lineDash,
-                        segment.distance + projection * segment.length + context.__dashOffset)) continue;
-                coverage[(y - top) * maskWidth + x - left] = 1;
-            }
-        }
-        for (const [previous, point, next] of canvasStrokeJoins(path)) {
-            const radius = context.__lineWidth / 2;
-            const extent = radius * (context.__lineJoin === 'miter' ? context.__miterLimit : 1);
-            const minX = Math.max(left, Math.floor(point[0] - extent));
-            const maxX = Math.min(right, Math.ceil(point[0] + extent));
-            const minY = Math.max(top, Math.floor(point[1] - extent));
-            const maxY = Math.min(bottom, Math.ceil(point[1] + extent));
-            coverageWork += Math.max(0, maxX - minX) * Math.max(0, maxY - minY);
-            if (coverageWork > 50000000)
-                throw new DOMException('Canvas stroke exceeds the raster budget', 'NotSupportedError');
-            for (let y = minY; y < maxY; y++) for (let x = minX; x < maxX; x++)
-                if (canvasJoinCovers(previous, point, next, x + 0.5, y + 0.5,
-                    radius, context.__lineJoin, context.__miterLimit))
+        const nativeCoverage = context.__lineDash.length ? null : canvasRasterHost('canvasStrokeMask', canvasRasterStringify({
+            width: maskWidth, height: bottom - top, left, top,
+            line_width: context.__lineWidth, miter_limit: context.__miterLimit,
+            cap: context.__lineCap, join: context.__lineJoin,
+            parts: path.subpaths.map(part => ({ points: part.points, closed: !!part.closed }))
+        }));
+        const coverage = nativeCoverage || new Uint8Array(maskWidth * (bottom - top));
+        if (!nativeCoverage) {
+            let coverageWork = 0;
+            for (const segment of canvasStrokeSegments(path)) {
+                const [[x0, y0], [x1, y1]] = [segment.start, segment.end];
+                const radius = context.__lineWidth / 2;
+                const minX = Math.max(left, Math.floor(Math.min(x0, x1) - radius));
+                const maxX = Math.min(right, Math.ceil(Math.max(x0, x1) + radius));
+                const minY = Math.max(top, Math.floor(Math.min(y0, y1) - radius));
+                const maxY = Math.min(bottom, Math.ceil(Math.max(y0, y1) + radius));
+                coverageWork += Math.max(0, maxX - minX) * Math.max(0, maxY - minY);
+                if (coverageWork > 50000000)
+                    throw new DOMException('Canvas stroke exceeds the raster budget', 'NotSupportedError');
+                for (let y = minY; y < maxY; y++) for (let x = minX; x < maxX; x++) {
+                    const projection = canvasStrokeSegmentContains(segment,
+                        x + 0.5, y + 0.5, radius, context.__lineCap);
+                    if (projection === null ||
+                        !canvasDashVisible(context.__lineDash,
+                            segment.distance + projection * segment.length + context.__dashOffset)) continue;
                     coverage[(y - top) * maskWidth + x - left] = 1;
+                }
+            }
+            for (const [previous, point, next] of canvasStrokeJoins(path)) {
+                const radius = context.__lineWidth / 2;
+                const extent = radius * (context.__lineJoin === 'miter' ? context.__miterLimit : 1);
+                const minX = Math.max(left, Math.floor(point[0] - extent));
+                const maxX = Math.min(right, Math.ceil(point[0] + extent));
+                const minY = Math.max(top, Math.floor(point[1] - extent));
+                const maxY = Math.min(bottom, Math.ceil(point[1] + extent));
+                coverageWork += Math.max(0, maxX - minX) * Math.max(0, maxY - minY);
+                if (coverageWork > 50000000)
+                    throw new DOMException('Canvas stroke exceeds the raster budget', 'NotSupportedError');
+                for (let y = minY; y < maxY; y++) for (let x = minX; x < maxX; x++)
+                    if (canvasJoinCovers(previous, point, next, x + 0.5, y + 0.5,
+                        radius, context.__lineJoin, context.__miterLimit))
+                        coverage[(y - top) * maskWidth + x - left] = 1;
+            }
         }
         for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
             if (coverage[(y - top) * maskWidth + x - left] &&

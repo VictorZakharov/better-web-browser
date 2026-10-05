@@ -134,6 +134,17 @@ row copying, check overload selection and error behavior, and exercise repeated
 Behavioral tests cover encoding, bitmap ownership/transfer, worker parity,
 path construction, pixel paint and compositing, clipping, stroke geometry,
 transforms, gradients, patterns, shadows, filters, and invalid inputs.
+
+Undashed stroke coverage reuses the existing BSD-3-Clause `tiny-skia` rasterizer
+through `resvg`, with bounded path serialization, point count and mask dimensions.
+The context still owns paint, clipping, alpha and compositing. Numeric ranges
+outside this native adapter's bounds select the existing bounded software path;
+they are not silently replaced with an empty image. This adapter preserves the
+current binary coverage contract, rather than claiming antialiased Canvas parity.
+Source-over compositing uses scalar premultiplied-alpha arithmetic without
+allocating temporary arrays or per-pixel typed-array views. An independent
+alpha oracle, repeated 512-square closed paths and overlapping clipped strokes
+cover the optimized paths.
 Normative references: [HTML Canvas 2D](https://html.spec.whatwg.org/multipage/canvas.html),
 [SVG 2 paths](https://www.w3.org/TR/SVG2/paths.html),
 [Geometry Interfaces](https://www.w3.org/TR/geometry-1/),

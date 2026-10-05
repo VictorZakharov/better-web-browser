@@ -80,7 +80,35 @@
             default: return [1, 1 - sourceAlpha];
         }
     };
+    // Source-over is the common path. Scalar straight-alpha arithmetic avoids
+    // allocating source/backdrop/factor arrays for every covered pixel.
+    const canvasSourceOverPixel = (pixels, offset, red, green, blue, alpha, opacity) => {
+        const sourceAlpha = alpha / 255 * opacity;
+        const backdropAlpha = pixels[offset + 3] / 255;
+        const backdropWeight = backdropAlpha * (1 - sourceAlpha);
+        const outputAlpha = sourceAlpha + backdropWeight;
+        if (outputAlpha === 0) {
+            pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = pixels[offset + 3] = 0;
+            return;
+        }
+        if (sourceAlpha === 0) return;
+        pixels[offset] = Math.round((sourceAlpha * red + backdropWeight * pixels[offset]) / outputAlpha);
+        pixels[offset + 1] = Math.round((sourceAlpha * green + backdropWeight * pixels[offset + 1]) / outputAlpha);
+        pixels[offset + 2] = Math.round((sourceAlpha * blue + backdropWeight * pixels[offset + 2]) / outputAlpha);
+        pixels[offset + 3] = Math.round(outputAlpha * 255);
+    };
+    const compositeCanvasPixelAt = (pixels, offset, source, sourceOffset, opacity, operator) => {
+        if (operator === 'source-over') {
+            canvasSourceOverPixel(pixels, offset, source[sourceOffset], source[sourceOffset + 1],
+                source[sourceOffset + 2], source[sourceOffset + 3], opacity);
+        } else compositeCanvasPixel(pixels, offset, source.subarray(sourceOffset, sourceOffset + 4),
+            opacity, operator);
+    };
     const compositeCanvasPixel = (pixels, offset, color, opacity, operator) => {
+        if (operator === 'source-over') {
+            canvasSourceOverPixel(pixels, offset, color[0], color[1], color[2], color[3], opacity);
+            return;
+        }
         const sourceAlpha = color[3] / 255 * opacity;
         const backdropAlpha = pixels[offset + 3] / 255;
         const source = [color[0] / 255, color[1] / 255, color[2] / 255];

@@ -5,6 +5,7 @@ use super::*;
 use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
 use std::io::Cursor;
 
+mod path;
 #[cfg(windows)]
 mod text;
 pub(crate) mod webgl;
@@ -13,6 +14,9 @@ use crate::limits::MAX_CANVAS_PIXELS;
 const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
+    if operation == "canvasStrokeMask" {
+        return Ok(Some(path::stroke_mask(args)));
+    }
     if operation == "canvasTextAvailable" {
         return Ok(Some(JsValue::Boolean(cfg!(windows))));
     }

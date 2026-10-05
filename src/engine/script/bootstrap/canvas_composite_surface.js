@@ -37,13 +37,11 @@
             context.__filterOperations);
         const layer = hasShadow ? canvasShadowLayer(context, source, state.width, state.height) : source;
         if (hasShadow) for (let offset = 0; offset < layer.length; offset += 4)
-            compositeCanvasPixel(layer, offset, source.subarray(offset, offset + 4),
-                1, 'source-over');
+            compositeCanvasPixelAt(layer, offset, source, offset, 1, 'source-over');
         for (let y = 0; y < state.height; y++) for (let x = 0; x < state.width; x++) {
             if (!canvasClipAllows(context, x, y, state.width)) continue;
             const offset = (y * state.width + x) * 4;
-            compositeCanvasPixel(destination, offset,
-                layer.subarray(offset, offset + 4), 1, operator);
+            compositeCanvasPixelAt(destination, offset, layer, offset, 1, operator);
         }
     };
     const canvasOriginalFillRect = CanvasRenderingContext2D.prototype.fillRect;
