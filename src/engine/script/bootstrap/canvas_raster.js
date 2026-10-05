@@ -106,6 +106,12 @@
         return canvasStrokeJoins(path).some(([previous, point, next]) =>
             canvasJoinCovers(previous, point, next, x, y, width / 2, join, miterLimit));
     };
+    const canvasNativeStrokeRequest = (context, path, width, height, left, top) => canvasRasterStringify({
+        width, height, left, top, line_width: context.__lineWidth, miter_limit: context.__miterLimit,
+        cap: context.__lineCap, join: context.__lineJoin, transform: context.__transform,
+        dash: context.__lineDash, dash_offset: context.__dashOffset,
+        parts: path.subpaths.map(part => ({ points: part.points, closed: !!part.closed }))
+    });
     const paintCanvasPath = (context, path, fill, rule) => {
         const state = stateForCanvas(context.canvas);
         if (!state.pixels) return;
@@ -148,13 +154,8 @@
         // The default path already contains construction-time transformed points.
         // Undo only the painting CTM, stroke with its pen, then transform back.
         const strokePath = transformCanvasPath(path, paintInverse);
-        const nativeCoverage = context.__lineDash.length ? null : canvasRasterHost('canvasStrokeMask', canvasRasterStringify({
-            width: maskWidth, height: bottom - top, left, top,
-            line_width: context.__lineWidth, miter_limit: context.__miterLimit,
-            cap: context.__lineCap, join: context.__lineJoin,
-            transform: context.__transform,
-            parts: strokePath.subpaths.map(part => ({ points: part.points, closed: !!part.closed }))
-        }));
+        const nativeCoverage = canvasRasterHost('canvasStrokeMask',
+            canvasNativeStrokeRequest(context, strokePath, maskWidth, bottom - top, left, top));
         const coverage = nativeCoverage || new Uint8Array(maskWidth * (bottom - top));
         if (!nativeCoverage && !canvasIsIdentity(context.__transform)) {
             const segments = canvasStrokeSegments(strokePath);
@@ -235,6 +236,9 @@
         const inverse = matrixInverse2D(this.__transform);
         if (!inverse) return false;
         const strokePath = transformCanvasPath(path, inverse);
+        const nativeHit = this.__lineDash.length ? canvasRasterHost('canvasStrokeContains',
+            canvasNativeStrokeRequest(this, strokePath, 1, 1, 0, 0), px, py) : null;
+        if (nativeHit !== null) return nativeHit;
         const [localX, localY] = matrixPoint2D(inverse, px, py);
         return pointOnCanvasStroke(strokePath, canvasStrokeSegments(strokePath), localX, localY, this.__lineWidth,
             this.__lineDash, this.__dashOffset, this.__lineCap, this.__lineJoin, this.__miterLimit);

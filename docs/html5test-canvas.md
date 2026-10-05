@@ -135,7 +135,7 @@ Behavioral tests cover encoding, bitmap ownership/transfer, worker parity,
 path construction, pixel paint and compositing, clipping, stroke geometry,
 transforms, gradients, patterns, shadows, filters, and invalid inputs.
 
-Undashed stroke coverage reuses the existing BSD-3-Clause `tiny-skia` rasterizer
+Stroke coverage reuses the existing BSD-3-Clause `tiny-skia` rasterizer
 through `resvg`, with bounded path serialization, point count and mask dimensions.
 The context still owns paint, clipping, alpha and compositing. Numeric ranges
 outside this native adapter's bounds select the existing bounded software path;
@@ -144,14 +144,34 @@ current binary coverage contract, rather than claiming antialiased Canvas parity
 Stroke outlines now use the painting-time affine pen, including non-uniform
 scale, rotation, reflection and shear. The current default path retains its
 construction-time geometry; a supplied `Path2D` is transformed without mutation.
-Inverse-coordinate hit testing and the bounded dashed software fallback use
-the same pen coordinate system. Singular painting transforms have no stroke
+Inverse-coordinate hit testing and dashed outlines use the same pen coordinate
+system. Singular painting transforms have no stroke
 area. Tests compare interior/exterior pixels with an independent inverse-matrix
 rectangle oracle, and separately check elliptical round caps and path retention.
 The `tests/canvas/affine-stroke.html` Chrome reference reports `[255,0,0]`
 for each scaled-width, retained-path and elliptical-cap sample triple; a singular
 pen produces neither nonzero pixels nor a hit. These samples match the unit
 tests, not a claim of full antialiasing parity.
+
+Native dashing runs before stroking, so each on interval receives its own caps,
+gaps remove original corner joins, and each subpath restarts its phase. Closed
+contours retain a join across the seam only when an on run is continuous there.
+All-zero patterns are solid; zero-length on intervals can produce round dots.
+Dashed hit queries inspect the same transformed native outline with the existing
+MIT/Apache-2.0 `kurbo` curve library, already locked through `usvg`. Boundary
+points are included, independently of the drawing clip or bitmap bounds.
+The input, dash entries, expansion transitions and final outline have explicit
+budgets. Positive intervals that would underflow native float precision do not
+silently become an all-zero solid pattern. Requests outside the adapter's bounds
+still select the prior bounded software path, whose extreme-range dash geometry
+is not claimed to have full parity.
+
+Native, window and worker tests cover caps, joins, subpath phase, negative
+offsets, empty off runs, affine pens, state ownership and path retention. The
+local `tests/canvas/dashed-stroke.html` fixture matches Chrome's cap/corner hit
+results, reset/gap samples and equivalent negative phase. Chrome's zero-on round
+dot edge has alpha 213 where Breeze's binary mask has 255; antialiasing remains
+separate work rather than being hidden by a loose screenshot threshold.
 Source-over compositing uses scalar premultiplied-alpha arithmetic without
 allocating temporary arrays or per-pixel typed-array views. An independent
 alpha oracle, repeated 512-square closed paths and overlapping clipped strokes

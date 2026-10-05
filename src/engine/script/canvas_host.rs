@@ -7,6 +7,7 @@ use std::io::Cursor;
 
 mod path;
 mod shadow;
+mod stroke_outline;
 #[cfg(windows)]
 mod text;
 pub(crate) mod webgl;
@@ -17,6 +18,9 @@ const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
     if operation == "canvasStrokeMask" {
         return Ok(Some(path::stroke_mask(args)));
+    }
+    if operation == "canvasStrokeContains" {
+        return Ok(Some(path::stroke_contains(args)));
     }
     if operation == "canvasShadowLayer" {
         return Ok(Some(shadow::render(args)));

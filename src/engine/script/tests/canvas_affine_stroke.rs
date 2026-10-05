@@ -74,7 +74,7 @@ fn transformed_round_caps_are_ellipses_and_singular_pens_paint_nothing() {
 }
 
 #[test]
-fn transformed_dashed_fallback_scales_dash_lengths_and_preserves_path2d() {
+fn transformed_dashed_stroke_scales_dash_lengths_and_preserves_path2d() {
     let (_, outcome) = execute_html(
         r#"<canvas width=80 height=60></canvas><script>
         const c=document.querySelector('canvas').getContext('2d');

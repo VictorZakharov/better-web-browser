@@ -155,6 +155,7 @@ dependencies = [
  "jxl-color",
  "jxl-oxide",
  "jxl-oxide-common",
+ "kurbo",
  "lewton",
  "moxcms",
  "mozangle",
