@@ -29,11 +29,19 @@ fn document_lifecycle_matches_owned_resource_and_top_level_await_contract() {
                 } else {
                     500
                 };
-                FixtureResponse::resource(
+                let response = FixtureResponse::resource(
                     include_str!("../../benchmarks/alpha/fixtures/assets/landscape.svg"),
                     "image/svg+xml",
                     Duration::from_millis(delay),
-                )
+                );
+                // Lazy images and author fetches do not block Window load. The
+                // finite benchmark may close them after its lifecycle capture;
+                // only these optional transfers permit that expected disconnect.
+                if path.contains("lazy=1") || path.contains("fetch=1") {
+                    response.allow_disconnect()
+                } else {
+                    response
+                }
             } else {
                 FixtureResponse::html(include_str!(
                     "../../benchmarks/alpha/fixtures/document-load-lifecycle.html"
