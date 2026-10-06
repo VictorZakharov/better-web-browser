@@ -2,7 +2,7 @@
     // the original Canvas current path is deliberately not part of the save/restore drawing state.
     const MAX_CANVAS_PATH_POINTS = 8192;
     const canvasCurveHost = __hostCall;
-    const canvasCurveStringify = JSON.stringify;
+    const canvasCurveStringify = canvasPrivateWireStringify;
     const canvasPathData = new WeakMap();
     const newCanvasPath = () => ({ subpaths: [], current: null, pointCount: 0 });
     const copyCanvasPath = path => ({
@@ -44,6 +44,7 @@
         lineCanvasPath(path, x + width, y + height);
         lineCanvasPath(path, x, y + height);
         closeCanvasPath(path);
+        moveCanvasPath(path, x, y);
     };
     const ellipseCanvasPath = (path, x, y, radiusX, radiusY, rotation, startAngle, endAngle,
         counterclockwise = false, transform = null) => {
@@ -134,6 +135,7 @@
             moveCanvasPath(path, ...corners[0]);
             for (const corner of corners.slice(1)) lineCanvasPath(path, ...corner);
             closeCanvasPath(path);
+            moveCanvasPath(path, ...corners[0]);
         };
         prototype.arc = function(x, y, radius, start, end, counterclockwise = false) {
             ellipseCanvasPath(pathFor(this), x, y, radius, radius, 0, start, end,
@@ -152,13 +154,15 @@
                 ...point(this, x, y)];
             curveCanvasPath(pathFor(this), controls, true);
         };
+        bindCanvasPathNumbers(prototype, [['moveTo',2], ['lineTo',2], ['closePath',0],
+            ['rect',4], ['arc',5,'boolean'], ['ellipse',7,'boolean'],
+            ['quadraticCurveTo',4], ['bezierCurveTo',6]]);
     };
     class Path2D {
         constructor(source) {
-            if (source instanceof Path2D) canvasPathData.set(this, copyCanvasPath(canvasPathData.get(source)));
+            if (canvasPathData.has(source)) canvasPathData.set(this, copyCanvasPath(canvasPathData.get(source)));
             else if (source === undefined) canvasPathData.set(this, newCanvasPath());
-            else if (typeof source === 'string') canvasPathData.set(this, parseCanvasSvgPath(source));
-            else throw new TypeError('Path2D requires a path or SVG path string');
+            else canvasPathData.set(this, parseCanvasSvgPath(`${source}`));
         }
         addPath(path, transform = {}) {
             if(!canvasPathData.has(this))throw new TypeError('addPath requires a Path2D receiver');

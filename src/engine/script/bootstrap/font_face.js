@@ -21,20 +21,8 @@
         return Number.isInteger(number) && number >= 1 && number <= 1000 ? number : null;
     };
     const fontStyle = value => value === 'normal' ? false : value === 'italic' ? true : null;
-    const fontURL = source => {
-        // Only a single url() source is admitted. local(), image URLs, and unparsed
-        // fallback lists cannot be silently treated as downloaded font bytes.
-        const match = /^\s*url\(\s*(?:"([^"]*)"|'([^']*)'|([^\s)]*))\s*\)\s*(?:format\(\s*(?:"[^"]*"|'[^']*'|[^)]*)\s*\))?\s*$/i.exec(source);
-        return match ? match[1] ?? match[2] ?? match[3] : null;
-    };
-    const fontBuffer = source => {
-        if (source instanceof ArrayBuffer) return new Uint8Array(source.slice(0));
-        if (ArrayBuffer.isView(source))
-            return new Uint8Array(source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength));
-        return null;
-    };
     const fontState = face => {
-        const state = fontFaceState.get(face);
+        const state = fontWeakGet(fontFaceState, face);
         if (!state) throw new TypeError('Illegal invocation');
         return state;
     };
@@ -44,28 +32,33 @@
         const weight = fontWeight(state.descriptors.weight);
         const italic = fontStyle(state.descriptors.style);
         if (weight === null || italic === null ||
-            !__hostCall('fontFaceInstall', state.id, state.descriptors.family, weight, italic, state.bytes))
+            !fontHost('fontFaceInstall', state.id, state.descriptors.family, weight, italic, state.bytes,
+                state.descriptors.unicodeRange, state.descriptors.featureSettings))
             throw new DOMException('FontFace could not be installed', 'SyntaxError');
     };
     class FontFace {
         constructor(family, source, descriptors = {}) {
             if (arguments.length < 2) throw new TypeError('FontFace requires a family and source');
-            descriptors = descriptors == null ? {} : Object(descriptors);
-            const values = {family: String(family)};
-            for (const name of fontDescriptorNames.slice(1))
-                values[name] = descriptors[name] === undefined ? fontDefaults[name] : String(descriptors[name]);
+            const convertedFamily = fontString(family);
+            const input = fontBufferSource(source);
+            const values = fontDescriptorDictionary(descriptors);
+            values.family = convertedFamily;
+            const range = fontHost('fontFaceRangeSerialize', values.unicodeRange);
+            if (range !== null) values.unicodeRange = range;
+            const features = fontHost('fontFaceFeaturesSerialize', values.featureSettings);
+            if (features !== null) values.featureSettings = features;
             let resolveLoaded, rejectLoaded;
             const loaded = new Promise((resolve, reject) => {
                 resolveLoaded = resolve; rejectLoaded = reject;
             });
             // A rejected face must still expose its rejected loaded promise to consumers.
             loaded.catch(() => {});
-            const bytes = fontBuffer(source);
-            const url = typeof source === 'string' ? fontURL(source) : null;
-            const invalid = !values.family.trim() || fontWeight(values.weight) === null ||
-                fontStyle(values.style) === null || (!bytes && url === null);
-            fontFaceState.set(this, {
-                id: nextFontFaceId++, descriptors: values, bytes, url,
+            const bytes = 'string' in input ? null : fontCopySource(input);
+            const urls = 'string' in input ? fontHost('fontFaceSourceURLs', input.string) : null;
+            const invalid = !fontHost('fontFaceFamilyValid',values.family) || fontWeight(values.weight) === null ||
+                fontStyle(values.style) === null || range === null || features === null || (!bytes && urls === null);
+            fontWeakSet(fontFaceState, this, {
+                id: nextFontFaceId++, descriptors: values, bytes, urls,
                 status: invalid ? 'error' : 'unloaded', owner: null,
                 loadPromise: null, loaded, resolveLoaded, rejectLoaded
             });
@@ -73,60 +66,51 @@
                 rejectLoaded(new DOMException('Invalid FontFace source or descriptors', 'SyntaxError'));
             } else if (bytes) {
                 // BufferSource faces begin loading without an explicit load() call.
-                queueMicrotask(() => { this.load().catch(() => {}); });
+                queueFontTask(() => beginFontFaceLoad(this));
             }
         }
         get status() { return fontState(this).status; }
         get loaded() { return fontState(this).loaded; }
         load() {
-            const state = fontState(this);
-            if (state.loadPromise) return state.loadPromise;
-            if (state.status === 'error') return state.loaded;
-            if (state.status === 'loaded') return Promise.resolve(this);
-            state.status = 'loading';
-            state.owner?._fontLoading(this);
-            const bytes = state.bytes
-                ? Promise.resolve(state.bytes)
-                : fetch(state.url, {mode: 'cors'}).then(response => {
-                    if (!response.ok) throw new DOMException('FontFace download failed', 'NetworkError');
-                    return response.arrayBuffer();
-                }).then(buffer => new Uint8Array(buffer));
-            state.loadPromise = bytes.then(data => {
-                const weight = fontWeight(state.descriptors.weight);
-                const italic = fontStyle(state.descriptors.style);
-                if (!__hostCall('fontFaceValidate', state.id, state.descriptors.family,
-                    weight, italic, data))
-                    throw new DOMException('FontFace source could not be decoded', 'SyntaxError');
-                state.bytes = data;
-                state.status = 'loaded';
-                fontInstall(this);
-                state.resolveLoaded(this);
-                state.owner?._fontSettled(this, true);
-                return this;
-            }).catch(error => {
-                state.status = 'error';
-                state.rejectLoaded(error);
-                state.owner?._fontSettled(this, false);
-                throw error;
-            });
-            state.loadPromise.catch(() => {});
-            return state.loadPromise;
+            // Web IDL converts exceptions from Promise-returning operations to
+            // rejected promises, including an invalid receiver.
+            let state;
+            try { state = fontState(this); }
+            catch (error) { return Promise.reject(error); }
+            // Buffer-backed faces are already scheduled by construction. load()
+            // never advances that task, and every call returns the loaded promise.
+            if (!state.bytes && state.status === 'unloaded') beginFontFaceLoad(this);
+            return state.loaded;
         }
     }
+    const loadFontFace=Function.call.bind(FontFace.prototype.load);
     for (const name of fontDescriptorNames) {
         Object.defineProperty(FontFace.prototype, name, {
             get() { return fontState(this).descriptors[name]; },
             set(value) {
                 const state = fontState(this);
-                const next = String(value);
-                if (name === 'family' && !next.trim() || name === 'weight' && fontWeight(next) === null ||
+                let next = fontString(value);
+                if (name === 'unicodeRange') {
+                    next = fontHost('fontFaceRangeSerialize', next);
+                    if (next === null) throw new DOMException('Invalid FontFace unicode-range', 'SyntaxError');
+                }
+                if (name === 'featureSettings') {
+                    next = fontHost('fontFaceFeaturesSerialize', next);
+                    if (next === null) throw new DOMException('Invalid FontFace feature settings', 'SyntaxError');
+                }
+                if (name === 'family' && !fontHost('fontFaceFamilyValid',next) || name === 'weight' && fontWeight(next) === null ||
                     name === 'style' && fontStyle(next) === null)
                     throw new DOMException('Invalid FontFace descriptor', 'SyntaxError');
+                const previous = state.descriptors[name];
                 state.descriptors[name] = next;
-                fontInstall(this);
+                try { fontInstall(this); }
+                catch (error) { state.descriptors[name] = previous; throw error; }
             },
             enumerable: true, configurable: true
         });
     }
+    // CSS Fonts renamed stretch to width; both IDL attributes share the value.
+    Object.defineProperty(FontFace.prototype, 'width',
+        Object.getOwnPropertyDescriptor(FontFace.prototype, 'stretch'));
     Object.defineProperty(FontFace.prototype, Symbol.toStringTag, {value: 'FontFace', configurable: true});
     globalThis.FontFace = FontFace;

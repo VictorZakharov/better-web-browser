@@ -12,9 +12,8 @@
     const canvasLuminosity = rgb => .3 * rgb[0] + .59 * rgb[1] + .11 * rgb[2];
     const canvasSaturation = rgb => Math.max(...rgb) - Math.min(...rgb);
     const canvasClipColor = rgb => {
-        const lum = canvasLuminosity(rgb), low = Math.min(...rgb);
+        const lum = canvasLuminosity(rgb), low = Math.min(...rgb), high = Math.max(...rgb);
         if (low < 0) rgb = rgb.map(value => lum + (value - lum) * lum / (lum - low));
-        const high = Math.max(...rgb);
         if (high > 1) rgb = rgb.map(value => lum + (value - lum) * (1 - lum) / (high - lum));
         return rgb;
     };
@@ -48,9 +47,9 @@
                 1 - 2 * (1 - backdrop) * (1 - source);
             case 'darken': return Math.min(backdrop, source);
             case 'lighten': return Math.max(backdrop, source);
-            case 'color-dodge': return source === 1 ? 1 :
+            case 'color-dodge': return backdrop === 0 ? 0 : source === 1 ? 1 :
                 Math.min(1, backdrop / (1 - source));
-            case 'color-burn': return source === 0 ? 0 :
+            case 'color-burn': return backdrop === 1 ? 1 : source === 0 ? 0 :
                 1 - Math.min(1, (1 - backdrop) / source);
             case 'hard-light': return source <= 0.5 ? 2 * backdrop * source :
                 1 - 2 * (1 - backdrop) * (1 - source);
@@ -119,9 +118,10 @@
             canvasBlendNonseparable(operator, backdrop, source) : null;
         const [sourceFactor, backdropFactor] = blend ? [1, 1 - sourceAlpha] :
             canvasPorterDuffFactors(operator, sourceAlpha, backdropAlpha);
-        const outputAlpha = operator === 'lighter' ?
+        const composedAlpha = operator === 'lighter' ?
             Math.min(1, sourceAlpha + backdropAlpha) :
             sourceAlpha * sourceFactor + backdropAlpha * backdropFactor;
+        const outputAlpha = canvasBitmapIsOpaque(pixels) ? 1 : composedAlpha;
         for (let channel = 0; channel < 3; channel++) {
             const premultiplied = operator === 'lighter' ?
                 Math.min(1, sourceAlpha * source[channel] + backdropAlpha * backdrop[channel]) :

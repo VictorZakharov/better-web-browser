@@ -26,8 +26,8 @@
         get length() { return this._map().size; }
         item(index) { return [...this._map().keys()][Number(index) >>> 0] || ''; }
         get parentRule() { return null; }
-        getPropertyValue(name) { return this._map().get(this._name(name))?.value || ''; }
-        getPropertyPriority(name) { return this._map().get(this._name(name))?.priority || ''; }
+        getPropertyValue(name) { return declarationValue(this._map(), this._name(name)); }
+        getPropertyPriority(name) { return declarationPriority(this._map(), this._name(name)); }
         setProperty(name, value, priority = '') {
             name = this._name(name); value = String(value); priority = String(priority).toLowerCase();
             if (!value) { this.removeProperty(name); return; }
@@ -35,19 +35,64 @@
             const parsed = host('cssDeclarationValue', name, value);
             if (parsed === null) return;
             const map = new Map(this._map());
-            if (map.get(name)?.value === parsed && map.get(name)?.priority === priority) return;
-            map.set(name, {value:parsed, priority});
+            if (!setDeclarationValue(map, name, parsed, priority)) return;
             this._write(map);
         }
         removeProperty(name) {
             const map = new Map(this._map());
             name = this._name(name);
-            const old = map.get(name)?.value || '';
-            if (!map.delete(name)) return '';
+            const old = declarationValue(map, name);
+            if (!removeDeclarationValue(map, name)) return '';
             this._write(map);
             return old;
         }
     }
+    const fontLonghands=Object.freeze(host('cssFontLonghands'));
+    const declarationValue = (map, name) => {
+        if (name === 'font') {
+            const pending=map.get(name);
+            if (pending) return pending.value;
+            const entries=fontLonghands.map(property=>map.get(property));
+            if (entries.some(entry=>!entry || entry.priority !== entries[0].priority)) return '';
+            return host('cssFontValue', ...entries.map(entry=>entry.value));
+        }
+        if (name !== 'font-variant') return map.get(name)?.value || '';
+        const ligatures=map.get('font-variant-ligatures'), numeric=map.get('font-variant-numeric');
+        if (!ligatures || !numeric || ligatures.priority !== numeric.priority) return '';
+        return host('cssFontVariantValue', ligatures.value, numeric.value);
+    };
+    const setDeclarationValue = (map, name, value, priority) => {
+        const expanded = host('cssDeclarationExpansion', name, value);
+        if (expanded.every(([property, text])=>map.get(property)?.value===text &&
+            map.get(property)?.priority===priority) &&
+            (expanded.length===1 || !map.has(name))) return false;
+        // Remove the old shorthand as well (e.g. a pending var() declaration).
+        if (expanded.length > 1) {
+            map.delete(name);
+            for (const [property] of expanded) map.delete(property);
+        }
+        for (const [property, text] of expanded) map.set(property, {value:text, priority});
+        return true;
+    };
+    const declarationPriority = (map, name) => {
+        if (name === 'font') {
+            if (map.has(name)) return map.get(name).priority;
+            return declarationValue(map, name) ? map.get(fontLonghands[0]).priority : '';
+        }
+        if (name !== 'font-variant') return map.get(name)?.priority || '';
+        return declarationValue(map, name) ? map.get('font-variant-ligatures').priority : '';
+    };
+    const removeDeclarationValue = (map, name) => {
+        let changed=map.delete(name);
+        if (name === 'font-variant') {
+            changed=map.delete('font-variant-ligatures') || changed;
+            changed=map.delete('font-variant-numeric') || changed;
+        }
+        if (name === 'font') {
+            for (const property of fontLonghands) changed=map.delete(property) || changed;
+        }
+        return changed;
+    };
     // CSSOM exposes named attributes only for supported CSS properties. Unknown
     // names/symbols retain ordinary JavaScript lookup and expando semantics.
     // https://drafts.csswg.org/cssom/#the-cssstyledeclaration-interface

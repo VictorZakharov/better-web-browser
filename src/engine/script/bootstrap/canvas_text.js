@@ -5,33 +5,57 @@
     const canvasTextBaselines = new Set(['top', 'hanging', 'middle', 'alphabetic',
         'ideographic', 'bottom']);
     const canvasTextDirections = new Set(['inherit', 'ltr', 'rtl']);
-    Object.defineProperties(CanvasRenderingContext2D.prototype, {
-        font: {
-            get() { return this.__font; },
+    const canvasSpacingStyles = {};
+    for (const name of ['letterSpacing', 'wordSpacing']) {
+        canvasSpacingStyles[name] = {
+            get() { return canvasDrawingState(this)[name][0]; },
             set(value) {
-                const serialized = String(value);
+                const parsed = host('canvasParseSpacing', `${value}`);
+                if (parsed) canvasDrawingState(this)[name] = parsed;
+            }
+        };
+    }
+    defineCanvasContextProperties(CanvasRenderingContext2D.prototype, canvasSpacingStyles);
+    defineCanvasContextProperties(CanvasRenderingContext2D.prototype, {
+        font: {
+            get() { return canvasDrawingState(this).font; },
+            set(value) {
+                const serialized = `${value}`;
                 const spec = host('canvasParseFont', serialized);
-                if (spec) { this.__font = serialized; this.__fontSpec = spec; }
+                if (spec) { canvasDrawingState(this).font = serialized; canvasDrawingState(this).fontSpec = spec; }
             }
         },
         textAlign: {
-            get() { return this.__textAlign; },
-            set(value) { if (canvasTextAlignments.has(value)) this.__textAlign = value; }
+            get() { return canvasDrawingState(this).textAlign; },
+            set(value) { value = `${value}`; if (canvasTextAlignments.has(value)) canvasDrawingState(this).textAlign = value; }
         },
         textBaseline: {
-            get() { return this.__textBaseline; },
-            set(value) { if (canvasTextBaselines.has(value)) this.__textBaseline = value; }
+            get() { return canvasDrawingState(this).textBaseline; },
+            set(value) { value = `${value}`; if (canvasTextBaselines.has(value)) canvasDrawingState(this).textBaseline = value; }
         },
         direction: {
-            get() { return this.__direction; },
-            set(value) { if (canvasTextDirections.has(value)) this.__direction = value; }
+            get() { return canvasDrawingState(this).direction; },
+            set(value) { value = `${value}`; if (canvasTextDirections.has(value)) canvasDrawingState(this).direction = value; }
+        },
+        fontKerning: {
+            get() { return canvasDrawingState(this).fontKerning; },
+            set(value) {
+                value = `${value}`;
+                if (['auto','normal','none'].includes(value)) canvasDrawingState(this).fontKerning = value;
+            }
+        },
+        lang: {
+            get() { return canvasDrawingState(this).lang; },
+            set(value) { canvasDrawingState(this).lang = `${value}`; }
         }
     });
-    const canvasTextDirection = context => context.__direction === 'inherit' ?
-        (context.canvas.ownerDocument?.documentElement?.getAttribute('dir') === 'rtl' ?
-            'rtl' : 'ltr') : context.__direction;
+    const canvasTextEnvironment = context => host('canvasTextEnvironment',
+        canvasNativeElement(context.canvas, 'canvas') ? canvasOwnerWeakGet(nodeHandles, context.canvas) : 0,
+        !!(canvasDrawingState(context).letterSpacing[1][2] || canvasDrawingState(context).wordSpacing[1][2]));
+    const canvasTextDirection = context => canvasDrawingState(context).direction === 'inherit' ?
+        canvasTextEnvironment(context)[3] : canvasDrawingState(context).direction;
     const canvasTextShift = (context, width) => {
-        const align = context.__textAlign;
+        const align = canvasDrawingState(context).textAlign;
         const direction = canvasTextDirection(context);
         if (align === 'center') return -width / 2;
         if (align === 'right' || (align === 'end' && direction === 'ltr') ||
@@ -39,7 +63,7 @@
         return 0;
     };
     const canvasBaselineShift = (context, ascent, descent) => {
-        switch (context.__textBaseline) {
+        switch (canvasDrawingState(context).textBaseline) {
             case 'top': return ascent;
             case 'hanging': return ascent * 0.8;
             case 'middle': return (ascent - descent) / 2;
@@ -48,10 +72,25 @@
             default: return 0;
         }
     };
-    const canvasTextValue = text => String(text).replace(/[\u0009-\u000d]/g, ' ');
-    const canvasTextRun = (context, text, stroke = false) => host(
-        stroke ? 'canvasStrokeText' : 'canvasRasterText',
-        canvasTextValue(text), context.__fontSpec, context.__lineWidth);
+    const canvasTextValue = text => `${text}`.replace(/[\u0009-\u000d]/g, ' ');
+    const canvasTextSpacing = (context, terms, environment) => {
+        const fontSize = canvasDrawingState(context).fontSpec[1];
+        const [width, height, rootSize] = environment;
+        return terms[0] + terms[1] * fontSize + terms[2] * rootSize +
+            (terms[3] * width + terms[4] * height + terms[5] * Math.min(width, height) +
+                terms[6] * Math.max(width, height)) / 100;
+    };
+    const canvasTextRun = (context, text, stroke = false) => {
+        text = canvasTextValue(text);
+        const state = canvasDrawingState(context);
+        const environment = canvasTextEnvironment(context);
+        const spec = [...state.fontSpec, canvasTextSpacing(context, state.letterSpacing[1], environment),
+            canvasTextSpacing(context, state.wordSpacing[1], environment)];
+        const language = state.lang === 'inherit' ? environment[4] : state.lang;
+        return host(stroke ? 'canvasStrokeText' : 'canvasRasterText',
+            text, spec, state.lineWidth,
+            [state.direction === 'inherit' ? environment[3] : state.direction, language, state.fontKerning]);
+    };
     const canvasTextInkBounds = glyphs => {
         let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
         for (const glyph of glyphs) {
@@ -65,24 +104,45 @@
         if (arguments.length === 0) throw new TypeError('measureText requires text');
         const [width, ascent, descent, glyphs] = canvasTextRun(this, text);
         const shift = canvasTextShift(this, width);
+        const baselineShift = canvasBaselineShift(this, ascent, descent);
         const [left, top, right, bottom] = canvasTextInkBounds(glyphs);
         const metrics = {
             width,
-            actualBoundingBoxLeft: -(left + shift),
-            actualBoundingBoxRight: right + shift,
-            actualBoundingBoxAscent: Math.max(0, -top),
-            actualBoundingBoxDescent: Math.max(0, bottom),
-            fontBoundingBoxAscent: ascent,
-            fontBoundingBoxDescent: descent,
-            emHeightAscent: ascent,
-            emHeightDescent: descent,
-            hangingBaseline: ascent * 0.8,
-            alphabeticBaseline: 0,
-            ideographicBaseline: -descent * 0.5
+            actualBoundingBoxLeft: glyphs.length ? -(left + shift) : 0,
+            actualBoundingBoxRight: glyphs.length ? right + shift : 0,
+            actualBoundingBoxAscent: glyphs.length ? -top - baselineShift : 0,
+            actualBoundingBoxDescent: glyphs.length ? bottom + baselineShift : 0,
+            fontBoundingBoxAscent: ascent - baselineShift,
+            fontBoundingBoxDescent: descent + baselineShift,
+            emHeightAscent: ascent - baselineShift,
+            emHeightDescent: descent + baselineShift,
+            hangingBaseline: ascent * 0.8 - baselineShift,
+            alphabeticBaseline: -baselineShift,
+            ideographicBaseline: -descent * 0.5 - baselineShift
         };
-        return Object.assign(Object.create(TextMetrics.prototype), metrics);
+        return new TextMetrics(canvasTextMetricsToken, metrics);
     };
-    class TextMetrics {}
+    const canvasTextMetricsToken = Symbol('TextMetrics');
+    const canvasTextMetricsStates = new WeakMap();
+    class TextMetrics {
+        constructor(token, metrics) {
+            if (token !== canvasTextMetricsToken) throw new TypeError('Illegal constructor');
+            canvasDrawingWeakSet(canvasTextMetricsStates, this, metrics);
+        }
+    }
+    for (const name of ['width','actualBoundingBoxLeft','actualBoundingBoxRight',
+        'actualBoundingBoxAscent','actualBoundingBoxDescent','fontBoundingBoxAscent',
+        'fontBoundingBoxDescent','emHeightAscent','emHeightDescent','hangingBaseline',
+        'alphabeticBaseline','ideographicBaseline']) {
+        canvasPathDefine(TextMetrics.prototype, name, {enumerable:true, configurable:true,
+            get() {
+                const metrics = canvasDrawingWeakGet(canvasTextMetricsStates, this);
+                if (!metrics) throw new TypeError('Illegal TextMetrics receiver');
+                return metrics[name];
+            }
+        });
+    }
+    canvasPathDefine(TextMetrics, 'length', {value:0, configurable:true});
     Object.defineProperty(TextMetrics.prototype, Symbol.toStringTag, { value: 'TextMetrics' });
     globalThis.TextMetrics = TextMetrics;
 
@@ -94,11 +154,14 @@
         const scale = maxWidth === undefined || width <= maxWidth ? 1 : maxWidth / width;
         const shift = canvasTextShift(this, width) * scale;
         const baselineShift = canvasBaselineShift(this, ascent, descent);
-        const inverse = matrixInverse2D(this.__transform);
+        const inverse = matrixInverse2D(canvasDrawingState(this).transform);
         if (!inverse) return;
+        const paint = stroke ? canvasDrawingState(this).stroke : canvasDrawingState(this).fill;
+        if (canvasPaintGlyphs(this, state, glyphs, paint, x+shift, y+baselineShift, scale, inverse, stroke))
+            return;
         for (const [left, top, glyphWidth, glyphHeight, colorGlyph, data] of glyphs) {
             const gx = x + shift + left * scale, gy = y + baselineShift + top;
-            const bounds = canvasTransformedBounds(this.__transform, gx, gy,
+            const bounds = canvasTransformedBounds(canvasDrawingState(this).transform, gx, gy,
                 glyphWidth * scale, glyphHeight, state);
             if (!bounds) continue;
             const [minX, minY, maxX, maxY] = bounds;
@@ -111,31 +174,33 @@
                 const coverage = colorGlyph ? data[source * 4 + 3] : data[source];
                 if (!coverage) continue;
                 const paint = colorGlyph && !stroke ? data.subarray(source * 4, source * 4 + 4) :
-                    canvasPaintAt(stroke ? this.__stroke : this.__fill,
+                    canvasPaintAt(stroke ? canvasDrawingState(this).stroke : canvasDrawingState(this).fill,
                         px + 0.5, py + 0.5, inverse);
                 const rgba = colorGlyph ? paint : [paint[0], paint[1], paint[2],
                     paint[3] * coverage / 255];
                 compositeCanvasPixel(state.pixels, (py * state.width + px) * 4,
-                    rgba, this.__globalAlpha, this.__compositeOperation);
+                    rgba, canvasDrawingState(this).globalAlpha, canvasDrawingState(this).compositeOperation);
             }
         }
     };
     CanvasRenderingContext2D.prototype.fillText = function(text, x, y, maxWidth) {
         if (arguments.length < 3) throw new TypeError('fillText requires text and coordinates');
-        x = Number(x); y = Number(y);
+        text = canvasTextValue(text); x = +x; y = +y;
         if (maxWidth !== undefined) {
-            maxWidth = Number(maxWidth);
+            maxWidth = +maxWidth;
             if (!Number.isFinite(maxWidth) || maxWidth <= 0) return;
         }
+        if (!text || !Number.isFinite(x) || !Number.isFinite(y)) return;
         return canvasCompositeSourceLayer(this, canvasTextPaint, [text, x, y, maxWidth, false]);
     };
     CanvasRenderingContext2D.prototype.strokeText = function(text, x, y, maxWidth) {
         if (arguments.length < 3) throw new TypeError('strokeText requires text and coordinates');
-        x = Number(x); y = Number(y);
+        text = canvasTextValue(text); x = +x; y = +y;
         if (maxWidth !== undefined) {
-            maxWidth = Number(maxWidth);
+            maxWidth = +maxWidth;
             if (!Number.isFinite(maxWidth) || maxWidth <= 0) return;
         }
+        if (!text || !Number.isFinite(x) || !Number.isFinite(y)) return;
         return canvasCompositeSourceLayer(this, canvasTextPaint, [text, x, y, maxWidth, true]);
     };
     }

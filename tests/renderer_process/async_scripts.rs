@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 const HTML: &str = include_str!("../../benchmarks/alpha/fixtures/async-script-readiness.html");
 const FAST: &str = include_str!("../../benchmarks/alpha/fixtures/async-fast.js");
 const SLOW: &str = include_str!("../../benchmarks/alpha/fixtures/async-slow.js");
+#[path = "async_scripts/connected_images.rs"]
+mod connected_images;
 #[path = "async_scripts/deferred.rs"]
 mod deferred;
 #[path = "async_scripts/document_lifecycle.rs"]
@@ -19,6 +21,8 @@ mod document_lifecycle;
 mod dynamic;
 #[path = "async_scripts/font_loading.rs"]
 mod font_loading;
+#[path = "async_scripts/font_sources.rs"]
+mod font_sources;
 #[path = "async_scripts/nonvisual.rs"]
 mod nonvisual;
 #[path = "async_scripts/parsing.rs"]
@@ -304,6 +308,23 @@ impl Driver {
     }
 
     fn respond_bytes(&self, suffix: &str, source: &[u8], content_type: &str, status: u16) {
+        self.respond_bytes_with_type(
+            suffix,
+            source,
+            content_type,
+            status,
+            FetchResponseType::Basic,
+        );
+    }
+
+    fn respond_bytes_with_type(
+        &self,
+        suffix: &str,
+        source: &[u8],
+        content_type: &str,
+        status: u16,
+        response_type: FetchResponseType,
+    ) {
         let request = self
             .requests
             .iter()
@@ -315,7 +336,7 @@ impl Driver {
         sink.start(FetchResponseHead {
             request_id: id,
             result: FetchResponseResult::Success {
-                response_type: FetchResponseType::Basic,
+                response_type,
                 urls: vec![request.head.url.clone()],
                 status,
                 headers: vec![("content-type".into(), content_type.into())],

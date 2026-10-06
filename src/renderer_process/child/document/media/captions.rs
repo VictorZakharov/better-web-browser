@@ -64,6 +64,10 @@ fn caption_items(
         underline: false,
         letter_spacing: 0.0,
         word_spacing: 0.0,
+        rtl: false,
+        kerning: true,
+        variants: Default::default(),
+        features: Default::default(),
     };
     let line_height = font.size * 1.25;
     let mut items = Vec::new();

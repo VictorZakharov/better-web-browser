@@ -15,6 +15,7 @@ pub(super) struct FrameImages {
     scanned: Option<(u64, usize)>,
     requested: HashSet<String>,
     pub decoded: HashMap<String, crate::engine::DecodedImage>,
+    origins: HashMap<String, bool>,
     pub canvas_updates: HashSet<String>,
 }
 
@@ -44,11 +45,17 @@ impl ScriptRuntime {
                 environment,
             );
             page.images.extend(state.decoded.clone());
+            for (url, clean) in &state.origins {
+                page.set_image_origin_clean(url, *clean);
+            }
             page.refresh_resources_for_viewport(
                 environment.viewport_width,
                 environment.viewport_height,
             );
             page.install_embedded_images();
+            drop(host);
+            page.synchronize_script_images(child);
+            state.origins = page.image_origin_policy().clone();
             state.decoded.extend(page.images);
             for resource in page.resources {
                 let PageResource::Image { url } = resource else {
@@ -144,6 +151,9 @@ impl ScriptRuntime {
             });
         if let Some(state) = frames.images.get(&document) {
             page.images.extend(state.decoded.clone());
+            for (url, clean) in &state.origins {
+                page.set_image_origin_clean(url, *clean);
+            }
         }
         let mut result = response
             .ok_or_else(|| "image response failed".to_string())
@@ -151,7 +161,16 @@ impl ScriptRuntime {
                 if total_decoded >= MAX_PAGE_DECODED_IMAGE_BYTES {
                     return Err("child image memory budget exhausted".into());
                 }
-                page.add_image(url.clone(), response.body.as_bytes())
+                if !response.is_success() {
+                    return Err(format!("image response returned HTTP {}", response.status));
+                }
+                let clean = matches!(
+                    response.response_type,
+                    crate::fetch::ResponseType::Basic | crate::fetch::ResponseType::Cors
+                );
+                page.add_image(url.clone(), response.body.as_bytes())?;
+                page.set_image_origin_clean(&url, clean);
+                Ok(())
             });
         if result.is_ok()
             && page.images.get(&url).is_some_and(|image| {
@@ -174,6 +193,8 @@ impl ScriptRuntime {
             .collect();
         drop(host);
         if result.is_ok() {
+            page.synchronize_script_images(child);
+            frames.images.entry(document).or_default().origins = page.image_origin_policy().clone();
             frames.images.entry(document).or_default().decoded = page.images;
             outcome.render_requested = true;
         } else if let Err(error) = &result {

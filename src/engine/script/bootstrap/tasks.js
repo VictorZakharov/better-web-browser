@@ -17,6 +17,8 @@
         return id;
     };
     const queueMediaTask = callback => queueTimer(callback, 0, false, [], 'media element task', 'mediaTaskSchedule');
+    windowObject.__fontLoadingQueue = callback =>
+        queueTimer(callback, 0, false, [], 'font loading task', 'fontTaskSchedule');
     const queueWebGlContextTask = callback =>
         queueTimer(callback, 0, false, [], 'WebGL context lifecycle', 'mediaTaskSchedule');
     // Hand off private scheduling and host calls to the Web Audio bootstrap.
@@ -134,11 +136,22 @@
         get cssText() { return ''; }
     }, {
         get(target, property) {
-            if (property in target) {
-                const value = target[property];
+            if (Reflect.has(target, property)) {
+                const value = Reflect.get(target, property);
                 return typeof value === 'function' ? value.bind(target) : value;
             }
-            return target.getPropertyValue(String(property).replace(/[A-Z]/g, match => '-' + match.toLowerCase()));
+            const name = styleAttributeName(property);
+            if (name !== null) return target.getPropertyValue(name);
+            // Some existing layout-only properties have actual computed values
+            // without claiming complete rendering support through CSS.supports.
+            if (typeof property !== 'string' || property.startsWith('--')) return undefined;
+            const value = target.getPropertyValue(cssName(property));
+            return value === '' ? undefined : value;
+        },
+        has(target, property) {
+            if (Reflect.has(target, property) || styleAttributeName(property) !== null) return true;
+            return typeof property === 'string' && !property.startsWith('--') &&
+                target.getPropertyValue(cssName(property)) !== '';
         }
     });
     windowObject.getComputedStyle = (element, pseudo = '') => {

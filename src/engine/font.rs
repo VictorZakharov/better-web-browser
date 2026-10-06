@@ -1,5 +1,4 @@
 use crate::limits::{MAX_FONT_BYTES, MAX_FONT_TABLES};
-use crate::navigation::resolve_url;
 use flate2::read::ZlibDecoder;
 use std::io::Read;
 
@@ -12,13 +11,22 @@ pub struct WebFontFace {
     pub weight_max: f32,
     pub italic: bool,
     pub url: String,
+    /// Supported remote candidates after `url`, in authored order.
+    pub fallback_urls: Vec<String>,
+    pub unicode_range: String,
+    pub features: crate::engine::css::FontFeatures,
 }
 
+pub(crate) mod descriptors;
 mod face_match;
 #[cfg(windows)]
 pub(crate) mod shaping;
+pub(crate) mod sources;
+#[cfg(all(test, windows))]
+pub(crate) mod test_features;
 #[cfg(test)]
 mod tests;
+pub(crate) mod unicode_ranges;
 
 #[derive(Debug, Clone)]
 pub struct WebFont {
@@ -30,49 +38,17 @@ pub struct WebFont {
     pub source_url: String,
     /// Script-owned FontFaceSet membership; stylesheet faces have no source ID.
     pub script_source_id: Option<u32>,
+    pub(crate) unicode_ranges: unicode_ranges::UnicodeRanges,
+    pub features: crate::engine::css::FontFeatures,
 }
 
-pub fn discover_font_faces(css: &str, stylesheet_url: &str) -> Vec<WebFontFace> {
-    let lowercase = css.to_ascii_lowercase();
-    let mut cursor = 0;
-    let mut faces = Vec::new();
-    while let Some(relative_start) = lowercase[cursor..].find("@font-face") {
-        let start = cursor + relative_start;
-        let Some(relative_open) = lowercase[start..].find('{') else {
-            break;
-        };
-        let open = start + relative_open;
-        let Some(close) = find_matching_brace(css, open) else {
-            break;
-        };
-        let declarations = &css[open + 1..close];
-        let family = declaration_value(declarations, "font-family")
-            .map(unquote)
-            .filter(|family| !family.is_empty());
-        let source = declaration_value(declarations, "src")
-            .and_then(supported_font_url)
-            .and_then(|url| resolve_url(stylesheet_url, &url));
-        if let (Some(family), Some(url)) = (family, source) {
-            let (weight_min, weight_max) = declaration_value(declarations, "font-weight")
-                .and_then(parse_font_weight)
-                .unwrap_or((400.0, 400.0));
-            let italic = declaration_value(declarations, "font-style")
-                .is_some_and(|style| matches!(style.trim(), "italic" | "oblique"));
-            let face = WebFontFace {
-                family,
-                weight: weight_min.round() as u16,
-                weight_min,
-                weight_max,
-                italic,
-                url,
-            };
-            if !faces.contains(&face) {
-                faces.push(face);
-            }
-        }
-        cursor = close + 1;
-    }
-    faces
+#[cfg(test)]
+fn discover_font_faces(css: &str, stylesheet_url: &str) -> Vec<WebFontFace> {
+    crate::engine::css::stylesheet::font_faces::collect(
+        css,
+        stylesheet_url,
+        crate::engine::css::media::MediaEnvironment::new(800.0, 600.0, 1.0, false),
+    )
 }
 
 pub fn decode_web_font(face: &WebFontFace, bytes: &[u8]) -> Result<WebFont, String> {
@@ -108,130 +84,15 @@ pub fn decode_web_font(face: &WebFontFace, bytes: &[u8]) -> Result<WebFont, Stri
         sfnt: sfnt.into(),
         source_url: face.url.clone(),
         script_source_id: None,
+        unicode_ranges: unicode_ranges::UnicodeRanges::parse(&face.unicode_range)
+            .ok_or_else(|| "invalid font unicode-range descriptor".to_owned())?,
+        features: face.features.clone(),
     })
 }
 
-fn declaration_value<'a>(declarations: &'a str, wanted: &str) -> Option<&'a str> {
-    declarations.split(';').find_map(|declaration| {
-        let (name, value) = declaration.split_once(':')?;
-        name.trim()
-            .eq_ignore_ascii_case(wanted)
-            .then_some(value.trim())
-    })
-}
-
-fn supported_font_url(source: &str) -> Option<String> {
-    let lowercase = source.to_ascii_lowercase();
-    let mut cursor = 0;
-    while let Some(relative_url) = lowercase[cursor..].find("url(") {
-        let open = cursor + relative_url + 4;
-        let close = find_matching_parenthesis(source, open - 1)?;
-        let url = unquote(source[open..close].trim());
-        let candidate_end = lowercase[close + 1..]
-            .find(',')
-            .map(|offset| close + 1 + offset)
-            .unwrap_or(source.len());
-        let descriptor = lowercase[close + 1..candidate_end].trim();
-        let path = url
-            .split(['?', '#'])
-            .next()
-            .unwrap_or(&url)
-            .to_ascii_lowercase();
-        let is_woff2 = has_font_format(descriptor, "woff2") || path.ends_with(".woff2");
-        let is_woff = has_font_format(descriptor, "woff") || path.ends_with(".woff");
-        let is_sfnt = has_font_format(descriptor, "truetype")
-            || has_font_format(descriptor, "opentype")
-            || path.ends_with(".ttf")
-            || path.ends_with(".otf");
-        if (is_woff2 || is_woff || is_sfnt) && !url.starts_with("data:") {
-            return Some(url);
-        }
-        cursor = close + 1;
-    }
-    None
-}
-
-fn has_font_format(descriptor: &str, format: &str) -> bool {
-    descriptor.split("format(").skip(1).any(|tail| {
-        tail.split_once(')')
-            .is_some_and(|(value, _)| value.trim().trim_matches(['\'', '"']) == format)
-    })
-}
-
+#[cfg(test)]
 fn parse_font_weight(value: &str) -> Option<(f32, f32)> {
-    match value.trim() {
-        "normal" => Some((400.0, 400.0)),
-        "bold" => Some((700.0, 700.0)),
-        value => {
-            let mut parts = value.split_ascii_whitespace();
-            let first = parts.next()?.parse::<f32>().ok()?;
-            let second = parts
-                .next()
-                .map(str::parse::<f32>)
-                .transpose()
-                .ok()?
-                .unwrap_or(first);
-            if parts.next().is_some()
-                || !first.is_finite()
-                || !second.is_finite()
-                || !(1.0..=1000.0).contains(&first)
-                || !(1.0..=1000.0).contains(&second)
-            {
-                return None;
-            }
-            Some((first.min(second), first.max(second)))
-        }
-    }
-}
-
-fn unquote(value: &str) -> String {
-    value
-        .trim()
-        .trim_matches(|character| matches!(character, '\'' | '"'))
-        .trim()
-        .to_string()
-}
-
-fn find_matching_brace(input: &str, open: usize) -> Option<usize> {
-    let mut depth = 0_i32;
-    let mut quote = None;
-    for (offset, character) in input[open..].char_indices() {
-        match (quote, character) {
-            (Some(active), candidate) if active == candidate => quote = None,
-            (Some(_), _) => {}
-            (None, '\'' | '"') => quote = Some(character),
-            (None, '{') => depth += 1,
-            (None, '}') => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(open + offset);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-fn find_matching_parenthesis(input: &str, open: usize) -> Option<usize> {
-    let mut depth = 0_i32;
-    let mut quote = None;
-    for (offset, character) in input[open..].char_indices() {
-        match (quote, character) {
-            (Some(active), candidate) if active == candidate => quote = None,
-            (Some(_), _) => {}
-            (None, '\'' | '"') => quote = Some(character),
-            (None, '(') => depth += 1,
-            (None, ')') => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(open + offset);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
+    descriptors::weight(value)
 }
 
 #[derive(Clone, Copy)]

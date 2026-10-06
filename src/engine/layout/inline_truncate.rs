@@ -290,10 +290,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let content_height =
             (metrics.border_box_height - metrics.border.vertical() - metrics.padding.vertical())
                 .max(0.0);
-        let mut child_x = match style.text_align {
-            TextAlign::Start => content_x,
+        let mut child_x = match style.text_align.physical(style.direction) {
+            TextAlign::Start | TextAlign::Left => content_x,
             TextAlign::Center => content_x + ((content_width - kept_children_width) / 2.0).max(0.0),
-            TextAlign::End => content_x + (content_width - kept_children_width).max(0.0),
+            TextAlign::End | TextAlign::Right => {
+                content_x + (content_width - kept_children_width).max(0.0)
+            }
         };
         let mut keeps = truncation.unwrap_or_default().iter().peekable();
         for (index, child) in children.iter().enumerate() {

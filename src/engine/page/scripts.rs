@@ -6,6 +6,7 @@ impl Page {
     pub(crate) fn synchronize_script_stylesheets(&self, runtime: &mut ScriptRuntime) {
         runtime.set_document_stylesheets(&self.stylesheet_sources);
         runtime.set_loaded_font_urls(&self.fonts);
+        self.synchronize_script_images(runtime);
     }
 
     pub fn execute_scripts(&mut self) -> ScriptOutcome {
@@ -153,7 +154,7 @@ impl Page {
             runtime.set_quirks_mode(
                 self.dom.quirks_mode.get() != html5ever::tree_builder::QuirksMode::NoQuirks,
             );
-            runtime.set_document_stylesheets(&self.stylesheet_sources);
+            self.synchronize_script_stylesheets(&mut runtime);
             for script in &self.scripts {
                 runtime.mark_parser_script_prepared(&script.node);
             }

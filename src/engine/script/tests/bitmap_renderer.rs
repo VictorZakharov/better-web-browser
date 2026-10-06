@@ -151,15 +151,16 @@ fn consumed_image_cannot_be_transferred_to_a_second_renderer() {
 }
 
 #[test]
-fn offscreen_transfer_retains_detached_canvas_identity_but_disallows_renderer_operations() {
+fn offscreen_active_renderer_rejects_canvas_transfer_without_detaching_context() {
     check(
         r#"
         const canvas=new OffscreenCanvas(1,1),renderer=canvas.getContext('bitmaprenderer');
-        structuredClone(canvas,{transfer:[canvas]});let error='';
-        try{renderer.transferFromImageBitmap(null);}catch(value){error=value.name;}
-        document.querySelector('output').textContent=[renderer.canvas===canvas,error].join(',');
+        let error='';
+        try{structuredClone(canvas,{transfer:[canvas]});}catch(value){error=value.name;}
+        renderer.transferFromImageBitmap(null);
+        document.querySelector('output').textContent=[renderer.canvas===canvas,error,canvas.width].join(',');
     "#,
-        "true,InvalidStateError",
+        "true,InvalidStateError,1",
     );
 }
 
@@ -168,7 +169,8 @@ fn context_identifiers_are_case_sensitive_and_keep_the_web_idl_function_length()
     check(
         r#"
         const html=document.createElement('canvas'),offscreen=new OffscreenCanvas(1,1);
-        const checks=[html.getContext('BITMAPRENDERER')===null,offscreen.getContext('2D')===null,
+        let invalid='';try{offscreen.getContext('2D');}catch(error){invalid=error.name;}
+        const checks=[html.getContext('BITMAPRENDERER')===null,invalid==='TypeError',
             HTMLCanvasElement.prototype.getContext.length===1,OffscreenCanvas.prototype.getContext.length===1];
         document.querySelector('output').textContent=checks.every(Boolean);
     "#,
@@ -177,14 +179,15 @@ fn context_identifiers_are_case_sensitive_and_keep_the_web_idl_function_length()
 }
 
 #[test]
-fn offscreen_renderer_transfer_preserves_attribute_size_natural_size_and_opaque_policy() {
+fn offscreen_renderer_rejected_transfer_preserves_attribute_size_natural_size_and_opaque_policy() {
     check(
         r#"
         const canvas=new OffscreenCanvas(4,3),renderer=canvas.getContext('bitmaprenderer',{alpha:false});
         createImageBitmap(new ImageData(2,1)).then(bitmap=>{
             renderer.transferFromImageBitmap(bitmap);
-            const moved=structuredClone(canvas,{transfer:[canvas]});
-            return createImageBitmap(moved).then(image=>({moved,image}));
+            let error='';try{structuredClone(canvas,{transfer:[canvas]});}catch(value){error=value.name;}
+            if(error!=='InvalidStateError')throw new Error('active renderer was transferred');
+            return createImageBitmap(canvas).then(image=>({moved:canvas,image}));
         }).then(({moved,image})=>{
             const dimensions=[moved.width,moved.height,image.width,image.height];
             moved.getContext('bitmaprenderer').transferFromImageBitmap(null);

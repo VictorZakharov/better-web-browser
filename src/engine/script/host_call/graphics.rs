@@ -7,6 +7,13 @@ pub(super) fn dispatch(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if let Some(value) = super::super::canvas_host::element_images::dispatch(operation, args, state)
+    {
+        return Ok(Some(value));
+    }
+    if operation == "canvasTextEnvironment" {
+        return Ok(Some(canvas_text_environment::read(args, state)));
+    }
     if let Some(value) =
         super::super::canvas_host::webgl::dispatch(operation, args, &mut state.webgl)?
     {
@@ -24,6 +31,15 @@ pub(super) fn dispatch(
         return Ok(Some(value));
     }
     if let Some(value) = font_host::dispatch(operation, args, state)? {
+        return Ok(Some(value));
+    }
+    #[cfg(windows)]
+    if let Some(value) = super::super::canvas_host::text::dispatch_owned(
+        operation,
+        args,
+        &mut state.canvas_text,
+        &state.loaded_web_fonts,
+    )? {
         return Ok(Some(value));
     }
     if let Some(value) = super::super::canvas_host::canvas_host_call(operation, args)? {

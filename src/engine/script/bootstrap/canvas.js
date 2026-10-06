@@ -3,66 +3,44 @@
     const MAX_CANVAS_PIXELS = 4 * 1024 * 1024;
     const canvasStates = new WeakMap();
     const canvas2dOwners = new WeakMap();
+    const canvas2dContextToken = Symbol('CanvasRenderingContext2D');
+    const canvasDrawingStates = new WeakMap();
+    const canvasDrawingWeakGet = Function.call.bind(WeakMap.prototype.get);
+    const canvasDrawingWeakSet = Function.call.bind(WeakMap.prototype.set);
+    const canvasDrawingCreate = Object.create;
+    const defineCanvasContextProperties = (prototype, descriptors) => {
+        for (const descriptor of Object.values(descriptors)) {
+            descriptor.configurable = true;
+            descriptor.enumerable = true;
+        }
+        Object.defineProperties(prototype, descriptors);
+    };
+    const canvasDrawingState = context => {
+        const state = canvasDrawingWeakGet(canvasDrawingStates, context);
+        if (!state) throw new TypeError('Illegal CanvasRenderingContext2D receiver');
+        return state;
+    };
     let synchronizeWebGlCanvas = () => {};
     let resetWebGlCanvas = () => {};
     let dirtyWebGlCanvas = () => {};
 
     const canvasDimension = (element, name, fallback) => {
-        const raw = element.getAttribute(name);
-        if (raw === null || raw.trim() === '' || !/^\d+$/.test(raw.trim())) return fallback;
-        return Math.min(0xffffffff, Number(raw));
+        const raw = canvasOwnerAttribute(element, name);
+        const digits = raw === null ? null : /^[\t\n\f\r ]*\+?(\d+)/.exec(raw);
+        if (!digits) return fallback;
+        const value = Number(digits[1]);
+        return value <= 2147483647 ? value : fallback;
     };
 
-    const imageDataStates = new WeakMap();
-    class ImageData {
-        constructor(dataOrWidth, widthOrHeight, heightOrSettings, settings = {}) {
-            let data;
-            let width;
-            let height;
-            if (dataOrWidth instanceof Uint8ClampedArray) {
-                data = dataOrWidth;
-                width = Math.trunc(Number(widthOrHeight));
-                height = heightOrSettings === undefined || typeof heightOrSettings === 'object'
-                    ? data.length / 4 / width
-                    : Math.trunc(Number(heightOrSettings));
-                settings = (typeof heightOrSettings === 'object' ? heightOrSettings : settings) || {};
-                if (width <= 0 || height <= 0 || !Number.isInteger(height) ||
-                    data.length !== width * height * 4)
-                    throw new DOMException('ImageData dimensions do not match its data', 'IndexSizeError');
-                if (width * height > MAX_CANVAS_PIXELS)
-                    throw new DOMException('ImageData exceeds the bitmap budget', 'NotSupportedError');
-            } else {
-                width = Math.trunc(Number(dataOrWidth));
-                height = Math.trunc(Number(widthOrHeight));
-                settings = heightOrSettings || {};
-                if (width <= 0 || height <= 0)
-                    throw new DOMException('ImageData dimensions must be positive', 'IndexSizeError');
-                if (width * height > MAX_CANVAS_PIXELS)
-                    throw new DOMException('ImageData exceeds the bitmap budget', 'NotSupportedError');
-                data = new Uint8ClampedArray(width * height * 4);
-            }
-            if (settings.colorSpace !== undefined && settings.colorSpace !== 'srgb')
-                throw new TypeError('Only the srgb ImageData color space is supported');
-            Object.defineProperties(this, {
-                data: { enumerable: true, value: data },
-                width: { enumerable: true, value: width },
-                height: { enumerable: true, value: height },
-                colorSpace: { enumerable: true, value: 'srgb' }
-            });
-            imageDataStates.set(this,{data,width,height});
-        }
-    }
-
     const normalizedColor = value => {
-        const result = host('normalizeCssColor', String(value));
+        const result = host('normalizeCssColor', `${value}`);
         if (!result) return null;
         const [serialized, red, green, blue, alpha] = result.split('\u001f');
         return { serialized, channels: [Number(red), Number(green), Number(blue), Number(alpha)] };
     };
 
     const stateForCanvas = (canvas, forceReset = false) => {
-        const width = canvas.width;
-        const height = canvas.height;
+        const [width, height] = canvasOwnedDimensions(canvas);
         let state = canvasStates.get(canvas);
         if (!state) {
             state = { width: -1, height: -1, inputWidth: -1, inputHeight: -1,
@@ -81,7 +59,8 @@
                 : null;
             if (state.mode === 'bitmaprenderer') resetCanvasBitmapRenderer(state.context);
             else if (state.mode === 'webgl') resetWebGlCanvas(state);
-            else state.context?.__reset?.();
+            else if (state.context) resetCanvasDrawingState(state.context);
+            if (state.mode === '2d') canvasInitializeOutputBitmap(state.context, state.pixels);
         }
         if (state.mode === 'webgl') synchronizeWebGlCanvas(state);
         return state;
@@ -99,48 +78,55 @@
     };
 
     class CanvasRenderingContext2D {
-        constructor(canvas) {
+        constructor(canvas, token, settings) {
+            if (token !== canvas2dContextToken) throw new TypeError('Illegal constructor');
             Object.defineProperty(this, 'canvas', { enumerable: true, value: canvas });
+            canvasDrawingWeakSet(canvasDrawingStates, this, canvasDrawingCreate(null));
             canvas2dOwners.set(this, canvas);
-            this.__reset();
+            resetCanvasDrawingState(this);
+            canvasInitializeContextSettings(this, settings);
         }
         __reset() {
-            this.__fill = normalizedColor('#000000');
-            this.__globalAlpha = 1;
-            this.__compositeOperation = 'source-over';
-            this.__stroke = normalizedColor('#000000');
-            this.__lineWidth = 1;
-            this.__lineCap = 'butt';
-            this.__lineJoin = 'miter';
-            this.__miterLimit = 10;
-            this.__lineDash = [];
-            this.__dashOffset = 0;
-            this.__imageSmoothingEnabled = true;
-            this.__imageSmoothingQuality = 'low';
-            this.__transform = identity2D();
-            this.__clipBits = null;
-            this.__shadowColor = normalizedColor('rgba(0, 0, 0, 0)');
-            this.__shadowBlur = 0;
-            this.__shadowOffsetX = 0;
-            this.__shadowOffsetY = 0;
-            this.__filter = 'none';
-            this.__filterOperations = [];
-            this.__font = '10px sans-serif';
-            this.__fontSpec = host('canvasParseFont', this.__font);
-            this.__textAlign = 'start';
-            this.__textBaseline = 'alphabetic';
-            this.__direction = 'inherit';
-            this.__path = newCanvasPath();
-            this.__stack = [];
+            canvasDrawingState(this).fill = normalizedColor('#000000');
+            canvasDrawingState(this).globalAlpha = 1;
+            canvasDrawingState(this).compositeOperation = 'source-over';
+            canvasDrawingState(this).stroke = normalizedColor('#000000');
+            canvasDrawingState(this).lineWidth = 1;
+            canvasDrawingState(this).lineCap = 'butt';
+            canvasDrawingState(this).lineJoin = 'miter';
+            canvasDrawingState(this).miterLimit = 10;
+            canvasDrawingState(this).lineDash = [];
+            canvasDrawingState(this).dashOffset = 0;
+            canvasDrawingState(this).imageSmoothingEnabled = true;
+            canvasDrawingState(this).imageSmoothingQuality = 'low';
+            canvasDrawingState(this).transform = identity2D();
+            canvasDrawingState(this).clipBits = null;
+            canvasDrawingState(this).shadowColor = normalizedColor('rgba(0, 0, 0, 0)');
+            canvasDrawingState(this).shadowBlur = 0;
+            canvasDrawingState(this).shadowOffsetX = 0;
+            canvasDrawingState(this).shadowOffsetY = 0;
+            canvasDrawingState(this).filter = 'none';
+            canvasDrawingState(this).filterOperations = [];
+            canvasDrawingState(this).font = '10px sans-serif';
+            canvasDrawingState(this).fontSpec = host('canvasParseFont', canvasDrawingState(this).font);
+            canvasDrawingState(this).textAlign = 'start';
+            canvasDrawingState(this).textBaseline = 'alphabetic';
+            canvasDrawingState(this).direction = 'inherit';
+            canvasDrawingState(this).fontKerning = 'auto';
+            canvasDrawingState(this).lang = 'inherit';
+            canvasDrawingState(this).letterSpacing = ['0px', [0,0,0,0,0,0,0]];
+            canvasDrawingState(this).wordSpacing = ['0px', [0,0,0,0,0,0,0]];
+            canvasDrawingState(this).path = newCanvasPath();
+            canvasDrawingState(this).stack = [];
         }
-        get fillStyle() { return canvasIsGradient(this.__fill) ||
-            canvasIsPattern(this.__fill) ? this.__fill : this.__fill.serialized; }
+        get fillStyle() { return canvasIsGradient(canvasDrawingState(this).fill) ||
+            canvasIsPattern(canvasDrawingState(this).fill) ? canvasDrawingState(this).fill : canvasDrawingState(this).fill.serialized; }
         set fillStyle(value) {
             if (canvasIsGradient(value) || canvasIsPattern(value)) {
-                this.__fill = value; return;
+                canvasDrawingState(this).fill = value; return;
             }
             const color = normalizedColor(value);
-            if (color) this.__fill = color;
+            if (color) canvasDrawingState(this).fill = color;
         }
         createLinearGradient(x0, y0, x1, y1) {
             canvasImageDataContext(this);
@@ -157,65 +143,73 @@
             if (arguments.length < 3) throw new TypeError('createConicGradient requires three arguments');
             return canvasGradient('conic', [startAngle, x, y]);
         }
-        get globalAlpha() { return this.__globalAlpha; }
+        get globalAlpha() { return canvasDrawingState(this).globalAlpha; }
         set globalAlpha(value) {
-            value = Number(value);
-            if (Number.isFinite(value) && value >= 0 && value <= 1) this.__globalAlpha = value;
+            value = +value;
+            if (Number.isFinite(value) && value >= 0 && value <= 1) canvasDrawingState(this).globalAlpha = value;
         }
-        get globalCompositeOperation() { return this.__compositeOperation; }
+        get globalCompositeOperation() { return canvasDrawingState(this).compositeOperation; }
         set globalCompositeOperation(value) {
-            value = String(value);
-            if (canvasCompositeOperators.has(value)) this.__compositeOperation = value;
+            value = `${value}`;
+            if (canvasCompositeOperators.has(value)) canvasDrawingState(this).compositeOperation = value;
         }
         save() {
-            if (this.__stack.length < 64)
-                this.__stack.push({ fill: this.__fill, globalAlpha: this.__globalAlpha,
-                    compositeOperation: this.__compositeOperation, stroke: this.__stroke,
-                    lineWidth: this.__lineWidth, lineCap: this.__lineCap,
-                    lineJoin: this.__lineJoin, miterLimit: this.__miterLimit,
-                    lineDash: [...this.__lineDash], dashOffset: this.__dashOffset,
-                    imageSmoothingEnabled: this.__imageSmoothingEnabled,
-                    imageSmoothingQuality: this.__imageSmoothingQuality,
-                    transform: [...this.__transform], clipBits: this.__clipBits,
-                    shadowColor: this.__shadowColor, shadowBlur: this.__shadowBlur,
-                    shadowOffsetX: this.__shadowOffsetX, shadowOffsetY: this.__shadowOffsetY,
-                    filter: this.__filter, filterOperations: this.__filterOperations,
-                    text: { font: this.__font, fontSpec: this.__fontSpec,
-                        textAlign: this.__textAlign, textBaseline: this.__textBaseline,
-                        direction: this.__direction } });
+            if (canvasDrawingState(this).stack.length < 64)
+                canvasDrawingState(this).stack.push({ fill: canvasDrawingState(this).fill, globalAlpha: canvasDrawingState(this).globalAlpha,
+                    compositeOperation: canvasDrawingState(this).compositeOperation, stroke: canvasDrawingState(this).stroke,
+                    lineWidth: canvasDrawingState(this).lineWidth, lineCap: canvasDrawingState(this).lineCap,
+                    lineJoin: canvasDrawingState(this).lineJoin, miterLimit: canvasDrawingState(this).miterLimit,
+                    lineDash: [...canvasDrawingState(this).lineDash], dashOffset: canvasDrawingState(this).dashOffset,
+                    imageSmoothingEnabled: canvasDrawingState(this).imageSmoothingEnabled,
+                    imageSmoothingQuality: canvasDrawingState(this).imageSmoothingQuality,
+                    transform: [...canvasDrawingState(this).transform], clipBits: canvasDrawingState(this).clipBits,
+                    shadowColor: canvasDrawingState(this).shadowColor, shadowBlur: canvasDrawingState(this).shadowBlur,
+                    shadowOffsetX: canvasDrawingState(this).shadowOffsetX, shadowOffsetY: canvasDrawingState(this).shadowOffsetY,
+                    filter: canvasDrawingState(this).filter, filterOperations: canvasDrawingState(this).filterOperations,
+                    text: { font: canvasDrawingState(this).font, fontSpec: canvasDrawingState(this).fontSpec,
+                        textAlign: canvasDrawingState(this).textAlign, textBaseline: canvasDrawingState(this).textBaseline,
+                        direction: canvasDrawingState(this).direction,
+                        fontKerning: canvasDrawingState(this).fontKerning,
+                        lang: canvasDrawingState(this).lang,
+                        letterSpacing: canvasDrawingState(this).letterSpacing,
+                        wordSpacing: canvasDrawingState(this).wordSpacing } });
         }
         restore() {
-            const state = this.__stack.pop();
+            const state = canvasDrawingState(this).stack.pop();
             if (state) {
-                this.__fill = state.fill;
-                this.__globalAlpha = state.globalAlpha;
-                this.__compositeOperation = state.compositeOperation;
-                this.__stroke = state.stroke;
-                this.__lineWidth = state.lineWidth;
-                this.__lineCap = state.lineCap;
-                this.__lineJoin = state.lineJoin;
-                this.__miterLimit = state.miterLimit;
-                this.__lineDash = state.lineDash;
-                this.__dashOffset = state.dashOffset;
-                this.__imageSmoothingEnabled = state.imageSmoothingEnabled;
-                this.__imageSmoothingQuality = state.imageSmoothingQuality;
-                this.__transform = state.transform;
-                this.__clipBits = state.clipBits;
-                this.__shadowColor = state.shadowColor;
-                this.__shadowBlur = state.shadowBlur;
-                this.__shadowOffsetX = state.shadowOffsetX;
-                this.__shadowOffsetY = state.shadowOffsetY;
-                this.__filter = state.filter;
-                this.__filterOperations = state.filterOperations;
-                this.__font = state.text.font;
-                this.__fontSpec = state.text.fontSpec;
-                this.__textAlign = state.text.textAlign;
-                this.__textBaseline = state.text.textBaseline;
-                this.__direction = state.text.direction;
+                canvasDrawingState(this).fill = state.fill;
+                canvasDrawingState(this).globalAlpha = state.globalAlpha;
+                canvasDrawingState(this).compositeOperation = state.compositeOperation;
+                canvasDrawingState(this).stroke = state.stroke;
+                canvasDrawingState(this).lineWidth = state.lineWidth;
+                canvasDrawingState(this).lineCap = state.lineCap;
+                canvasDrawingState(this).lineJoin = state.lineJoin;
+                canvasDrawingState(this).miterLimit = state.miterLimit;
+                canvasDrawingState(this).lineDash = state.lineDash;
+                canvasDrawingState(this).dashOffset = state.dashOffset;
+                canvasDrawingState(this).imageSmoothingEnabled = state.imageSmoothingEnabled;
+                canvasDrawingState(this).imageSmoothingQuality = state.imageSmoothingQuality;
+                canvasDrawingState(this).transform = state.transform;
+                canvasDrawingState(this).clipBits = state.clipBits;
+                canvasDrawingState(this).shadowColor = state.shadowColor;
+                canvasDrawingState(this).shadowBlur = state.shadowBlur;
+                canvasDrawingState(this).shadowOffsetX = state.shadowOffsetX;
+                canvasDrawingState(this).shadowOffsetY = state.shadowOffsetY;
+                canvasDrawingState(this).filter = state.filter;
+                canvasDrawingState(this).filterOperations = state.filterOperations;
+                canvasDrawingState(this).font = state.text.font;
+                canvasDrawingState(this).fontSpec = state.text.fontSpec;
+                canvasDrawingState(this).textAlign = state.text.textAlign;
+                canvasDrawingState(this).textBaseline = state.text.textBaseline;
+                canvasDrawingState(this).direction = state.text.direction;
+                canvasDrawingState(this).fontKerning = state.text.fontKerning;
+                canvasDrawingState(this).lang = state.text.lang;
+                canvasDrawingState(this).letterSpacing = state.text.letterSpacing;
+                canvasDrawingState(this).wordSpacing = state.text.wordSpacing;
             }
         }
-        clearRect(x, y, width, height) { this.__paintRect(x, y, width, height, null); }
-        fillRect(x, y, width, height) { this.__paintRect(x, y, width, height, this.__fill); }
+        clearRect(x, y, width, height) { paintCanvasRectangle(this, x, y, width, height, null); }
+        fillRect(x, y, width, height) { paintCanvasRectangle(this, x, y, width, height, canvasDrawingState(this).fill); }
         __paintRect(x, y, width, height, style) {
             const rect = normalizedRectangle(x, y, width, height);
             const state = stateForCanvas(this.canvas);
@@ -223,45 +217,56 @@
             paintTransformedCanvasRect(this, state, rect, style);
         }
         createImageData(widthOrImageData, height, settings) {
-            if (widthOrImageData instanceof ImageData)
-                return new ImageData(widthOrImageData.width, widthOrImageData.height, height);
-            return new ImageData(Math.abs(Number(widthOrImageData)), Math.abs(Number(height)), settings);
+            return createCanvasImageData(this, arguments);
         }
         getImageData(x, y, width, height, settings) {
+            if (arguments.length < 4) throw new TypeError('getImageData requires four coordinates');
             return readCanvasImageData(this, x, y, width, height, settings);
         }
         putImageData(imageData, x, y, ...dirty) {
+            if (arguments.length < 3) throw new TypeError('putImageData requires ImageData and coordinates');
             writeCanvasImageData(this, imageData, x, y, dirty);
         }
-        getContextAttributes() { return { alpha: true, colorSpace: 'srgb', desynchronized: false, willReadFrequently: false }; }
+        getContextAttributes() { return canvasGetContextSettings(this); }
         reset() {
             const state = stateForCanvas(this.canvas);
-            state.pixels?.fill(0);
-            this.__reset();
+            if (state.pixels) canvasClearBitmapRange(state.pixels, 0, state.pixels.length);
+            resetCanvasDrawingState(this);
         }
         isContextLost() { return false; }
     }
+    // Implementation helpers are captured, not author-visible prototype hooks.
+    // Drawing state is platform-owned and never consulted through context expandos.
+    const canvasResetImplementation = CanvasRenderingContext2D.prototype.__reset;
+    const canvasRectangleImplementation = CanvasRenderingContext2D.prototype.__paintRect;
+    delete CanvasRenderingContext2D.prototype.__reset;
+    delete CanvasRenderingContext2D.prototype.__paintRect;
+    const resetCanvasDrawingState = context => canvasPathApply(canvasResetImplementation, context, []);
+    const paintCanvasRectangle = (context, x, y, width, height, style) =>
+        canvasPathApply(canvasRectangleImplementation, context, [x, y, width, height, style]);
 
     class HTMLCanvasElement extends HTMLElement {
         get width() { return canvasDimension(this, 'width', 300); }
         set width(value) {
-            this.setAttribute('width', Math.max(0, Math.trunc(Number(value))) || 0);
-            stateForCanvas(this, true);
+            setCanvasDimension(this, 'width', value, 300);
         }
         get height() { return canvasDimension(this, 'height', 150); }
         set height(value) {
-            this.setAttribute('height', Math.max(0, Math.trunc(Number(value))) || 0);
-            stateForCanvas(this, true);
+            setCanvasDimension(this, 'height', value, 150);
         }
         getContext(contextId, options = undefined) {
-            const requested = String(contextId);
+            canvasHtmlReceiver(this);
+            if (!arguments.length) throw new TypeError('getContext requires a context identifier');
+            const requested = `${contextId}`;
             const mode = ['experimental-webgl','webgl2'].includes(requested) ? 'webgl' : requested;
             if (!['2d', 'bitmaprenderer', 'webgl'].includes(mode)) return null;
             const state = stateForCanvas(this);
             if (state.mode !== 'none' && state.mode !== mode) return null;
             if (state.context) return mode === 'webgl' &&
                 webGlState(state.context).api !== (requested === 'webgl2' ? 'webgl2' : 'webgl1') ? null : state.context;
-            const context = mode === 'webgl' ? createWebGlContext(this, options, requested === 'webgl2' ? 'webgl2' : 'webgl1') : mode === '2d' ? new CanvasRenderingContext2D(this) :
+            const settings = mode === '2d' ? canvasConvertSettings(options) : null;
+            if (settings && !canvasSettingsSupported(settings)) return null;
+            const context = mode === 'webgl' ? createWebGlContext(this, options, requested === 'webgl2' ? 'webgl2' : 'webgl1') : mode === '2d' ? new CanvasRenderingContext2D(this, canvas2dContextToken, settings) :
                 new ImageBitmapRenderingContext(canvasBitmapContextToken, this, options);
             if (!context) return null;
             state.context = context;

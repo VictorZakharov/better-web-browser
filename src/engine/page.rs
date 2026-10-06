@@ -1,7 +1,9 @@
 mod canvas;
 pub(crate) use canvas::intrinsic_size as canvas_intrinsic_size;
+mod element_images;
 mod embedded;
 mod font_loading;
+mod font_requests;
 mod integrity;
 pub(crate) use integrity::{resource_integrity, stylesheet_crossorigin};
 mod link_preloads;
@@ -77,6 +79,7 @@ pub struct Page {
     stylesheet_discovery: Option<(u64, usize, MediaEnvironment)>,
     cached_styles: Option<(f32, f32, StyleSet)>,
     pub images: HashMap<String, DecodedImage>,
+    image_origin_clean: HashMap<String, bool>,
     canvas_image_updates: HashSet<String>,
     scripting_enabled: bool,
     hidden_media_video: HashSet<NodeId>,
@@ -153,6 +156,7 @@ impl Page {
             cached_styles: None,
             images,
             canvas_image_updates: HashSet::new(),
+            image_origin_clean: HashMap::new(),
             scripting_enabled: true,
             hidden_media_video: HashSet::new(),
             inline_svg_versions,
@@ -253,6 +257,8 @@ impl Page {
     }
 
     pub fn add_image(&mut self, url: String, bytes: &[u8]) -> Result<(), String> {
+        // Replacement bytes cannot inherit an earlier response's readback authority.
+        self.image_origin_clean.remove(&url);
         if bytes.len() > MAX_IMAGE_SOURCE_BYTES {
             return Err(format!(
                 "image source exceeds the {MAX_IMAGE_SOURCE_BYTES}-byte limit"

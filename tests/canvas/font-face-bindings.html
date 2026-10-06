@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>FontFace BufferSource and dictionary bindings</title>
+<pre id="probe" data-result="pending"></pre>
+<script src="font-face-bindings.js"></script>
+<script>
+fetch('fonts/ahem.ttf').then(response=>response.arrayBuffer())
+    .then(buffer=>testFontFaceBindings(new Uint8Array(buffer)))
+    .then(result=>{probe.setAttribute('data-result',result);probe.textContent=result;},
+        error=>{probe.setAttribute('data-result',String(error));probe.textContent=String(error);});
+</script>

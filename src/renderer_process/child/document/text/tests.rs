@@ -41,6 +41,10 @@ fn spec() -> FontSpec {
         underline: false,
         letter_spacing: 0.0,
         word_spacing: 0.0,
+        rtl: false,
+        kerning: true,
+        variants: Default::default(),
+        features: Default::default(),
     }
 }
 
@@ -55,7 +59,7 @@ fn borrowed_cache_keys_match_owned_entries_without_losing_shaping_inputs() {
     let cache: HashMap<ShapeKey<'static>, u32> = HashMap::from([(owned, 42)]);
     assert_eq!(cache.get(&key), Some(&42));
     assert_eq!(cache.get(&ShapeKey::new("different", &font)), None);
-    for field in 0..6 {
+    for field in 0..10 {
         let mut changed = font.clone();
         match field {
             0 => changed.family = "serif".into(),
@@ -63,10 +67,49 @@ fn borrowed_cache_keys_match_owned_entries_without_losing_shaping_inputs() {
             2 => changed.weight += 100,
             3 => changed.italic = !changed.italic,
             4 => changed.letter_spacing += 1.0,
-            _ => changed.word_spacing += 1.0,
+            5 => changed.word_spacing += 1.0,
+            6 => changed.rtl = !changed.rtl,
+            7 => changed.kerning = !changed.kerning,
+            8 => changed.features = crate::engine::css::FontFeatures::parse("'liga' off").unwrap(),
+            _ => {
+                changed.variants = crate::engine::css::FontVariants::new(
+                    crate::engine::css::FontLigatures::parse("none").unwrap(),
+                    Default::default(),
+                )
+            }
         }
         assert_eq!(cache.get(&ShapeKey::new(&text, &changed)), None, "{field}");
     }
+}
+
+#[test]
+fn text_direction_changes_bidi_geometry_without_aliasing_measurement_or_shape_caches() {
+    let mut text = RendererTextSystem::new(96);
+    let ltr = spec();
+    let mut rtl = ltr.clone();
+    rtl.rtl = true;
+    let source = "א abc";
+    let left = text.text_geometry(source, &ltr);
+    let right = text.text_geometry(source, &rtl);
+    let first = |geometry: &TextGeometry| {
+        geometry
+            .clusters
+            .iter()
+            .find(|cluster| cluster.start == 0)
+            .unwrap()
+            .rect
+            .x
+    };
+    assert!(
+        first(&right) > first(&left),
+        "CSS RTL base must reorder the mixed run"
+    );
+    assert_eq!(text.measurements.len(), 2);
+    assert_eq!(text.shape(source, &ltr).geometry, left);
+    assert_eq!(text.shape(source, &rtl).geometry, right);
+    assert_eq!(text.shapes.len(), 2);
+    assert_eq!(text.text_geometry(source, &ltr), left);
+    assert_eq!(text.text_geometry(source, &rtl), right);
 }
 
 #[test]
@@ -216,6 +259,8 @@ fn registers_bounded_in_memory_font_bytes_under_the_css_family_alias() {
         sfnt: bytes.into(),
         source_url: "test-font:alias".into(),
         script_source_id: None,
+        features: Default::default(),
+        unicode_ranges: Default::default(),
     }]);
     assert!(text.catalog.contains_family("Breeze Test Alias"));
     let mut aliased = spec();

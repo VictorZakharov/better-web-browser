@@ -2,7 +2,7 @@
     // region without copying up to four million bytes per drawing state.
     // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-clip
     const canvasClipAllows = (context, x, y, width) => {
-        const bits = context.__clipBits;
+        const bits = canvasDrawingState(context).clipBits;
         if (!bits) return true;
         const index = y * width + x;
         return (bits[index >> 3] & (1 << (index & 7))) !== 0;
@@ -41,8 +41,8 @@
     };
     CanvasRenderingContext2D.prototype.clip = function(pathOrRule, rule) {
         const path = canvasPathArgument(this, pathOrRule);
-        const fillRule = canvasFillRule(pathOrRule instanceof Path2D ? rule : pathOrRule);
+        const fillRule = canvasFillRule(canvasPathData.has(pathOrRule) ? rule : pathOrRule);
         const state = stateForCanvas(this.canvas);
         if (!state.pixels) return;
-        this.__clipBits = canvasRasterClip(path, fillRule, state, this.__clipBits);
+        canvasDrawingState(this).clipBits = canvasRasterClip(path, fillRule, state, canvasDrawingState(this).clipBits);
     };

@@ -29,6 +29,7 @@ fn compile(
         transition_rule_indices: Vec::new(),
         animation_rule_indices: Vec::new(),
         keyframes: Vec::new(),
+        font_faces: Vec::new(),
         scope_parents: Default::default(),
         inputs,
         parsed,

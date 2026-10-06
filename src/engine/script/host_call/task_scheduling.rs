@@ -8,12 +8,19 @@ pub(super) fn dispatch(
     let value = match operation {
         "performanceNow" => JsValue::from(state.performance_clock.now()),
         "performanceTimeOrigin" => JsValue::from(state.performance_clock.time_origin()),
-        "performanceTaskSchedule" => {
+        "performanceTaskSchedule" | "fontTaskSchedule" => {
             let id = argument_id(args, 1);
-            let handle =
-                state
-                    .timers
-                    .queue_task(TaskSource::PerformanceTimeline, Duration::ZERO, id);
+            if id == 0 {
+                return Err(JsNativeError::range()
+                    .with_message("task identifiers must be positive integers")
+                    .into());
+            }
+            let source = if operation == "fontTaskSchedule" {
+                TaskSource::FontLoading
+            } else {
+                TaskSource::PerformanceTimeline
+            };
+            let handle = state.timers.queue_task(source, Duration::ZERO, id);
             state.timer_handles.insert(id, handle);
             JsValue::from(id)
         }

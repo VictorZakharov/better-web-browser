@@ -58,11 +58,17 @@ fn is_inherited_property(property: &str) -> bool {
     matches!(
         property,
         "color"
+            | "direction"
             | "border-collapse"
             | "border-spacing"
             | "caption-side"
             | "font"
             | "font-family"
+            | "font-feature-settings"
+            | "font-kerning"
+            | "font-variant"
+            | "font-variant-ligatures"
+            | "font-variant-numeric"
             | "font-size"
             | "font-style"
             | "font-weight"
@@ -97,7 +103,11 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
     match property {
         "all" => {
             let custom_properties = Arc::clone(&style.custom_properties);
+            // The all shorthand excludes direction, unicode-bidi and custom properties.
+            // https://drafts.csswg.org/css-cascade-5/#all-shorthand
+            let direction = style.direction;
             *style = source.clone();
+            style.direction = direction;
             style.custom_properties = custom_properties;
         }
         "transition" => style.transition.clone_from(&source.transition),
@@ -163,11 +173,23 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.font_weight = source.font_weight;
             style.italic = source.italic;
             style.font_family.clone_from(&source.font_family);
+            style.font_features.clone_from(&source.font_features);
+            style.font_kerning = source.font_kerning;
+            style.font_ligatures = source.font_ligatures;
+            style.font_numeric = source.font_numeric;
             style.line_height = source.line_height;
             style.line_height_value = source.line_height_value;
         }
         "font-size" => style.font_size = source.font_size,
         "font-weight" => style.font_weight = source.font_weight,
+        "font-feature-settings" => style.font_features.clone_from(&source.font_features),
+        "font-kerning" => style.font_kerning = source.font_kerning,
+        "font-variant-ligatures" => style.font_ligatures = source.font_ligatures,
+        "font-variant-numeric" => style.font_numeric = source.font_numeric,
+        "font-variant" => {
+            style.font_ligatures = source.font_ligatures;
+            style.font_numeric = source.font_numeric;
+        }
         "font-style" => style.italic = source.italic,
         "font-family" => style.font_family.clone_from(&source.font_family),
         "letter-spacing" => style.letter_spacing = source.letter_spacing,
@@ -177,6 +199,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.line_height_value = source.line_height_value;
         }
         "text-align" => style.text_align = source.text_align,
+        "direction" => style.direction = source.direction,
         "text-transform" => style.text_transform = source.text_transform,
         "white-space" => style.white_space = source.white_space,
         "text-overflow" => style.text_overflow = source.text_overflow,

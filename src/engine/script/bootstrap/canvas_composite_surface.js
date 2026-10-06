@@ -3,7 +3,17 @@
     // clipped surface. Per-pixel blending inside a shape cannot implement these modes.
     const canvasNeedsSourceLayer = new Set(['copy', 'source-in', 'source-out',
         'source-atop', 'destination-in', 'destination-out', 'destination-atop', 'xor']);
+    const canvasCompositeLayerHost = __hostCall;
     const canvasCompositeLayer = (context, destination, layer, width, height, operator) => {
+        if (width * height >= 256 && width * height <= MAX_CANVAS_PIXELS) {
+            const painted = canvasCompositeLayerHost('canvasCompositeLayer',
+                destination, layer, operator, canvasDrawingState(context).clipBits || null,
+                canvasBitmapIsOpaque(destination));
+            if (painted && canvasPixelLength(painted) === destination.length) {
+                copyCanvasPixelRow(destination, 0, painted, 0, destination.length);
+                return;
+            }
+        }
         for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
             if (!canvasClipAllows(context, x, y, width)) continue;
             const offset = (y * width + x) * 4;
@@ -11,10 +21,10 @@
         }
     };
     const canvasCompositeSourceLayer = (context, draw, args) => {
-        const operator = context.__compositeOperation;
-        const hasShadow = context.__shadowColor.channels[3] !== 0 &&
-            (context.__shadowBlur !== 0 || context.__shadowOffsetX !== 0 || context.__shadowOffsetY !== 0);
-        const hasFilter = context.__filterOperations.length !== 0;
+        const operator = canvasDrawingState(context).compositeOperation;
+        const hasShadow = canvasDrawingState(context).shadowColor.channels[3] !== 0 &&
+            (canvasDrawingState(context).shadowBlur !== 0 || canvasDrawingState(context).shadowOffsetX !== 0 || canvasDrawingState(context).shadowOffsetY !== 0);
+        const hasFilter = canvasDrawingState(context).filterOperations.length !== 0;
         if (!canvasNeedsSourceLayer.has(operator) && !hasShadow && !hasFilter) {
             if (draw === canvasOriginalDrawImage) paintCanvasImage.apply(context, args);
             else draw.apply(context, args);
@@ -30,10 +40,10 @@
                 new Uint8ClampedArray(destination)), ...args.slice(1)];
         }
         state.pixels = source;
-        const savedClip = context.__clipBits;
+        const savedClip = canvasDrawingState(context).clipBits;
         // The source and shadow are generated before the drawing clip is applied.
-        context.__clipBits = null;
-        context.__compositeOperation = 'source-over';
+        canvasDrawingState(context).clipBits = null;
+        canvasDrawingState(context).compositeOperation = 'source-over';
         let painted = true;
         try {
             if (draw === canvasOriginalDrawImage) painted = paintCanvasImage.apply(context, args);
@@ -41,12 +51,22 @@
         }
         finally {
             state.pixels = destination;
-            context.__clipBits = savedClip;
-            context.__compositeOperation = operator;
+            canvasDrawingState(context).clipBits = savedClip;
+            canvasDrawingState(context).compositeOperation = operator;
         }
         if (!painted) return;
         if (hasFilter) source = applyCanvasFilters(source, state.width, state.height,
-            context.__filterOperations);
+            canvasDrawingState(context).filterOperations);
+        if (hasShadow && state.width * state.height >= 256) {
+            const painted = canvasCompositeLayerHost('canvasPaintSourceLayer', destination, source,
+                operator, savedClip || null, state.width, state.height, canvasDrawingState(context).shadowBlur,
+                canvasDrawingState(context).shadowOffsetX, canvasDrawingState(context).shadowOffsetY,
+                new Uint8Array(canvasDrawingState(context).shadowColor.channels), canvasBitmapIsOpaque(destination));
+            if (painted && canvasPixelLength(painted) === destination.length) {
+                copyCanvasPixelRow(destination, 0, painted, 0, destination.length);
+                return;
+            }
+        }
         // HTML's drawing model composites the shadow and source separately using
         // the selected operator. Flattening them with source-over breaks source-in,
         // destination-in, copy and the other non-associative Porter-Duff modes.
@@ -79,7 +99,9 @@
         return canvasCompositeSourceLayer(this, canvasOriginalStroke, args);
     };
     CanvasRenderingContext2D.prototype.drawImage = function(...args) {
-        return canvasCompositeSourceLayer(this, canvasOriginalDrawImage, args);
+        const converted = canvasImageDrawArguments(this, args);
+        if (!converted.slice(1).every(Number.isFinite)) return;
+        return canvasCompositeSourceLayer(this, canvasOriginalDrawImage, converted);
     };
     CanvasRenderingContext2D.prototype.strokeRect = function(x, y, width, height) {
         const path = new Path2D(); path.rect(x, y, width, height);

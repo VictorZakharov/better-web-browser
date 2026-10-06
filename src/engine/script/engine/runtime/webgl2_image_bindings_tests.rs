@@ -73,6 +73,7 @@ fn webgl2_realm_image_overloads_convert_platform_brands_even_when_lost() {
         r#"
         const gl=__stageWebGl2(new OffscreenCanvas(2,2));
         const image=new ImageData(new Uint8ClampedArray([10,20,30,255]),1,1);
+        const imagePixels=image.data;
         const texture=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,texture);
         Object.setPrototypeOf(image,null);
         gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,gl.RGBA,gl.UNSIGNED_BYTE,image);
@@ -80,7 +81,8 @@ fn webgl2_realm_image_overloads_convert_platform_brands_even_when_lost() {
         if (error!==0) throw Error('genuine source depends on mutable prototype: '+error);
         gl.getExtension('WEBGL_lose_context').loseContext();
         const forged=Object.create(ImageData.prototype);
-        Object.assign(forged,{width:1,height:1,data:new Uint8ClampedArray(4)});
+        Object.defineProperties(forged,{width:{value:1},height:{value:1},
+            data:{value:new Uint8ClampedArray(4)}});
         let converted=[];
         try {
             gl.texImage2D({valueOf(){converted.push('target');return gl.TEXTURE_2D;}},
@@ -96,7 +98,7 @@ fn webgl2_realm_image_overloads_convert_platform_brands_even_when_lost() {
         }
         // Valid detached ImageData passes IDL branding. Lost-context no-op occurs
         // before checking whether its bitmap can still be uploaded.
-        structuredClone(image.data.buffer,{transfer:[image.data.buffer]});
+        structuredClone(imagePixels.buffer,{transfer:[imagePixels.buffer]});
         gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,gl.RGBA,gl.UNSIGNED_BYTE,image);
     "#,
     );

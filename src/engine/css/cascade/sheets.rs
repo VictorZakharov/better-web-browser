@@ -6,6 +6,7 @@ use crate::engine::css::rule_index::RuleIndex;
 use std::rc::Rc;
 
 mod animations;
+mod fonts;
 mod invalidation;
 mod owners;
 mod parsed;
@@ -31,6 +32,7 @@ pub(super) struct CompiledRules {
     transition_rule_indices: Vec<usize>,
     animation_rule_indices: Vec<usize>,
     keyframes: Vec<crate::engine::css::stylesheet::keyframes::KeyframeDefinition>,
+    font_faces: Vec<crate::engine::font::WebFontFace>,
     scope_parents: std::collections::HashMap<NodeId, Option<NodeId>>,
     pub(super) index: RuleIndex,
     inputs: Vec<Rc<SheetInput>>,
@@ -179,12 +181,14 @@ pub(super) fn collect(
     let transition_rule_indices = transitions::rule_indices(&rules);
     let animation_rule_indices = animations::rule_indices(&rules);
     let keyframes = animations::collect(&inputs, environment);
+    let font_faces = fonts::collect(&inputs, environment);
     let compiled = Rc::new(CompiledRules {
         index: RuleIndex::new(&rules),
         rules,
         transition_rule_indices,
         animation_rule_indices,
         keyframes,
+        font_faces,
         scope_parents,
         inputs,
         parsed,

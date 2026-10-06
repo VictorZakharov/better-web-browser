@@ -229,18 +229,17 @@ fn canvas_ellipse_stroke_and_dash_have_observable_geometry() {
 }
 
 #[test]
-fn canvas_path2d_parses_svg_lines_and_rejects_invalid_commands() {
+fn canvas_path2d_parses_svg_lines_and_retains_prefix_before_invalid_command() {
     let (dom, outcome) = execute_html(
         r#"<body><output>waiting</output><canvas width="8" height="8"></canvas><script>
             const context = document.querySelector('canvas').getContext('2d');
             const path = new Path2D('M1 1 h5 v5 h-5 z');
             context.fill(path);
-            let error = '';
-            try { new Path2D('M1 1 X2 2'); } catch (caught) { error = caught.name; }
+            const prefix = new Path2D('M1 1 h5 v5 h-5 z X2 2');
             document.querySelector('output').textContent = [
                 context.getImageData(3, 3, 1, 1).data[3] === 255,
                 context.getImageData(0, 0, 1, 1).data[3] === 0,
-                error === 'SyntaxError'
+                context.isPointInPath(prefix, 3, 3) && !context.isPointInPath(prefix, 0, 0)
             ].join(',');
         </script></body>"#,
     );

@@ -20,6 +20,7 @@ mod dynamic_scripts;
 mod frames;
 mod graph_audio;
 pub(crate) use frames::FramePaintSnapshot;
+mod element_images;
 mod geometry;
 mod guarded_run;
 mod history;

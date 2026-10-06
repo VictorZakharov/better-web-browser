@@ -32,10 +32,15 @@ impl ComputedStyle {
             && self.font_weight == other.font_weight
             && self.italic == other.italic
             && self.font_family == other.font_family
+            && self.font_features == other.font_features
+            && self.font_kerning == other.font_kerning
+            && self.font_ligatures == other.font_ligatures
+            && self.font_numeric == other.font_numeric
             && self.letter_spacing == other.letter_spacing
             && self.word_spacing == other.word_spacing
             && self.line_height == other.line_height
             && self.text_align == other.text_align
+            && self.direction == other.direction
             && self.text_transform == other.text_transform
             && self.white_space == other.white_space
             // `text-overflow` only swaps the painted overflow marker, so it stays

@@ -1076,6 +1076,51 @@ playable**. SVG text was deferred rather than shipping incorrect nested
 [indexed blending](docs/webgl-indexed-blending.md). No HTML5test point gain is
 claimed for this batch.
 
+### October 6: owned Canvas, font sources and real text shaping
+
+Canvas drawing state, context/image/transfer brands and Web IDL conversion now
+share private Window/Worker contracts. Native coverage, image painting, glyph
+painting and all 26 compositing operators retain owned pixels and bounded
+fallbacks. Connected image drawing uses the decoded resource and its response
+authority, not author-controlled image helpers. SVG path parsing reuses the
+already locked MIT/Apache-2.0 `svgtypes` dependency.
+
+Document and worker fonts now use separate native registries. Live CSS font
+discovery respects stylesheet ownership, active groups and descriptor coverage;
+supported remote sources are tried in order through normal Fetch admission.
+`font-feature-settings`, kerning, ligature and numeric variants reach real
+OpenType glyph selection and advances, rather than only exposing property names.
+Font CSSOM assignments reset supported longhands coherently, preserve authored
+units, and distinguish specified feature lists from computed maps. Tests derive
+real GSUB and kerning tables in memory from the existing CC0 Ahem fixture.
+
+| Measurement | Before (`ebd42cc`) | After | Chrome 154 |
+| --- | ---: | ---: | ---: |
+| HTML5test rendered score | 507 / 588 | 507 / 588 | 579 / 588 |
+| Unmodified CSS Fonts assertions | 22 / 80 | 80 / 80 | Not replayed |
+| Unmodified CSS Font Loading assertions | 4 / 8 | 8 / 8 | Not replayed |
+| Canvas repeated-label text | 46.6 ms | 17.8 ms | 43.0 ms |
+| Canvas transformed images, nearest | 64.3 ms | 23.9 ms | 54.1 ms |
+| Canvas transformed images, bilinear | 91.8 ms | 26.6 ms | 121.6 ms |
+| Canvas changing thin strokes | 16.3 ms | 16.1 ms | 120.1 ms |
+| Canvas compositing/shadow layers | 955.7 ms | 74.5 ms | 12.4 ms |
+
+Canvas timings are medians of three rotating-order fresh hidden release runs
+on this machine, with pixel readback inside the timed interval. These fixed-size
+microbenchmarks are not a general browser-speed comparison: Chrome remains
+substantially faster on the layer workload, and sampled fractional pixels and
+text hashes are not universally identical. The score row uses one fresh sample
+per browser at 125% device scale and ten seconds of settling, not time-to-score
+measurement or matched-viewport visual acceptance. No HTML5test point gain is
+claimed.
+
+These remain bounded standards slices. Local font aliases, variation axes, full
+CSS Font Loading layout readiness, container-dependent feature math and complete
+paragraph-wide bidi remain open. Opaque Canvas images are currently rejected
+before drawing instead of implementing full tainted-canvas propagation. No
+claim of complete Canvas/CSS Fonts conformance or playable gd-clone follows from
+the added API and pixel tests. See the [contracts and remaining gaps](docs/canvas-owned-compositing.md).
+
 YouTube remains work in progress: non-DRM video/audio can play, but startup, seeking/recovery,
 video frame cadence, layout fidelity, and memory use are not an accepted browser baseline.
 Passing media fixtures does not establish usable live-site playback. Wikipedia has dedicated

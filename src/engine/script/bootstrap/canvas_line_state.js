@@ -5,11 +5,13 @@
     const canvasLineOwn=(array,index,value)=>canvasLineDefine(array,index,
         {value,writable:true,enumerable:true,configurable:true});
     const canvasLineObject=value=>value!==null&&(typeof value==='object'||typeof value==='function');
-    const canvasLineAttribute=(name,slot,convert,valid)=>canvasLineDefine(CanvasRenderingContext2D.prototype,name,{
+    const canvasLineAttribute=(name,slot,convert,valid)=>{
+        const key=slot.slice(2);
+        return canvasLineDefine(CanvasRenderingContext2D.prototype,name,{
         enumerable:true,configurable:true,
-        get(){canvasImageDataContext(this);return this[slot];},
-        set(value){canvasImageDataContext(this);value=convert(value);if(valid(value))this[slot]=value;}
-    });
+        get(){canvasImageDataContext(this);return canvasDrawingState(this)[key];},
+        set(value){canvasImageDataContext(this);value=convert(value);if(valid(value))canvasDrawingState(this)[key]=value;}
+    });};
     canvasLineAttribute('lineWidth','__lineWidth',value=>+value,value=>canvasLineFinite(value)&&value>0);
     canvasLineAttribute('miterLimit','__miterLimit',value=>+value,value=>canvasLineFinite(value)&&value>0);
     canvasLineAttribute('lineDashOffset','__dashOffset',value=>+value,canvasLineFinite);
@@ -42,11 +44,11 @@
             if(!canvasLineFinite(values[index])||values[index]<0)return;
         const length=values.length;
         if(length%2)for(let index=0;index<length;index++)canvasLineOwn(values,length+index,values[index]);
-        this.__lineDash=values;
+        canvasDrawingState(this).lineDash=values;
     };
     CanvasRenderingContext2D.prototype.getLineDash=function getLineDash(){
         canvasImageDataContext(this);
         const copy=[];
-        for(let index=0;index<this.__lineDash.length;index++)canvasLineOwn(copy,index,this.__lineDash[index]);
+        for(let index=0;index<canvasDrawingState(this).lineDash.length;index++)canvasLineOwn(copy,index,canvasDrawingState(this).lineDash[index]);
         return copy;
     };

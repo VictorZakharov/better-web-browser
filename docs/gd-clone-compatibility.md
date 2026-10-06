@@ -132,3 +132,20 @@ prototype remain in ignored G: scratch files for follow-up; no test was weakened
 or ignored to ship it. Existing SVG raster/image/input-cache improvements remain
 included. The HTML5test release score is unchanged at 507 / 588 in the fresh
 before/after samples, versus 579 / 588 in the hidden Chrome reference.
+
+### October 6 owned Canvas/font batch
+
+The final hidden release replay uses the same unchanged production snapshot,
+a fresh profile, 125% device scale and twenty seconds of settling. Page readiness
+was 861.332 ms and cumulative JavaScript time was 5,944.950 ms. A document timer
+promise job still exceeded the unchanged 2,000 ms execution limit. The capture
+shows the textured loading background and tip, with a large loading shape and
+remaining layout differences; it does not show an accepted lobby or gameplay.
+These single-run timings are not a sustained-performance or Chrome comparison.
+
+Dedicated readback-fenced Canvas measurements improved repeated text, image
+painting and compositing substantially, while Chrome remains faster on the
+layer workload. Real CSS font sources, OpenType features and private Canvas
+ownership now have unit, renderer and upstream WPT coverage. The game blocker
+remains a separate document texture-generation/watchdog investigation. No game
+asset, watchdog limit or containment budget was changed to obtain this result.

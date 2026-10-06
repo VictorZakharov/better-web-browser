@@ -11,6 +11,23 @@ use unicode_bidi::BidiInfo;
 use unicode_script::{Script, UnicodeScript};
 use unicode_segmentation::UnicodeSegmentation;
 
+#[derive(Clone)]
+pub(crate) struct ShapeOptions {
+    pub(crate) rtl: Option<bool>,
+    pub(crate) language: Option<harfrust::Language>,
+    pub(crate) kerning: bool,
+}
+
+impl Default for ShapeOptions {
+    fn default() -> Self {
+        Self {
+            rtl: None,
+            language: None,
+            kerning: true,
+        }
+    }
+}
+
 pub(crate) struct ShapedGlyph {
     pub(crate) font: SelectedFont,
     pub(crate) glyph_id: u16,
@@ -54,6 +71,25 @@ impl TextShaper {
         text: &str,
         spec: &FontSpec,
     ) -> ShapeOutput {
+        self.shape_with_options(
+            catalog,
+            text,
+            spec,
+            &ShapeOptions {
+                rtl: Some(spec.rtl),
+                kerning: spec.kerning,
+                ..ShapeOptions::default()
+            },
+        )
+    }
+
+    pub(crate) fn shape_with_options(
+        &mut self,
+        catalog: &mut FontCatalog,
+        text: &str,
+        spec: &FontSpec,
+        options: &ShapeOptions,
+    ) -> ShapeOutput {
         let size = spec.size.clamp(1.0, 768.0);
         let height = (size * 1.2).max(size);
         let mut output = ShapeOutput {
@@ -73,13 +109,22 @@ impl TextShaper {
         }
 
         let utf16_offsets = super::geometry::utf16_offsets(text);
-        let bidi = BidiInfo::new(text, None);
+        let bidi = BidiInfo::new(
+            text,
+            options.rtl.map(|rtl| {
+                if rtl {
+                    unicode_bidi::Level::rtl()
+                } else {
+                    unicode_bidi::Level::ltr()
+                }
+            }),
+        );
         for paragraph in &bidi.paragraphs {
             let (_, visual_runs) = bidi.visual_runs(paragraph, paragraph.range.clone());
             for visual_run in visual_runs {
                 let rtl = bidi.levels[visual_run.start].is_rtl();
                 let select_started = Instant::now();
-                let mut font_runs = select_font_runs(catalog, text, visual_run, rtl, spec);
+                let mut font_runs = select_font_runs(catalog, text, visual_run, rtl, spec, options);
                 output.font_select_time += select_started.elapsed();
                 if rtl {
                     font_runs.reverse();
@@ -144,7 +189,37 @@ impl TextShaper {
             buffer.set_script(script);
         }
         buffer.guess_segment_properties();
-        let glyph_buffer = shaper.shape(buffer, &[]);
+        if let Some(language) = run.options.language {
+            buffer.set_language(language);
+        }
+        // CSS Text 3 disables optional ligatures for non-zero letter spacing;
+        // required shaping ligatures (rlig) must remain enabled for joined scripts.
+        let mut features = Vec::with_capacity(3);
+        for (tag, value) in run.font.features.settings() {
+            features.push(harfrust::Feature::new(harfrust::Tag::new(tag), *value, ..));
+        }
+        for (tag, value) in spec.variants.settings() {
+            features.push(harfrust::Feature::new(harfrust::Tag::new(&tag), value, ..));
+        }
+        if spec.letter_spacing != 0.0 {
+            features.push(harfrust::Feature::new(harfrust::Tag::new(b"liga"), 0, ..));
+            features.push(harfrust::Feature::new(harfrust::Tag::new(b"clig"), 0, ..));
+            features.push(harfrust::Feature::new(harfrust::Tag::new(b"dlig"), 0, ..));
+            features.push(harfrust::Feature::new(harfrust::Tag::new(b"hlig"), 0, ..));
+        }
+        // The property's resolved policy overrides face defaults in both
+        // directions, not only when disabling kerning. Low-level CSS is last.
+        features.push(harfrust::Feature::new(
+            harfrust::Tag::new(b"kern"),
+            u32::from(run.options.kerning),
+            ..,
+        ));
+        // Low-level settings win even over letter-spacing's default disables.
+        // https://drafts.csswg.org/css-fonts-4/#feature-precedence
+        for (tag, value) in spec.features.settings() {
+            features.push(harfrust::Feature::new(harfrust::Tag::new(tag), *value, ..));
+        }
+        let glyph_buffer = shaper.shape(buffer, &features);
         let scale = spec.size.clamp(1.0, 768.0) / shaper.units_per_em().max(1) as f32;
         let baseline = font_baseline(&run.font, spec.size, line_height);
         let infos = glyph_buffer.glyph_infos();
@@ -213,6 +288,7 @@ struct FontRun {
     script: Script,
     rtl: bool,
     font: SelectedFont,
+    options: ShapeOptions,
 }
 
 fn select_font_runs(
@@ -221,6 +297,7 @@ fn select_font_runs(
     range: Range<usize>,
     rtl: bool,
     spec: &FontSpec,
+    options: &ShapeOptions,
 ) -> Vec<FontRun> {
     let slice = &text[range.clone()];
     let mut clusters = slice
@@ -241,6 +318,7 @@ fn select_font_runs(
         if let Some(last) = runs.last_mut()
             && last.script == cluster.script
             && last.font.instance == font.instance
+            && last.font.features == font.features
             && last.range.end == cluster.range.start
         {
             last.range.end = cluster.range.end;
@@ -250,6 +328,7 @@ fn select_font_runs(
                 script: cluster.script,
                 rtl,
                 font,
+                options: options.clone(),
             });
         }
     }

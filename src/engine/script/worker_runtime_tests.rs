@@ -4,12 +4,18 @@ use crate::fetch::{Body, FetchResponse, FetchUrl, HeaderList, ResponseType};
 #[path = "worker_runtime_tests/binary_clone.rs"]
 mod binary_clone;
 
+#[path = "worker_runtime_tests/canvas_composite_layers.rs"]
+mod canvas_composite_layers;
+#[path = "worker_runtime_tests/canvas_image_paint.rs"]
+mod canvas_image_paint;
 #[path = "worker_runtime_tests/canvas_line_state.rs"]
 mod canvas_line_state;
 #[path = "worker_runtime_tests/canvas_patterns.rs"]
 mod canvas_patterns;
 #[path = "worker_runtime_tests/canvas_strokes.rs"]
 mod canvas_strokes;
+#[path = "worker_runtime_tests/canvas_web_fonts.rs"]
+mod canvas_web_fonts;
 
 #[path = "worker_runtime_tests/cache_storage.rs"]
 mod cache_storage;

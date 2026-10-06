@@ -3,7 +3,7 @@ use super::*;
 use crate::engine::script::ScriptFetchEvent;
 
 #[test]
-fn font_face_set_exposes_real_setlike_membership_and_rejects_invalid_sources() {
+fn font_face_set_exposes_real_setlike_membership_with_an_unavailable_local_source() {
     let (dom, outcome) = execute_html(
         r#"<body><div id=status></div><script>
             const face = new FontFace('Example', 'local("Unavailable")');
@@ -19,7 +19,7 @@ fn font_face_set_exposes_real_setlike_membership_and_rejects_invalid_sources() {
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
-        "error|1|true|1|false|function|true|true|0"
+        "unloaded|1|true|1|false|function|true|true|0"
     );
     assert!(
         outcome
@@ -79,7 +79,13 @@ fn url_backed_face_waits_for_fetch_then_registers_decoded_bytes() {
         dom.elements_named("div").next().unwrap().text_content(),
         "pending"
     );
-    let outcome = runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::End, None);
+    let delivered = runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::End, None);
+    assert!(delivered.errors.is_empty(), "{:?}", delivered.errors);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "pending"
+    );
+    let outcome = runtime.advance_time(Duration::ZERO, 16);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
@@ -111,7 +117,9 @@ fn failed_url_face_rejects_load_and_set_ready_still_settles() {
         ScriptFetchEvent::Chunk(b"not a font".to_vec()),
         None,
     );
-    let outcome = runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::End, None);
+    let delivered = runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::End, None);
+    assert!(delivered.errors.is_empty(), "{:?}", delivered.errors);
+    let outcome = runtime.advance_time(Duration::ZERO, 16);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
@@ -142,7 +150,7 @@ fn synthetic_woff() -> Vec<u8> {
 #[test]
 fn css_connected_faces_appear_in_document_fonts_but_cannot_be_deleted() {
     let (dom, outcome) = super::cssom::execute_html_with_stylesheets(
-        "<body><div id=status></div><script>\
+        "<link rel=stylesheet href=/assets/fonts.css><body><div id=status></div><script>\
          const set=document.fonts, face=[...set][0];\
          document.getElementById('status').textContent=[set.size,face.family,face.status,\
            set.check('12px Fixture'),set.delete(face),set.size].join('|');\
@@ -162,7 +170,7 @@ fn css_connected_faces_appear_in_document_fonts_but_cannot_be_deleted() {
 #[test]
 fn css_connected_face_reports_loaded_after_renderer_font_installation() {
     let dom = dom::parse_with_scripting(
-        "<body><div id=status></div><script>\
+        "<link rel=stylesheet href=/fonts.css><body><div id=status></div><script>\
          const face=[...document.fonts][0];\
          document.getElementById('status').textContent=[face.status,\
            document.fonts.check('12px Fixture')].join('|');</script>",
@@ -180,8 +188,11 @@ fn css_connected_face_reports_loaded_after_renderer_font_installation() {
             weight: 400,
             weight_min: 400.0,
             weight_max: 400.0,
+            features: Default::default(),
             italic: false,
             url: source_url.into(),
+            fallback_urls: Vec::new(),
+            unicode_range: "U+0-10FFFF".into(),
         },
         &synthetic_woff(),
     )
@@ -206,7 +217,7 @@ fn css_connected_face_reports_loaded_after_renderer_font_installation() {
 }
 
 #[test]
-fn ready_waits_when_second_face_starts_before_first_completion_event() {
+fn ready_settles_before_done_event_and_second_load_creates_a_new_promise() {
     let (dom, outcome) = execute_html(
         r#"<body><div id=status>pending</div><script>
             const bytes = new Uint8Array(76);
@@ -217,17 +228,20 @@ fn ready_waits_when_second_face_starts_before_first_completion_event() {
             const first = new FontFace('First', bytes);
             set.add(first);
             first.load();
-            const ready = set.ready;
-            let reused = false;
+            // Buffer loading starts on a font task. Wait for the loading event
+            // before capturing its pending ready promise.
+            let reused = true;
+            let firstReady;
+            set.addEventListener('loading', () => { firstReady ??= set.ready; });
             first.loaded.then(() => {
                 const second = new FontFace('Second', bytes);
                 set.add(second);
                 second.load();
-                reused = set.ready === ready;
-            });
-            ready.then(() => {
-                document.getElementById('status').textContent = String(
-                    reused && set.check('12px First') && set.check('12px Second'));
+                second.loaded.then(() => {
+                    reused = set.ready === firstReady;
+                    document.getElementById('status').textContent = String(
+                        !reused && set.check('12px First') && set.check('12px Second'));
+                });
             });
         </script></body>"#,
     );

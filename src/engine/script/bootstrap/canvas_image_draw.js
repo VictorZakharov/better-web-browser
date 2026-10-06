@@ -1,4 +1,20 @@
     // Shared bounded image sampling for ImageBitmap resize and Canvas drawImage.
+    const canvasImagePaintHost = __hostCall;
+    const canvasImagePaintEncode = canvasPrivateWireStringify;
+    const canvasImageDrawArguments = (context, args) => {
+        canvasImageDataContext(context);
+        const count = Math.min(args.length, 9);
+        if (![3, 5, 9].includes(count))
+            throw new TypeError('drawImage requires 3, 5, or 9 arguments');
+        if (!canvasImageSourceSupported(args[0]))
+            throw new TypeError('Unsupported Canvas image source');
+        // Web IDL converts arguments before entering the drawing algorithm.
+        // Unary + implements ToNumber (including rejecting Symbol/BigInt).
+        // Surplus arguments after the longest overload are never inspected.
+        const converted = [args[0]];
+        for (let index = 1; index < count; index++) converted.push(+args[index]);
+        return converted;
+    };
     const sampleCanvasBitmap = (source, x, y, smooth) => {
         if (!smooth) {
             const column = Math.max(0, Math.min(source.width - 1, Math.round(x)));
@@ -42,22 +58,26 @@
         }
         return { width, height, pixels };
     };
-    Object.defineProperties(CanvasRenderingContext2D.prototype, {
+    defineCanvasContextProperties(CanvasRenderingContext2D.prototype, {
         imageSmoothingEnabled: {
-            get() { return this.__imageSmoothingEnabled; },
-            set(value) { this.__imageSmoothingEnabled = Boolean(value); }
+            get() { return canvasDrawingState(this).imageSmoothingEnabled; },
+            set(value) { canvasDrawingState(this).imageSmoothingEnabled = Boolean(value); }
         },
         imageSmoothingQuality: {
-            get() { return this.__imageSmoothingQuality; },
-            set(value) { if (['low', 'medium', 'high'].includes(value)) this.__imageSmoothingQuality = value; }
+            get() { return canvasDrawingState(this).imageSmoothingQuality; },
+            set(value) {
+                value = `${value}`;
+                if (['low', 'medium', 'high'].includes(value)) canvasDrawingState(this).imageSmoothingQuality = value;
+            }
         }
     });
     const paintCanvasImage = function(source, ...coordinates) {
         if (![2, 4, 8].includes(coordinates.length))
             throw new TypeError('drawImage requires 3, 5, or 9 arguments');
-        const image = imageSourceSnapshot(source);
         const values = coordinates.map(Number);
         if (!values.every(Number.isFinite)) return false;
+        if (!canvasImageSourceUsable(source)) return false;
+        const image = imageSourceSnapshot(source);
         let sourceX = 0, sourceY = 0, sourceWidth = image.width, sourceHeight = image.height;
         let destinationX, destinationY, destinationWidth, destinationHeight;
         if (values.length === 2) {
@@ -76,14 +96,30 @@
         if (destinationHeight < 0) { destinationY += destinationHeight; destinationHeight = -destinationHeight; }
         const target = stateForCanvas(this.canvas);
         if (!target.pixels) throw new DOMException('Canvas bitmap exceeds the budget', 'NotSupportedError');
-        const bounds = canvasTransformedBounds(this.__transform,
+        const bounds = canvasTransformedBounds(canvasDrawingState(this).transform,
             destinationX, destinationY, destinationWidth, destinationHeight, target);
-        const inverse = matrixInverse2D(this.__transform);
+        const inverse = matrixInverse2D(canvasDrawingState(this).transform);
         if (!inverse) return false;
         // A valid image entirely outside the bitmap still has a transparent source
         // layer for whole-canvas Porter-Duff operators such as copy/source-in.
         if (!bounds) return true;
         const [left, top, right, bottom] = bounds;
+        if (canvasPixelTag(image.pixels) === 'Uint8ClampedArray' &&
+            (right - left) * (bottom - top) >= 256 && left <= right && top <= bottom) {
+            const painted = canvasImagePaintHost('canvasPaintImage', canvasImagePaintEncode({
+                width: target.width, height: target.height,
+                source_width: image.width, source_height: image.height,
+                bounds, inverse,
+                source: [sourceX, sourceY, sourceWidth, sourceHeight],
+                destination: [destinationX, destinationY, destinationWidth, destinationHeight],
+                opacity: canvasDrawingState(this).globalAlpha, smooth: canvasDrawingState(this).imageSmoothingEnabled,
+                operator: canvasDrawingState(this).compositeOperation
+            }), target.pixels, image.pixels, canvasDrawingState(this).clipBits || null);
+            if (painted && canvasPixelLength(painted) === target.pixels.length) {
+                copyCanvasPixelRow(target.pixels, 0, painted, 0, target.pixels.length);
+                return true;
+            }
+        }
         for (let row = top; row < bottom; row++) for (let column = left; column < right; column++) {
             if (!canvasClipAllows(this, column, row, target.width)) continue;
             const [paintX, paintY] = matrixPoint2D(inverse, column + 0.5, row + 0.5);
@@ -94,12 +130,12 @@
             const sampleY = sourceY + (paintY - destinationY) * sourceHeight / destinationHeight - 0.5;
             if (sampleX < -0.5 || sampleY < -0.5 ||
                 sampleX >= image.width - 0.5 || sampleY >= image.height - 0.5) continue;
-            const pixel = sampleCanvasBitmap(image, sampleX, sampleY, this.__imageSmoothingEnabled);
+            const pixel = sampleCanvasBitmap(image, sampleX, sampleY, canvasDrawingState(this).imageSmoothingEnabled);
             compositeCanvasPixel(target.pixels, (row * target.width + column) * 4,
-                pixel, this.__globalAlpha, this.__compositeOperation);
+                pixel, canvasDrawingState(this).globalAlpha, canvasDrawingState(this).compositeOperation);
         }
         return true;
     };
     CanvasRenderingContext2D.prototype.drawImage = function(source, ...coordinates) {
-        paintCanvasImage.call(this, source, ...coordinates);
+        paintCanvasImage.apply(this, canvasImageDrawArguments(this, [source, ...coordinates]));
     };

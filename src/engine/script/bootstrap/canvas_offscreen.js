@@ -1,15 +1,20 @@
     // OffscreenCanvas reuses the bounded 2D bitmap without manufacturing a DOM element.
     const offscreenContextToken = Symbol('OffscreenCanvasRenderingContext2D');
     const canvasUnsignedDimension = value => {
-        value = Number(value);
-        if (!Number.isFinite(value) || value < 0)
+        // Web IDL [EnforceRange] unsigned long long: convert before truncating,
+        // reject BigInt/Symbol, and preserve the full exactly representable range.
+        value = +value;
+        if (!Number.isFinite(value))
             throw new TypeError('Canvas dimensions must be non-negative finite integers');
-        return Math.min(0xffffffff, Math.trunc(value));
+        value = Math.trunc(value);
+        if (value < 0 || value > 9007199254740991)
+            throw new TypeError('Canvas dimension is outside the unsigned integer range');
+        return value === 0 ? 0 : value;
     };
     class OffscreenCanvasRenderingContext2D extends CanvasRenderingContext2D {
-        constructor(token, canvas) {
+        constructor(token, canvas, settings) {
             if (token !== offscreenContextToken) throw new TypeError('Illegal constructor');
-            super(canvas);
+            super(canvas, canvas2dContextToken, settings);
         }
     }
     // CanvasPathDrawingStyles is included by both context interfaces. Its IDL
@@ -22,35 +27,45 @@
         constructor(width, height) {
             super();
             if (arguments.length < 2) throw new TypeError('OffscreenCanvas requires width and height');
-            this.__width = canvasUnsignedDimension(width);
-            this.__height = canvasUnsignedDimension(height);
-            this.__detached = false;
+            canvasOwnerWeakSet(offscreenCanvasDimensions, this, {
+                width: canvasUnsignedDimension(width), height: canvasUnsignedDimension(height), detached: false
+            });
             offscreenCanvasBrands.add(this);
             stateForCanvas(this);
         }
-        get width() { return this.__detached ? 0 : this.__width; }
+        get width() { const state=canvasOffscreenDimensions(this);return state.detached ? 0 : state.width; }
         set width(value) {
-            if (this.__detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
-            this.__width = canvasUnsignedDimension(value);
+            const state=canvasOffscreenDimensions(this);
+            const width=canvasUnsignedDimension(value);
+            if (state.detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
+            state.width = width;
             stateForCanvas(this, true);
         }
-        get height() { return this.__detached ? 0 : this.__height; }
+        get height() { const state=canvasOffscreenDimensions(this);return state.detached ? 0 : state.height; }
         set height(value) {
-            if (this.__detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
-            this.__height = canvasUnsignedDimension(value);
+            const state=canvasOffscreenDimensions(this);
+            const height=canvasUnsignedDimension(value);
+            if (state.detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
+            state.height = height;
             stateForCanvas(this, true);
         }
         getContext(contextId, options = undefined) {
-            if (this.__detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
-            const requested = String(contextId);
-            const mode = ['experimental-webgl','webgl2'].includes(requested) ? 'webgl' : requested;
+            const dimensions = canvasOffscreenDimensions(this);
+            if (!arguments.length) throw new TypeError('getContext requires a context identifier');
+            const requested = `${contextId}`;
+            if (!['2d', 'bitmaprenderer', 'webgl', 'webgl2', 'webgpu'].includes(requested))
+                throw new TypeError('Invalid OffscreenRenderingContextId');
+            if (dimensions.detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
+            const mode = requested === 'webgl2' ? 'webgl' : requested;
             if (!['2d', 'bitmaprenderer', 'webgl'].includes(mode)) return null;
             const state = stateForCanvas(this);
             if (state.mode !== 'none' && state.mode !== mode) return null;
             if (state.context) return mode === 'webgl' &&
                 webGlState(state.context).api !== (requested === 'webgl2' ? 'webgl2' : 'webgl1') ? null : state.context;
+            const settings = mode === '2d' ? canvasConvertSettings(options) : null;
+            if (settings && !canvasSettingsSupported(settings)) return null;
             const context = mode === 'webgl' ? createWebGlContext(this, options, requested === 'webgl2' ? 'webgl2' : 'webgl1') : mode === '2d' ?
-                new OffscreenCanvasRenderingContext2D(offscreenContextToken, this) :
+                new OffscreenCanvasRenderingContext2D(offscreenContextToken, this, settings) :
                 new ImageBitmapRenderingContext(canvasBitmapContextToken, this, options);
             if (!context) return null;
             state.context = context;
@@ -58,9 +73,10 @@
             return context;
         }
         convertToBlob(options = {}) {
-            if (this.__detached)
+            if (canvasOffscreenDimensions(this).detached)
                 return Promise.reject(new DOMException('OffscreenCanvas is detached', 'InvalidStateError'));
-            if (!this.width || !this.height)
+            const [width,height]=canvasOwnedDimensions(this);
+            if (!width || !height)
                 return Promise.reject(new DOMException('Canvas has no pixels', 'IndexSizeError'));
             try {
                 const encoded = encodedCanvas(this, String(options?.type ?? 'image/png'), options?.quality);
@@ -70,7 +86,7 @@
             } catch (error) { return Promise.reject(error); }
         }
         transferToImageBitmap() {
-            if (this.__detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
+            if (canvasOffscreenDimensions(this).detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
             const state = stateForCanvas(this);
             if (state.mode === 'none')
                 throw new DOMException('OffscreenCanvas has no rendering context', 'InvalidStateError');
@@ -78,17 +94,18 @@
                 throw new DOMException('Canvas has no available bitmap', 'InvalidStateError');
             const result = makeImageBitmap(state.width, state.height, state.pixels);
             state.pixels = new Uint8ClampedArray(state.width * state.height * 4);
+            if (state.mode === '2d') canvasInitializeOutputBitmap(state.context, state.pixels);
             if (state.mode === 'webgl') resetWebGlCanvas(state);
             if (state.mode === 'bitmaprenderer') resetCanvasBitmapRenderer(state.context);
             return result;
         }
     }
     HTMLCanvasElement.prototype.transferControlToOffscreen = function() {
-        if (!(this instanceof HTMLCanvasElement)) throw new TypeError('Illegal canvas receiver');
+        canvasHtmlReceiver(this);
         const state = stateForCanvas(this);
         if (state.mode !== 'none')
             throw new DOMException('Canvas already has a rendering context', 'InvalidStateError');
-        const offscreen = new OffscreenCanvas(this.width, this.height);
+        const offscreen = new OffscreenCanvas(...canvasOwnedDimensions(this));
         state.mode = 'placeholder';
         state.placeholder = offscreen;
         return offscreen;
@@ -98,17 +115,19 @@
     // ImageBitmap stays usable, while OffscreenCanvas requires transfer.
     globalThis.__cloneCanvasBindings = {
         isBitmap: value => imageBitmapStates.has(value),
-        isOffscreen: value => value instanceof OffscreenCanvas,
-        isDetached: value => value instanceof OffscreenCanvas ? value.__detached :
+        isOffscreen: value => canvasSourceSetHas(offscreenCanvasBrands,value),
+        isDetached: value => canvasSourceSetHas(offscreenCanvasBrands,value) ? canvasOffscreenDetached(value) :
             !imageBitmapStates.get(value)?.pixels,
         snapshot(value) {
-            if (value instanceof OffscreenCanvas) {
-                if (value.__detached) throw new DOMException('Canvas is detached', 'DataCloneError');
+            if (canvasSourceSetHas(offscreenCanvasBrands,value)) {
+                if (canvasOffscreenDetached(value)) throw new DOMException('Canvas is detached', 'DataCloneError');
                 const state = stateForCanvas(value);
-                if (state.mode === 'webgl') throw new DOMException('A Canvas with an active WebGL context cannot be transferred', 'InvalidStateError');
+                // HTML transfer steps require context mode "none", including
+                // 2D and bitmaprenderer. Transfer an ImageBitmap for painted pixels.
+                if (state.mode !== 'none') throw new DOMException('A Canvas with an active rendering context cannot be transferred', 'InvalidStateError');
                 if (!state.pixels) throw new DOMException('Canvas exceeds the bitmap budget', 'DataCloneError');
                 return { width: state.width, height: state.height, pixels: state.pixels,
-                    canvasWidth: value.width, canvasHeight: value.height,
+                    canvasWidth: canvasOwnedDimensions(value)[0], canvasHeight: canvasOwnedDimensions(value)[1],
                     alpha: bitmapRendererStates.get(state.context)?.alpha,
                     mode: state.mode, kind: 'offscreencanvas' };
             }
@@ -119,8 +138,8 @@
                 premultiplied: state.premultiplied, kind: 'imagebitmap' };
         },
         detach(value) {
-            if (value instanceof OffscreenCanvas) {
-                value.__detached = true;
+            if (canvasSourceSetHas(offscreenCanvasBrands,value)) {
+                canvasOffscreenDimensions(value).detached = true;
                 const state = canvasStates.get(value);
                 if (state) { state.pixels = null; state.context = null; }
             } else closeImageBitmap(value);
@@ -137,15 +156,15 @@
                 record.a === true,decodedBitmapWords(preciseBytes));
             if (record.t !== 'offscreencanvas')
                 throw new DOMException('Unknown bitmap transfer', 'DataCloneError');
+            if (record.m !== 'none')
+                throw new DOMException('Invalid Canvas context mode in transfer', 'DataCloneError');
             const canvasWidth = record.cw ?? width, canvasHeight = record.ch ?? height;
             if (!Number.isInteger(canvasWidth) || !Number.isInteger(canvasHeight) ||
-                canvasWidth < 0 || canvasHeight < 0 || canvasWidth > 0xffffffff || canvasHeight > 0xffffffff)
+                canvasWidth < 0 || canvasHeight < 0 || canvasWidth > 9007199254740991 || canvasHeight > 9007199254740991)
                 throw new DOMException('Invalid Canvas dimensions in transfer', 'DataCloneError');
             const canvas = new OffscreenCanvas(canvasWidth, canvasHeight), state = stateForCanvas(canvas);
             state.width = width; state.height = height;
             state.pixels = pixels;
-            if (record.m === '2d') canvas.getContext('2d');
-            else if (record.m === 'bitmaprenderer') canvas.getContext('bitmaprenderer', {alpha:record.o !== false});
             return canvas;
         }
     };

@@ -1,5 +1,39 @@
 use super::*;
+mod fonts;
 mod native_parsing;
+
+#[test]
+fn computed_style_named_properties_share_supported_names_and_live_values() {
+    let (dom, outcome) = execute_html(
+        r#"<style>main{background-color:red;float:right;font-kerning:none;transform-style:preserve-3d}</style>
+        <main></main><output></output><script>
+        const assert=(value,message)=>{if(!value)throw Error(message)};
+        const element=document.querySelector('main'), style=getComputedStyle(element);
+        for(const [attribute,property] of [['backgroundColor','background-color'],
+            ['background-color','background-color'],['cssFloat','float'],['float','float'],
+            ['fontKerning','font-kerning'],['font-kerning','font-kerning']]) {
+            assert(attribute in style,'supported name '+attribute);
+            assert(style[attribute]===style.getPropertyValue(property),'used value '+attribute);
+        }
+        for(const name of ['notAProperty','not-a-property','--custom',Symbol('missing')])
+            assert(!(name in style)&&style[name]===undefined,'ordinary absent name');
+        element.style.backgroundColor='blue';element.style.fontKerning='normal';
+        assert(style.backgroundColor===style.getPropertyValue('background-color'),'live style');
+        assert(style.fontKerning==='normal','live supported property after mutation');
+        assert('getPropertyValue' in style&&'cssText' in style,'existing interface members');
+        assert('transformStyle' in style&&style.transformStyle==='preserve-3d',
+            'existing layout-only computed value remains available');
+        assert(!CSS.supports('transform-style','preserve-3d'),
+            'computed metadata must not advertise missing 3D rendering');
+        document.querySelector('output').textContent='passed';
+        </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "passed"
+    );
+}
 
 #[test]
 fn inset_clip_path_is_exposed_without_claiming_unsupported_shapes() {

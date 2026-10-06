@@ -1,6 +1,8 @@
 //! Shared bounded native source coverage, independent of paint/clip/opacity.
 
 use resvg::tiny_skia::{FillRule, Mask, Path, Transform};
+#[path = "coverage/reduction.rs"]
+mod reduction;
 
 pub(super) struct Region {
     pub width: u32,
@@ -24,6 +26,9 @@ impl Region {
 
     pub fn rasterize(&self, path: Option<&Path>, rule: FillRule) -> Option<Vec<u8>> {
         let pixels = self.pixels()?;
+        let Some(path) = path else {
+            return Some(vec![0; pixels]);
+        };
         // Reuse tiny-skia's vetted rasterizer at a bounded higher resolution to
         // reduce its four-step edge quantization. Large ROIs retain native AA.
         let mut scale = 1u32;
@@ -36,59 +41,97 @@ impl Region {
                 scale *= 2;
             }
         }
+        // The caller conservatively includes pen/miter expansion in its ROI.
+        // Once tiny-skia has built the actual outline, reduce only its support.
+        // Select the sample scale BEFORE cropping: a smaller allocation must
+        // not silently change edge quality or the mask-cache contract.
+        let Some(crop) = Crop::intersect(self, path) else {
+            return Some(vec![0; pixels]);
+        };
+        // Keep upstream's full raster coordinate space. Translating a cropped
+        // surface changes curve/edge rounding even at an integer displacement.
         let mut mask = Mask::new(self.width * scale, self.height * scale)?;
-        if let Some(path) = path {
-            mask.fill_path(
-                path,
-                rule,
-                self.antialias,
-                Transform::from_scale(scale as f32, scale as f32)
-                    .pre_translate(-(self.left as f32), -(self.top as f32)),
-            );
-        }
+        mask.fill_path(
+            path,
+            rule,
+            self.antialias,
+            Transform::from_scale(scale as f32, scale as f32)
+                .pre_translate(-(self.left as f32), -(self.top as f32)),
+        );
         let samples = mask.take();
         if scale == 1 {
             return Some(samples);
         }
-        Some(match scale {
-            2 => downsample::<2>(&samples, self.width as usize, self.height as usize),
-            4 => downsample::<4>(&samples, self.width as usize, self.height as usize),
+        let samples = match scale {
+            2 => downsample_crop::<2>(&samples, self.width as usize, &crop),
+            4 => downsample_crop::<4>(&samples, self.width as usize, &crop),
             _ => unreachable!("bounded power-of-two raster scale"),
+        };
+        if crop.x == 0 && crop.y == 0 && crop.width == self.width && crop.height == self.height {
+            return Some(samples);
+        }
+        let mut output = vec![0; pixels];
+        for (row, source) in samples.chunks_exact(crop.width as usize).enumerate() {
+            let start = (crop.y as usize + row) * self.width as usize + crop.x as usize;
+            output[start..start + source.len()].copy_from_slice(source);
+        }
+        Some(output)
+    }
+}
+
+struct Crop {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+impl Crop {
+    fn intersect(region: &Region, path: &Path) -> Option<Self> {
+        let bounds = path.bounds();
+        // Control-point bounds conservatively enclose every curve. An extra
+        // bitmap pixel retains upstream edge AA even at an integer boundary.
+        let x = (f64::from(bounds.left()) - f64::from(region.left) - 1.0)
+            .floor()
+            .clamp(0.0, f64::from(region.width)) as u32;
+        let y = (f64::from(bounds.top()) - f64::from(region.top) - 1.0)
+            .floor()
+            .clamp(0.0, f64::from(region.height)) as u32;
+        let right = (f64::from(bounds.right()) - f64::from(region.left) + 1.0)
+            .ceil()
+            .clamp(0.0, f64::from(region.width)) as u32;
+        let bottom = (f64::from(bounds.bottom()) - f64::from(region.top) + 1.0)
+            .ceil()
+            .clamp(0.0, f64::from(region.height)) as u32;
+        (x < right && y < bottom).then_some(Self {
+            x,
+            y,
+            width: right.saturating_sub(x),
+            height: bottom.saturating_sub(y),
         })
     }
 }
 
+fn downsample_crop<const SCALE: usize>(
+    samples: &[u8],
+    source_width: usize,
+    crop: &Crop,
+) -> Vec<u8> {
+    reduction::reduce::<SCALE>(samples, source_width, crop)
+}
+
+#[cfg(test)]
 fn downsample<const SCALE: usize>(samples: &[u8], width: usize, height: usize) -> Vec<u8> {
-    debug_assert!(SCALE == 2 || SCALE == 4);
-    let source_stride = width * SCALE;
-    debug_assert_eq!(samples.len(), source_stride * height * SCALE);
-    let mut output = vec![0; width * height];
-    let mut sums = vec![0u16; width];
-    for (source, destination) in samples
-        .chunks_exact(source_stride * SCALE)
-        .zip(output.chunks_exact_mut(width))
-    {
-        sums.fill(0);
-        for row in source.chunks_exact(source_stride) {
-            for (sum, group) in sums.iter_mut().zip(row.chunks_exact(SCALE)) {
-                let horizontal = if SCALE == 4 {
-                    // Two independent 16-bit lanes sum byte pairs without
-                    // carry between lanes; each pair is at most 510.
-                    let packed = u32::from_ne_bytes([group[0], group[1], group[2], group[3]]);
-                    let pairs = (packed & 0x00ff_00ff) + ((packed >> 8) & 0x00ff_00ff);
-                    ((pairs & 0xffff) + (pairs >> 16)) as u16
-                } else {
-                    u16::from(group[0]) + u16::from(group[1])
-                };
-                // The largest 4x4 total is 4080, comfortably within u16.
-                *sum += horizontal;
-            }
-        }
-        for (pixel, sum) in destination.iter_mut().zip(&sums) {
-            *pixel = ((*sum + (SCALE * SCALE / 2) as u16) / (SCALE * SCALE) as u16) as u8;
-        }
-    }
-    output
+    downsample_crop::<SCALE>(
+        samples,
+        width,
+        &Crop {
+            x: 0,
+            y: 0,
+            width: width as u32,
+            height: height as u32,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -132,3 +175,7 @@ mod tests {
         verify::<4>();
     }
 }
+
+#[cfg(test)]
+#[path = "coverage/tests.rs"]
+mod crop_tests;

@@ -44,6 +44,14 @@ pub(super) fn encode_font(writer: &mut WireWriter, font: &FontSpec) -> Result<()
     writer.bool(font.underline);
     writer.f32(font.letter_spacing);
     writer.f32(font.word_spacing);
+    writer.bool(font.rtl);
+    writer.bool(font.kerning);
+    writer.u16(font.variants.bits());
+    writer.u16(font.features.settings().len() as u16);
+    for (tag, value) in font.features.settings() {
+        writer.u32(u32::from_be_bytes(*tag));
+        writer.u32(*value);
+    }
     Ok(())
 }
 
@@ -57,16 +65,41 @@ pub(super) fn decode_font(reader: &mut WireReader<'_>) -> Result<FontSpec, Proto
     if !(1..=1000).contains(&weight) {
         return Err(ProtocolError::InvalidPayload("font weight"));
     }
+    let italic = reader.bool()?;
+    let underline = reader.bool()?;
+    let letter_spacing = finite(reader.f32()?, -768.0, 768.0, "letter spacing")?;
+    let word_spacing = finite(reader.f32()?, -768.0, 768.0, "word spacing")?;
+    let rtl = reader.bool()?;
+    let kerning = reader.bool()?;
+    let variants = crate::engine::css::FontVariants::from_bits(reader.u16()?)
+        .ok_or(ProtocolError::InvalidPayload("font variant flags"))?;
+    let count = reader.u16()? as usize;
+    if count > 64 {
+        return Err(ProtocolError::InvalidPayload("font feature count"));
+    }
+    let mut settings = Vec::with_capacity(count);
+    for _ in 0..count {
+        settings.push((reader.u32()?.to_be_bytes(), reader.u32()?));
+    }
+    let features = crate::engine::css::FontFeatures::from_settings(&settings)
+        .ok_or(ProtocolError::InvalidPayload("font feature tag"))?;
     Ok(FontSpec {
         family,
         size,
         weight,
-        italic: reader.bool()?,
-        underline: reader.bool()?,
-        letter_spacing: finite(reader.f32()?, -768.0, 768.0, "letter spacing")?,
-        word_spacing: finite(reader.f32()?, -768.0, 768.0, "word spacing")?,
+        italic,
+        underline,
+        letter_spacing,
+        word_spacing,
+        rtl,
+        kerning,
+        features,
+        variants,
     })
 }
+
+#[cfg(test)]
+mod text_tests;
 
 pub(super) fn encode_edges(writer: &mut WireWriter, values: [f32; 4]) {
     for value in values {

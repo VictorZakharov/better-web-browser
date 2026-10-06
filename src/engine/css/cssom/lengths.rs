@@ -34,7 +34,7 @@ pub(super) fn serialize_computed_length(value: Length, font_size: f32) -> String
     serialize_length(value)
 }
 
-pub(super) fn serialize_length(value: Length) -> String {
+pub(in crate::engine::css) fn serialize_length(value: Length) -> String {
     match value {
         Length::Auto => "auto".to_string(),
         Length::Px(value) => serialize_px(value),

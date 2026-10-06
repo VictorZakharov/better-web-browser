@@ -78,11 +78,12 @@
         return operations.length ? operations : null;
     };
     Object.defineProperty(CanvasRenderingContext2D.prototype, 'filter', {
-        get() { return this.__filter; },
+        configurable:true, enumerable:true,
+        get() { return canvasDrawingState(this).filter; },
         set(value) {
-            const text = String(value).trim();
+            const text = `${value}`.trim();
             const operations = parseCanvasFilters(text);
-            if (operations) { this.__filter = text; this.__filterOperations = operations; }
+            if (operations) { canvasDrawingState(this).filter = text; canvasDrawingState(this).filterOperations = operations; }
         }
     });
     const canvasFilterBlur = (pixels, width, height, blur) => {
@@ -163,9 +164,9 @@
         for (const {name, value} of operations) {
             if (name === 'blur') { result = canvasFilterBlur(result, width, height, value); continue; }
             if (name === 'drop-shadow') {
-                const shadow = canvasShadowLayer({__shadowBlur: value.blur,
-                    __shadowOffsetX: value.x, __shadowOffsetY: value.y,
-                    __shadowColor: value.color}, result, width, height);
+                const shadow = canvasShadowLayerFromState({shadowBlur: value.blur,
+                    shadowOffsetX: value.x, shadowOffsetY: value.y,
+                    shadowColor: value.color}, result, width, height);
                 for (let offset = 0; offset < result.length; offset += 4)
                     compositeCanvasPixelAt(shadow, offset, result, offset, 1, 'source-over');
                 result = shadow;

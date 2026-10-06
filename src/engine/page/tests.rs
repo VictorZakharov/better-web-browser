@@ -143,7 +143,11 @@ fn uses_sizes_to_choose_width_described_srcset_candidates() {
 
 #[test]
 fn requests_only_webfont_faces_used_by_computed_styles() {
-    let mut page = Page::parse("<body><strong>text</strong></body>", "https://example.com/");
+    // Both faces have actual text consumers, not merely an empty inherited box.
+    let mut page = Page::parse(
+        "<body>regular<strong>text</strong></body>",
+        "https://example.com/",
+    );
     page.add_stylesheet_from(
         "https://example.com/css/main.css",
         r#"

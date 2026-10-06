@@ -125,7 +125,7 @@
         ordered.sort((left, right) => Number(exportedBitmaps.has(left)) -
             Number(exportedBitmaps.has(right)));
         for (const canvas of ordered) {
-            const width = canvas.width, height = canvas.height;
+            const [width,height] = canvasOwnedDimensions(canvas);
             const previous = presentedDimensions.get(canvas);
             if (previous?.[0] !== width || previous?.[1] !== height) {
                 stateForCanvas(canvas);
@@ -138,7 +138,7 @@
             // JavaScript copy of framebuffer bindings. Export APIs still read
             // the actual (possibly implicitly cleared) drawing buffer.
             const cached = canvasStates.get(canvas);
-            const backing = cached?.placeholder && !cached.placeholder.__detached
+            const backing = cached?.placeholder && !canvasOffscreenDetached(cached.placeholder)
                 ? canvasStates.get(cached.placeholder) : cached;
             if (exportedBitmaps.has(canvas) && previous?.[0] === width && previous?.[1] === height &&
                 backing?.mode === 'webgl') {
@@ -150,10 +150,10 @@
             }
             const state = stateForCanvas(canvas);
             const placeholder = state.placeholder;
-            const output = placeholder && !placeholder.__detached
+            const output = placeholder && !canvasOffscreenDetached(placeholder)
                 ? stateForCanvas(placeholder) : state;
             let pixels = output.pixels;
-            if (placeholder?.__detached || !output.width || !output.height ||
+            if (canvasOffscreenDetached(placeholder) || !output.width || !output.height ||
                 !width || !height || !pixels)
                 pixels = null;
             else if (pixels.byteLength > MAX_PRESENTED_CANVAS_BYTES) {

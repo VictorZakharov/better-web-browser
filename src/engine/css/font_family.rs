@@ -1,6 +1,7 @@
 //! CSS Fonts family lists retain order, quoted names, and generic-family identity.
 //! https://drafts.csswg.org/css-fonts-4/#font-family-prop
 use cssparser::{Parser, ParserInput};
+pub(crate) mod spacing;
 
 /// Canvas `font` attributes share page text's CSS shorthand parser. A sentinel family
 /// distinguishes a valid declaration equal to initial values from an invalid one.
@@ -21,6 +22,10 @@ pub(crate) fn parse_canvas_font(value: &str) -> Option<crate::engine::FontSpec> 
         underline: false,
         letter_spacing: 0.0,
         word_spacing: 0.0,
+        rtl: false,
+        kerning: true,
+        variants: Default::default(),
+        features: Default::default(),
     })
 }
 

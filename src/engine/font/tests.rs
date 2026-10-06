@@ -9,6 +9,8 @@ fn web_font_snapshots_share_immutable_bytes_but_not_descriptors() {
         sfnt: vec![0_u8; 1024 * 1024].into(),
         source_url: "https://example.test/font.woff2".into(),
         script_source_id: Some(7),
+        features: Default::default(),
+        unicode_ranges: Default::default(),
     };
     let mut snapshot = font.clone();
     assert!(std::sync::Arc::ptr_eq(&font.sfnt, &snapshot.sfnt));
@@ -73,8 +75,11 @@ fn rejects_oversized_woff2_before_decompression() {
         weight: 400,
         weight_min: 400.0,
         weight_max: 400.0,
+        features: Default::default(),
         italic: false,
         url: "fixture.woff2".into(),
+        fallback_urls: Vec::new(),
+        unicode_range: "U+0-10FFFF".into(),
     };
     assert!(
         decode_web_font(&face, &bytes)
@@ -90,8 +95,11 @@ fn rejects_truncated_and_excessive_table_woff2_containers() {
         weight: 400,
         weight_min: 400.0,
         weight_max: 400.0,
+        features: Default::default(),
         italic: false,
         url: "fixture.woff2".into(),
+        fallback_urls: Vec::new(),
+        unicode_range: "U+0-10FFFF".into(),
     };
     assert!(
         decode_web_font(&face, b"wOF2")

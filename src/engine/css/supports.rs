@@ -231,6 +231,7 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
                     .iter()
                     .all(|repeat| matches!(*repeat, "repeat" | "no-repeat"))
         }
+        "font" => super::shorthands::font::parse(&value).is_some(),
         "font-size" => single_component_or_calc(&value) && parse_font_size(&value, 16.0).is_some(),
         "font-weight" => {
             matches!(value.as_str(), "normal" | "bold" | "bolder" | "lighter")
@@ -238,6 +239,11 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
         }
         "font-style" => matches!(value.as_str(), "normal" | "italic" | "oblique"),
         "font-family" => super::font_family::parse(&value).is_some(),
+        "font-feature-settings" => FontFeatures::parse(&value).is_some(),
+        "font-kerning" => FontKerning::parse(&value).is_some(),
+        "font-variant-ligatures" => FontLigatures::parse(&value).is_some(),
+        "font-variant-numeric" => FontNumeric::parse(&value).is_some(),
+        "font-variant" => FontVariants::parse_shorthand(&value).is_some(),
         "letter-spacing" | "word-spacing" => {
             single_component_or_calc(&value) && parse_text_spacing(&value, 16.0).is_some()
         }
@@ -245,10 +251,8 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
             single_component_or_calc(&value) && parse_line_height(&value, 16.0).is_some()
         }
         "align-content" => ContentAlignment::parse(&value).is_some(),
-        "text-align" => matches!(
-            value.as_str(),
-            "left" | "start" | "center" | "right" | "end"
-        ),
+        "text-align" => TextAlign::parse(&value).is_some(),
+        "direction" => Direction::parse(&value).is_some(),
         "white-space" => matches!(value.as_str(), "normal" | "nowrap" | "pre" | "pre-wrap"),
         "text-overflow" => TextOverflow::parse(&value).is_some(),
         "-webkit-line-clamp" => LineClamp::parse(&value).is_some(),

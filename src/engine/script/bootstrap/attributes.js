@@ -129,6 +129,7 @@
         if (newValue) refreshWindowNamedPropertyValues([newValue], true);
     };
     const queueAttributeMutation = (element, record, oldValue, newValue) => {
+        canvasAttributeChanged(element, record.namespace, record.localName);
         popoverAttributeChanged(element, record.namespace, record.localName, oldValue, newValue);
         popoverTargetAttributeChanged(element, record.namespace, record.localName);
         if (record.namespace === null && record.localName === 'type'
@@ -152,6 +153,9 @@
     // DOM's "set an attribute value" is an internal algorithm. CSSOM uses it
     // to update inline style without invoking an author-overridden setAttribute.
     const setAttributeValueInternal = (element, name, value) => {
+        const existing = (name === 'width' || name === 'height') &&
+            nativeNodeLocalName(element) === 'canvas' ? recordByQualifiedName(element, name) : null;
+        validateCanvasAttributeSet(element, existing?.namespace ?? null, existing?.localName ?? name);
         const transitionBefore = transitionBeforeAttributeChange(element, name, value);
         const record = host('attrSet', nodeId(element), name, value);
         transitionAfterAttributeChange(element, transitionBefore);
@@ -184,6 +188,7 @@
     };
     const setAttachedAttributeValue = (attribute, value) => {
         const element = attribute.ownerElement;
+        validateCanvasAttributeSet(element, attribute.namespaceURI, attribute.localName);
         const oldValue = attribute.value;
         const transitionBefore = attribute.namespaceURI === null ?
             transitionBeforeAttributeChange(element, attribute.localName, value) : null;
@@ -305,6 +310,7 @@
             throw new DOMException('The attribute is already in use', 'InUseAttributeError');
         const oldAttribute = getAttributeNodeNsFor(element, attribute.namespaceURI, attribute.localName);
         if (oldAttribute === attribute) return attribute;
+        validateCanvasAttributeSet(element, attribute.namespaceURI, attribute.localName);
         const oldValue = oldAttribute?.value ?? null;
         host('attrReplaceNs', nodeId(element), attribute.namespaceURI || '', attribute.prefix || '',
             attribute.localName, attribute.value);

@@ -10,7 +10,7 @@ pub(super) fn matches_directions(directions: &[TextDirection], node: &NodeRef) -
             .all(|direction| *direction == element_direction(node))
 }
 
-fn element_direction(node: &NodeRef) -> TextDirection {
+pub(super) fn element_direction(node: &NodeRef) -> TextDirection {
     if node.namespace_uri() == Some("http://www.w3.org/1999/xhtml") {
         match node
             .attr_ref("dir")
@@ -94,7 +94,7 @@ pub(super) fn matches_languages(groups: &[Vec<String>], node: &NodeRef) -> bool 
     })
 }
 
-fn inherited_language(node: &NodeRef) -> Option<String> {
+pub(super) fn inherited_language(node: &NodeRef) -> Option<String> {
     let mut ancestor = Some(node.clone());
     while let Some(current) = ancestor {
         if let Some(language) = current.attr_ref("lang") {

@@ -55,9 +55,14 @@ pub enum PageResource {
     },
     Font {
         url: String,
+        /// Stable CSS-face source identity, even while fetching a later candidate.
+        source_url: String,
+        fallback_urls: Vec<String>,
         family: String,
         weight: u16,
         italic: bool,
+        unicode_range: String,
+        font_feature_settings: String,
     },
 }
 

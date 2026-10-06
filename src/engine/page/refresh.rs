@@ -1,8 +1,6 @@
 use super::*;
 use crate::engine::css::Display;
 use crate::engine::dom::Node;
-use crate::engine::font::WebFontFace;
-use crate::engine::font::discover_font_faces;
 use crate::engine::invalidation::RenderInvalidation;
 use std::collections::HashSet;
 
@@ -135,19 +133,7 @@ impl Page {
             }
         }
         self.refresh_media_sources();
-        let mut available_faces = Vec::new();
         self.discover_stylesheet_dependencies();
-        for source in &self.stylesheet_sources {
-            available_faces.extend(discover_font_faces(&source.source, &source.base_url));
-        }
-        for root in Node::shadow_including_descendants(&self.dom.document) {
-            for stylesheet in root.adopted_stylesheets() {
-                available_faces.extend(discover_font_faces(
-                    &stylesheet.source,
-                    &stylesheet.base_url,
-                ));
-            }
-        }
         let (mut styles, style_stats) =
             self.refresh_style_cache(viewport_width, viewport_height, invalidation, false);
         let viewport_width = viewport_width.max(1.0);
@@ -160,7 +146,6 @@ impl Page {
                 _ => None,
             })
             .collect::<HashSet<_>>();
-        let mut requested_faces = Vec::<(String, u16, bool)>::new();
         let mut discovered_style_images = 0_usize;
         for node in Node::shadow_including_descendants(&self.dom.document) {
             // Dynamic DOM work can connect a previously detached subtree at a rendering
@@ -188,23 +173,9 @@ impl Page {
                     .push(PageResource::Image { url: url.clone() });
                 discovered_style_images += 1;
             }
-            for family in
-                crate::engine::css::font_family::parse(&style.font_family).unwrap_or_default()
-            {
-                if let crate::engine::css::font_family::Family::Named(family) = family {
-                    let family = family.to_ascii_lowercase();
-                    if !requested_faces.iter().any(|(requested, weight, italic)| {
-                        requested == &family
-                            && *weight == style.font_weight
-                            && *italic == style.italic
-                    }) {
-                        requested_faces.push((family, style.font_weight, style.italic));
-                    }
-                }
-            }
         }
         self.install_embedded_images();
-        self.add_requested_fonts(available_faces, requested_faces);
+        self.request_visible_fonts(&mut styles);
         self.cached_styles = Some((viewport_width, viewport_height, styles));
         self.refresh_inline_svgs();
         style_stats
@@ -312,51 +283,6 @@ impl Page {
                         ..StyleRefreshStats::default()
                     },
                 )
-            }
-        }
-    }
-
-    fn add_requested_fonts(
-        &mut self,
-        available_faces: Vec<WebFontFace>,
-        requested_faces: Vec<(String, u16, bool)>,
-    ) {
-        let mut selected_faces = Vec::<(WebFontFace, u16)>::new();
-        for (family, weight, italic) in requested_faces {
-            let Some(face) = available_faces
-                .iter()
-                .filter(|face| face.family.eq_ignore_ascii_case(&family))
-                .min_by(|left, right| {
-                    u8::from(left.italic != italic)
-                        .cmp(&u8::from(right.italic != italic))
-                        .then_with(|| {
-                            let left_rank = left.weight_match_rank(weight);
-                            let right_rank = right.weight_match_rank(weight);
-                            left_rank
-                                .0
-                                .cmp(&right_rank.0)
-                                .then_with(|| left_rank.1.total_cmp(&right_rank.1))
-                        })
-                })
-            else {
-                continue;
-            };
-            let registered_weight = face.registered_weight(weight);
-            if !selected_faces.iter().any(|(selected, selected_weight)| {
-                selected == face && *selected_weight == registered_weight
-            }) {
-                selected_faces.push((face.clone(), registered_weight));
-            }
-        }
-        for (face, weight) in selected_faces.into_iter().take(MAX_WEB_FONTS) {
-            let resource = PageResource::Font {
-                url: face.url,
-                family: face.family,
-                weight,
-                italic: face.italic,
-            };
-            if !self.resources.contains(&resource) {
-                self.resources.push(resource);
             }
         }
     }
