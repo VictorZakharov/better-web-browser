@@ -6,6 +6,7 @@ use super::*;
 use crate::navigation::resolve_url;
 use serde::Serialize;
 use std::sync::Arc;
+mod graphics;
 
 pub type WorkerSourceLoader =
     dyn Fn(&str, ScriptKind) -> Result<String, String> + Send + Sync + 'static;
@@ -33,6 +34,9 @@ pub(super) struct WorkerHostState {
     pub(super) image_frames: super::image_frames::ImageFrames,
     pub(super) audio_codecs: super::audio_codecs::AudioCodecs,
     pub(super) webgl: super::canvas_host::webgl::Contexts,
+    pub(super) loaded_web_fonts: Vec<crate::engine::WebFont>,
+    #[cfg(windows)]
+    pub(super) canvas_text: Option<super::canvas_host::text::CanvasTextFonts>,
     pub(super) video_codecs: super::video_codecs::VideoCodecs,
     pub(super) closed: bool,
     pub(super) module_evaluation_pending: bool,
@@ -79,6 +83,9 @@ impl WorkerHostState {
             image_frames: Default::default(),
             audio_codecs: Default::default(),
             webgl: Default::default(),
+            loaded_web_fonts: Vec::new(),
+            #[cfg(windows)]
+            canvas_text: None,
             video_codecs: Default::default(),
             closed: false,
             module_evaluation_pending: false,
@@ -147,19 +154,7 @@ pub(super) fn dispatch_worker_host_call(
     if let Some(value) = super::url_host::dispatch(operation, args)? {
         return Ok(value);
     }
-    if let Some(value) = super::canvas_host::canvas_host_call(operation, args)? {
-        return Ok(value);
-    }
-    if let Some(value) = super::canvas_host::webgl::dispatch(operation, args, &mut state.webgl)? {
-        return Ok(value);
-    }
-    if let Some(value) = super::image_frames::dispatch(operation, args, &mut state.image_frames)? {
-        return Ok(value);
-    }
-    if let Some(value) = super::audio_codecs::dispatch(operation, args, &mut state.audio_codecs)? {
-        return Ok(value);
-    }
-    if let Some(value) = super::video_codecs::dispatch(operation, args, &mut state.video_codecs)? {
+    if let Some(value) = graphics::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = super::worker_websocket_host::dispatch(operation, args, state)? {
@@ -171,12 +166,17 @@ pub(super) fn dispatch_worker_host_call(
         )?)),
         "performanceNow" => Ok(JsValue::from(state.performance_clock.now())),
         "performanceTimeOrigin" => Ok(JsValue::from(state.performance_clock.time_origin())),
-        "performanceTaskSchedule" | "mediaCapabilitiesTaskSchedule" => {
+        "performanceTaskSchedule" | "mediaCapabilitiesTaskSchedule" | "fontTaskSchedule" => {
             let id = argument_id(args, 1);
-            let source = if operation == "performanceTaskSchedule" {
-                TaskSource::PerformanceTimeline
-            } else {
-                TaskSource::MediaElement
+            if id == 0 {
+                return Err(JsNativeError::range()
+                    .with_message("task identifiers must be positive integers")
+                    .into());
+            }
+            let source = match operation {
+                "performanceTaskSchedule" => TaskSource::PerformanceTimeline,
+                "fontTaskSchedule" => TaskSource::FontLoading,
+                _ => TaskSource::MediaElement,
             };
             let handle = state.timers.queue_task(source, Duration::ZERO, id);
             state.timer_handles.insert(id, handle);
@@ -304,6 +304,11 @@ pub(super) fn dispatch_worker_host_call(
         }
         "workerClose" => {
             state.closed = true;
+            state.loaded_web_fonts.clear();
+            #[cfg(windows)]
+            {
+                state.canvas_text = None;
+            }
             state.image_frames.cancel_all();
             state.audio_codecs.cancel_all();
             state.webgl.clear();

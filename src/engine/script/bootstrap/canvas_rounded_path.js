@@ -10,8 +10,12 @@
         const sequence = Array.isArray(radii) ? radii : [radii];
         if (sequence.length < 1 || sequence.length > 4)
             throw new RangeError('Rounded rectangle requires one to four radii');
-        const points = sequence.map(canvasRadiusPoint);
-        if (points.some(point => !point)) return null;
+        const points = [];
+        for (const radius of sequence) {
+            const point = canvasRadiusPoint(radius);
+            if (!point) return null;
+            points.push(point);
+        }
         let corners = sequence.length === 1 ? [points[0], points[0], points[0], points[0]] :
             sequence.length === 2 ? [points[0], points[1], points[0], points[1]] :
             sequence.length === 3 ? [points[0], points[1], points[2], points[1]] : points;
@@ -92,8 +96,13 @@
             ellipseCanvasPath(path, x0 + ul.x, y0 + ul.y, ul.x, ul.y, 0,
                 Math.PI, Math.PI * 1.5, false, transform);
             closeCanvasPath(path);
+            // Reflecting exactly one axis reverses winding. Painting a compound
+            // path must be able to cancel this contour with a clockwise one.
+            if ((width < 0) !== (height < 0)) path.subpaths[path.current].points.reverse();
+            moveCanvasPath(path, ...paint(x,y));
         };
+        bindCanvasPathNumbers(prototype, [['arcTo',5], ['roundRect',4,'radii']]);
     };
     installCanvasRoundedPathMethods(Path2D.prototype, path => canvasPathData.get(path));
     installCanvasRoundedPathMethods(CanvasRenderingContext2D.prototype,
-        context => context.__path, context => context.__transform);
+        context => canvasDrawingState(context).path, context => canvasDrawingState(context).transform);

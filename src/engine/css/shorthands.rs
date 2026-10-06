@@ -2,7 +2,7 @@
 
 use super::values::LineHeight;
 use super::*;
-mod font;
+pub(in crate::engine::css) mod font;
 use crate::navigation::resolve_resource_url;
 pub(super) use font::apply_font_shorthand;
 

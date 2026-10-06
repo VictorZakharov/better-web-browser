@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Canvas source layers and stroke coverage reduction</title>
+<canvas id="canvas" width="512" height="512"></canvas>
+<pre id="probe">Measuring Canvas source generation and whole-surface compositing.</pre>
+<script>
+const c=canvas.getContext('2d'), times={};
+const measure=(name,draw)=>{
+    const start=performance.now();draw();
+    // Include a readback fence: Chromium may defer work past the draw call.
+    const pixels=c.getImageData(0,0,512,512).data;
+    times[name]=performance.now()-start;
+    if(pixels.length!==512*512*4)throw Error('incomplete readback');
+};
+measure('thinStrokes',()=>{
+    c.strokeStyle='red';
+    for(let i=0;i<120;i++){
+        c.lineWidth=1+i*.001;c.beginPath();c.moveTo(12,200+i*.125);c.lineTo(490,200+i*.125);c.stroke();
+    }
+});
+const strokeSample=Array.from(c.getImageData(100,205,1,1).data);
+measure('layers',()=>{
+    c.clearRect(0,0,512,512);c.fillStyle='#123456';c.fillRect(0,0,512,512);
+    c.shadowColor='rgba(0,0,255,.5)';c.shadowOffsetX=40;c.shadowOffsetY=40;
+    for(let i=0;i<24;i++){
+        c.globalCompositeOperation=i%2?'source-atop':'xor';c.fillStyle='rgba(200,40,80,.5)';
+        c.fillRect(100+i,100+i,140,140);
+    }
+});
+const samples=[strokeSample,...[[0,0],[110,110],[260,260]].map(([x,y])=>Array.from(c.getImageData(x,y,1,1).data))];
+probe.setAttribute('data-ms',JSON.stringify(times));probe.setAttribute('data-samples',JSON.stringify(samples));
+probe.textContent=JSON.stringify({times,samples});
+</script>

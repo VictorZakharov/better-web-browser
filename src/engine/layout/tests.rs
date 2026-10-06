@@ -10,5 +10,6 @@ mod flex_sizing;
 mod general;
 mod pseudo;
 mod shadow_manual;
+mod text_direction;
 mod truncation;
 mod truncation_dynamic;

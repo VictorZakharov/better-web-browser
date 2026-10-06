@@ -5,25 +5,58 @@ use super::*;
 use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
 use std::io::Cursor;
 
+mod composite;
+mod composite_layer;
 mod coverage;
 mod curves;
+pub(in crate::engine::script) mod element_images;
 mod fill;
+mod glyph_paint;
 mod gradient_mask;
+mod image_paint;
 mod mask_cache;
 mod path;
 mod pattern_mask;
 mod shader_mask;
 mod shadow;
 mod solid_mask;
+mod solid_path;
+mod source_layer;
 mod stroke_outline;
+mod svg_path;
 #[cfg(windows)]
-mod text;
+pub(in crate::engine::script) mod text;
 pub(crate) mod webgl;
 
 use crate::limits::MAX_CANVAS_PIXELS;
 const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
+    if operation == "canvasTextEnvironment" {
+        // A worker has no element or root style. CSS's non-element root size is initial.
+        return Ok(Some(JsValue::Array(vec![
+            JsValue::from(300),
+            JsValue::from(150),
+            JsValue::from(16),
+            JsValue::from("ltr".to_owned()),
+            JsValue::from(String::new()),
+        ])));
+    }
+    if operation == "canvasSvgPathSegments" {
+        return Ok(Some(svg_path::segments(args)));
+    }
+    if operation == "canvasPaintSourceLayer" {
+        return Ok(Some(source_layer::paint(args)));
+    }
+    if operation == "canvasPaintImage" {
+        return Ok(Some(image_paint::paint(args)));
+    }
+    if operation == "canvasPaintGlyphs" {
+        return Ok(Some(glyph_paint::paint(args)));
+    }
+    if operation == "canvasCompositeLayer" {
+        return Ok(Some(composite_layer::paint(args)));
+    }
     if operation == "canvasPaintGradientMask" {
         return Ok(Some(gradient_mask::paint(args)));
     }
@@ -32,6 +65,9 @@ pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Op
     }
     if operation == "canvasPaintSolidMask" {
         return Ok(Some(solid_mask::paint(args)));
+    }
+    if operation == "canvasPaintSolidPath" {
+        return Ok(Some(solid_path::paint(args)));
     }
     if operation == "canvasCurvePoints" {
         return Ok(Some(curves::points(args)));

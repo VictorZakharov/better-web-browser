@@ -52,17 +52,18 @@ fn svg_path_relative_commands_and_compact_arc_flags_draw_pixels() {
 }
 
 #[test]
-fn svg_path_rejects_malformed_data_and_respects_geometry_budget() {
+fn svg_path_keeps_malformed_prefixes_and_respects_geometry_budget() {
     let (dom, outcome) = execute_html(
         r#"<output>no</output><script>
             const rejects = (source, name) => {
                 try { new Path2D(source); return false; }
                 catch (error) { return error.name === name; }
             };
-            const checks = [rejects('L2 2', 'SyntaxError'), rejects('M2', 'SyntaxError'),
-                rejects('M0 0 A2 2 0 2 1 4 0', 'SyntaxError'),
-                rejects('M0 0 X2 2', 'SyntaxError'),
-                rejects('M0 0 Z 1 2', 'SyntaxError'),
+            const accepts = source => {try {new Path2D(source);return true;}catch {return false;}};
+            const checks = [accepts('L2 2'), accepts('M2'),
+                accepts('M0 0 A2 2 0 2 1 4 0'),
+                accepts('M0 0 X2 2'),
+                accepts('M0 0 Z 1 2'),
                 rejects('M0 0' + ' L1 1'.repeat(8200), 'NotSupportedError')];
             document.querySelector('output').textContent = checks.every(Boolean) ? 'yes' : checks.join(',');
         </script>"#,

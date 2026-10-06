@@ -7,16 +7,16 @@
             return canvasPaintGradientMask(context, state, mask, style, left, top, right, bottom);
         if (canvasIsPattern(style))
             return canvasPaintPatternMask(context, state, mask, style, left, top, right, bottom);
-        if (pixels < 256 || pixels > MAX_CANVAS_PIXELS || context.__clipBits ||
+        if (pixels < 256 || pixels > MAX_CANVAS_PIXELS || canvasDrawingState(context).clipBits ||
             canvasIsGradient(style) || canvasIsPattern(style) ||
-            context.__compositeOperation !== 'source-over' || !style.channels ||
-            canvasPixelLength(mask) !== pixels) return false;
+            canvasDrawingState(context).compositeOperation !== 'source-over' || !style.channels ||
+            mask !== null && canvasPixelLength(mask) !== pixels) return false;
         const region = new canvasPixelArray(pixels * 4);
         for (let row = 0; row < height; row++)
             copyCanvasPixelRow(region, row * width * 4, state.pixels,
                 ((row + top) * state.width + left) * 4, width * 4);
         const painted = canvasSolidMaskHost('canvasPaintSolidMask', mask, region,
-            style.channels, context.__globalAlpha);
+            style.channels, canvasDrawingState(context).globalAlpha);
         if (!painted || canvasPixelLength(painted) !== region.length) return false;
         for (let row = 0; row < height; row++)
             copyCanvasPixelRow(state.pixels, ((row + top) * state.width + left) * 4,

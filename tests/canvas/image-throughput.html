@@ -1,0 +1,29 @@
+<!doctype html><meta charset="utf-8"><title>Canvas image throughput</title>
+<div id="probe">Running</div><canvas id="image" width="256" height="256"></canvas>
+<script>
+const source=document.createElement('canvas');source.width=16;source.height=16;
+const s=source.getContext('2d'),data=s.createImageData(16,16);
+for(let y=0;y<16;y++)for(let x=0;x<16;x++)data.data.set(
+    [x*16,y*16,(x+y)*8,((x+y)%3)*127],(y*16+x)*4);
+s.putImageData(data,0,0);
+const c=document.querySelector('#image').getContext('2d');
+const run=smooth=>{
+    c.resetTransform();c.clearRect(0,0,256,256);c.fillStyle='#123456';c.fillRect(0,0,256,256);
+    c.imageSmoothingEnabled=smooth;c.globalAlpha=.75;
+    const start=performance.now();
+    for(let index=0;index<12;index++) {
+        c.setTransform(1,index*.002,index*.003,1,index*.5,index*.25);
+        c.drawImage(source,0,0,16,16,0,0,240,240);
+    }
+    // Force deferred reference-browser commands to execute inside the timing.
+    const pixels=c.getImageData(0,0,256,256).data;
+    const duration=performance.now()-start;
+    return {duration_ms:duration,samples:[0,83,127,254].map(x=>
+        Array.from(pixels.slice((127*256+x)*4,(127*256+x)*4+4)))};
+};
+try {
+    const result={nearest:run(false),bilinear:run(true),readback_fenced:true};
+    document.querySelector('#probe').setAttribute('data-result',JSON.stringify(result));
+    document.querySelector('#probe').textContent='Complete';
+}catch(error){document.querySelector('#probe').setAttribute('data-error',String(error));}
+</script>

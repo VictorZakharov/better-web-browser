@@ -3,6 +3,8 @@
 //! Page font bytes and page text stay inside the AppContainer. The browser receives only bounded
 //! glyph placements and premultiplied raster assets over the validated presentation protocol.
 
+#[cfg(test)]
+mod features_tests;
 mod raster;
 use self::raster::{GlyphRasterCache, RasterizedGlyph};
 use crate::engine::font::shaping::{FontCatalog, TextShaper};
@@ -27,6 +29,10 @@ struct ShapeKey<'a> {
     italic: bool,
     letter_spacing: u32,
     word_spacing: u32,
+    rtl: bool,
+    kerning: bool,
+    features: crate::engine::css::FontFeatures,
+    variants: crate::engine::css::FontVariants,
 }
 
 pub(in crate::renderer_process::child) struct RendererTextSystem {
@@ -259,6 +265,7 @@ fn shape_cache_entry_bytes(key: &ShapeKey, shaped: &ShapedText) -> usize {
     std::mem::size_of::<ShapeKey>()
         .saturating_add(key.text.len())
         .saturating_add(key.family.len())
+        .saturating_add(std::mem::size_of_val(key.features.settings()))
         .saturating_add(std::mem::size_of::<ShapedText>())
         .saturating_add(geometry_bytes(&shaped.geometry))
         .saturating_add(
@@ -273,6 +280,7 @@ fn measurement_cache_entry_bytes(key: &ShapeKey) -> usize {
     std::mem::size_of::<ShapeKey>()
         .saturating_add(key.text.len())
         .saturating_add(key.family.len())
+        .saturating_add(std::mem::size_of_val(key.features.settings()))
         .saturating_add(std::mem::size_of::<((f32, f32), TextGeometry)>())
 }
 
@@ -307,6 +315,10 @@ impl<'a> ShapeKey<'a> {
             italic: spec.italic,
             letter_spacing: spec.letter_spacing.to_bits(),
             word_spacing: spec.word_spacing.to_bits(),
+            rtl: spec.rtl,
+            kerning: spec.kerning,
+            features: spec.features.clone(),
+            variants: spec.variants,
         }
     }
 
@@ -321,6 +333,10 @@ impl<'a> ShapeKey<'a> {
             italic: self.italic,
             letter_spacing: self.letter_spacing,
             word_spacing: self.word_spacing,
+            rtl: self.rtl,
+            kerning: self.kerning,
+            features: self.features,
+            variants: self.variants,
         }
     }
 }

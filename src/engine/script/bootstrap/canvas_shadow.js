@@ -1,30 +1,30 @@
-    Object.defineProperties(CanvasRenderingContext2D.prototype, {
+    defineCanvasContextProperties(CanvasRenderingContext2D.prototype, {
         shadowColor: {
-            get() { return this.__shadowColor.serialized; },
+            get() { return canvasDrawingState(this).shadowColor.serialized; },
             set(value) {
                 const color = normalizedColor(value);
-                if (color) this.__shadowColor = color;
+                if (color) canvasDrawingState(this).shadowColor = color;
             }
         },
         shadowBlur: {
-            get() { return this.__shadowBlur; },
+            get() { return canvasDrawingState(this).shadowBlur; },
             set(value) {
-                value = Number(value);
-                if (Number.isFinite(value) && value >= 0) this.__shadowBlur = value;
+                value = +value;
+                if (Number.isFinite(value) && value >= 0) canvasDrawingState(this).shadowBlur = value;
             }
         },
         shadowOffsetX: {
-            get() { return this.__shadowOffsetX; },
+            get() { return canvasDrawingState(this).shadowOffsetX; },
             set(value) {
-                value = Number(value);
-                if (Number.isFinite(value)) this.__shadowOffsetX = value;
+                value = +value;
+                if (Number.isFinite(value)) canvasDrawingState(this).shadowOffsetX = value;
             }
         },
         shadowOffsetY: {
-            get() { return this.__shadowOffsetY; },
+            get() { return canvasDrawingState(this).shadowOffsetY; },
             set(value) {
-                value = Number(value);
-                if (Number.isFinite(value)) this.__shadowOffsetY = value;
+                value = +value;
+                if (Number.isFinite(value)) canvasDrawingState(this).shadowOffsetY = value;
             }
         }
     });
@@ -63,16 +63,18 @@
         return blurred;
     };
     const canvasShadowHost = __hostCall;
-    const canvasShadowLayer = (context, source, width, height) => {
+    const canvasShadowLayer = (context, source, width, height) =>
+        canvasShadowLayerFromState(canvasDrawingState(context), source, width, height);
+    const canvasShadowLayerFromState = (settings, source, width, height) => {
         const nativeLayer = canvasShadowHost('canvasShadowLayer', source, width, height,
-            context.__shadowBlur, context.__shadowOffsetX, context.__shadowOffsetY,
-            new Uint8Array(context.__shadowColor.channels));
+            settings.shadowBlur, settings.shadowOffsetX, settings.shadowOffsetY,
+            new Uint8Array(settings.shadowColor.channels));
         if (nativeLayer) return new Uint8ClampedArray(nativeLayer.buffer,
             nativeLayer.byteOffset, nativeLayer.byteLength);
-        const mask = canvasBlurAlpha(source, width, height, context.__shadowBlur);
+        const mask = canvasBlurAlpha(source, width, height, settings.shadowBlur);
         const layer = new Uint8ClampedArray(source.length);
-        const channels = context.__shadowColor.channels;
-        const offsetX = context.__shadowOffsetX, offsetY = context.__shadowOffsetY;
+        const channels = settings.shadowColor.channels;
+        const offsetX = settings.shadowOffsetX, offsetY = settings.shadowOffsetY;
         for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
             const sourceX = x - offsetX, sourceY = y - offsetY;
             const left = Math.floor(sourceX), top = Math.floor(sourceY);

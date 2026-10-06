@@ -11,31 +11,31 @@
         const path = canvasPathArgument(this, external ? pathOrElement : undefined);
         if (!path.subpaths.some(part => part.points.length > 1)) return;
         const previous = {
-            stroke: this.__stroke, width: this.__lineWidth, dash: this.__lineDash,
-            offset: this.__dashOffset, alpha: this.__globalAlpha,
-            composite: this.__compositeOperation, cap: this.__lineCap,
-            join: this.__lineJoin, miter: this.__miterLimit
+            stroke: canvasDrawingState(this).stroke, width: canvasDrawingState(this).lineWidth, dash: canvasDrawingState(this).lineDash,
+            offset: canvasDrawingState(this).dashOffset, alpha: canvasDrawingState(this).globalAlpha,
+            composite: canvasDrawingState(this).compositeOperation, cap: canvasDrawingState(this).lineCap,
+            join: canvasDrawingState(this).lineJoin, miter: canvasDrawingState(this).miterLimit
         };
         try {
-            this.__stroke = normalizedColor('#005fcc');
-            this.__lineWidth = 2;
-            this.__lineDash = [];
-            this.__dashOffset = 0;
-            this.__globalAlpha = 1;
-            this.__compositeOperation = 'source-over';
-            this.__lineCap = 'round';
-            this.__lineJoin = 'round';
-            this.__miterLimit = 1;
+            canvasDrawingState(this).stroke = normalizedColor('#005fcc');
+            canvasDrawingState(this).lineWidth = 2;
+            canvasDrawingState(this).lineDash = [];
+            canvasDrawingState(this).dashOffset = 0;
+            canvasDrawingState(this).globalAlpha = 1;
+            canvasDrawingState(this).compositeOperation = 'source-over';
+            canvasDrawingState(this).lineCap = 'round';
+            canvasDrawingState(this).lineJoin = 'round';
+            canvasDrawingState(this).miterLimit = 1;
             paintCanvasPath(this, path, false, 'nonzero');
         } finally {
-            this.__stroke = previous.stroke;
-            this.__lineWidth = previous.width;
-            this.__lineDash = previous.dash;
-            this.__dashOffset = previous.offset;
-            this.__globalAlpha = previous.alpha;
-            this.__compositeOperation = previous.composite;
-            this.__lineCap = previous.cap;
-            this.__lineJoin = previous.join;
-            this.__miterLimit = previous.miter;
+            canvasDrawingState(this).stroke = previous.stroke;
+            canvasDrawingState(this).lineWidth = previous.width;
+            canvasDrawingState(this).lineDash = previous.dash;
+            canvasDrawingState(this).dashOffset = previous.offset;
+            canvasDrawingState(this).globalAlpha = previous.alpha;
+            canvasDrawingState(this).compositeOperation = previous.composite;
+            canvasDrawingState(this).lineCap = previous.cap;
+            canvasDrawingState(this).lineJoin = previous.join;
+            canvasDrawingState(this).miterLimit = previous.miter;
         }
     };

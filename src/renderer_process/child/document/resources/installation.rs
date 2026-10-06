@@ -28,7 +28,10 @@ impl DocumentRuntime {
                 || (self.parser.is_some() && matches!(resource, PageResource::Script { .. }));
             let current_media = !matches!(resource, PageResource::Media { .. })
                 || self.page.is_current_media_resource(&resource);
-            if !current_media || (require_authoritative_match && !admitted) {
+            if !current_media
+                || !self.page.is_current_font_resource(&resource)
+                || (require_authoritative_match && !admitted)
+            {
                 continue;
             }
             self.loaded_resources.insert(resource.clone());
@@ -36,6 +39,9 @@ impl DocumentRuntime {
                 Ok(response) => response,
                 Err(error) => {
                     self.record_resource_diagnostic(format!("{label}: {error}"));
+                    if self.page.retry_font_resource(&resource) {
+                        continue;
+                    }
                     retained |= self.dispatch_resource_event(&resource, "error")?;
                     continue;
                 }
@@ -51,7 +57,9 @@ impl DocumentRuntime {
                     "{label}: server returned HTTP {}",
                     response.status
                 ));
-                retained |= self.dispatch_resource_event(&resource, "error")?;
+                if !self.page.retry_font_resource(&resource) {
+                    retained |= self.dispatch_resource_event(&resource, "error")?;
+                }
                 continue;
             }
             if matches!(resource, PageResource::OriginHint { .. }) {
@@ -62,6 +70,15 @@ impl DocumentRuntime {
                 response.response_type,
                 crate::fetch::ResponseType::Basic | crate::fetch::ResponseType::Cors
             );
+            if matches!(resource, PageResource::Font { .. }) && !eligible {
+                self.record_resource_diagnostic(format!(
+                    "{label}: font response is not origin-clean"
+                ));
+                if !self.page.retry_font_resource(&resource) {
+                    retained |= self.dispatch_resource_event(&resource, "error")?;
+                }
+                continue;
+            }
             if let Some(error) = integrity.iter().find_map(|metadata| {
                 crate::fetch::integrity::verify(metadata, response.body.as_bytes(), eligible).err()
             }) {
@@ -174,14 +191,38 @@ impl DocumentRuntime {
                         .ok_or_else(|| "script was not installed".to_string())
                 }
                 PageResource::Font {
-                    url,
+                    url: _,
+                    source_url,
+                    fallback_urls: _,
                     family,
                     weight,
                     italic,
-                } => self.page.add_font(url, family, weight, italic, &bytes),
+                    unicode_range,
+                    font_feature_settings,
+                } => self.page.add_font_face(
+                    crate::engine::font::WebFontFace {
+                        url: source_url,
+                        fallback_urls: Vec::new(),
+                        family,
+                        weight,
+                        weight_min: f32::from(weight),
+                        weight_max: f32::from(weight),
+                        italic,
+                        unicode_range,
+                        features: crate::engine::css::FontFeatures::parse(&font_feature_settings)
+                            .ok_or_else(|| "invalid font feature settings".to_owned())?,
+                    },
+                    &bytes,
+                ),
             };
             match installed {
                 Ok(()) => {
+                    if let PageResource::Image { url } = &event_resource {
+                        self.page.set_image_origin_clean(url, eligible);
+                        if let Some(runtime) = self.script_runtime.as_mut() {
+                            self.page.synchronize_script_images(runtime);
+                        }
+                    }
                     if matches!(event_resource, PageResource::Font { .. })
                         && let Some(runtime) = self.script_runtime.as_mut()
                     {
@@ -195,6 +236,9 @@ impl DocumentRuntime {
                 }
                 Err(error) => {
                     self.record_resource_diagnostic(format!("{label}: {error}"));
+                    if self.page.retry_font_resource(&event_resource) {
+                        continue;
+                    }
                     retained |= if matches!(event_resource, PageResource::Media { .. }) {
                         self.dispatch_media_failure(&event_resource, "decode")?
                     } else {

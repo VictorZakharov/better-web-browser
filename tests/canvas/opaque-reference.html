@@ -1,0 +1,18 @@
+<!doctype html><meta charset="utf-8"><title>Canvas opaque backing reference</title>
+<output id="probe">Running</output>
+<script>
+const canvas=new OffscreenCanvas(2,2),ctx=canvas.getContext('2d',{alpha:false});
+const sample=()=>Array.from(ctx.getImageData(0,0,1,1).data),result={attributes:ctx.getContextAttributes()};
+result.initial=sample();
+ctx.fillStyle='rgba(255,0,0,.5)';ctx.fillRect(0,0,2,2);result.sourceOver=sample();
+ctx.clearRect(0,0,2,2);result.clear=sample();
+ctx.globalCompositeOperation='copy';ctx.fillRect(0,0,2,2);result.copy=sample();
+ctx.putImageData(new ImageData(new Uint8ClampedArray([255,0,0,128]),1),0,0);result.put=sample();
+ctx.putImageData(new ImageData(new Uint8ClampedArray([255,0,0,0]),1),0,0);result.hidden=sample();
+result.outside=Array.from(ctx.getImageData(-1,-1,1,1).data);
+canvas.width=2;result.resize=sample();
+ctx.fillRect(0,0,2,2);const bitmap=canvas.transferToImageBitmap();result.transferBlank=sample();
+result.bitmapSize=[bitmap.width,bitmap.height];
+document.querySelector('#probe').setAttribute('data-result',JSON.stringify(result));
+document.querySelector('#probe').textContent='Complete';
+</script>

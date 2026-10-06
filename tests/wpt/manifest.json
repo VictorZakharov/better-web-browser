@@ -11,6 +11,9 @@
     "expectations": "forbidden"
   },
   "support": [
+    "css/support/computed-testcommon.js",
+    "css/css-font-loading/resources/Rochester.otf",
+    "css/css-font-loading/resources/GenR102.woff2",
     "css/support/parsing-testcommon.js",
     "common/media.js",
     "webcodecs/utils.js",
@@ -1310,6 +1313,24 @@
     {"path":"css/css-animations/parsing/keyframes-name-valid.html","area":"CSS Animations names","expected":"pass"},
     {"path":"css/css-animations/parsing/keyframes-name-invalid.html","area":"CSS Animations names","expected":"pass"},
     {"path":"css/css-animations/parsing/animation-name-valid.html","area":"CSS Animations authored values","expected":"pass"},
-    {"path":"css/css-animations/parsing/animation-name-invalid.html","area":"CSS Animations authored values","expected":"pass"}
+    {"path":"css/css-animations/parsing/animation-name-invalid.html","area":"CSS Animations authored values","expected":"pass"},
+    {"path":"css/css-font-loading/fontfacesetloadevent-constructor.html","area":"CSS Font Loading","expected":"pass"},
+    {"path":"css/css-font-loading/fontfaceset-has.html","area":"CSS Font Loading","expected":"pass"},
+    {"path":"css/css-font-loading/fontface-invalid-arraybuffer.html","area":"CSS Font Loading","expected":"pass"},
+    {"path":"css/css-font-loading/empty-family-load.html","area":"CSS Font Loading","expected":"pass"},
+    {"path":"css/css-font-loading/fontfaceset-delete-css-connected.html","area":"CSS Font Loading","expected":"pass"},
+    {"path":"css/css-font-loading/fontfaceset-clear-css-connected.html","area":"CSS Font Loading","expected":"pass"},
+    {"path":"css/css-font-loading/historical.html","area":"CSS Font Loading","expected":"pass"},
+    {"path":"css/css-fonts/parsing/font-feature-settings-valid.html","area":"CSS Fonts authored features","expected":"pass"},
+    {"path":"css/css-fonts/parsing/font-feature-settings-invalid.html","area":"CSS Fonts authored features","expected":"pass"},
+    {"path":"css/css-fonts/parsing/font-kerning-valid.html","area":"CSS Fonts kerning","expected":"pass"},
+    {"path":"css/css-fonts/parsing/font-kerning-invalid.html","area":"CSS Fonts kerning","expected":"pass"},
+    {"path":"css/css-fonts/parsing/font-kerning-computed.html","area":"CSS Fonts kerning","expected":"pass"},
+    {"path":"css/css-fonts/parsing/font-variant-ligatures-valid.html","area":"CSS Fonts ligatures","expected":"pass"},
+    {"path":"css/css-fonts/parsing/font-variant-ligatures-invalid.html","area":"CSS Fonts ligatures","expected":"pass"},
+    {"path":"css/css-fonts/parsing/font-variant-ligatures-computed.html","area":"CSS Fonts ligatures","expected":"pass"},
+    {"path":"css/css-fonts/parsing/font-variant-numeric-valid.html","area":"CSS Fonts numeric variants","expected":"pass"},
+    {"path":"css/css-fonts/parsing/font-variant-numeric-invalid.html","area":"CSS Fonts numeric variants","expected":"pass"},
+    {"path":"css/css-fonts/parsing/font-variant-numeric-computed.html","area":"CSS Fonts numeric variants","expected":"pass"}
   ]
 }

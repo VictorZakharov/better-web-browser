@@ -27,9 +27,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         };
         let line_width = (line_width - hanging).max(0.0);
         let mut cursor_x = match align {
-            TextAlign::Start => x,
+            TextAlign::Start | TextAlign::Left => x,
             TextAlign::Center => x + ((width - line_width) / 2.0).max(0.0),
-            TextAlign::End => x + (width - line_width).max(0.0),
+            TextAlign::End | TextAlign::Right => x + (width - line_width).max(0.0),
         };
         for measured in line {
             self.paint_atom(measured, cursor_x, y, line_height, width, line_id);

@@ -4,7 +4,7 @@ use super::values::LineHeight;
 use super::*;
 
 pub(crate) mod declarations;
-mod lengths;
+pub(super) mod lengths;
 #[cfg(test)]
 use lengths::serialize_length;
 
@@ -48,6 +48,8 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         return super::variables::substitute_variables(value, &style.custom_properties);
     }
     let value = match property {
+        "direction" => style.direction.css_text().into(),
+        "text-align" => style.text_align.css_text().into(),
         "transition-property" => style.transition.properties.join(", "),
         "transition-duration" => values::transitions::serialize_times(&style.transition.durations),
         "transition-delay" => values::transitions::serialize_times(&style.transition.delays),
@@ -120,6 +122,11 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "width" => serialize_length(style.width),
         "height" => serialize_length(style.height),
         "font-weight" => style.font_weight.to_string(),
+        "font-feature-settings" => style.font_features.css_text(),
+        "font-kerning" => style.font_kerning.css_text().into(),
+        "font-variant-ligatures" => style.font_ligatures.css_text(),
+        "font-variant-numeric" => style.font_numeric.css_text(),
+        "font-variant" => FontVariants::css_text(style.font_ligatures, style.font_numeric),
         "top" => serialize_length(style.top),
         "right" => serialize_length(style.right),
         "bottom" => serialize_length(style.bottom),

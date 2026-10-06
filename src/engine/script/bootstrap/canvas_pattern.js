@@ -41,12 +41,9 @@
         if(arguments.length<2)throw new TypeError('createPattern requires two arguments');
         // Convert the image interface before DOMString; usability/snapshot comes
         // afterward, so later argument getters may still change source pixels.
-        const supported=videoFrameStates.has(image)||imageBitmapStates.has(image)||offscreenCanvasBrands.has(image)||
-            (typeof nodeHandles!=='undefined'&&nodeHandles.has(image)&&
-                (image instanceof HTMLCanvasElement||typeof HTMLImageElement!=='undefined'&&image instanceof HTMLImageElement));
-        if(!supported)throw new TypeError('Unsupported Canvas image source');
+        if(!canvasImageSourceSupported(image))throw new TypeError('Unsupported Canvas image source');
         repetition = repetition === null ? '' : `${repetition}`;
-        if(typeof HTMLImageElement!=='undefined'&&image instanceof HTMLImageElement&&!image.complete)return null;
+        if(!canvasImageSourceUsable(image))return null;
         const source = imageSourceSnapshot(image);
         if (!source.width || !source.height) return null;
         if(repetition==='')repetition='repeat';

@@ -1,7 +1,5 @@
-    // SVG 2 path-data grammar. Parse commands before flattening so shorthand control points,
-    // compact arc flags, and relative coordinates all use the original geometric points.
-    const svgPathNumber = /[+-]?(?:(?:\d+\.?\d*)|(?:\.\d+))(?:[eE][+-]?\d+)?/y;
-    const svgPathError = () => new DOMException('Invalid SVG path data', 'SyntaxError');
+    // Reuse the existing resvg/usvg provider's pinned SVG 2 grammar. The owned
+    // command stream retains original coordinates for our Canvas flattening.
     const svgPathArc = (path, x0, y0, rx, ry, degrees, large, sweep, x1, y1) => {
         rx = Math.abs(rx); ry = Math.abs(ry);
         if (x0 === x1 && y0 === y1) return;
@@ -42,50 +40,29 @@
     const parseCanvasSvgPath = source => {
         if (source.length > 131072)
             throw new DOMException('SVG path data exceeds the geometry budget', 'NotSupportedError');
+        const segments = canvasCurveHost('canvasSvgPathSegments', source);
+        if (!segments) throw new DOMException('SVG path data exceeds the parsing budget', 'NotSupportedError');
         const path = newCanvasPath();
-        let offset = 0, command = '', x = 0, y = 0, startX = 0, startY = 0;
+        let x = 0, y = 0, startX = 0, startY = 0;
         let lastCurve = '', cubicControl = null, quadraticControl = null;
-        const skipSeparators = () => {
-            while (offset < source.length && /[\s,]/.test(source[offset])) offset++;
-        };
-        const readNumber = () => {
-            skipSeparators();
-            svgPathNumber.lastIndex = offset;
-            const match = svgPathNumber.exec(source);
-            if (!match) throw svgPathError();
-            offset += match[0].length;
-            const value = Number(match[0]);
-            if (!Number.isFinite(value)) throw svgPathError();
-            return value;
-        };
-        const readFlag = () => {
-            skipSeparators();
-            if (source[offset] !== '0' && source[offset] !== '1') throw svgPathError();
-            return Number(source[offset++]);
-        };
+        let values = [], index = 0;
+        const readNumber = () => values[index++];
         const endpoint = relative => {
             const px = readNumber(), py = readNumber();
             return relative ? [x + px, y + py] : [px, py];
         };
-        skipSeparators();
-        while (offset < source.length) {
-            if (/[A-Za-z]/.test(source[offset])) command = source[offset++];
-            else if (!command) throw svgPathError();
+        for (const segment of segments) {
+            const command = segment[0];values = segment;index = 1;
             const type = command.toUpperCase();
-            if (!'MLHVCSQTAZ'.includes(type)) throw svgPathError();
-            if (path.current === null && type !== 'M') throw svgPathError();
             if (type === 'Z') {
                 closeCanvasPath(path); x = startX; y = startY;
                 lastCurve = ''; cubicControl = quadraticControl = null;
-                command = '';
-                skipSeparators();
                 continue;
             }
             const relative = command === command.toLowerCase();
             if (type === 'M') {
                 [x, y] = endpoint(relative);
                 moveCanvasPath(path, x, y); startX = x; startY = y;
-                command = relative ? 'l' : 'L';
             } else if (type === 'L') {
                 [x, y] = endpoint(relative);
                 lineCanvasPath(path, x, y);
@@ -117,14 +94,11 @@
                 quadraticControl = control; [x, y] = end;
             } else {
                 const rx = readNumber(), ry = readNumber(), rotation = readNumber();
-                const large = readFlag(), sweep = readFlag(), end = endpoint(relative);
+                const large = readNumber(), sweep = readNumber(), end = endpoint(relative);
                 svgPathArc(path, x, y, rx, ry, rotation, large, sweep, ...end);
                 [x, y] = end;
             }
             lastCurve = type;
-            skipSeparators();
-            if (offset < source.length && !/[A-Za-z+\-.\d]/.test(source[offset]))
-                throw svgPathError();
         }
         return path;
     };

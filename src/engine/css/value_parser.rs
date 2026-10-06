@@ -26,7 +26,9 @@ pub(crate) fn parse_length(value: &str) -> Option<Length> {
         Token::Dimension { value, unit, .. } if value.is_finite() => {
             match unit.to_ascii_lowercase().as_str() {
                 "px" => Some(Length::Px(value)),
-                "pt" => Some(Length::Px(value * 96.0 / 72.0)),
+                unit if absolute_length_scale(unit).is_some() => {
+                    Some(Length::Px(value * absolute_length_scale(unit)?))
+                }
                 "em" => Some(Length::Em(value)),
                 "rem" => Some(Length::Rem(value)),
                 "vw" => Some(Length::Vw(value)),
@@ -36,6 +38,19 @@ pub(crate) fn parse_length(value: &str) -> Option<Length> {
                 _ => None,
             }
         }
+        _ => None,
+    }
+}
+
+fn absolute_length_scale(unit: &str) -> Option<f32> {
+    // CSS Values 4: fixed ratios to the reference pixel, including calc() terms.
+    match unit {
+        "pt" => Some(96.0 / 72.0),
+        "pc" => Some(16.0),
+        "in" => Some(96.0),
+        "cm" => Some(96.0 / 2.54),
+        "mm" => Some(96.0 / 25.4),
+        "q" => Some(96.0 / 101.6),
         _ => None,
     }
 }
@@ -239,7 +254,9 @@ pub(super) fn parse_calc_value<'i, 't>(
             let mut length = CalcLength::default();
             match unit.to_ascii_lowercase().as_str() {
                 "px" => length.px = value,
-                "pt" => length.px = value * 96.0 / 72.0,
+                unit if absolute_length_scale(unit).is_some() => {
+                    length.px = value * absolute_length_scale(unit).unwrap();
+                }
                 "rem" => length.rem = value,
                 "em" => length.em = value,
                 "vw" => length.vw = value,

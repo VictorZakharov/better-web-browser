@@ -20,7 +20,9 @@ impl Page {
             let Ok(bytes) = decode_embedded_image(&url) else {
                 continue;
             };
-            let _ = self.add_image(url, &bytes);
+            if self.add_image(url.clone(), &bytes).is_ok() {
+                self.set_image_origin_clean(&url, true);
+            }
         }
     }
 }

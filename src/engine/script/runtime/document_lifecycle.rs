@@ -218,6 +218,12 @@ impl ScriptRuntime {
         host.pending_media_actions.clear();
         host.pending_graph_audio_actions.clear();
         host.pending_font_actions.clear();
+        host.loaded_web_fonts.clear();
+        host.loaded_css_font_urls.clear();
+        #[cfg(windows)]
+        {
+            host.canvas_text = None;
+        }
         host.storage_event = None;
         host.storage_updates.clear();
         host.local_storage = Default::default();

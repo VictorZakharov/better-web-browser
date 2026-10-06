@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Canvas platform-owned binding contracts</title>
+<style>body{font:16px sans-serif}pre{white-space:pre-wrap}</style>
+<h1>Canvas platform-owned binding contracts</h1>
+<pre id="probe" data-result="pending"></pre>
+<script src="drawing-state-bindings.js"></script>
+<script src="image-data-bindings.js"></script>
+<script src="text-metrics-bindings.js"></script>
+<script src="text-spacing.js"></script>
+<script src="text-shaping.js"></script>
+<script src="context-settings.js"></script>
+<script>
+const makeHtml=(w,h)=>{const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;return canvas;};
+const makeOffscreen=(w,h)=>new OffscreenCanvas(w,h);
+const results=[];
+const run=(name,operation)=>{try{operation();results.push({name,passed:true});}
+    catch(error){results.push({name,passed:false,error:String(error.message).slice(0,100)});}};
+for(const [name,make] of [['html',makeHtml],['offscreen',makeOffscreen]]) {
+    run(name+'.drawing-state',()=>testCanvasDrawingStateConversions(make));
+    run(name+'.text-arguments',()=>testCanvasTextArgumentConversions(make));
+    run(name+'.image-data',()=>testCanvasImageDataBindings(make));
+    run(name+'.text-metrics',()=>testCanvasTextMetrics(make));
+    run(name+'.text-spacing',()=>testCanvasTextSpacing(make));
+    run(name+'.text-shaping',()=>testCanvasTextShaping(make));
+    run(name+'.opaque-pixels',()=>testOpaqueCanvasPixels(make));
+}
+run('image-data.clone',testImageDataStructuredClone);
+const observations={};
+for(const [name,make] of [['html',makeHtml],['offscreen',makeOffscreen]]) {
+    const context=make(2,2).getContext('2d',{alpha:false});
+    const pixel=()=>Array.from(context.getImageData(0,0,1,1).data);
+    const initial=pixel();
+    context.putImageData(new ImageData(new Uint8ClampedArray([170,90,40,128]),1,1),0,0);
+    observations[name]={attributes:context.getContextAttributes(),initial,rawPut:pixel()};
+}
+const probe=document.getElementById('probe');
+probe.setAttribute('data-result',JSON.stringify(results));
+probe.setAttribute('data-passed',results.filter(result=>result.passed).map(result=>result.name).join(','));
+probe.setAttribute('data-failed',JSON.stringify(results.filter(result=>!result.passed)
+    .map(result=>[result.name,result.error.slice(0,40)])));
+probe.setAttribute('data-observations',JSON.stringify(observations));
+probe.textContent=JSON.stringify({results,observations},null,2);
+</script>

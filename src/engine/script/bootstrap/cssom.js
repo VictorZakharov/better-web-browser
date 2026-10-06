@@ -121,10 +121,10 @@
         get parentRule() { return this.__rule; }
         item(index) { return [...this.__declarations.keys()][Number(index)] || ''; }
         getPropertyValue(name) {
-            return this.__declarations.get(declarationName(name))?.value || '';
+            return declarationValue(this.__declarations, declarationName(name));
         }
         getPropertyPriority(name) {
-            return this.__declarations.get(declarationName(name))?.priority || '';
+            return declarationPriority(this.__declarations, declarationName(name));
         }
         setProperty(name, value, priority = '') {
             name = declarationName(name);
@@ -134,13 +134,13 @@
             if (priority && priority !== 'important') return;
             const parsed = host('cssDeclarationValue', name, value);
             if (parsed === null) return;
-            this.__declarations.set(name, {value:parsed, priority});
+            if (!setDeclarationValue(this.__declarations, name, parsed, priority)) return;
             this.__rule.__changed();
         }
         removeProperty(name) {
             name = declarationName(name);
             const previous = this.getPropertyValue(name);
-            if (this.__declarations.delete(name)) this.__rule.__changed();
+            if (removeDeclarationValue(this.__declarations, name)) this.__rule.__changed();
             return previous;
         }
     }

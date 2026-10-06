@@ -3,52 +3,35 @@
     // https://www.w3.org/TR/css-font-loading-3/#font-face-set-interface
     const fontSetState = new WeakMap();
     const fontSet = receiver => {
-        const state = fontSetState.get(receiver);
+        const state = fontWeakGet(fontSetState, receiver);
         if (!state) throw new TypeError('Illegal invocation');
         return state;
     };
-    const fontSetMatch = (face, family) => fontState(face).descriptors.family
-        .replace(/^['"]|['"]$/g, '').toLowerCase() === family.toLowerCase();
-    const fontShorthandFamily = shorthand => {
-        // CSS font shorthand requires a size before the family list. This parser only
-        // selects a face after recognizing that boundary; unknown shorthand fails closed.
-        const match = /(?:^|\s)(?:\d+(?:\.\d+)?)(?:px|pt|em|rem|%)\s*(?:\/\s*\S+\s*)?(.+)$/i.exec(String(shorthand));
-        if (!match) throw new DOMException('Invalid font shorthand', 'SyntaxError');
-        const family = match[1].split(',')[0].trim().replace(/^['"]|['"]$/g, '');
-        if (!family) throw new DOMException('Invalid font shorthand', 'SyntaxError');
-        return family;
-    };
-    class FontFaceSetLoadEvent extends Event {
-        constructor(type, init = {}) {
-            super(type);
-            this.fontfaces = Object.freeze(Array.from(init.fontfaces ?? []));
-        }
-    }
     class FontFaceSet extends EventTarget {
         constructor(secret) {
             if (secret !== fontSetToken) throw new TypeError('Illegal constructor');
             super();
-            fontSetState.set(this, {
+            fontWeakSet(fontSetState, this, {
                 faces: new Set(), pending: new Set(), completed: [], failed: [],
                 cssFaces: new Map(),
                 ready: Promise.resolve(this), resolveReady: null
             });
         }
-        get size() { this._syncCSSFaces(); return fontSet(this).faces.size; }
-        get status() { this._syncCSSFaces(); return fontSet(this).pending.size ? 'loading' : 'loaded'; }
-        get ready() { this._syncCSSFaces(); return fontSet(this).ready; }
+        get size() { syncFontFaces(this); return fontSet(this).faces.size; }
+        get status() { syncFontFaces(this); return fontSet(this).pending.size ? 'loading' : 'loaded'; }
+        get ready() { syncFontFaces(this); return fontSet(this).ready; }
         _syncCSSFaces() {
             const state = fontSet(this);
-            const rules = JSON.parse(__hostCall('fontFaceCSSFaces'));
+            const rules = fontJSONParse(fontHost('fontFaceCSSFaces'));
             const live = new Set();
             for (const rule of rules) {
-                const key = JSON.stringify([rule.family, rule.weight, rule.italic, rule.url]);
+                const key = fontJSONStringify([rule.family, rule.weight, rule.italic, rule.source, rule.unicodeRange, rule.featureSettings]);
                 live.add(key);
                 let face = state.cssFaces.get(key);
                 if (!face) {
-                    face = new FontFace(rule.family,
-                        `url("${rule.url.replace(/"/g, '%22')}")`,
-                        {weight: String(rule.weight), style: rule.italic ? 'italic' : 'normal'});
+                    face = new FontFace(fontHost('fontFaceSerializeFamily',rule.family),
+                        rule.source,
+                        {weight: String(rule.weight), style: rule.italic ? 'italic' : 'normal', unicodeRange: rule.unicodeRange, featureSettings: rule.featureSettings});
                     fontState(face).cssConnected = true;
                     fontState(face).owner = this;
                     state.cssFaces.set(key, face);
@@ -64,73 +47,88 @@
                 if (live.has(key)) continue;
                 state.cssFaces.delete(key);
                 state.faces.delete(face);
-                fontState(face).owner = null;
-                if (fontState(face).bytes) __hostCall('fontFaceRemove', fontState(face).id);
+                const owned = fontState(face);
+                // Removing the rule permanently disconnects this object. Readding
+                // that rule creates a new object; retained references become ordinary faces.
+                owned.cssConnected = false;
+                owned.owner = null;
+                state.completed = state.completed.filter(value => value !== face);
+                state.failed = state.failed.filter(value => value !== face);
+                if (state.pending.delete(face) && !state.pending.size) finishFontLoading(this);
+                if (owned.bytes) fontHost('fontFaceRemove', owned.id);
             }
         }
         add(face) {
+            syncFontFaces(this);
             const state = fontSet(this);
-            if (!(face instanceof FontFace)) throw new TypeError('Expected a FontFace');
+            if (!fontWeakHas(fontFaceState,face)) throw new TypeError('Expected a FontFace');
             const owned = fontState(face);
+            if (state.faces.has(face)) return this;
             if (owned.cssConnected)
                 throw new DOMException('CSS-connected FontFace cannot be added', 'InvalidModificationError');
             if (owned.owner && owned.owner !== this)
                 throw new DOMException('FontFace belongs to another FontFaceSet', 'InvalidModificationError');
-            if (state.faces.has(face)) return this;
-            state.faces.add(face);
+            // Admission can fail at the resource budget. Do not publish membership
+            // until the native registry has accepted the loaded bytes.
+            const previousOwner = owned.owner;
             owned.owner = this;
-            if (owned.status === 'loaded') fontInstall(face);
-            else if (owned.status === 'loading') this._fontLoading(face);
+            try { if (owned.status === 'loaded') fontInstall(face); }
+            catch (error) { owned.owner = previousOwner; throw error; }
+            state.faces.add(face);
+            if (owned.status === 'loading') markFontLoading(this,face);
             return this;
         }
         delete(face) {
+            syncFontFaces(this);
             const state = fontSet(this);
-            if (face instanceof FontFace && fontState(face).cssConnected) return false;
+            if (fontState(face).cssConnected) return false;
             if (!state.faces.delete(face)) return false;
             const owned = fontState(face);
             owned.owner = null;
-            if (state.pending.delete(face) && !state.pending.size) this._finishLoading();
-            __hostCall('fontFaceRemove', owned.id);
+            state.completed = state.completed.filter(value => value !== face);
+            state.failed = state.failed.filter(value => value !== face);
+            if (state.pending.delete(face) && !state.pending.size) finishFontLoading(this);
+            fontHost('fontFaceRemove', owned.id);
             return true;
         }
-        clear() { for (const face of [...fontSet(this).faces]) this.delete(face); }
-        has(face) { this._syncCSSFaces(); return fontSet(this).faces.has(face); }
+        clear() { syncFontFaces(this); for (const face of [...fontSet(this).faces]) deleteFontFromSet(this,face); }
+        has(face) { fontSet(this);fontState(face);syncFontFaces(this); return fontSet(this).faces.has(face); }
         forEach(callback, thisArg) {
-            this._syncCSSFaces();
+            syncFontFaces(this);
             if (typeof callback !== 'function') throw new TypeError('Expected callback');
             for (const face of fontSet(this).faces) callback.call(thisArg, face, face, this);
         }
-        values() { this._syncCSSFaces(); return fontSet(this).faces.values(); }
-        keys() { return this.values(); }
-        entries() { this._syncCSSFaces(); return fontSet(this).faces.entries(); }
-        [Symbol.iterator]() { return this.values(); }
+        values() { syncFontFaces(this); return fontSet(this).faces.values(); }
+        keys() { syncFontFaces(this);return fontSet(this).faces.values(); }
+        entries() { syncFontFaces(this); return fontSet(this).faces.entries(); }
+        [Symbol.iterator]() { syncFontFaces(this);return fontSet(this).faces.values(); }
         check(shorthand, text = ' ') {
-            this._syncCSSFaces();
-            const family = fontShorthandFamily(shorthand);
-            void text;
-            return [...fontSet(this).faces].filter(face => fontSetMatch(face, family))
-                .every(face => face.status === 'loaded');
+            fontSet(this);
+            if (!arguments.length) throw new TypeError('check requires a font shorthand');
+            shorthand=fontString(shorthand);text=fontString(text);
+            syncFontFaces(this);
+            return matchFontFaces(this,shorthand,text)
+                .every(face => fontState(face).status === 'loaded');
         }
         load(shorthand, text = ' ') {
-            this._syncCSSFaces();
-            let family;
-            try { family = fontShorthandFamily(shorthand); }
+            let faces;
+            try {
+                fontSet(this);
+                if (!arguments.length) throw new TypeError('load requires a font shorthand');
+                shorthand=fontString(shorthand);text=fontString(text);
+                syncFontFaces(this);
+                faces = matchFontFaces(this,shorthand,text);
+            }
             catch (error) { return Promise.reject(error); }
-            void text;
-            const faces = [...fontSet(this).faces].filter(face => fontSetMatch(face, family));
-            return Promise.all(faces.map(face => face.load()));
+            return Promise.all(faces.map(face => loadFontFace(face)));
         }
         _fontLoading(face) {
             const state = fontSet(this);
             if (state.pending.has(face)) return;
             if (!state.pending.size) {
-                state.completed.length = 0;
-                state.failed.length = 0;
-                // A second load can begin before the previous completion microtask.
-                // Keep the unresolved ready promise across that boundary.
                 if (!state.resolveReady)
                     state.ready = new Promise(resolve => { state.resolveReady = resolve; });
-                queueMicrotask(() => this.dispatchEvent(new Event('loading')));
+                queueFontTask(() => fontEventDispatch(this,fontTrustEvent(new FontFaceSetLoadEvent('loading'))));
             }
             state.pending.add(face);
         }
@@ -138,24 +136,29 @@
             const state = fontSet(this);
             if (!state.pending.delete(face)) return;
             (success ? state.completed : state.failed).push(face);
-            if (!state.pending.size) this._finishLoading();
+            if (!state.pending.size) finishFontLoading(this);
         }
         _finishLoading() {
             const state = fontSet(this);
-            const completed = state.completed.splice(0);
-            const failed = state.failed.splice(0);
-            const resolveReady = state.resolveReady;
-            queueMicrotask(() => {
-                this.dispatchEvent(new FontFaceSetLoadEvent('loadingdone', {fontfaces: completed}));
+            state.resolveReady?.(this);
+            state.resolveReady = null;
+            queueFontTask(() => {
+                const completed = state.completed.splice(0).filter(face => state.faces.has(face));
+                const failed = state.failed.splice(0).filter(face => state.faces.has(face));
+                fontEventDispatch(this,fontTrustEvent(new FontFaceSetLoadEvent('loadingdone', {fontfaces: completed})));
                 if (failed.length)
-                    this.dispatchEvent(new FontFaceSetLoadEvent('loadingerror', {fontfaces: failed}));
-                if (!state.pending.size && state.resolveReady === resolveReady) {
-                    resolveReady?.(this);
-                    state.resolveReady = null;
-                }
+                    fontEventDispatch(this,fontTrustEvent(new FontFaceSetLoadEvent('loadingerror', {fontfaces: failed})));
             });
         }
     }
+    // Platform lifecycle helpers are lexical, not author-overridable methods.
+    const syncFontFaces=Function.call.bind(FontFaceSet.prototype._syncCSSFaces);
+    const markFontLoading=Function.call.bind(FontFaceSet.prototype._fontLoading);
+    const markFontSettled=Function.call.bind(FontFaceSet.prototype._fontSettled);
+    const finishFontLoading=Function.call.bind(FontFaceSet.prototype._finishLoading);
+    const deleteFontFromSet=Function.call.bind(FontFaceSet.prototype.delete);
+    for (const name of ['_syncCSSFaces','_fontLoading','_fontSettled','_finishLoading'])
+        delete FontFaceSet.prototype[name];
     const fontSetToken = {};
     for (const type of ['loading', 'loadingdone', 'loadingerror']) {
         Object.defineProperty(FontFaceSet.prototype, `on${type}`, {
@@ -173,8 +176,16 @@
     Object.defineProperty(FontFaceSetLoadEvent.prototype, Symbol.toStringTag,
         {value: 'FontFaceSetLoadEvent', configurable: true});
     const documentFonts = new FontFaceSet(fontSetToken);
-    Object.defineProperty(Document.prototype, 'fonts', {
-        get() { documentFonts._syncCSSFaces(); return documentFonts; }, enumerable: true, configurable: true
-    });
+    if (typeof Document === 'function') {
+        Object.defineProperty(Document.prototype, 'fonts', {
+            get() { syncFontFaces(documentFonts); return documentFonts; }, enumerable: true, configurable: true
+        });
+    } else {
+        // CSS Font Loading's worker FontFaceSource starts empty and remains
+        // independent of the creating document's FontFaceSet.
+        Object.defineProperty(globalThis, 'fonts', {
+            get() { return documentFonts; }, enumerable: true, configurable: true
+        });
+    }
     globalThis.FontFaceSet = FontFaceSet;
     globalThis.FontFaceSetLoadEvent = FontFaceSetLoadEvent;

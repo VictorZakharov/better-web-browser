@@ -8,6 +8,11 @@ pub struct FontSpec {
     pub underline: bool,
     pub letter_spacing: f32,
     pub word_spacing: f32,
+    /// CSS inline base direction. Raster placement and selection retain DOM UTF-16 order.
+    pub rtl: bool,
+    pub kerning: bool,
+    pub features: crate::engine::css::FontFeatures,
+    pub variants: crate::engine::css::FontVariants,
 }
 
 impl FontSpec {
@@ -20,6 +25,13 @@ impl FontSpec {
             underline: style.text_decoration_underline,
             letter_spacing: style.letter_spacing,
             word_spacing: style.word_spacing,
+            rtl: style.direction.is_rtl(),
+            kerning: style.font_kerning.enabled(),
+            features: style.font_features.clone(),
+            variants: crate::engine::css::FontVariants::new(
+                style.font_ligatures,
+                style.font_numeric,
+            ),
         }
     }
 }

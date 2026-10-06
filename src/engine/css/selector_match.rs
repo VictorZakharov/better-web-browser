@@ -21,6 +21,13 @@ pub(crate) struct CompiledSelectorList {
     selectors: Vec<Selector>,
 }
 
+pub(crate) fn element_text_environment(node: &NodeRef) -> (bool, String) {
+    (
+        linguistic::element_direction(node) == TextDirection::Rtl,
+        linguistic::inherited_language(node).unwrap_or_default(),
+    )
+}
+
 impl CompiledSelectorList {
     pub(crate) fn matches(&self, node: &NodeRef) -> bool {
         self.selectors

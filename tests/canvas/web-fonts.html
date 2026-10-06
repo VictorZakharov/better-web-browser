@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Canvas loaded font pixels and ownership</title>
+<pre id="probe" data-result="pending"></pre>
+<script src="web-fonts.js"></script>
+<script>
+fetch('fonts/ahem.ttf').then(response=>response.arrayBuffer()).then(testCanvasWebFonts)
+    .then(result=>{probe.setAttribute('data-result',result);probe.textContent=result;},
+        error=>{probe.setAttribute('data-result',String(error));probe.textContent=String(error);});
+</script>

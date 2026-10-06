@@ -11,7 +11,13 @@ mod source_order;
 
 impl ScriptRuntime {
     pub(crate) fn set_loaded_font_urls(&mut self, fonts: &[crate::engine::WebFont]) {
-        self.host.borrow_mut().loaded_css_font_urls = fonts
+        let mut host = self.host.borrow_mut();
+        host.loaded_web_fonts = fonts
+            .iter()
+            .take(crate::limits::MAX_WEB_FONTS)
+            .cloned()
+            .collect();
+        host.loaded_css_font_urls = fonts
             .iter()
             .filter(|font| font.script_source_id.is_none())
             .map(|font| font.source_url.clone())
@@ -20,6 +26,13 @@ impl ScriptRuntime {
 }
 
 impl HostState {
+    pub(super) fn document_font_faces(&mut self) -> Vec<crate::engine::font::WebFontFace> {
+        let (version, styles) = self.take_computed_styles();
+        let faces = styles.document_font_faces();
+        self.computed_styles = Some((version, styles));
+        faces
+    }
+
     pub(super) fn transition_rule_candidate(
         &mut self,
         node: &NodeRef,

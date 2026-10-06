@@ -5,8 +5,13 @@
 use super::*;
 
 pub(super) fn paint(args: &[JsValue]) -> JsValue {
-    let Some(mask) = args.get(1).and_then(JsValue::as_bytes) else {
-        return JsValue::Null;
+    let mask = match args.get(1) {
+        Some(JsValue::Null) => None,
+        Some(value) => match value.as_bytes() {
+            Some(bytes) => Some(bytes),
+            None => return JsValue::Null,
+        },
+        None => return JsValue::Null,
     };
     let Some(destination) = args.get(2).and_then(JsValue::as_bytes) else {
         return JsValue::Null;
@@ -27,13 +32,25 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
         };
         *output = value;
     }
-    composite(mask, destination, color, opacity).map_or(JsValue::Null, JsValue::Bytes)
+    composite_region(mask, destination, color, opacity).map_or(JsValue::Null, JsValue::Bytes)
 }
 
+#[cfg(test)]
 fn composite(mask: &[u8], destination: &[u8], color: [f64; 4], opacity: f64) -> Option<Vec<u8>> {
-    if mask.is_empty()
-        || mask.len() > MAX_CANVAS_PIXELS
-        || mask.len().checked_mul(4)? != destination.len()
+    composite_region(Some(mask), destination, color, opacity)
+}
+
+pub(super) fn composite_region(
+    mask: Option<&[u8]>,
+    destination: &[u8],
+    color: [f64; 4],
+    opacity: f64,
+) -> Option<Vec<u8>> {
+    let pixels = destination.len() / 4;
+    if pixels == 0
+        || pixels > MAX_CANVAS_PIXELS
+        || !destination.len().is_multiple_of(4)
+        || mask.is_some_and(|mask| mask.len() != pixels)
         || !opacity.is_finite()
         || !(0.0..=1.0).contains(&opacity)
         || color
@@ -43,11 +60,14 @@ fn composite(mask: &[u8], destination: &[u8], color: [f64; 4], opacity: f64) -> 
         return None;
     }
     let mut output = destination.to_vec();
-    for (pixel, coverage) in output.chunks_exact_mut(4).zip(mask) {
-        if *coverage == 0 {
+    for (index, pixel) in output.chunks_exact_mut(4).enumerate() {
+        // An aligned integer rectangle has complete coverage. Do not allocate
+        // a redundant all-255 mask just to move its paint off the JS pixel loop.
+        let coverage = mask.map_or(255, |mask| mask[index]);
+        if coverage == 0 {
             continue;
         }
-        source_over(pixel, color, opacity * (f64::from(*coverage) / 255.0));
+        source_over(pixel, color, opacity * (f64::from(coverage) / 255.0));
     }
     Some(output)
 }
@@ -72,6 +92,22 @@ pub(super) fn source_over(pixel: &mut [u8], color: [f64; 4], opacity: f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn complete_rectangles_equal_full_coverage_masks_without_allocating_one() {
+        for alpha in [0, 1, 64, 127, 128, 254, 255] {
+            for opacity in [0.0, 0.125, 0.5, 1.0] {
+                let destination = [20, 60, 140, alpha].repeat(257);
+                let color = [200.0, 40.0, 80.0, 128.0];
+                assert_eq!(
+                    composite_region(None, &destination, color, opacity),
+                    composite(&[255; 257], &destination, color, opacity)
+                );
+            }
+        }
+        assert!(composite_region(None, &[], [0.0; 4], 1.0).is_none());
+        assert!(composite_region(None, &[0; 7], [0.0; 4], 1.0).is_none());
+    }
 
     #[test]
     fn complete_coverage_and_partial_coverage_apply_source_alpha_once() {

@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Canvas binding contracts</title>
+<style>body{font:16px sans-serif}pre{white-space:pre-wrap}</style>
+<h1>Canvas binding contracts</h1>
+<pre id="probe">Running</pre>
+<script src="path-bindings.js"></script>
+<script src="rectangle-bindings.js"></script>
+<script src="image-usability.js"></script>
+<script>
+const canvasFactory=(width,height)=>{
+    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;return canvas;
+};
+const results=[];
+for(const [name,operation] of [
+    ['path-numbers',testCanvasPathBindings],
+    ['radius-conversion',testCanvasRadiusBindings],
+    ['svg-prefix',testCanvasSvgPrefix],
+    ['path-geometry',testCanvasPathGeometry],
+    ['rectangle-html',()=>testCanvasRectangleBindings(canvasFactory)],
+    ['rectangle-offscreen',()=>testCanvasRectangleBindings((w,h)=>new OffscreenCanvas(w,h))],
+    ['image-html',()=>testCanvasImageUsability(canvasFactory)],
+    ['image-offscreen',()=>testCanvasImageUsability((w,h)=>new OffscreenCanvas(w,h))],
+    ['image-incomplete',testHtmlImageUsability]
+]){
+    try{operation();results.push({name,passed:true});}
+    catch(error){results.push({name,passed:false,error:String(error)});}
+}
+// Keep observations separate from normative assertions. A reference browser
+// can lag behind Web IDL without changing what the standard fixture requires.
+let iteratorLookups=0,iteratorCloses=0;
+const path=new Path2D();
+path.roundRect(0,0,10,10,{get [Symbol.iterator](){iteratorLookups++;return function*(){yield 1;};}});
+try{path.roundRect(0,0,10,10,{*[Symbol.iterator](){try{yield 1n;}finally{iteratorCloses++;}}});}catch{}
+const result={groups:results,observations:{iteratorLookups,iteratorCloses}};
+probe.setAttribute('data-result',JSON.stringify(result));
+probe.setAttribute('data-observations',JSON.stringify(result.observations));
+probe.textContent=JSON.stringify(result,null,2);
+</script>

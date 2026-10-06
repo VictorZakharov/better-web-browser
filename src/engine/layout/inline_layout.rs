@@ -28,7 +28,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let atoms = transformed.as_ref();
         self.begin_inline_measurement_context();
         let policy = TruncationPolicy::for_style(style);
-        let align = style.text_align;
+        let align = style.text_align.physical(style.direction);
         let default_line_height = style.line_height;
         let mut ephemeral = ClampState::fresh(&policy);
         let slot: &mut Option<ClampState> = if clamp.is_some() {

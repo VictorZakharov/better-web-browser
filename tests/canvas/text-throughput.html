@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Canvas repeated-label text throughput</title>
+<canvas id="surface" width="512" height="256"></canvas>
+<pre id="probe" data-result="pending"></pre>
+<script>
+const context=surface.getContext('2d');
+context.font='18px Arial';
+context.fillStyle='#304050';context.fillRect(0,0,512,256);
+context.fillStyle='rgba(240,160,80,0.75)';
+for(let i=0;i<8;i++)context.fillText('Canvas label 0123',12,24);
+const start=performance.now();
+for(let i=0;i<64;i++) {
+    context.fillText('Canvas label 0123',12+(i%4)*5.25,24+(i%8)*28);
+    context.strokeStyle='#80b0e0';context.lineWidth=1.25;
+    context.strokeText('Score: 12345',245+(i%3)*2.5,24+(i%8)*28);
+}
+// Readback is inside timing: a reference renderer must finish submitted work.
+const pixels=context.getImageData(0,0,512,256).data;
+const elapsed=performance.now()-start;
+let hash=2166136261;
+for(let i=0;i<pixels.length;i++)hash=Math.imul(hash^pixels[i],16777619)>>>0;
+probe.setAttribute('data-result','passed');
+probe.setAttribute('data-ms',elapsed.toFixed(3));
+probe.setAttribute('data-hash',String(hash));
+probe.textContent=JSON.stringify({draws:128,ms:elapsed,hash});
+</script>

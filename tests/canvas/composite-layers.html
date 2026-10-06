@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Owned whole-surface Canvas compositing</title>
+<pre id="probe">Checking all compositing modes, clips and separate shadows.</pre>
+<script src="composite-layers.js"></script>
+<script>
+try {
+    const result=testCanvasCompositeLayers((width,height)=>{
+        const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;return canvas;
+    });
+    probe.setAttribute('data-result',JSON.stringify(result));probe.textContent=`Passed ${result.cases} layer cases.`;
+} catch(error) {probe.setAttribute('data-error',String(error));throw error;}
+</script>

@@ -31,7 +31,7 @@ pub(super) fn render(args: &[JsValue]) -> JsValue {
         .map_or(JsValue::Null, JsValue::Bytes)
 }
 
-fn render_layer(
+pub(super) fn render_layer(
     source: &[u8],
     width: u32,
     height: u32,

@@ -249,7 +249,7 @@
     )));
     const dispatchNativeImageResource = input => {
         const target = nativeTarget(input.target);
-        updateImageElementState(target, true, input.naturalWidth, input.naturalHeight);
+        updateImageElementState(target, true, input.naturalWidth, input.naturalHeight, input.type === 'error');
         return target.dispatchEvent(markTrusted(new Event(String(input.type))));
     };
 

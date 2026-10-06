@@ -206,6 +206,17 @@ pub(super) fn resolve_image_url(
     resolve_resource_url(base_url, source.trim())
 }
 
+pub(super) fn resolve_html_image_url(
+    node: &NodeRef,
+    base_url: &str,
+    environment: MediaEnvironment,
+) -> Option<String> {
+    let source = picture_source(node, environment)
+        .or_else(|| responsive_source(node, environment))
+        .or_else(|| node.attr("src"))?;
+    resolve_resource_url(base_url, source.trim())
+}
+
 fn picture_source(node: &NodeRef, environment: MediaEnvironment) -> Option<String> {
     if node.tag_name() != Some("img") {
         return None;

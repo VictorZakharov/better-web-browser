@@ -23,15 +23,18 @@ pub(super) fn mask(args: &[JsValue]) -> JsValue {
     let Some(JsValue::String(source)) = args.get(1) else {
         return JsValue::Null;
     };
+    mask_from_source(source).map_or(JsValue::Null, JsValue::Bytes)
+}
+
+pub(super) fn mask_from_source(source: &str) -> Option<Vec<u8>> {
     if source.len() > 1024 * 1024 {
-        return JsValue::Null;
+        return None;
     }
     super::mask_cache::rasterize(super::mask_cache::Kind::Fill, source, || {
         serde_json::from_str::<Request>(source)
             .ok()
             .and_then(rasterize)
     })
-    .map_or(JsValue::Null, JsValue::Bytes)
 }
 
 fn rasterize(request: Request) -> Option<Vec<u8>> {

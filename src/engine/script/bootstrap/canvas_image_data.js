@@ -6,6 +6,7 @@
     const canvasPixelBuffer = Function.call.bind(Object.getOwnPropertyDescriptor(canvasTypedPrototype, 'buffer').get);
     const canvasPixelOffset = Function.call.bind(Object.getOwnPropertyDescriptor(canvasTypedPrototype, 'byteOffset').get);
     const canvasPixelLength = Function.call.bind(Object.getOwnPropertyDescriptor(canvasTypedPrototype, 'byteLength').get);
+    const canvasPixelTag = Function.call.bind(Object.getOwnPropertyDescriptor(canvasTypedPrototype, Symbol.toStringTag).get);
     const canvasImageDataContext = context => {
         const canvas = canvas2dOwners.get(context);
         if (!canvas) throw new TypeError('Pixel operation requires a CanvasRenderingContext2D');
@@ -26,6 +27,7 @@
         const canvas = canvasImageDataContext(context);
         const rect = normalizedRectangle(canvasPixelInteger(x), canvasPixelInteger(y),
             canvasPixelInteger(width), canvasPixelInteger(height));
+        settings = imageDataOptions(settings);
         if (!rect || rect.width === 0 || rect.height === 0)
             throw new DOMException('ImageData dimensions must be non-zero', 'IndexSizeError');
         const state = stateForCanvas(canvas);
@@ -66,5 +68,10 @@
         for (let row = top; row < bottom; row++) {
             copyCanvasPixelRow(state.pixels, ((y + row) * state.width + x + left) * 4,
                 image.data, (row * image.width + left) * 4, length);
+            if (canvasBitmapIsOpaque(state.pixels)) {
+                const start = ((y + row) * state.width + x + left) * 4;
+                for (let offset = start + 3; offset < start + length; offset += 4)
+                    state.pixels[offset] = 255;
+            }
         }
     };

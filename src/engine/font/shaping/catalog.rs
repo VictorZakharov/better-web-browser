@@ -8,6 +8,7 @@ use fontique::{
 use std::borrow::Cow;
 use std::collections::HashMap;
 use unicode_script::Script as UnicodeScript;
+mod web_faces;
 
 const MAX_SELECTIONS: usize = 4096;
 
@@ -36,6 +37,7 @@ impl SelectionKey<'_> {
 pub(crate) struct SelectedFont {
     pub(crate) font: QueryFont,
     pub(crate) instance: FontInstanceKey,
+    pub(crate) features: crate::engine::css::FontFeatures,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -49,7 +51,8 @@ pub(crate) struct FontInstanceKey {
 pub(crate) struct FontCatalog {
     collection: Collection,
     sources: SourceCache,
-    registered_web_fonts: usize,
+    registered_web_fonts: Vec<WebFont>,
+    web_faces: web_faces::WebFaces,
     selections: HashMap<SelectionKey<'static>, SelectedFont>,
 }
 
@@ -60,38 +63,37 @@ impl FontCatalog {
             // eager scan of every installed font that dominated the previous cold path.
             collection: Collection::new(CollectionOptions::default()),
             sources: SourceCache::default(),
-            registered_web_fonts: 0,
+            registered_web_fonts: Vec::new(),
+            web_faces: Default::default(),
             selections: HashMap::new(),
         }
     }
 
     pub(crate) fn register_web_fonts(&mut self, fonts: &[WebFont]) -> bool {
-        if self.registered_web_fonts == fonts.len() {
+        if self.registered_web_fonts.len() == fonts.len()
+            && self
+                .registered_web_fonts
+                .iter()
+                .zip(fonts)
+                .all(|(previous, next)| {
+                    previous.family == next.family
+                        && previous.weight == next.weight
+                        && previous.italic == next.italic
+                        && previous.unicode_ranges == next.unicode_ranges
+                        && previous.features == next.features
+                        && std::sync::Arc::ptr_eq(&previous.sfnt, &next.sfnt)
+                })
+        {
             return false;
         }
         *self = Self::new();
-        for font in fonts {
-            let style = if font.italic {
-                FontStyle::Italic
-            } else {
-                FontStyle::Normal
-            };
-            self.collection.register_fonts(
-                Blob::new(std::sync::Arc::new(font.sfnt.clone())),
-                Some(FontInfoOverride {
-                    family_name: Some(&font.family),
-                    style: Some(style),
-                    weight: Some(FontWeight::new(font.weight.clamp(1, 1000) as f32)),
-                    ..FontInfoOverride::default()
-                }),
-            );
-        }
-        self.registered_web_fonts = fonts.len();
+        self.web_faces = web_faces::WebFaces::register(&mut self.collection, fonts);
+        self.registered_web_fonts = fonts.to_vec();
         true
     }
 
     pub(crate) fn reset_web_fonts(&mut self) -> bool {
-        if self.registered_web_fonts == 0 {
+        if self.registered_web_fonts.is_empty() {
             return false;
         }
         *self = Self::new();
@@ -151,12 +153,17 @@ impl FontCatalog {
         let mut first = None;
         let mut selected = None;
         query.matches_with(|font| {
-            first.get_or_insert_with(|| font.clone());
-            if font
+            let candidate = match self.web_faces.select(font.family.0, spec, cluster) {
+                Some(Some(font)) => font,
+                Some(None) => return QueryStatus::Continue,
+                None => font.clone(),
+            };
+            first.get_or_insert_with(|| candidate.clone());
+            if candidate
                 .charmap()
                 .is_some_and(|map| cluster_has_coverage(cluster, &map))
             {
-                selected = Some(font.clone());
+                selected = Some(candidate);
                 QueryStatus::Stop
             } else {
                 QueryStatus::Continue
@@ -164,6 +171,7 @@ impl FontCatalog {
         });
         let font = selected.or(first)?;
         let selected = SelectedFont {
+            features: self.web_faces.features_for(&font),
             instance: FontInstanceKey {
                 blob_id: font.blob.id(),
                 index: font.index,
@@ -239,6 +247,10 @@ mod tests {
             underline: false,
             letter_spacing: 0.0,
             word_spacing: 0.0,
+            rtl: false,
+            kerning: true,
+            variants: Default::default(),
+            features: Default::default(),
         };
         let first = catalog
             .select(&spec.family, &spec, UnicodeScript::Latin, "A")

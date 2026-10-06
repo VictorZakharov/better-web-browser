@@ -21,7 +21,7 @@ pub(super) fn context() -> (Context, Rc<RefCell<HostState>>) {
             const decoded=host('canvasDecode',new Uint8Array(bytes),false,false,true);
             if(!decoded) throw Error('real encoded source failed decoding');
             const image=new Image();
-            detachedImageLoads.set(image,{decoded:{width:decoded[0],height:decoded[1],
+            detachedImageLoads.set(image,{source:imageElementSource(image),decoded:{width:decoded[0],height:decoded[1],
                 pixels:decoded[2],pixels16:decoded[3]?new Uint16Array(decoded[3].buffer,
                     decoded[3].byteOffset,decoded[3].byteLength/2):null}});
             updateImageElementState(image,true,decoded[0],decoded[1]);

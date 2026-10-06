@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><title>Canvas transfer ownership</title>
+<div id="probe">Running</div><script src="transfer-bindings.js"></script>
+<script>
+try {
+    testCanvasTransfers();
+    // Breeze-private hook isolation is unit-tested separately. This reference
+    // fixture exercises only the interoperable public transfer contract.
+    probe.setAttribute('data-result', 'passed');probe.textContent='Complete';
+} catch(error) {probe.setAttribute('data-error', String(error));}
+</script>

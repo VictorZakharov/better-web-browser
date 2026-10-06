@@ -12,6 +12,7 @@ use crate::limits::{
 use std::rc::Rc;
 mod comments;
 mod declarations;
+pub(crate) mod font_faces;
 pub(super) use comments::strip_comments;
 pub(crate) mod keyframes;
 mod nesting;

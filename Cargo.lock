@@ -168,6 +168,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "svgtypes",
  "swash",
  "symphonia",
  "symphonia-common",

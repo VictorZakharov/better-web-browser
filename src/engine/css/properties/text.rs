@@ -45,6 +45,32 @@ pub(super) fn apply(
             viewport_width,
             viewport_height,
         ),
+        "font-feature-settings" => {
+            if let Some(features) = FontFeatures::parse(value) {
+                style.font_features = features;
+            }
+        }
+        "font-kerning" => {
+            if let Some(kerning) = FontKerning::parse(value) {
+                style.font_kerning = kerning;
+            }
+        }
+        "font-variant-ligatures" => {
+            if let Some(value) = FontLigatures::parse(value) {
+                style.font_ligatures = value;
+            }
+        }
+        "font-variant-numeric" => {
+            if let Some(value) = FontNumeric::parse(value) {
+                style.font_numeric = value;
+            }
+        }
+        "font-variant" => {
+            if let Some((ligatures, numeric)) = FontVariants::parse_shorthand(value) {
+                style.font_ligatures = ligatures;
+                style.font_numeric = numeric;
+            }
+        }
         "letter-spacing" => {
             if let Some(spacing) = parse_text_spacing_for_viewport(
                 value,
@@ -73,10 +99,13 @@ pub(super) fn apply(
             }
         }
         "text-align" => {
-            style.text_align = match value {
-                "center" => TextAlign::Center,
-                "right" | "end" => TextAlign::End,
-                _ => TextAlign::Start,
+            if let Some(align) = TextAlign::parse(value) {
+                style.text_align = align;
+            }
+        }
+        "direction" => {
+            if let Some(direction) = Direction::parse(value) {
+                style.direction = direction;
             }
         }
         "text-transform" => {

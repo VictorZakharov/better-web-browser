@@ -18,6 +18,10 @@ fn geometry_text_timing_is_opt_in_and_preserves_measurements() {
         underline: false,
         letter_spacing: 0.0,
         word_spacing: 0.0,
+        rtl: false,
+        kerning: true,
+        variants: Default::default(),
+        features: Default::default(),
     };
     for profile in [false, true] {
         let mut inner = Measurer;

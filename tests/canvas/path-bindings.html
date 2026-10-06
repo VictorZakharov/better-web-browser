@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><title>Canvas path Web IDL</title>
+<div id="probe">Running</div><script src="path-bindings.js"></script>
+<script>
+const results=[];
+for(const test of [testCanvasPathBindings,testCanvasRadiusBindings,testCanvasSvgPrefix,testCanvasPathGeometry]) {
+    try {test();results.push({test:test.name,passed:true});}
+    catch(error){results.push({test:test.name,passed:false,error:String(error)});}
+}
+probe.setAttribute('data-result',JSON.stringify(results));
+probe.textContent=JSON.stringify(results);
+</script>

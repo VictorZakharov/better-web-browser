@@ -236,15 +236,19 @@ fn webgl2_public_canvas_admission_locks_version_and_exposes_illegal_interface_co
         for(const create of [()=>new OffscreenCanvas(2,2),()=>{
             const canvas=document.createElement('canvas');canvas.width=2;canvas.height=2;return canvas;
         }]) {
-            for(const requested of ['webgl','experimental-webgl','webgl2']) {
+            const offscreen=create() instanceof OffscreenCanvas;
+            for(const requested of offscreen?['webgl','webgl2']:['webgl','experimental-webgl','webgl2']) {
                 const canvas=create(),gl=canvas.getContext(requested,{antialias:false});
                 const two=requested==='webgl2',type=two?WebGL2RenderingContext:WebGLRenderingContext;
                 if(!(gl instanceof type) || gl.canvas!==canvas) throw Error('wrong public interface '+requested);
                 if(canvas.getContext(requested)!==gl) throw Error('context identity changed');
                 if(canvas.getContext(two?'webgl':'webgl2')!==null || canvas.getContext('2d')!==null ||
                     canvas.getContext('bitmaprenderer')!==null) throw Error('context mode unlocked');
-                if(canvas.getContext('experimental-webgl2')!==null) throw Error('unsupported experimental alias');
-                if(!two && canvas.getContext(requested==='webgl'?'experimental-webgl':'webgl')!==gl)
+                if(offscreen) {
+                    let error='';try{canvas.getContext('experimental-webgl2');}catch(value){error=value.name;}
+                    if(error!=='TypeError')throw Error('Offscreen context identifier must be an enum');
+                } else if(canvas.getContext('experimental-webgl2')!==null) throw Error('unsupported experimental alias');
+                if(!offscreen && !two && canvas.getContext(requested==='webgl'?'experimental-webgl':'webgl')!==gl)
                     throw Error('WebGL1 aliases differ');
                 if(two && gl instanceof WebGLRenderingContext) throw Error('WebGL2 is not a WebGL1 subclass');
                 gl.getExtension('WEBGL_lose_context').loseContext();

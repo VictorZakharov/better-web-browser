@@ -58,8 +58,11 @@ mod tests {
             weight: min.round() as u16,
             weight_min: min,
             weight_max: max,
+            features: Default::default(),
             italic: false,
             url: "https://example.test/font.woff".into(),
+            fallback_urls: Vec::new(),
+            unicode_range: "U+0-10FFFF".into(),
         }
     }
 

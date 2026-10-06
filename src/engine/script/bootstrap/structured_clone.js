@@ -15,6 +15,24 @@
     delete globalThis.__videoFrameCloneBindings;
     const audio = globalThis.__audioCloneBindings;
     delete globalThis.__audioCloneBindings;
+    const canvas = globalThis.__cloneCanvasBindings;
+    delete globalThis.__cloneCanvasBindings;
+    const imageData = globalThis.__cloneImageDataBindings;
+    delete globalThis.__cloneImageDataBindings;
+    const cloneStringify = JSON.stringify, cloneParse = JSON.parse;
+    const cloneSetPrototype = Object.setPrototypeOf, cloneKeys = Object.keys;
+    const cloneDefineProperty = Object.defineProperty;
+    // Wire records are implementation data, not author objects. JSON must not
+    // invoke inherited Object/Array.prototype.toJSON during message delivery.
+    const wireStringify = value => {
+        const protect = item => {
+            if (item === null || typeof item !== 'object') return;
+            for (const key of cloneKeys(item)) protect(item[key]);
+            cloneSetPrototype(item, null);
+        };
+        protect(value);
+        return cloneStringify(value);
+    };
     const transferList = options => {
         const source = Array.isArray(options) ? options : options?.transfer;
         if (source === undefined) return [];
@@ -22,7 +40,6 @@
             throw new TypeError('transfer must be an iterable');
         const result = [...source], seen = new Set();
         for (const value of result) {
-            const canvas = globalThis.__cloneCanvasBindings;
             if ((!(value instanceof ArrayBuffer) && !globalThis.__clonePortBindings?.isPort(value) &&
                 !canvas?.isBitmap(value) && !canvas?.isOffscreen(value) && !frames?.has(value) && !audio?.has(value)) ||
                 value.detached || ((canvas?.isBitmap(value) || canvas?.isOffscreen(value)) &&
@@ -36,6 +53,7 @@
     globalThis.__serializeClone = (input, transfers = [], forStorage = false) => {
         transfers = transferList(transfers);
         const seen = new Map(); let nextId = 1;
+        const transferredRecords = new Map(transfers.map(value => [value, {}]));
         const portDescriptors = new Map();
         for (const port of transfers.filter(value => globalThis.__clonePortBindings?.isPort(value)))
             portDescriptors.set(port, globalThis.__clonePortBindings.describe(port));
@@ -53,6 +71,14 @@
             if (typeof value !== 'object') return fail();
             if (seen.has(value)) return { t: 'reference', v: seen.get(value) };
             const id = nextId++; seen.set(value, id);
+            // HTML serializes the graph before running transfer steps. Keep a
+            // placeholder so getters can still change the resource before its
+            // transfer snapshot, without losing repeated-reference identity.
+            if (transferredRecords.has(value)) {
+                const record = transferredRecords.get(value);
+                record.id = id;
+                return record;
+            }
             if (audio?.has(value) || audio?.hasChunk(value)) {
                 const chunk = audio.hasChunk(value);
                 if (!chunk && (forStorage || audio.closed(value))) return fail();
@@ -74,7 +100,6 @@
                 if (!portDescriptors.has(value)) return fail();
                 return { t: 'port', id, v: portDescriptors.get(value) };
             }
-            const canvas = globalThis.__cloneCanvasBindings;
             if (canvas?.isBitmap(value) || canvas?.isOffscreen(value)) {
                 if (canvas.isOffscreen(value) && !transfers.includes(value)) return fail();
                 if (canvas.isDetached(value)) return fail();
@@ -96,10 +121,11 @@
             if (typeof DOMRectReadOnly === 'function' && value instanceof DOMRectReadOnly)
                 return { t: 'dom-rect', id, v: [value.x, value.y, value.width, value.height].map(encode),
                     r: value instanceof DOMRect };
-            if (typeof ImageData === 'function' && value instanceof ImageData)
-                return { t: 'image-data', id, w: value.width, h: value.height,
-                    p: bytesToBase64(new Uint8Array(value.data.buffer,
-                        value.data.byteOffset, value.data.byteLength)) };
+            if (imageData?.has(value)) {
+                const record = imageData.snapshot(value);
+                return {t:'image-data', id, w:record.width, h:record.height,
+                    cs:record.colorSpace, pf:record.pixelFormat, v:encode(record.data)};
+            }
             if (Array.isArray(value)) return {
                 t: 'array', id, l: value.length,
                 v: Object.keys(value).map(key => [key, encode(value[key])])
@@ -135,26 +161,46 @@
         };
         const payload = encode(input);
         const ports = [...portDescriptors.values()];
-        const serialized = JSON.stringify(ports.length ? { __breezeClonePorts: true, payload, ports } : payload);
         for (const value of transfers) {
-            if (value instanceof ArrayBuffer) __hostCall('arrayBufferDetach', value);
-            else if (frames?.has(value)) frames.detach(value);
-            else if (audio?.has(value)) audio.detach(value);
-            else if (globalThis.__cloneCanvasBindings?.isBitmap(value) ||
-                globalThis.__cloneCanvasBindings?.isOffscreen(value))
-                globalThis.__cloneCanvasBindings.detach(value);
-            else globalThis.__clonePortBindings.detach(value);
+            const target = transferredRecords.get(value);
+            if (value instanceof cloneBuffer) {
+                target.t = 'buffer';
+                try { target.v = binaryHost('cloneBufferEncode', value); } catch { return fail(); }
+                binaryHost('arrayBufferDetach', value);
+            } else if (frames?.has(value)) {
+                const record = frames.snapshot(value);
+                target.t = 'video-frame'; target.p = bytesToBase64(record.pixels);
+                delete record.pixels; target.v = record;
+                frames.detach(value);
+            } else if (audio?.has(value)) {
+                const record = audio.snapshot(value);
+                target.t = 'audio-data'; target.p = bytesToBase64(record.bytes);
+                delete record.bytes; target.v = record;
+                audio.detach(value);
+            } else if (canvas?.isBitmap(value) || canvas?.isOffscreen(value)) {
+                const record = canvas.snapshot(value);
+                Object.assign(target, {t:record.kind, w:record.width, h:record.height,
+                    cw:record.canvasWidth, ch:record.canvasHeight, o:record.alpha,
+                    m:record.mode, a:record.premultiplied, p:bytesToBase64(record.pixels),
+                    p16:record.precise ? bytesToBase64(record.precise) : undefined});
+                canvas.detach(value);
+            } else {
+                target.t = 'port'; target.v = globalThis.__clonePortBindings.describe(value);
+                globalThis.__clonePortBindings.detach(value);
+            }
         }
-        return serialized;
+        // Transfer steps run in list order. A later invalid resource can throw
+        // after an earlier one was detached; do not promise rollback here.
+        return wireStringify(ports.length ? { __breezeClonePorts: true, payload, ports } : payload);
     };
     globalThis.__deserializeCloneWithPorts = (serialized, context) => {
-        const envelope = JSON.parse(String(serialized));
+        const envelope = cloneParse(String(serialized));
         const transfers = envelope?.__breezeClonePorts === true ? envelope.ports : [];
         const payload = envelope?.__breezeClonePorts === true ? envelope.payload : envelope;
         const references = new Map();
         const ports = new Map();
         const receive = descriptor => {
-            const key = JSON.stringify(descriptor);
+            const key = cloneStringify(descriptor);
             if (!ports.has(key)) ports.set(key, globalThis.__clonePortBindings?.receive(descriptor, context) ?? fail());
             return ports.get(key);
         };
@@ -173,7 +219,7 @@
             else if (node.t === 'audio-chunk') value = audio?.receiveChunk(node.v, base64ToBytes(node.p)) ?? fail();
             else if (node.t === 'video-frame') value = frames?.receive(node.v, base64ToBytes(node.p)) ?? fail();
             else if (node.t === 'imagebitmap' || node.t === 'offscreencanvas')
-                value = globalThis.__cloneCanvasBindings?.receive(node, base64ToBytes(node.p),
+                value = canvas?.receive(node, base64ToBytes(node.p),
                     node.p16===undefined?null:base64ToBytes(node.p16)) ?? fail();
             else if (node.t === 'dom-matrix') {
                 const numbers = node.v.map(decode);
@@ -187,8 +233,14 @@
                     z: decode(point[2]), w: decode(point[3])})));
             else if (node.t === 'dom-rect') value = new (node.r ? DOMRect : DOMRectReadOnly)(
                 ...node.v.map(decode));
-            else if (node.t === 'image-data') value = new ImageData(
-                new Uint8ClampedArray(base64ToBytes(node.p).buffer), node.w, node.h);
+            else if (node.t === 'image-data') {
+                // Older persistent records stored standalone RGBA8 bytes. Keep
+                // reading them while new records sub-serialize the actual view
+                // to retain graph identity and shared backing-buffer ownership.
+                const pixels = node.v === undefined ?
+                    new (viewConstructors.get('Uint8ClampedArray'))(base64ToBytes(node.p)) : decode(node.v);
+                value = imageData?.receive(node, pixels) ?? fail();
+            }
             else if (node.t === 'array') value = new Array(node.l);
             else if (node.t === 'date') value = new Date(node.v);
             else if (node.t === 'regexp') value = new RegExp(node.s, node.f);
@@ -211,10 +263,12 @@
             else if (node.t === 'object') value = node.n ? Object.create(null) : {};
             else return fail();
             if (node.id) references.set(node.id, value);
-            if (node.t === 'array') for (const [key, item] of node.v) value[key] = decode(item);
+            if (node.t === 'array') for (const [key, item] of node.v)
+                cloneDefineProperty(value, key, {value:decode(item), enumerable:true, writable:true, configurable:true});
             else if (node.t === 'map') for (const [key, item] of node.v) value.set(decode(key), decode(item));
             else if (node.t === 'set') for (const item of node.v) value.add(decode(item));
-            else if (node.t === 'object') for (const [key, item] of node.v) value[key] = decode(item);
+            else if (node.t === 'object') for (const [key, item] of node.v)
+                cloneDefineProperty(value, key, {value:decode(item), enumerable:true, writable:true, configurable:true});
             return value;
         };
         const data = decode(payload);

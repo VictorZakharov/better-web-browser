@@ -20,7 +20,7 @@
         const controller = new AbortController();
         let settle;
         const promise = new Promise(resolve => { settle = resolve; });
-        const state = { controller, promise, settle, decoded: null };
+        const state = { controller, promise, settle, decoded: null, source: imageElementSource(element) };
         detachedImageLoads.set(element, state);
         const url = element.src;
         // Resource selection is asynchronous. A script can set src and insert
@@ -66,7 +66,7 @@
                     cancelDetachedImage(element);
                     return;
                 }
-                updateImageElementState(element, true, 0, 0);
+                updateImageElementState(element, true, 0, 0, true);
                 state.settle(false);
                 element.dispatchEvent(new Event('error'));
             });

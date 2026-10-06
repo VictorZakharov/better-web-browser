@@ -73,9 +73,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let line_id = fragments.next_line;
         let original_width: f32 = line.iter().map(|atom| atom.width).sum();
         let start_x = match align {
-            TextAlign::Start => x,
+            TextAlign::Start | TextAlign::Left => x,
             TextAlign::Center => x + ((available - original_width) / 2.0).max(0.0),
-            TextAlign::End => x + (available - original_width).max(0.0),
+            TextAlign::End | TextAlign::Right => x + (available - original_width).max(0.0),
         };
         let mut cursor_x = start_x;
         let mut keeps = plan.keeps.iter().peekable();

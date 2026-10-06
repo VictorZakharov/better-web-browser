@@ -1,4 +1,11 @@
     const imageElementStates = new WeakMap();
+    const imageStateWeakGet = Function.call.bind(WeakMap.prototype.get);
+    const imageStateWeakSet = Function.call.bind(WeakMap.prototype.set);
+    const imageSourceAttribute = (element, name) =>
+        __hostCall('attrGetNs', imageStateWeakGet(nodeHandles, element), '', name);
+    const imageElementSource = element => {
+        return __hostCall('imageElementSource', imageStateWeakGet(nodeHandles, element)) || '';
+    };
     // HTML's fragment parser uses the insertion site's context, not a generic div.
     const parseContextualHtml = (context, markup) => {
         if (!(context instanceof Element) ||
@@ -7,21 +14,26 @@
         return wrap(host('parseHtmlFragment', nodeId(context), String(markup)));
     };
     const resetImageElementState = element => imageElementStates.delete(element);
-    const updateImageElementState = (element, complete, naturalWidth, naturalHeight) => {
-        imageElementStates.set(element, {
-            source: element.src,
+    const updateImageElementState = (element, complete, naturalWidth, naturalHeight, broken = false) => {
+        imageStateWeakSet(imageElementStates, element, {
+            source: imageElementSource(element),
             complete: !!complete,
+            broken,
             naturalWidth: Math.max(0, Number(naturalWidth) || 0),
             naturalHeight: Math.max(0, Number(naturalHeight) || 0),
         });
     };
     const imageElementState = element => {
-        const source = element.src;
-        const state = imageElementStates.get(element);
+        const source = imageElementSource(element);
+        const metadata = __hostCall('imageElementMetadata', imageStateWeakGet(nodeHandles, element));
+        if (metadata) return {source, complete:true, broken:false,
+            naturalWidth:metadata[1], naturalHeight:metadata[2]};
+        const state = imageStateWeakGet(imageElementStates, element);
         if (state?.source === source) return state;
         return {
             source,
-            complete: !element.hasAttribute('src') && !element.srcset,
+            complete: imageSourceAttribute(element, 'src') === null && !imageSourceAttribute(element, 'srcset'),
+            broken: false,
             naturalWidth: 0,
             naturalHeight: 0,
         };
@@ -126,6 +138,7 @@
         setAttributeNS(namespace, qualifiedName, value) {
             const extracted = validateAndExtractAttributeName(namespace, qualifiedName);
             value = String(value);
+            validateCanvasAttributeSet(this, extracted.namespace, extracted.localName);
             const transitionBefore = extracted.namespace === null ?
                 transitionBeforeAttributeChange(this, extracted.localName, value) : null;
             const record = host('attrSetNs', nodeId(this), extracted.namespace || '',

@@ -48,6 +48,8 @@
     let disconnectCustomElementTree = () => {};
     let adoptCustomElementTree = () => {};
     let customElementAttributeChanged = () => {};
+    let validateCanvasAttributeSet = () => {};
+    let canvasAttributeChanged = () => {};
     let scheduleSlotChangeCheck = () => {};
     let shadowRootForTraversal = () => null;
     let focusedAreaForDocument = () => null;

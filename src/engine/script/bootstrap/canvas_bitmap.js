@@ -42,6 +42,28 @@
             throw new DOMException('Canvas has no available bitmap', 'InvalidStateError');
         return { width: output.width, height: output.height, pixels: new Uint8ClampedArray(output.pixels) };
     };
+    const canvasSourceWeakGet = Function.call.bind(WeakMap.prototype.get);
+    const canvasSourceWeakHas = Function.call.bind(WeakMap.prototype.has);
+    const canvasSourceSetHas = Function.call.bind(WeakSet.prototype.has);
+    const canvasSourceElement = (source, localName) => {
+        return canvasNativeElement(source, localName);
+    };
+    const canvasImageSourceSupported = source => canvasSourceWeakHas(videoFrameStates, source) ||
+        canvasSourceWeakHas(imageBitmapStates, source) ||
+        canvasSourceSetHas(offscreenCanvasBrands, source) ||
+        canvasSourceElement(source, 'canvas') || canvasSourceElement(source, 'img');
+    const canvasImageSourceUsable = source => {
+        // HTML distinguishes an incomplete image (no drawing) from a broken
+        // request (InvalidStateError). Author properties cannot supply pixels.
+        // https://html.spec.whatwg.org/multipage/canvas.html#check-the-usability-of-the-image-argument
+        if (!canvasSourceElement(source, 'img')) return true;
+        const image = imageElementState(source);
+        if (image.broken) throw new DOMException('Image request is broken', 'InvalidStateError');
+        const load = canvasSourceWeakGet(detachedImageLoads, source);
+        return image.naturalWidth > 0 && image.naturalHeight > 0 &&
+            (load?.source === image.source && !!load.decoded ||
+                !!__hostCall('imageElementMetadata', canvasOwnerWeakGet(nodeHandles, source)));
+    };
     const imageSourceSnapshot = (source, allowImageData = false) => {
         if (videoFrameStates.has(source)) return videoFrameSnapshot(source);
         if (imageBitmapStates.has(source)) {
@@ -50,24 +72,26 @@
             return { width: state.width, height: state.height,
                 pixels: pixels16?narrowBitmapWords(pixels16):bitmapStraightPixels(state), pixels16 };
         }
-        if (offscreenCanvasBrands.has(source) || source instanceof HTMLCanvasElement &&
-            typeof nodeHandles !== 'undefined' && nodeHandles.has(source))
+        if (canvasSourceSetHas(offscreenCanvasBrands, source) || canvasSourceElement(source, 'canvas'))
             return canvasBitmapSnapshot(source);
-        if (typeof HTMLImageElement !== 'undefined' && source instanceof HTMLImageElement &&
-            nodeHandles.has(source)) {
+        if (canvasSourceElement(source, 'img')) {
             // Only decoded, same-origin/CORS-readable bytes may enter Canvas.
             // Opaque image responses remain inaccessible through this path.
-            const decoded = detachedImageLoads.get(source)?.decoded;
-            if (!decoded || !source.complete)
-                throw new DOMException('Image has no available bitmap', 'InvalidStateError');
-            return { width: decoded.width, height: decoded.height,
+            const load = canvasSourceWeakGet(detachedImageLoads, source);
+            const decoded = load?.source === imageElementState(source).source ? load.decoded : null;
+            if (decoded) return { width: decoded.width, height: decoded.height,
                 pixels: new Uint8ClampedArray(decoded.pixels), pixels16: decoded.pixels16 };
+            const owned = __hostCall('imageElementBitmap', canvasOwnerWeakGet(nodeHandles, source));
+            if (owned === 'tainted')
+                throw new DOMException('Image pixels are not origin-clean', 'SecurityError');
+            if (!owned) throw new DOMException('Image has no available bitmap', 'InvalidStateError');
+            return {width:owned[0], height:owned[1], pixels:new Uint8ClampedArray(owned[2])};
         }
         if (allowImageData && imageDataStates.has(source)) {
             const state=imageDataStates.get(source);
-            if (!state.data.byteLength)
+            if (canvasPixelLength(state.data) !== state.width * state.height * 4)
                 throw new DOMException('ImageData buffer is detached', 'InvalidStateError');
-            return { width: state.width, height: state.height, pixels: new Uint8ClampedArray(state.data) };
+            return { width: state.width, height: state.height, pixels: new canvasPixelArray(state.data) };
         }
         throw new TypeError('Unsupported Canvas image source');
     };
@@ -137,6 +161,7 @@
     };
     const resetCanvasBitmapRenderer = context => {
         const renderer = bitmapRendererState(context);
+        renderer.blank = true;
         const state = canvasStates.get(renderer.canvas);
         if (!renderer.alpha && state?.pixels) opaqueBitmap(state.pixels);
     };
@@ -153,7 +178,7 @@
         get canvas() { return bitmapRendererState(this).canvas; }
         transferFromImageBitmap(bitmap) {
             const renderer = bitmapRendererState(this);
-            if (renderer.canvas instanceof OffscreenCanvas && renderer.canvas.__detached)
+            if (canvasOffscreenDetached(renderer.canvas))
                 throw new DOMException('Canvas is detached', 'InvalidStateError');
             if (bitmap === null) {
                 stateForCanvas(renderer.canvas, true);
@@ -168,6 +193,7 @@
             // Straight inputs need no copy; associated inputs are normalized for
             // the Canvas representation before the source is detached.
             state.pixels = image.premultiplied ? bitmapStraightPixels(image) : image.pixels;
+            renderer.blank = false;
             if (!renderer.alpha) opaqueBitmap(state.pixels);
             closeImageBitmap(bitmap);
         }

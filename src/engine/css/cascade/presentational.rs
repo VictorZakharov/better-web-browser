@@ -3,11 +3,23 @@
 use super::super::*;
 
 pub(super) fn apply_presentational_hints(node: &NodeRef, style: &mut ComputedStyle) {
+    if node.namespace_uri() == Some("http://www.w3.org/1999/xhtml")
+        && (node.attr("dir").is_some_and(|value| {
+            matches!(value.to_ascii_lowercase().as_str(), "ltr" | "rtl" | "auto")
+        }) || node.tag_name() == Some("bdi")
+            || node.tag_name() == Some("input")
+                && node
+                    .attr("type")
+                    .is_some_and(|value| value.eq_ignore_ascii_case("tel")))
+    {
+        let (rtl, _) = selector_match::element_text_environment(node);
+        style.direction = if rtl { Direction::Rtl } else { Direction::Ltr };
+    }
     if let Some(align) = node.attr("align") {
         style.text_align = match align.to_ascii_lowercase().as_str() {
             "center" | "middle" => TextAlign::Center,
-            "right" => TextAlign::End,
-            _ => TextAlign::Start,
+            "right" => TextAlign::Right,
+            _ => TextAlign::Left,
         };
     }
     if node.attr("nowrap").is_some() {

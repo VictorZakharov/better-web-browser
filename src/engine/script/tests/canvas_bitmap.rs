@@ -264,18 +264,22 @@ fn structured_clone_copies_bitmaps_but_transfers_offscreen_canvas() {
             context.fillStyle = 'blue'; context.fillRect(0, 0, 1, 1);
             let cloneError = '';
             try { structuredClone(canvas); } catch (error) { cloneError = error.name; }
-            const destination = structuredClone(canvas, { transfer: [canvas] });
+            let activeError = '';
+            try { structuredClone(canvas, { transfer: [canvas] }); } catch (error) { activeError = error.name; }
+            const uninitialized = new OffscreenCanvas(1, 1);
+            const destination = structuredClone(uninitialized, { transfer: [uninitialized] });
             const target = new OffscreenCanvas(2, 1).getContext('2d');
             target.drawImage(copy, 0, 0); target.drawImage(moved, 1, 0);
             let detachError = '';
-            try { canvas.getContext('2d'); } catch (error) { detachError = error.name; }
+            try { uninitialized.getContext('2d'); } catch (error) { detachError = error.name; }
             const checks = [image.width === 0, copy.width === 1, moved.width === 1,
-                canvas.width === 0, destination.width === 1,
+                canvas.width === 1, uninitialized.width === 0, destination.width === 1,
+                activeError === 'InvalidStateError', canvas.getContext('2d') === context,
                 cloneError === 'DataCloneError', detachError === 'InvalidStateError',
                 [...target.getImageData(0, 0, 2, 1).data].join(',') ===
                     '255,0,0,255,255,0,0,255',
-                [...destination.getContext('2d').getImageData(0, 0, 1, 1).data].join(',') ===
-                    '0,0,255,255'];
+                [...context.getImageData(0, 0, 1, 1).data].join(',') === '0,0,255,255',
+                destination.getContext('2d').getImageData(0, 0, 1, 1).data[3] === 0];
             document.querySelector('output').textContent = checks.every(Boolean) ? 'yes' : checks.join(',');
         </script></body>"#,
         "yes",
@@ -287,18 +291,19 @@ fn worker_receives_canvas_and_image_bitmap_pixels_from_window() {
     let (dom, outcome) = execute_html(
         r#"<body><output>waiting</output><script>
             const worker = new Worker('/bitmap-worker.js');
-            const canvas = new OffscreenCanvas(1, 1), context = canvas.getContext('2d');
+            const painted = new OffscreenCanvas(1, 1), context = painted.getContext('2d');
             context.fillStyle = 'blue'; context.fillRect(0, 0, 1, 1);
-            const image = structuredClone(canvas.transferToImageBitmap());
+            const image = structuredClone(painted.transferToImageBitmap());
             context.fillStyle = 'red'; context.fillRect(0, 0, 1, 1);
-            worker.postMessage({canvas, image}, [canvas, image]);
-            document.querySelector('output').textContent = [canvas.width, image.width].join(',');
+            const redImage = painted.transferToImageBitmap(), canvas = new OffscreenCanvas(1, 1);
+            worker.postMessage({canvas, image, redImage}, [canvas, image, redImage]);
+            document.querySelector('output').textContent = [canvas.width, image.width, redImage.width].join(',');
         </script></body>"#,
     );
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        "0,0"
+        "0,0,0"
     );
     let Some(ScriptWorkerAction::PostMessage { serialized, .. }) = outcome.worker_actions.get(1)
     else {
@@ -310,7 +315,8 @@ fn worker_receives_canvas_and_image_bitmap_pixels_from_window() {
     let (runtime, started) = WorkerRuntime::start(
         "https://example.com/bitmap-worker.js",
         r#"onmessage = event => {
-            const {canvas, image} = event.data;
+            const {canvas, image, redImage} = event.data;
+            canvas.getContext('2d').drawImage(redImage, 0, 0);
             const red = [...canvas.getContext('2d').getImageData(0, 0, 1, 1).data];
             const target = new OffscreenCanvas(1, 1).getContext('2d');
             target.drawImage(image, 0, 0);

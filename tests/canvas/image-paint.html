@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><title>Canvas image sampling</title>
+<div id="probe">Running</div><script src="image-paint.js"></script>
+<script>
+try {
+    const result=testCanvasImagePaint((w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c;});
+    document.querySelector('#probe').setAttribute('data-result',JSON.stringify(result));
+    document.querySelector('#probe').textContent='Passed';
+} catch(error) {
+    document.querySelector('#probe').setAttribute('data-error',String(error));
+    document.querySelector('#probe').textContent='Failed';
+}
+</script>

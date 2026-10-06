@@ -35,7 +35,7 @@ fn webgl_attributes_use_inherited_values_and_do_not_mutate_author_options() {
         r#"
         const options=Object.freeze(Object.create({alpha:null,depth:0,stencil:1,antialias:true,
             desynchronized:true,premultipliedAlpha:'',preserveDrawingBuffer:'yes',powerPreference:'low-power'}));
-        const canvas=new OffscreenCanvas(1,1), gl=canvas.getContext('experimental-webgl',options);
+        const canvas=new OffscreenCanvas(1,1), gl=canvas.getContext('webgl',options);
         const a=gl.getContextAttributes();
         if(a.alpha || a.depth || a.premultipliedAlpha || a.antialias || a.desynchronized ||
             !a.stencil || !a.preserveDrawingBuffer || a.powerPreference!=='low-power') throw Error(JSON.stringify(a));
