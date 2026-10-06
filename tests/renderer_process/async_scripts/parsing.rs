@@ -93,19 +93,34 @@ fn speculative_completion_cannot_execute_a_script_before_the_parser_reaches_it()
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
     let mut driver = Driver::new(
         r#"<!doctype html><div id=status>waiting</div>
-      <script>window.trace=[];window.mark=x=>{trace.push(x);document.querySelector('#status').textContent=trace.join('|')};</script>
+      <script>window.trace=[];window.mark=x=>{trace.push(x);document.querySelector('#status').textContent=
+        (trace.includes('tail') && trace.includes('late') ? 'complete:' : '')+trace.join('|')};</script>
       <script async src=/early.js></script><script src=/block.js></script>
-      <script async src=/late.js></script><script>mark('tail');</script>"#,
+      <script id=late async src=/late.js></script><script>mark('tail');</script>"#,
     );
     driver.until_text("waiting");
-    driver.respond("late.js", "mark('late');", 200);
+    driver.respond(
+        "late.js",
+        "mark(document.getElementById('late')===document.currentScript ? 'late' : 'WRONG-unprepared');",
+        200,
+    );
     driver.respond("early.js", "mark('early');", 200);
     let prefix = driver.until_text("early");
     assert!(!painted_text(&prefix).contains("late"));
     driver.advance();
     driver.until_idle();
     driver.respond("block.js", "mark('block');", 200);
-    driver.until_text("early|block|tail|late");
+    // HTML's prepare-the-script-element algorithm permits a ready async script
+    // to execute before parsing finishes. Our bounded parser can yield between
+    // late's preparation and the following inline script; neither relative
+    // order is required. Preparation and the blocking prefix remain mandatory.
+    // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+    let result = painted_text(&driver.until_text("complete:"));
+    assert!(
+        result.contains("complete:early|block|tail|late")
+            || result.contains("complete:early|block|late|tail"),
+        "{result}"
+    );
     driver.session.shutdown().unwrap();
 }
 

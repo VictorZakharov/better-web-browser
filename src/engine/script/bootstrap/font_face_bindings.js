@@ -2,7 +2,11 @@
     // buffer/view brands, never instanceof or author-shadowed storage properties.
     const fontBytes = Uint8Array;
     const fontHost = __hostCall;
-    const fontFetch = fetch;
+    const fontFetch = globalThis.__fontFaceFetch;
+    delete globalThis.__fontFaceFetch;
+    const FontPromise = Promise;
+    const fontPromiseReject = Promise.reject.bind(Promise);
+    const fontPromiseAll = Promise.all.bind(Promise);
     // Both realm bootstraps supply a private, non-cancelable font task source.
     // Consume the handoff before author scripts can replace the scheduler.
     const queueFontTask = globalThis.__fontLoadingQueue;

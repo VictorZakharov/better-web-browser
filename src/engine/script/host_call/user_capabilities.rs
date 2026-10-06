@@ -7,6 +7,11 @@ pub(super) fn dispatch(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if operation == "hardwareConcurrency" {
+        return Ok(Some(JsValue::from(
+            super::super::runtime::platform_info::hardware_concurrency() as f64,
+        )));
+    }
     if let Some(value) = speech::dispatch(operation, args, state)? {
         return Ok(Some(value));
     }

@@ -41,7 +41,7 @@ impl Page {
             cached_styles: None,
             images: layout_image_metadata(&self.images),
             image_origin_clean: HashMap::new(),
-            canvas_image_updates: HashSet::new(),
+            image_updates: HashSet::new(),
             scripting_enabled: self.scripting_enabled,
             hidden_media_video: self.hidden_media_video.clone(),
             inline_svg_versions: HashMap::new(),

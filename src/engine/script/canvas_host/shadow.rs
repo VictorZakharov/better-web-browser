@@ -4,7 +4,25 @@
 //! a shadow halo at a clipped bitmap edge.
 
 use super::*;
-use image::{ImageBuffer, Luma};
+
+#[cfg(test)]
+mod dense_oracle_tests;
+mod kernel_cache;
+mod sampling_bounds;
+
+pub(super) struct Layer {
+    pub(super) bounds: [u32; 4],
+    pub(super) pixels: Vec<u8>,
+}
+
+impl Layer {
+    fn empty() -> Self {
+        Self {
+            bounds: [0; 4],
+            pixels: Vec::new(),
+        }
+    }
+}
 
 const MAX_SIGMA: f64 = 64.0;
 const MAX_WORKING_PIXELS: usize = 8 * 1024 * 1024;
@@ -40,12 +58,60 @@ pub(super) fn render_layer(
     offset_y: f64,
     color: &[u8],
 ) -> Option<Vec<u8>> {
+    let layer = render_sparse_layer(source, width, height, blur, offset_x, offset_y, color)?;
+    let mut result = vec![0; source.len()];
+    let [left, top, right, bottom] = layer.bounds;
+    let row_bytes = (right - left) as usize * 4;
+    if row_bytes == 0 {
+        return Some(result);
+    }
+    for (y, row) in (top..bottom).zip(layer.pixels.chunks_exact(row_bytes)) {
+        let start = (y as usize * width as usize + left as usize) * 4;
+        result[start..start + row_bytes].copy_from_slice(row);
+    }
+    Some(result)
+}
+
+pub(super) fn render_sparse_layer(
+    source: &[u8],
+    width: u32,
+    height: u32,
+    blur: f64,
+    offset_x: f64,
+    offset_y: f64,
+    color: &[u8],
+) -> Option<Layer> {
+    render_region_layer(
+        source,
+        [width, height],
+        [0, 0, width, height],
+        blur,
+        [offset_x, offset_y],
+        color,
+    )
+}
+
+/// A source rectangle is storage only: omitted pixels are transparent. Its
+/// origin remains in whole-bitmap coordinates throughout Gaussian sampling.
+pub(super) fn render_region_layer(
+    source: &[u8],
+    [width, height]: [u32; 2],
+    [source_left, source_top, source_right, source_bottom]: [u32; 4],
+    blur: f64,
+    [offset_x, offset_y]: [f64; 2],
+    color: &[u8],
+) -> Option<Layer> {
     let pixels = (width as usize).checked_mul(height as usize)?;
+    let source_width = source_right.checked_sub(source_left)?;
+    let source_height = source_bottom.checked_sub(source_top)?;
+    let source_pixels = (source_width as usize).checked_mul(source_height as usize)?;
     if pixels == 0
         || pixels > MAX_CANVAS_PIXELS
         || width > 16384
         || height > 16384
-        || source.len() != pixels * 4
+        || source_right > width
+        || source_bottom > height
+        || source.len() != source_pixels.checked_mul(4)?
         || color.len() != 4
         || !blur.is_finite()
         || blur < 0.0
@@ -54,24 +120,23 @@ pub(super) fn render_layer(
     {
         return None;
     }
-    let mut result = vec![0; source.len()];
     if color[3] == 0 {
-        return Some(result);
+        return Some(Layer::empty());
     }
     let mut bounds = [width, height, 0, 0];
     for (index, pixel) in source.chunks_exact(4).enumerate() {
         if pixel[3] == 0 {
             continue;
         }
-        let x = index as u32 % width;
-        let y = index as u32 / width;
+        let x = index as u32 % source_width + source_left;
+        let y = index as u32 / source_width + source_top;
         bounds[0] = bounds[0].min(x);
         bounds[1] = bounds[1].min(y);
         bounds[2] = bounds[2].max(x + 1);
         bounds[3] = bounds[3].max(y + 1);
     }
     if bounds[0] >= bounds[2] {
-        return Some(result);
+        return Some(Layer::empty());
     }
     let sigma = blur.min(MAX_SIGMA * 2.0) / 2.0;
     // The Gaussian kernel is truncated at three standard deviations. Retain
@@ -83,44 +148,57 @@ pub(super) fn render_layer(
     if mask_pixels > MAX_WORKING_PIXELS {
         return None;
     }
-    let mut alpha = ImageBuffer::<Luma<f32>, Vec<f32>>::new(mask_width, mask_height);
+    let origin_x = f64::from(bounds[0]) - f64::from(padding);
+    let origin_y = f64::from(bounds[1]) - f64::from(padding);
+    let [left, top, right, bottom] = sampling_bounds::translated_support(
+        [width, height],
+        [mask_width, mask_height],
+        [origin_x, origin_y],
+        [offset_x, offset_y],
+    );
+    if left >= right || top >= bottom {
+        return Some(Layer::empty());
+    }
+    let output_width = (right - left) as usize;
+    let mut result = vec![0; output_width * (bottom - top) as usize * 4];
+    let mut source_alpha =
+        Vec::with_capacity((bounds[2] - bounds[0]) as usize * (bounds[3] - bounds[1]) as usize);
     for y in bounds[1]..bounds[3] {
         for x in bounds[0]..bounds[2] {
-            alpha.put_pixel(
-                x - bounds[0] + padding,
-                y - bounds[1] + padding,
-                Luma([
-                    f32::from(source[(y as usize * width as usize + x as usize) * 4 + 3]) / 255.0,
-                ]),
-            );
+            let index =
+                (y - source_top) as usize * source_width as usize + (x - source_left) as usize;
+            source_alpha.push(source[index * 4 + 3]);
         }
     }
     // Below this deviation every off-center contribution rounds to zero in the
     // 8-bit output. Avoid underflow into image-rs's special sigma=0 default.
-    let alpha = if sigma < 0.01 {
-        alpha
-    } else {
-        image::imageops::blur(&alpha, sigma as f32)
-    };
-    let origin_x = f64::from(bounds[0]) - f64::from(padding);
-    let origin_y = f64::from(bounds[1]) - f64::from(padding);
-    for y in 0..height {
-        for x in 0..width {
+    let alpha = kernel_cache::gaussian(
+        source_alpha,
+        bounds[2] - bounds[0],
+        bounds[3] - bounds[1],
+        padding,
+        sigma,
+    );
+    // Sampling outside this translated support is exactly transparent. Keep
+    // the same Gaussian/interpolation arithmetic inside, without scanning the
+    // entire destination for a small shadow on a large texture.
+    for y in top..bottom {
+        for x in left..right {
             let sx = f64::from(x) - offset_x - origin_x;
             let sy = f64::from(y) - offset_y - origin_y;
             if sx < -1.0 || sy < -1.0 || sx >= f64::from(mask_width) || sy >= f64::from(mask_height)
             {
                 continue;
             }
-            let left = sx.floor() as i64;
-            let top = sy.floor() as i64;
-            let fx = sx - left as f64;
-            let fy = sy - top as f64;
+            let sample_left = sx.floor() as i64;
+            let sample_top = sy.floor() as i64;
+            let fx = sx - sample_left as f64;
+            let fy = sy - sample_top as f64;
             let mut coverage = 0.0;
             for dy in 0..=1 {
                 for dx in 0..=1 {
-                    let px = left + dx;
-                    let py = top + dy;
+                    let px = sample_left + dx;
+                    let py = sample_top + dy;
                     if px < 0
                         || py < 0
                         || px >= i64::from(mask_width)
@@ -133,7 +211,7 @@ pub(super) fn render_layer(
                     coverage += f64::from(alpha.get_pixel(px as u32, py as u32)[0]) * weight;
                 }
             }
-            let index = (y as usize * width as usize + x as usize) * 4;
+            let index = ((y - top) as usize * output_width + (x - left) as usize) * 4;
             let opacity = (coverage * f64::from(color[3])).clamp(0.0, 255.0);
             // Uint8ClampedArray's round-to-even conversion, including half ties.
             result[index + 3] = opacity.round_ties_even() as u8;
@@ -142,7 +220,10 @@ pub(super) fn render_layer(
             }
         }
     }
-    Some(result)
+    Some(Layer {
+        bounds: [left, top, right, bottom],
+        pixels: result,
+    })
 }
 
 #[cfg(test)]

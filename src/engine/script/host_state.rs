@@ -11,6 +11,7 @@ mod cookies;
 mod csp;
 mod fetches;
 mod focus;
+mod font_environment;
 pub(crate) mod geometry;
 mod mutations;
 mod ownership;
@@ -138,6 +139,7 @@ pub(super) struct HostState {
     pub(super) pending_media_actions: Vec<ScriptMediaAction>,
     pub(super) pending_graph_audio_actions: Vec<ScriptGraphAudioAction>,
     pub(super) pending_font_actions: Vec<ScriptFontAction>,
+    pub(super) font_environment: font_environment::FontEnvironment,
     pub(super) timers: EventLoopScheduler<u32>,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
     pub(super) idle_callbacks: super::idle_callbacks::IdleCallbacks,
@@ -288,6 +290,7 @@ impl HostState {
             pending_media_actions: Vec::new(),
             pending_graph_audio_actions: Vec::new(),
             pending_font_actions: Vec::new(),
+            font_environment: Default::default(),
             timers: EventLoopScheduler::new(),
             timer_handles: HashMap::new(),
             idle_callbacks: Default::default(),

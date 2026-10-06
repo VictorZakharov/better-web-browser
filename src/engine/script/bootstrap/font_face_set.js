@@ -11,15 +11,17 @@
         constructor(secret) {
             if (secret !== fontSetToken) throw new TypeError('Illegal constructor');
             super();
+            let resolveReady;
+            const ready = new FontPromise(resolve => { resolveReady = resolve; });
             fontWeakSet(fontSetState, this, {
                 faces: new Set(), pending: new Set(), completed: [], failed: [],
                 cssFaces: new Map(),
-                ready: Promise.resolve(this), resolveReady: null
+                ready, resolveReady, loading: false
             });
         }
         get size() { syncFontFaces(this); return fontSet(this).faces.size; }
-        get status() { syncFontFaces(this); return fontSet(this).pending.size ? 'loading' : 'loaded'; }
-        get ready() { syncFontFaces(this); return fontSet(this).ready; }
+        get status() { syncFontFaces(this); return fontSet(this).loading ? 'loading' : 'loaded'; }
+        get ready() { syncFontFaces(this); finishFontLoading(this); return fontSet(this).ready; }
         _syncCSSFaces() {
             const state = fontSet(this);
             const rules = fontJSONParse(fontHost('fontFaceCSSFaces'));
@@ -38,7 +40,21 @@
                     state.faces.add(face);
                 }
                 const entry = fontState(face);
-                if (rule.loaded && entry.status === 'unloaded') {
+                if ((rule.loading || rule.requested) && entry.status === 'unloaded') {
+                    entry.status = 'loading';
+                    entry.cssAutomaticLoad = true;
+                    markFontLoading(this,face);
+                }
+                if (entry.cssAutomaticLoad && !rule.loading && !entry.cssCompletionQueued) {
+                    entry.cssCompletionQueued = true;
+                    queueFontTask(() => {
+                        if (!fontSet(this).faces.has(face)) return;
+                        entry.status = rule.loaded ? 'loaded' : 'error';
+                        if (rule.loaded) entry.resolveLoaded(face);
+                        else entry.rejectLoaded(new DOMException('CSS font resource failed','NetworkError'));
+                        markFontSettled(this,face,rule.loaded);
+                    });
+                } else if (rule.loaded && entry.status === 'unloaded') {
                     entry.status = 'loaded';
                     entry.resolveLoaded(face);
                 }
@@ -119,15 +135,17 @@
                 syncFontFaces(this);
                 faces = matchFontFaces(this,shorthand,text);
             }
-            catch (error) { return Promise.reject(error); }
-            return Promise.all(faces.map(face => loadFontFace(face)));
+            catch (error) { return fontPromiseReject(error); }
+            return fontPromiseAll(faces.map(face => loadFontFace(face)));
         }
         _fontLoading(face) {
             const state = fontSet(this);
             if (state.pending.has(face)) return;
-            if (!state.pending.size) {
+            if (!state.loading) {
+                state.loading = true;
+                fontHost('fontFaceEnvironmentObserve',true);
                 if (!state.resolveReady)
-                    state.ready = new Promise(resolve => { state.resolveReady = resolve; });
+                    state.ready = new FontPromise(resolve => { state.resolveReady = resolve; });
                 queueFontTask(() => fontEventDispatch(this,fontTrustEvent(new FontFaceSetLoadEvent('loading'))));
             }
             state.pending.add(face);
@@ -140,8 +158,15 @@
         }
         _finishLoading() {
             const state = fontSet(this);
+            // A completed fetch is not stable layout. Keep this loading period
+            // and its original ready promise until the native environment settles.
+            if (state.pending.size || fontHost('fontFaceEnvironmentPending')) return;
+            if (!state.resolveReady) return;
             state.resolveReady?.(this);
             state.resolveReady = null;
+            fontHost('fontFaceEnvironmentObserve',false);
+            if (!state.loading) return;
+            state.loading = false;
             queueFontTask(() => {
                 const completed = state.completed.splice(0).filter(face => state.faces.has(face));
                 const failed = state.failed.splice(0).filter(face => state.faces.has(face));
@@ -176,6 +201,12 @@
     Object.defineProperty(FontFaceSetLoadEvent.prototype, Symbol.toStringTag,
         {value: 'FontFaceSetLoadEvent', configurable: true});
     const documentFonts = new FontFaceSet(fontSetToken);
+    // Captured and removed by the embedder before author code runs. A private
+    // transition notification cannot be forged via public prototype methods.
+    globalThis.__fontEnvironmentChanged = () => {
+        syncFontFaces(documentFonts);
+        finishFontLoading(documentFonts);
+    };
     if (typeof Document === 'function') {
         Object.defineProperty(Document.prototype, 'fonts', {
             get() { syncFontFaces(documentFonts); return documentFonts; }, enumerable: true, configurable: true
@@ -186,6 +217,8 @@
         Object.defineProperty(globalThis, 'fonts', {
             get() { return documentFonts; }, enumerable: true, configurable: true
         });
+        finishFontLoading(documentFonts);
+        delete globalThis.__fontEnvironmentChanged;
     }
     globalThis.FontFaceSet = FontFaceSet;
     globalThis.FontFaceSetLoadEvent = FontFaceSetLoadEvent;

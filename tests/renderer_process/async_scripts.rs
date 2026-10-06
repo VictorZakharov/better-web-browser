@@ -19,6 +19,8 @@ mod deferred;
 mod document_lifecycle;
 #[path = "async_scripts/dynamic.rs"]
 mod dynamic;
+#[path = "async_scripts/font_environment.rs"]
+mod font_environment;
 #[path = "async_scripts/font_loading.rs"]
 mod font_loading;
 #[path = "async_scripts/font_sources.rs"]
@@ -33,6 +35,8 @@ mod rendering;
 mod resource_integrity;
 #[path = "async_scripts/stylesheets.rs"]
 mod stylesheets;
+#[path = "async_scripts/svg_text.rs"]
+mod svg_text;
 
 #[test]
 fn async_scripts_execute_ready_elements_and_fail_each_owner_without_waiting_for_slow_fetch() {
@@ -180,9 +184,15 @@ impl Driver {
 
     fn until_text(&mut self, expected: &str) -> RendererPresentation {
         let deadline = Instant::now() + Duration::from_secs(5);
+        let mut last_text = String::new();
         loop {
             assert!(Instant::now() < deadline, "never painted {expected}");
-            match self.session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            match self
+                .session
+                .wait_for_event(Duration::from_secs(3))
+                .unwrap_or_else(|error| {
+                    panic!("waiting to paint {expected}: {error}; last text: {last_text}")
+                }) {
                 RendererEvent::FetchBatch { requests, .. } => {
                     for request in requests {
                         self.requests.insert(request.head.url.clone(), request);
@@ -194,7 +204,8 @@ impl Driver {
                         "{:?}",
                         presentation.runtime.errors
                     );
-                    if painted_text(&presentation).contains(expected) {
+                    last_text = painted_text(&presentation);
+                    if last_text.contains(expected) {
                         return *presentation;
                     }
                     if presentation.next_timer_micros.is_some() {
@@ -222,7 +233,15 @@ impl Driver {
         let deadline = Instant::now() + Duration::from_secs(5);
         while !self.requests.keys().any(|url| url.ends_with(suffix)) {
             assert!(Instant::now() < deadline, "never requested {suffix}");
-            match self.session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            match self
+                .session
+                .wait_for_event(Duration::from_secs(3))
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "waiting for {suffix}: {error}; known requests: {:?}",
+                        self.requests.keys().collect::<Vec<_>>()
+                    )
+                }) {
                 RendererEvent::FetchBatch { requests, .. } => {
                     for request in requests {
                         self.requests.insert(request.head.url.clone(), request);

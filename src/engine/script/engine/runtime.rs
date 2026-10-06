@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Once, OnceLock};
+mod diagnostics;
 mod dynamic_imports;
 mod frames;
 #[cfg(all(test, windows))]
@@ -13,6 +14,7 @@ mod gpu_task_tests;
 mod gpu_tasks;
 mod hooks;
 mod module_preparation;
+mod platform_tasks;
 #[cfg(all(test, windows))]
 mod webgl2_bindings_tests;
 #[cfg(all(test, windows))]
@@ -152,29 +154,6 @@ impl Context {
                 .run(tc)
                 .ok_or_else(|| caught_error(tc, "evaluate JavaScript"))?;
             value_from_v8(tc, value)
-        })
-    }
-
-    pub(in crate::engine::script) fn run_jobs(&mut self) -> JsResult<()> {
-        self.agent.borrow_mut().run(|isolate| {
-            isolate.perform_microtask_checkpoint();
-            Ok(())
-        })
-    }
-
-    pub(in crate::engine::script) fn heap_diagnostic(&mut self) -> JsResult<String> {
-        self.agent.borrow_mut().run(|isolate| {
-            let stats = isolate.get_heap_statistics();
-            Ok(format!(
-                "V8 heap: used={} committed={} physical={} external={} malloced={} contexts={} detached={}",
-                stats.used_heap_size(),
-                stats.total_heap_size(),
-                stats.total_physical_size(),
-                stats.external_memory(),
-                stats.malloced_memory(),
-                stats.number_of_native_contexts(),
-                stats.number_of_detached_contexts(),
-            ))
         })
     }
 

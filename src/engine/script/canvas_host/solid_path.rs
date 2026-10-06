@@ -57,13 +57,23 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
     }
     // Validate the destination and paint before allocating/rasterizing a mask.
     // The existing provider strictly validates every remaining geometry field.
+    let Some(clip) = super::raster_clip::Clip::from_args(args, 6, [region.width, region.height])
+    else {
+        return JsValue::Null;
+    };
     let mask = match kind.as_str() {
-        "fill" => super::fill::mask_from_source(source),
-        "stroke" => super::path::mask_from_source(source),
+        "fill" => super::fill::coverage_from_source(source),
+        "stroke" => super::path::coverage_from_source(source),
         _ => unreachable!(),
     };
     mask.and_then(|mask| {
-        super::solid_mask::composite_region(Some(&mask), destination, color, opacity)
+        super::solid_mask::composite_clipped_region(
+            Some(mask.as_slice()),
+            destination,
+            color,
+            opacity,
+            clip.as_ref(),
+        )
     })
     .map_or(JsValue::Null, JsValue::Bytes)
 }

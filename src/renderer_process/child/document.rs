@@ -279,16 +279,16 @@ impl DocumentRuntime {
             .checked_add(1)
             .ok_or_else(|| "presentation revision exhausted".to_string())?;
         let mut retired_image_keys = Vec::new();
-        let mut active_canvas_keys = self
+        let mut active_dynamic_keys = self
             .page
             .images
             .keys()
-            .filter(|key| Page::is_canvas_image_key(key))
+            .filter(|key| Page::is_dynamic_image_key(key))
             .cloned()
             .collect();
-        frames_paint::canvas_image_keys(&self.frame_paint, &mut active_canvas_keys);
+        frames_paint::dynamic_image_keys(&self.frame_paint, &mut active_dynamic_keys);
         self.sent_images.retain(|key| {
-            let retired = Page::is_canvas_image_key(key) && !active_canvas_keys.contains(key);
+            let retired = Page::is_dynamic_image_key(key) && !active_dynamic_keys.contains(key);
             if retired {
                 retired_image_keys.push(key.clone());
             }
@@ -297,10 +297,10 @@ impl DocumentRuntime {
         let mut seen_candidates = HashSet::new();
         let mut candidates = Vec::new();
         for (url, image) in &self.page.images {
-            let canvas_update = self.page.has_canvas_image_update(url);
+            let image_update = self.page.has_image_update(url);
             let already_sent = self.sent_images.contains(url);
             if url.len() <= MAX_URL_BYTES
-                && (!already_sent || canvas_update)
+                && (!already_sent || image_update)
                 && seen_candidates.insert(url.clone())
             {
                 candidates.push(image_deltas::ImageDelta {
@@ -308,7 +308,7 @@ impl DocumentRuntime {
                         url: url.clone(),
                         image: image.clone(),
                     },
-                    canvas_update,
+                    image_update,
                     frame: None,
                     already_sent,
                 });

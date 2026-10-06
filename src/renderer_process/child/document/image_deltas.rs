@@ -12,7 +12,7 @@ mod wheel_budget;
 
 pub(super) struct ImageDelta {
     pub presented: PresentedImage,
-    pub canvas_update: bool,
+    pub image_update: bool,
     pub frame: Option<NodeId>,
     pub already_sent: bool,
 }
@@ -103,8 +103,8 @@ impl DocumentRuntime {
                 MAX_RENDERER_PRESENTATION_BYTES.saturating_sub(base_bytes),
             );
         }
-        let mut root_canvas_updates = Vec::new();
-        let mut frame_canvas_updates = Vec::new();
+        let mut root_image_updates = Vec::new();
+        let mut frame_image_updates = Vec::new();
         for index in selection.indexes {
             let candidate = &candidates[index];
             let key = &candidate.presented.url;
@@ -113,18 +113,17 @@ impl DocumentRuntime {
                 self.last_served_image_key = Some(key.clone());
             }
             presentation.images.push(candidate.presented.clone());
-            if candidate.canvas_update {
+            if candidate.image_update {
                 if let Some(frame) = candidate.frame {
-                    frame_canvas_updates.push((frame, key.clone()));
+                    frame_image_updates.push((frame, key.clone()));
                 } else {
-                    root_canvas_updates.push(key.clone());
+                    root_image_updates.push(key.clone());
                 }
             }
         }
-        self.page
-            .acknowledge_canvas_image_updates(&root_canvas_updates);
+        self.page.acknowledge_image_updates(&root_image_updates);
         if let Some(runtime) = self.script_runtime.as_mut() {
-            runtime.acknowledge_frame_canvas_updates(&frame_canvas_updates);
+            runtime.acknowledge_frame_image_updates(&frame_image_updates);
         }
         // Sent deltas disappear from the next candidate set, so one immediate
         // checkpoint can deliver the remainder. An image that cannot fit even
@@ -154,7 +153,7 @@ mod tests {
                     bgra: vec![0; bytes].into(),
                 },
             },
-            canvas_update: false,
+            image_update: false,
             frame: None,
             already_sent: false,
         }
@@ -183,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn never_sent_image_precedes_a_repeated_canvas_update() {
+    fn never_sent_image_precedes_a_repeated_image_update() {
         let mut repainted = candidate("root-canvas", 48);
         repainted.already_sent = true;
         let mut candidates = [repainted, candidate("child-canvas", 32)];

@@ -33,6 +33,25 @@ fn product_budget_rejects_before_raster_allocation() {
 }
 
 #[test]
+fn presentation_conversion_matches_the_original_equation_for_every_byte_and_alpha() {
+    let rgba: Vec<u8> = (0_u8..=255)
+        .flat_map(|alpha| {
+            (0_u8..=255).flat_map(move |value| [value, 255 - value, value.wrapping_mul(17), alpha])
+        })
+        .collect();
+    let expected: Vec<u8> = rgba
+        .chunks_exact(4)
+        .flat_map(|pixel| {
+            let alpha = u32::from(pixel[3]);
+            let convert = |channel| ((u32::from(pixel[channel]) * alpha + 127) / 255) as u8;
+            [convert(2), convert(1), convert(0), pixel[3]]
+        })
+        .collect();
+    let image = RasterImage::new(256, 256, rgba, DecodeLimits::CANVAS).unwrap();
+    assert_eq!(&*image.into_premultiplied_bgra().bgra, expected);
+}
+
+#[test]
 fn every_orientation_round_trips_pixels_and_rectangular_dimensions() {
     let pixels: Vec<u8> = (1..=6).flat_map(|value| [value, 0, 0, 255]).collect();
     for value in 1..=8 {

@@ -312,7 +312,10 @@ fn root_and_child_canvas_bitmaps_are_deferred_within_the_wire_budget() {
                 next_timer = update.next_timer_micros;
             }
             RendererEvent::Diagnostic { .. } => {}
-            event => panic!("unexpected split Canvas renderer event: {event:?}"),
+            event => panic!(
+                "unexpected split Canvas renderer event: {event:?}; renderer snapshot: {:?}",
+                session.snapshot()
+            ),
         }
     }
     assert_eq!(

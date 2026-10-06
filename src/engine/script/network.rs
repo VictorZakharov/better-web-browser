@@ -3,6 +3,7 @@
 mod base64;
 mod beacon;
 pub(super) mod database_host;
+pub(super) mod font_request;
 pub(crate) mod response;
 pub(super) mod websocket_host;
 pub(super) use base64::decode_base64;
@@ -86,7 +87,7 @@ pub(super) fn network_host_call(
                     && crate::fetch::integrity::verify(&metadata, bytes, eligible).is_ok(),
             )))
         }
-        "fetchStart" => {
+        "fetchStart" | "fontFetchStart" => {
             let serialized = argument_string(args, 1)?;
             let mut request = request_from_serialized(
                 state
@@ -95,6 +96,9 @@ pub(super) fn network_host_call(
                     .unwrap_or(&state.document_url),
                 &serialized,
             )?;
+            if operation == "fontFetchStart" {
+                font_request::prepare(&mut request)?;
+            }
             request.origin = Some(state.document_origin.clone());
             request.client = state.fetch_client;
             request.policy = state.policy.clone();

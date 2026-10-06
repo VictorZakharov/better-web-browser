@@ -3,6 +3,7 @@
 use super::Page;
 use crate::engine::font::{WebFontFace, decode_web_font};
 mod fallback;
+mod readiness;
 
 impl Page {
     pub fn add_font(

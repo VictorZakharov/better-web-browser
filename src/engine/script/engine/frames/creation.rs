@@ -147,8 +147,13 @@ pub(super) fn create<'s>(
         if initial {
             host.borrow_mut().document_load =
                 crate::engine::script::runtime::document_lifecycle::DocumentLoad::initial_blank();
-            let ready = v8::String::new(scope, "__setDocumentComplete()")?;
+            let ready = v8::String::new(
+                scope,
+                "__setDocumentComplete();__fontEnvironmentChanged(false)",
+            )?;
             v8::Script::compile(scope, ready, None)?.run(scope)?;
+            let pending = host.borrow().font_environment_pending();
+            host.borrow_mut().font_environment.notified_pending = Some(pending);
         }
         // Retain parser hooks privately too. A same-origin parent must not be
         // able to pass guessed node IDs into a child realm's wrapper cache.
@@ -156,6 +161,7 @@ pub(super) fn create<'s>(
         for name in [
             "__trackModulePromise",
             "__parserDomChanged",
+            "__fontEnvironmentChanged",
             "__constructParserElement",
             "__resumeDocumentStream",
             "__setCurrentScript",

@@ -48,7 +48,7 @@ impl ChildRuntimes {
                 child.host.borrow_mut().diagnose(error);
             }
         }
-        let updates = page.take_canvas_image_updates();
+        let updates = page.take_image_updates();
         let other_bytes = self
             .images
             .iter()
@@ -73,22 +73,22 @@ impl ChildRuntimes {
         let state = self.images.entry(document).or_default();
         state.decoded = images;
         state
-            .canvas_updates
+            .image_updates
             .retain(|key| state.decoded.contains_key(key));
-        state.canvas_updates.extend(updates);
+        state.image_updates.extend(updates);
     }
 }
 
 impl ScriptRuntime {
     /// A frame paint snapshot can be discarded (for example by a zero-sized
     /// iframe). Clear pending updates only after those bytes enter a presentation.
-    pub(crate) fn acknowledge_frame_canvas_updates(&mut self, emitted: &[(NodeId, String)]) {
+    pub(crate) fn acknowledge_frame_image_updates(&mut self, emitted: &[(NodeId, String)]) {
         let Some(frames) = self.frames.as_mut() else {
             return;
         };
         for (document, key) in emitted {
             if let Some(state) = frames.images.get_mut(document) {
-                state.canvas_updates.remove(key);
+                state.image_updates.remove(key);
             }
         }
     }

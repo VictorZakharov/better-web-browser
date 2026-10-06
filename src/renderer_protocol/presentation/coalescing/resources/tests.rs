@@ -29,7 +29,7 @@ fn merged(first: RendererPresentation, next: RendererPresentation) -> RendererPr
 }
 
 #[test]
-fn repeated_canvas_updates_keep_only_the_latest_bitmap_and_release_old_pixels() {
+fn repeated_image_updates_keep_only_the_latest_bitmap_and_release_old_pixels() {
     let mut retained = frame(1);
     retained.images.push(image("canvas:1", 1));
     let first_pixels = Arc::downgrade(&retained.images[0].image.bgra);

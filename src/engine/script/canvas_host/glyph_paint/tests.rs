@@ -1,5 +1,20 @@
 use super::*;
 
+#[test]
+fn json_geometry_keeps_the_exact_binary_double_at_transformed_texel_boundaries() {
+    let expected = [
+        0.9696969696969697_f64,
+        -0.12121212121212122,
+        0.24242424242424243,
+        0.9696969696969697,
+        -7.030303030303031,
+        -0.12121212121212122,
+    ];
+    let parsed: [f64; 6] = serde_json::from_str(
+        "[0.9696969696969697,-0.12121212121212122,0.24242424242424243,0.9696969696969697,-7.030303030303031,-0.12121212121212122]").unwrap();
+    assert_eq!(parsed.map(f64::to_bits), expected.map(f64::to_bits));
+}
+
 fn request() -> Request {
     Request {
         width: 4,

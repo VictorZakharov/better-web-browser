@@ -64,12 +64,15 @@ try {
     foreach ($notice in @(
         'opus-0.4.0/LICENSE-MIT',
         'opus-0.4.0/LICENSE-APACHE',
-        'opusic-sys-0.7.5/LICENSE'
+        'opusic-sys-0.7.5/LICENSE',
+        'usvg-0.48.1/LICENSE-MIT',
+        'usvg-0.48.1/LICENSE-APACHE',
+        'usvg-0.48.1/BREEZE_PATCHES.md'
     )) {
         $noticePath = Join-Path $codecNoticeRoot $notice
         if (-not (Test-Path -LiteralPath $noticePath -PathType Leaf) -or
             (Get-Item -LiteralPath $noticePath).Length -eq 0) {
-            throw "Release archive is missing the codec notice $notice."
+            throw "Release archive is missing the third-party notice $notice."
         }
     }
     $opusNotice = [IO.File]::ReadAllText((Join-Path $codecNoticeRoot 'opusic-sys-0.7.5/LICENSE'))

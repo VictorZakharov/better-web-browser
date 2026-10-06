@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
-const MAX_DEDICATED_WORKERS: usize = 16;
+use crate::engine::script::runtime::platform_info::MAX_DEDICATED_WORKERS;
 
 pub(super) struct RendererWorkers {
     handles: HashMap<u32, WorkerHandle>,

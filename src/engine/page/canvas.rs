@@ -76,54 +76,36 @@ impl Page {
                     .and_then(|height| width.checked_mul(height))
             })
             .ok_or_else(|| "Canvas bitmap dimensions overflow".to_string())?;
-        let Some(mut pixels) = pixels else {
+        let Some(pixels) = pixels else {
             self.images.remove(&key);
-            self.canvas_image_updates.remove(&key);
+            self.image_updates.remove(&key);
             return Ok(());
         };
         if count == 0 || count > MAX_CANVAS_PIXELS || pixels.len() != count * 4 {
             self.images.remove(&key);
-            self.canvas_image_updates.remove(&key);
+            self.image_updates.remove(&key);
             return Err("Canvas bitmap exceeds its pixel limit or has invalid dimensions".into());
         }
-        // Canvas owns straight-alpha RGBA; GDI presents premultiplied BGRA.
-        for pixel in pixels.chunks_exact_mut(4) {
-            let alpha = u16::from(pixel[3]);
-            for channel in &mut pixel[..3] {
-                *channel = ((u16::from(*channel) * alpha + 127) / 255) as u8;
-            }
-            pixel.swap(0, 2);
-        }
+        // Canvas owns straight-alpha RGBA. Reuse the decoder's exact bounded
+        // presentation conversion instead of maintaining a second pixel loop.
         let result = media::install_initial_decoded_image(
             &mut self.images,
             key.clone(),
-            DecodedImage {
+            crate::engine::image_decode::RasterImage {
                 width,
                 height,
-                bgra: pixels.into(),
-            },
+                rgba: pixels,
+                rgba16: None,
+            }
+            .into_premultiplied_bgra(),
         );
         if let Err(error) = result {
             self.images.remove(&key);
-            self.canvas_image_updates.remove(&key);
+            self.image_updates.remove(&key);
             return Err(error);
         }
-        self.canvas_image_updates.insert(key);
+        self.image_updates.insert(key);
         Ok(())
-    }
-
-    pub(crate) fn take_canvas_image_updates(&mut self) -> HashSet<String> {
-        std::mem::take(&mut self.canvas_image_updates)
-    }
-
-    pub(crate) fn has_canvas_image_update(&self, key: &str) -> bool {
-        self.canvas_image_updates.contains(key)
-    }
-
-    pub(crate) fn acknowledge_canvas_image_updates(&mut self, keys: &[String]) {
-        for key in keys {
-            self.canvas_image_updates.remove(key);
-        }
     }
 
     pub(crate) fn prune_detached_canvas_images(&mut self) {
@@ -144,7 +126,7 @@ impl Page {
                         && key == &self::key(node.id(), intrinsic_size(&node))
                 });
             if !connected {
-                self.canvas_image_updates.remove(key);
+                self.image_updates.remove(key);
             }
             connected
         });
@@ -172,7 +154,7 @@ mod tests {
         .unwrap();
         let key = image_url(&page, &node).unwrap();
         assert_eq!(&*page.images[&key].bgra, &[25, 50, 100, 128, 0, 0, 0, 0]);
-        assert!(page.take_canvas_image_updates().contains(&key));
+        assert!(page.take_image_updates().contains(&key));
         node.set_attr("width", "3");
         assert_eq!(image_url(&page, &node), None);
         page.install_canvas_bitmap(node.id(), 3, 1, (3, 1), None)

@@ -13,7 +13,7 @@ pub(crate) struct FramePaintSnapshot {
     pub media_environment: crate::engine::MediaEnvironment,
     pub quirks_mode: bool,
     pub images: HashMap<String, crate::engine::DecodedImage>,
-    pub canvas_updates: HashSet<String>,
+    pub image_updates: HashSet<String>,
     pub children: Vec<FramePaintSnapshot>,
     /// Publish the exact child layout used for paint to its script realm. A child
     /// document has its own viewport and cannot use the parent document's boxes.
@@ -43,10 +43,10 @@ impl ScriptRuntime {
             .into_iter()
             .filter_map(|(element, id)| {
                 frames.sync_canvas(id);
-                let (images, canvas_updates) = frames
+                let (images, image_updates) = frames
                     .images
                     .get(&id)
-                    .map(|state| (state.decoded.clone(), state.canvas_updates.clone()))
+                    .map(|state| (state.decoded.clone(), state.image_updates.clone()))
                     .unwrap_or_default();
                 let child = frames.children.get_mut(&id)?;
                 let snapshot = {
@@ -60,7 +60,7 @@ impl ScriptRuntime {
                         media_environment: host.media_environment,
                         quirks_mode: host.quirks_mode,
                         images,
-                        canvas_updates,
+                        image_updates,
                         children: Vec::new(),
                         publish_geometry: {
                             let host = Rc::clone(&child.host);

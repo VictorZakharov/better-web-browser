@@ -91,7 +91,10 @@ pub(super) fn composite_into_with_alpha(
         if clip.is_some_and(|bits| bits[index / 8] & (1 << (index % 8)) == 0) {
             continue;
         }
-        if source[3] == 0 && pixel[3] != 0 && mode.transparent_preserves_backdrop() {
+        if source[3] == 0
+            && mode.transparent_preserves_backdrop()
+            && (pixel[3] != 0 || pixel[..3] == [0, 0, 0])
+        {
             continue;
         }
         // Other zero-alpha sources still matter: copy/source-in/destination-in

@@ -16,7 +16,7 @@ pub(super) struct PaintedFrame {
     pub rect: RectF,
     pub page: Page,
     pub layout: LayoutOutput,
-    pub canvas_updates: HashSet<String>,
+    pub image_updates: HashSet<String>,
     pub children: Vec<PaintedFrame>,
 }
 
@@ -28,10 +28,10 @@ pub(super) fn append_image_candidates(
 ) {
     for frame in frames {
         for (url, image) in &frame.page.images {
-            let canvas_update = frame.canvas_updates.contains(url);
+            let image_update = frame.image_updates.contains(url);
             let already_sent = sent.contains(url);
             if url.len() <= crate::limits::MAX_URL_BYTES
-                && (!already_sent || canvas_update)
+                && (!already_sent || image_update)
                 && seen.insert(url.clone())
             {
                 candidates.push(super::image_deltas::ImageDelta {
@@ -39,7 +39,7 @@ pub(super) fn append_image_candidates(
                         url: url.clone(),
                         image: image.clone(),
                     },
-                    canvas_update,
+                    image_update,
                     frame: Some(frame.document),
                     already_sent,
                 });
@@ -49,17 +49,17 @@ pub(super) fn append_image_candidates(
     }
 }
 
-pub(super) fn canvas_image_keys(frames: &[PaintedFrame], output: &mut HashSet<String>) {
+pub(super) fn dynamic_image_keys(frames: &[PaintedFrame], output: &mut HashSet<String>) {
     for frame in frames {
         output.extend(
             frame
                 .page
                 .images
                 .keys()
-                .filter(|key| Page::is_canvas_image_key(key))
+                .filter(|key| Page::is_dynamic_image_key(key))
                 .cloned(),
         );
-        canvas_image_keys(&frame.children, output);
+        dynamic_image_keys(&frame.children, output);
     }
 }
 
@@ -160,7 +160,7 @@ fn compose_items(
             rect,
             page,
             layout,
-            canvas_updates: snapshot.canvas_updates,
+            image_updates: snapshot.image_updates,
             children,
         });
     }
@@ -214,13 +214,13 @@ mod tests {
     use crate::engine::layout::StickyLayer;
 
     #[test]
-    fn previously_sent_child_canvas_update_is_emitted_and_acknowledged() {
+    fn previously_sent_child_image_update_is_emitted_and_acknowledged() {
         let mut page = Page::parse_scripted("<canvas width=1 height=1></canvas>", "about:blank");
         let canvas = page.dom.elements_named("canvas").next().unwrap();
         page.install_canvas_bitmap(canvas.id(), 1, 1, (1, 1), Some(vec![255, 0, 0, 255]))
             .unwrap();
-        let canvas_updates = page.take_canvas_image_updates();
-        let key = canvas_updates.iter().next().unwrap().clone();
+        let image_updates = page.take_image_updates();
+        let key = image_updates.iter().next().unwrap().clone();
         let document = page.dom.document.id();
         let frame = PaintedFrame {
             document,
@@ -232,7 +232,7 @@ mod tests {
             },
             page,
             layout: LayoutOutput::default(),
-            canvas_updates,
+            image_updates,
             children: Vec::new(),
         };
         let sent = HashSet::from([key.clone()]);
@@ -241,7 +241,7 @@ mod tests {
         append_image_candidates(&[frame], &sent, &mut seen, &mut candidates);
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].presented.url, key);
-        assert!(candidates[0].canvas_update);
+        assert!(candidates[0].image_update);
         assert_eq!(candidates[0].frame, Some(document));
     }
 
@@ -271,7 +271,7 @@ mod tests {
             media_environment: MediaEnvironment::new(304.0, 78.0, 1.0, false),
             quirks_mode: false,
             images: HashMap::new(),
-            canvas_updates: HashSet::new(),
+            image_updates: HashSet::new(),
             children: Vec::new(),
             publish_geometry: Box::new(|_, _| {}),
         };

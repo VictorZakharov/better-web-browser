@@ -117,9 +117,19 @@ impl Writer<'_> {
                         }
                     }
                     self.push(&format!(
-                        "color:#{:02x}{:02x}{:02x}{:02x}!important\"",
+                        "color:#{:02x}{:02x}{:02x}{:02x}!important",
                         color.red, color.green, color.blue, color.alpha
                     ))?;
+                    if (root || matches!(tag, "text" | "tspan" | "textPath"))
+                        && !std::iter::successors(node.parent(), |parent| parent.parent())
+                            .any(|parent| matches!(parent.tag_name(), Some("defs" | "symbol")))
+                        && let Some(style) = styles.and_then(|styles| styles.styles.get(&node.id()))
+                    {
+                        self.push(";font-family:")?;
+                        self.escape(&style.font_family)?;
+                        self.push(&format!("!important;font-size:{}px!important;font-weight:{}!important;font-style:{}!important;letter-spacing:{}px!important;word-spacing:{}px!important", style.font_size, style.font_weight, if style.italic { "italic" } else { "normal" }, style.letter_spacing, style.word_spacing))?;
+                    }
+                    self.push("\"")?;
                 }
                 self.push(">")?;
                 drop(attrs);

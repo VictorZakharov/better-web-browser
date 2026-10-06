@@ -17,6 +17,7 @@ impl ScriptRuntime {
             }
         };
         self.synchronize_css_animations(&mut outcome);
+        self.synchronize_font_environment(&mut outcome);
         if !outcome.runtime_stopped
             && let Some(context) = self.context.as_deref_mut()
             && let Err(error) = context

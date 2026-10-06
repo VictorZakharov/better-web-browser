@@ -32,9 +32,22 @@ impl DocumentRuntime {
         &mut self,
         discovery_pending: bool,
     ) {
+        let pending_fonts = self.page.pending_css_font_sources(&self.loaded_resources);
         let Some(runtime) = self.script_runtime.as_mut() else {
             return;
         };
+        runtime.set_pending_css_fonts(pending_fonts);
+        runtime.set_font_stylesheets_pending(
+            discovery_pending
+                || self.pending_resource_preloads.iter().any(|pending| {
+                    pending.by_request.values().any(|resource| {
+                        matches!(
+                            resource,
+                            crate::engine::page::PageResource::Stylesheet { .. }
+                        )
+                    })
+                }),
+        );
         if runtime.document_load_finished() {
             return;
         }

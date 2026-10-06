@@ -83,6 +83,7 @@
     const canvasTextRun = (context, text, stroke = false) => {
         text = canvasTextValue(text);
         const state = canvasDrawingState(context);
+        prepareCanvasFontFaces(state.font, text);
         const environment = canvasTextEnvironment(context);
         const spec = [...state.fontSpec, canvasTextSpacing(context, state.letterSpacing[1], environment),
             canvasTextSpacing(context, state.wordSpacing[1], environment)];

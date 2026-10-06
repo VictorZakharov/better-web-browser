@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "tests/containers.rs"]
+mod containers;
+
 #[test]
 fn web_font_snapshots_share_immutable_bytes_but_not_descriptors() {
     let font = WebFont {

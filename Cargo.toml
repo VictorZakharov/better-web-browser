@@ -47,7 +47,7 @@ ogg = "=0.8.0"
 opus = "=0.4.0"
 psl2 = { version = "0.1.12", default-features = false, features = ["fast-lookup"] }
 # Reuse bounded data-image rendering; ambient file reads remain disabled by our resolver.
-resvg = { version = "0.48.1", default-features = false, features = ["raster-images"] }
+resvg = { version = "0.48.1", default-features = false, features = ["raster-images", "text"] }
 # Already locked through usvg; MIT/Apache-2.0 curve queries for native stroke outlines.
 kurbo = "=0.13.1"
 # Already locked through resvg/usvg; reuse its MIT/Apache-2.0 SVG path lexer.
@@ -58,7 +58,9 @@ symphonia = { version = "=0.6.1", default-features = false, features = ["mp3", "
 # Reuse the already-locked, vetted OpusHead parser; no second header parser.
 symphonia-common = "=0.6.1"
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
+# Native Canvas/DOM geometry must retain JavaScript's exact binary doubles.
+# The default fast decoder can shift a coefficient by one ULP at texel edges.
+serde_json = { version = "1.0.151", features = ["float_roundtrip"] }
 time = { version = "0.3.55", default-features = false, features = ["std", "parsing"] }
 unicode-bidi = "0.3.18"
 unicode-segmentation = "1.13.3"
@@ -136,6 +138,8 @@ gif = "=0.14.2"
 # V8 152.2 still names the archived `paste` crate. This maintained,
 # version-compatible fork preserves the macro API without an advisory ignore.
 paste = { path = "vendor/paste-complete" }
+# Pinned usvg with a documented descendant textLength layout correction.
+usvg = { path = "vendor/usvg" }
 
 [lib]
 name = "better_web_browser"

@@ -1121,6 +1121,35 @@ before drawing instead of implementing full tainted-canvas propagation. No
 claim of complete Canvas/CSS Fonts conformance or playable gd-clone follows from
 the added API and pixel tests. See the [contracts and remaining gaps](docs/canvas-owned-compositing.md).
 
+### October 6: font readiness, SVG text and bounded Canvas work
+
+CSS Font Loading now tracks the renderer's actual pending environment: parsing,
+stylesheets, used font requests/decoding and unpublished layout. Canvas-only
+font use participates in loading, while unused faces do not manufacture
+requests. Script font fetching uses the normal CORS/Fetch path with the `font`
+destination and `font-src` policy. Bounded SFNT/table admission rejects unusable
+containers; it is not a complete OpenType sanitizer.
+
+SVG text uses the existing usvg shaping/outline backend and Breeze's font
+catalog, including loaded CSS family aliases. A pinned, licensed usvg patch
+corrects element-owned nested `textLength`; imports are excluded from the
+original-work batch size. Renderer image acknowledgements publish changed SVG
+pixels under stable keys and retire removed or rejected rasters. No synthetic
+SVG geometry API is exposed just to claim support.
+
+Canvas clipping, compact source/shadow storage and immutable coverage reuse
+reduce redundant work while retaining independent dense/scalar pixel oracles.
+V8 foreground tasks are pumped at bounded checkpoints, and hardware concurrency
+reflects the shared worker-admission limit. The two-second script/renderer
+watchdogs and containment budgets are unchanged.
+
+These are incomplete standards slices, not a claim of universal Chromium pixel
+parity or playable gd-clone. SVG bidi/text-path/baseline limitations, composite
+Unicode-range shaping and custom SVG font-feature selection remain open. See
+[font readiness](docs/font-loading-readiness.md),
+[SVG contracts and provenance](docs/svg-text-rendering.md), and
+[Canvas coverage contracts](docs/canvas-coverage-reuse.md).
+
 YouTube remains work in progress: non-DRM video/audio can play, but startup, seeking/recovery,
 video frame cadence, layout fidelity, and memory use are not an accepted browser baseline.
 Passing media fixtures does not establish usable live-site playback. Wikipedia has dedicated

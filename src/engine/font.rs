@@ -19,6 +19,7 @@ pub struct WebFontFace {
 
 pub(crate) mod descriptors;
 mod face_match;
+pub(crate) mod loading_identity;
 #[cfg(windows)]
 pub(crate) mod shaping;
 pub(crate) mod sources;
@@ -27,6 +28,7 @@ pub(crate) mod test_features;
 #[cfg(test)]
 mod tests;
 pub(crate) mod unicode_ranges;
+mod validation;
 
 #[derive(Debug, Clone)]
 pub struct WebFont {
@@ -77,6 +79,7 @@ pub fn decode_web_font(face: &WebFontFace, bytes: &[u8]) -> Result<WebFont, Stri
             "decoded webfont exceeds the {MAX_FONT_BYTES}-byte limit"
         ));
     }
+    validation::validate(&sfnt)?;
     Ok(WebFont {
         family: face.family.clone(),
         weight: face.weight,
@@ -167,9 +170,13 @@ fn decode_woff(bytes: &[u8]) -> Result<Vec<u8>, String> {
         if table.compressed_length == table.original_length {
             output[destination..end].copy_from_slice(source);
         } else {
-            let mut decoder = ZlibDecoder::new(source);
+            let decoder = ZlibDecoder::new(source);
             let mut decoded = Vec::with_capacity(table.original_length);
             decoder
+                // The declaration is not proof of the inflated length. Stop
+                // after one excess byte instead of allocating an unbounded
+                // decompression bomb before noticing the length mismatch.
+                .take(table.original_length as u64 + 1)
                 .read_to_end(&mut decoded)
                 .map_err(|error| format!("decompress WOFF table: {error}"))?;
             if decoded.len() != table.original_length {

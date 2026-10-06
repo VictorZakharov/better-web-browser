@@ -3,8 +3,8 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `17bf5d6a31a5ea55aedfaf62f812c0e55760dc8a2228e4e380390c1865a333f0`
-- Third-party packages: 303
+- Cargo.lock SHA-256: `c61e00fbcf96a45bb60c758fbb3886b16868a5aa537b43ebf2d0fec1846cd1ee`
+- Third-party packages: 309
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
@@ -23,6 +23,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `autocfg` | 1.5.1 | Apache-2.0 OR MIT | [upstream](https://github.com/cuviper/autocfg) |
 | `avif-parse` | 2.0.0 | MPL-2.0 | [upstream](https://github.com/kornelski/avif-parse) |
 | `base64` | 0.22.1 | MIT OR Apache-2.0 | [upstream](https://github.com/marshallpierce/rust-base64) |
+| `base64` | 0.23.1 | MIT OR Apache-2.0 | [upstream](https://github.com/marshallpierce/rust-base64) |
 | `bindgen` | 0.72.1 | BSD-3-Clause | [upstream](https://github.com/rust-lang/rust-bindgen) |
 | `bitflags` | 2.13.1 | MIT OR Apache-2.0 | [upstream](https://github.com/bitflags/bitflags) |
 | `bitreader` | 0.3.11 | MIT OR Apache-2.0 | [upstream](https://github.com/irauta/bitreader) |
@@ -75,6 +76,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `foldhash` | 0.2.0 | Zlib | [upstream](https://github.com/orlp/foldhash) |
 | `font-types` | 0.11.3 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
 | `font-types` | 0.12.3 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
+| `fontdb` | 0.24.0 | MIT | [upstream](https://github.com/RazrFalcon/fontdb) |
 | `fontique` | 0.11.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/parley) |
 | `form_urlencoded` | 1.2.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url) |
 | `fslock` | 0.2.1 | MIT | [upstream](https://github.com/brunoczim/fslock) |
@@ -93,6 +95,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `gl_generator` | 0.14.0 | Apache-2.0 | [upstream](https://github.com/brendanzab/gl-rs/) |
 | `glob` | 0.3.4 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/glob) |
 | `gzip-header` | 1.1.0 | MIT/Apache-2.0 | [upstream](https://github.com/oyvindln/gzip-header) |
+| `harfrust` | 0.12.0 | MIT | [upstream](https://github.com/harfbuzz/harfrust) |
 | `harfrust` | 0.5.2 | MIT | [upstream](https://github.com/harfbuzz/harfrust) |
 | `hash32` | 0.3.1 | MIT OR Apache-2.0 | [upstream](https://github.com/japaric/hash32) |
 | `hashbrown` | 0.16.1 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/hashbrown) |
@@ -218,6 +221,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `siphasher` | 1.0.3 | MIT/Apache-2.0 | [upstream](https://github.com/jedisct1/rust-siphash) |
 | `skrifa` | 0.44.0 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
 | `slab` | 0.4.12 | MIT | [upstream](https://github.com/tokio-rs/slab) |
+| `slotmap` | 1.1.1 | Zlib | [upstream](https://github.com/orlp/slotmap) |
 | `smallvec` | 1.15.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-smallvec) |
 | `stable_deref_trait` | 1.2.1 | MIT OR Apache-2.0 | [upstream](https://github.com/storyyeller/stable_deref_trait) |
 | `static_assertions` | 1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/nvzqz/static-assertions-rs) |
@@ -263,6 +267,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `unicode-ident` | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | [upstream](https://github.com/dtolnay/unicode-ident) |
 | `unicode-script` | 0.5.8 | MIT OR Apache-2.0 | [upstream](https://github.com/unicode-rs/unicode-script) |
 | `unicode-segmentation` | 1.13.3 | MIT OR Apache-2.0 | [upstream](https://github.com/unicode-rs/unicode-segmentation) |
+| `unicode-vo` | 0.1.0 | MIT/Apache-2.0 | [upstream](https://github.com/RazrFalcon/unicode-vo) |
 | `url` | 2.5.8 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url) |
 | `usvg` | 0.48.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/resvg) |
 | `utf8_iter` | 1.0.4 | Apache-2.0 OR MIT | [upstream](https://github.com/hsivonen/utf8_iter) |
@@ -295,6 +300,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `xml` | 1.4.0 | MIT | [upstream](https://github.com/kornelski/xml-rs) |
 | `xml-rs` | 0.8.29 | MIT | [upstream](https://github.com/kornelski/xml-rs) |
 | `xmlparser` | 0.13.6 | MIT/Apache-2.0 | [upstream](https://github.com/RazrFalcon/xmlparser) |
+| `xmlwriter` | 0.1.0 | MIT | [upstream](https://github.com/RazrFalcon/xmlwriter) |
 | `yazi` | 0.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/dfrg/yazi) |
 | `yoke` | 0.8.3 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `yoke-derive` | 0.8.2 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
@@ -314,6 +320,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 
 ## Bundled sources and data
 
+- `usvg` 0.48.1 (MIT OR Apache-2.0), already used through `resvg`, is vendored with a documented SVG text-length layout correction. Its pinned package checksum, upstream revision, retained licenses, modified-file inventory and compatibility limits are recorded in `vendor/usvg/BREEZE_PATCHES.md`. Imported upstream lines are reported separately from original Breeze work. Filesystem font/image loaders remain disabled or replaced with bounded browser-owned resolvers.
 - `mozangle` 0.7.1 statically builds ANGLE GLES/EGL and its GLSL ES compiler from the published Mozilla/Servo package (BSD-3-Clause). Its pinned `UPSTREAM` revision, native ANGLE license, Chromium BSD notice, and original bundled third-party notice-bearing text are retained in release archives. `libz-sys` statically builds stock zlib (Zlib license), whose native notice is retained separately from its Rust wrapper. No native graphics implementation is copied into Breeze source. See `docs/webgl-backend.md` for scope, limits, build policy, and provenance.
 - `psl2` embeds a compact Mozilla Public Suffix List snapshot. The crate is MIT OR Apache-2.0; the list data is MPL-2.0. The crate and list versions are pinned by `Cargo.lock` and `psl2::psl_version()`.
 - The AccessKit crates are MIT OR Apache-2.0 and contain portions derived from Chromium under a BSD license. The required upstream notice is preserved at `third_party/accesskit/LICENSE.chromium` and copied beside every AccessKit package notice in release archives.

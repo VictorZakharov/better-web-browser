@@ -3,19 +3,23 @@
 //! separately, BEFORE source, with the same operator and final drawing clip.
 use super::{JsValue, composite::Operator, composite_layer, shadow};
 
+mod region;
+mod sparse;
+pub(super) use region::render_region;
+
 pub(super) fn paint(args: &[JsValue]) -> JsValue {
-    render(args).map_or(JsValue::Null, JsValue::Bytes)
+    render(args, None).map_or(JsValue::Null, JsValue::Bytes)
 }
 
-fn dimension(value: &JsValue) -> Option<u32> {
+pub(super) fn dimension(value: &JsValue) -> Option<u32> {
     let number = value.as_number()?;
     (number.is_finite() && number.fract() == 0.0 && (1.0..=16384.0).contains(&number))
         .then_some(number as u32)
 }
 
-fn render(args: &[JsValue]) -> Option<Vec<u8>> {
+pub(super) fn render(args: &[JsValue], source_override: Option<&[u8]>) -> Option<Vec<u8>> {
     let destination = args.get(1)?.as_bytes()?;
-    let source = args.get(2)?.as_bytes()?;
+    let source = source_override.or_else(|| args.get(2)?.as_bytes())?;
     let JsValue::String(operator) = args.get(3)? else {
         return None;
     };
@@ -45,9 +49,10 @@ fn render(args: &[JsValue]) -> Option<Vec<u8>> {
     }
     // Shadow validates all options and its own transient allocation budget
     // before modifying the output. A decline keeps the scalar fallback atomic.
-    let shadow = shadow::render_layer(source, width, height, blur, offset_x, offset_y, color)?;
+    let shadow =
+        shadow::render_sparse_layer(source, width, height, blur, offset_x, offset_y, color)?;
     let mut output = destination.to_vec();
-    composite_layer::composite_into_with_alpha(&mut output, &shadow, operator, clip, opaque)?;
+    sparse::composite(&mut output, width, height, &shadow, operator, clip, opaque)?;
     composite_layer::composite_into_with_alpha(&mut output, source, operator, clip, opaque)?;
     Some(output)
 }
