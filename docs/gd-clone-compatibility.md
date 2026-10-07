@@ -149,3 +149,28 @@ layer workload. Real CSS font sources, OpenType features and private Canvas
 ownership now have unit, renderer and upstream WPT coverage. The game blocker
 remains a separate document texture-generation/watchdog investigation. No game
 asset, watchdog limit or containment budget was changed to obtain this result.
+
+### October 6 font-readiness / SVG-text wrap-up
+
+The final release replay uses the same unchanged production asset snapshot,
+fresh profiles, twenty seconds of settling, 100% device scale and a measured
+1262-by-539 CSS-pixel viewport in both Breeze versions and Chrome 154.0.8037.98.
+Chrome reaches the rendered lobby. Breeze renders the real SVG title over the
+loading background, but its title/layout is too large and no accepted lobby or
+gameplay transition occurs. Both Breeze versions report a document timer
+promise-job execution-limit exception at the unchanged 2,000 ms watchdog.
+
+| Single-run diagnostic | Before (`e349b7e`) | After | Chrome |
+| --- | ---: | ---: | ---: |
+| Harness page-ready / first presentation | 893.495 ms | 2,780.700 ms | 994.889 ms |
+| Cumulative JavaScript time | 6,739.688 ms | 5,347.702 ms | 7,290.274 ms |
+| Reported working set | 429.7 MiB | 470.4 MiB | 1,227.9 MiB |
+| Accepted captured state | Loading only | Loading only | Rendered lobby |
+
+**Breeze first presentation regressed in this sample.** Lower cumulative script
+time is not a game-startup win: the browsers finish different amounts of work.
+Chrome's page-ready observer is not Breeze's renderer-presentation observer,
+and its lobby workload differs from Breeze's interrupted loading workload.
+These single runs do not establish a browser-speed or memory-efficiency ranking,
+sustained frame cadence, time-to-lobby, or playability. They are a transparent
+remaining blocker, not a reason to raise the watchdog or modify the game.

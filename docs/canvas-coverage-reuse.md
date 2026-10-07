@@ -95,3 +95,38 @@ blend mode, clipping, offsets, alpha extremes and opaque destinations.
 The geometry JSON decoder uses serde_json's exact float-roundtrip mode. This
 protects binary-double texel boundaries in transformed glyphs and path requests;
 an epsilon or coordinate-snapping workaround would alter valid geometry.
+
+## October 6 final release comparison
+
+Baseline is main at `e349b7e` (#227). Fresh hidden release profiles were rotated
+between before, after and Chrome 154.0.8037.98 on the same machine. Every timed
+operation includes pixel readback; the fixtures use fixed Canvas resolutions.
+These are targeted measurements, not matched-viewport page benchmarks or a
+general claim that Breeze is faster than Chrome.
+
+| Workload | Before | After | Chrome |
+| --- | ---: | ---: | ---: |
+| Tall strokes, cold coverage | 390.0 ms | 307.3 ms | 51.3 ms |
+| Tall strokes, warm coverage | 358.7 ms | 308.5 ms | 81.5 ms |
+| Tall strokes, changed pen | 381.4 ms | 311.8 ms | 2.4 ms |
+| Compound clips | 122.9 ms | 27.1 ms | 122.6 ms |
+| Clipped strokes | 52.5 ms | 36.5 ms | 130.5 ms |
+| Clipped fills | 16.5 ms | 6.4 ms | 0.6 ms |
+| Cold shadow | 32.5 ms | 19.8 ms | 162.9 ms |
+| Changing shadow paint | 333.7 ms | 142.8 ms | 109.5 ms |
+| Changed shadow kernel | 29.1 ms | 16.7 ms | 4.1 ms |
+
+Clip/shadow rows are medians of three completed runs. Tall-stroke rows use four
+attempted runs per browser: the baseline's first attempt exceeded the unchanged
+two-second script watchdog and produced no timings. Its completed-run median
+uses the other three attempts; after/Chrome medians use all four. That censored
+failure is retained, not replaced or silently excluded from success counts.
+Before/after recorded hashes and pixel samples match across completed runs.
+Independent native dense/scalar oracles cover broader pixel contracts; sampled
+hashes alone do not establish every pixel or Chrome parity.
+
+Large bitmap premultiplication also shares the image decoder's exact integer
+conversion, with zero/opaque alpha fast paths. An exhaustive channel/alpha test
+checks the original rounding equation. The unchanged large root/child Canvas
+renderer fixture now passes under its existing two-second heartbeat; its size,
+wire budget and watchdog were not relaxed.
