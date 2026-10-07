@@ -3,6 +3,8 @@ use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
+mod checkout;
+
 #[cfg(test)]
 #[path = "manifest_webgl_tests.rs"]
 mod webgl_tests;
@@ -152,17 +154,7 @@ impl Manifest {
             }
         }
 
-        let mut diff = git_command(&root);
-        diff.args(["diff", "--quiet", "HEAD", "--"]);
-        for path in required {
-            diff.arg(path);
-        }
-        let status = diff
-            .status()
-            .map_err(|error| format!("verify WPT fixtures with git: {error}"))?;
-        if !status.success() {
-            return Err("selected WPT fixtures differ from the pinned revision".to_string());
-        }
+        checkout::verify_unmodified(&root, &required)?;
         Ok(root)
     }
 
