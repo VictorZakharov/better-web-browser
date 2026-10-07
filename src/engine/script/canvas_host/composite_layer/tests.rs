@@ -145,14 +145,17 @@ fn transparent_fast_skip_matches_scalar_equation_including_hidden_backdrop_rgb()
     ] {
         let mode = Operator::parse(name).unwrap();
         for alpha in [0, 1, 127, 255] {
-            let destination = [41, 59, 70, alpha];
-            let mut expected = destination;
-            mode.pixel(&mut expected, [201.0, 123.0, 37.0, 0.0], 1.0);
-            assert_eq!(
-                composite(&destination, &[201, 123, 37, 0], mode, None).unwrap(),
-                expected,
-                "{name}/{alpha}"
-            );
+            for destination in [[41, 59, 70, alpha], [0, 0, 0, alpha]] {
+                for source in [[201, 123, 37, 0], [0, 0, 0, 0]] {
+                    let mut expected = destination;
+                    mode.pixel(&mut expected, source.map(f64::from), 1.0);
+                    assert_eq!(
+                        composite(&destination, &source, mode, None).unwrap(),
+                        expected,
+                        "{name}/{alpha}/{destination:?}/{source:?}"
+                    );
+                }
+            }
         }
     }
 }

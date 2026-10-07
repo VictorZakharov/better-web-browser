@@ -1,0 +1,43 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Readback-fenced clipped procedural Canvas paths</title>
+<canvas id="canvas" width="256" height="640"></canvas>
+<pre id="probe">Measuring clipped thin paths and compound clip construction.</pre>
+<script>
+const context=canvas.getContext('2d'),times={},samples={};
+const measure=(name,draw)=>{
+    const start=performance.now();draw();
+    const pixels=context.getImageData(0,0,256,640).data;
+    times[name]=performance.now()-start;
+    if(pixels.length!==256*640*4)throw Error('incomplete readback');
+    samples[name]=[[0,0],[128,160],[128,320],[32,600]].map(([x,y])=>
+        Array.from(pixels.slice((y*256+x)*4,(y*256+x)*4+4)));
+};
+measure('compoundClips',()=>{
+    for(let index=0;index<12;index++){
+        context.save();context.beginPath();
+        context.moveTo(12,10);context.lineTo(244,24);context.lineTo(230,620);context.lineTo(26,630);
+        context.closePath();context.rect(80+index,180,96,280);context.clip('evenodd');
+        context.fillStyle='#537ca0';context.fillRect(0,0,256,640);context.restore();
+    }
+});
+context.beginPath();context.rect(16,16,224,608);context.rect(80,200,96,160);context.clip('evenodd');
+measure('clippedStrokes',()=>{
+    context.lineWidth=1.5;context.strokeStyle='rgba(220,240,255,.45)';
+    for(let index=0;index<96;index++){
+        context.beginPath();context.moveTo(-20,index*6+.25);context.lineTo(280,index*6+140.25);
+        context.stroke();
+    }
+});
+measure('clippedFills',()=>{
+    context.fillStyle='rgba(120,180,220,.35)';
+    for(let index=0;index<32;index++){
+        context.beginPath();context.moveTo(20,index*16);context.lineTo(180,index*16+30);
+        context.lineTo(80,index*16+60);context.closePath();context.fill();
+    }
+});
+probe.setAttribute('data-ms',JSON.stringify(times));
+for(const [name,value]of Object.entries(samples))
+    probe.setAttribute('data-'+name.toLowerCase(),JSON.stringify(value));
+probe.textContent=JSON.stringify({times,samples});
+</script>

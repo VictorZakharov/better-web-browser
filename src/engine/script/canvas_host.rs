@@ -5,6 +5,7 @@ use super::*;
 use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
 use std::io::Cursor;
 
+mod clip_mask;
 mod composite;
 mod composite_layer;
 mod coverage;
@@ -17,8 +18,10 @@ mod image_paint;
 mod mask_cache;
 mod path;
 mod pattern_mask;
+mod raster_clip;
 mod shader_mask;
 mod shadow;
+mod shadow_path;
 mod solid_mask;
 mod solid_path;
 mod source_layer;
@@ -32,6 +35,9 @@ use crate::limits::MAX_CANVAS_PIXELS;
 const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
+    if operation == "canvasClipMask" {
+        return Ok(Some(clip_mask::paint(args)));
+    }
     if operation == "canvasTextEnvironment" {
         // A worker has no element or root style. CSS's non-element root size is initial.
         return Ok(Some(JsValue::Array(vec![
@@ -47,6 +53,9 @@ pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Op
     }
     if operation == "canvasPaintSourceLayer" {
         return Ok(Some(source_layer::paint(args)));
+    }
+    if operation == "canvasPaintShadowPath" {
+        return Ok(Some(shadow_path::paint(args)));
     }
     if operation == "canvasPaintImage" {
         return Ok(Some(image_paint::paint(args)));

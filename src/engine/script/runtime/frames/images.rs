@@ -16,7 +16,7 @@ pub(super) struct FrameImages {
     requested: HashSet<String>,
     pub decoded: HashMap<String, crate::engine::DecodedImage>,
     origins: HashMap<String, bool>,
-    pub canvas_updates: HashSet<String>,
+    pub image_updates: HashSet<String>,
 }
 
 impl ScriptRuntime {

@@ -19,11 +19,13 @@ function testSolidPathPainting() {
                 for(let index=0;index<seed.data.length;index+=4)
                     seed.data.set([31,71,113,(index/4)%256],index);
                 c.putImageData(seed,0,0);
-                // A whole-surface clip preserves pixels but selects the bounded
-                // fallback rather than fused solid painting in Breeze.
+                // The constant gradient plus clip selects the scalar fallback;
+                // clipping alone also uses native solid painting now.
                 if(c===scalar){c.beginPath();c.rect(0,0,40,40);c.clip();}
                 c.setTransform(...transform);c.beginPath();shape(c);
-                c.globalAlpha=.75;c.fillStyle=color;c.strokeStyle=color;
+                let paint=color;
+                if(c===scalar){const g=c.createLinearGradient(0,0,40,0);g.addColorStop(0,color);g.addColorStop(1,color);paint=g;}
+                c.globalAlpha=.75;c.fillStyle=paint;c.strokeStyle=paint;
                 c.lineWidth=2.25;c.lineCap='round';c.lineJoin='bevel';c.setLineDash([3,2]);
                 c.lineDashOffset=.5;
                 if(fill)c.fill('evenodd');else c.stroke();

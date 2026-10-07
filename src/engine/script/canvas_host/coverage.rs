@@ -1,8 +1,12 @@
 //! Shared bounded native source coverage, independent of paint/clip/opacity.
 
-use resvg::tiny_skia::{FillRule, Mask, Path, Transform};
+#[cfg(test)]
+use resvg::tiny_skia::Mask;
+use resvg::tiny_skia::{FillRule, Path, Transform};
 #[path = "coverage/reduction.rs"]
 mod reduction;
+#[path = "coverage/scratch.rs"]
+mod scratch;
 
 pub(super) struct Region {
     pub width: u32,
@@ -50,7 +54,7 @@ impl Region {
         };
         // Keep upstream's full raster coordinate space. Translating a cropped
         // surface changes curve/edge rounding even at an integer displacement.
-        let mut mask = Mask::new(self.width * scale, self.height * scale)?;
+        let mut mask = scratch::take(self.width * scale, self.height * scale)?;
         mask.fill_path(
             path,
             rule,
@@ -58,15 +62,17 @@ impl Region {
             Transform::from_scale(scale as f32, scale as f32)
                 .pre_translate(-(self.left as f32), -(self.top as f32)),
         );
-        let samples = mask.take();
         if scale == 1 {
-            return Some(samples);
+            // Returning owned samples is cheaper than retaining and copying at
+            // native resolution. Supersampled storage never crosses the bridge.
+            return Some(mask.take());
         }
         let samples = match scale {
-            2 => downsample_crop::<2>(&samples, self.width as usize, &crop),
-            4 => downsample_crop::<4>(&samples, self.width as usize, &crop),
+            2 => downsample_crop::<2>(mask.data(), self.width as usize, &crop),
+            4 => downsample_crop::<4>(mask.data(), self.width as usize, &crop),
             _ => unreachable!("bounded power-of-two raster scale"),
         };
+        scratch::retain(mask);
         if crop.x == 0 && crop.y == 0 && crop.width == self.width && crop.height == self.height {
             return Some(samples);
         }

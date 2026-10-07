@@ -48,7 +48,7 @@
             const features = fontHost('fontFaceFeaturesSerialize', values.featureSettings);
             if (features !== null) values.featureSettings = features;
             let resolveLoaded, rejectLoaded;
-            const loaded = new Promise((resolve, reject) => {
+            const loaded = new FontPromise((resolve, reject) => {
                 resolveLoaded = resolve; rejectLoaded = reject;
             });
             // A rejected face must still expose its rejected loaded promise to consumers.
@@ -76,7 +76,7 @@
             // rejected promises, including an invalid receiver.
             let state;
             try { state = fontState(this); }
-            catch (error) { return Promise.reject(error); }
+            catch (error) { return fontPromiseReject(error); }
             // Buffer-backed faces are already scheduled by construction. load()
             // never advances that task, and every call returns the loaded promise.
             if (!state.bytes && state.status === 'unloaded') beginFontFaceLoad(this);

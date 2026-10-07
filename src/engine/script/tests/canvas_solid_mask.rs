@@ -21,7 +21,9 @@ fn batched_solid_fill_and_stroke_match_scalar_clipped_arithmetic() {
     for(const opacity of [1,.5,.123,0])for(const color of ['red','#123456','rgba(10,220,80,.5)','transparent']){
         for(const c of contexts){
             c.globalAlpha=1;c.fillStyle='rgba(0,0,255,.5)';c.fillRect(0,0,64,64);
-            c.globalAlpha=opacity;c.fillStyle=color;c.strokeStyle=color;
+            let paint=color;
+            if(c===scalar){const g=c.createLinearGradient(0,0,64,0);g.addColorStop(0,color);g.addColorStop(1,color);paint=g;}
+            c.globalAlpha=opacity;c.fillStyle=paint;c.strokeStyle=paint;
             c.lineWidth=3.5;c.lineCap='round';c.lineJoin='bevel';c.setLineDash([5,2,1,2]);
             c.fill(p);c.stroke(p);
         }

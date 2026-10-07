@@ -32,6 +32,8 @@
         }
         const state = stateForCanvas(context.canvas);
         if (!state.pixels) return draw.apply(context, args);
+        if (hasShadow && !hasFilter && state.width*state.height >= 256 &&
+            canvasPaintShadowPath(context,draw,args,state)) return;
         const destination = state.pixels;
         let source = new Uint8ClampedArray(destination.length);
         // Drawing a canvas into itself must read its original bitmap, not the temporary layer.

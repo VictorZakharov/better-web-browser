@@ -11,6 +11,7 @@
     "expectations": "forbidden"
   },
   "support": [
+    "fonts/Ahem.ttf",
     "css/support/computed-testcommon.js",
     "css/css-font-loading/resources/Rochester.otf",
     "css/css-font-loading/resources/GenR102.woff2",
@@ -1315,6 +1316,10 @@
     {"path":"css/css-animations/parsing/animation-name-valid.html","area":"CSS Animations authored values","expected":"pass"},
     {"path":"css/css-animations/parsing/animation-name-invalid.html","area":"CSS Animations authored values","expected":"pass"},
     {"path":"css/css-font-loading/fontfacesetloadevent-constructor.html","area":"CSS Font Loading","expected":"pass"},
+    {"path":"css/css-font-loading/fontface-fonts-loading.html","area":"CSS Font Loading","expected":"pass"},
+    {"path":"css/css-font-loading/fontface-loadingevent.html","area":"CSS Font Loading","expected":"pass"},
+    {"path":"css/css-font-loading/fontfaceset-load-css-connected.html","area":"CSS Font Loading","expected":"pass"},
+    {"path":"css/css-font-loading/fontfaceset-update-after-stylesheet-change.html","area":"CSS Font Loading","expected":"pass"},
     {"path":"css/css-font-loading/fontfaceset-has.html","area":"CSS Font Loading","expected":"pass"},
     {"path":"css/css-font-loading/fontface-invalid-arraybuffer.html","area":"CSS Font Loading","expected":"pass"},
     {"path":"css/css-font-loading/empty-family-load.html","area":"CSS Font Loading","expected":"pass"},

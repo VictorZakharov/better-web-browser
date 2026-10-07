@@ -63,7 +63,7 @@ fn fused_transaction_matches_separate_shadow_then_source_for_all_operators() {
                 .unwrap();
             composite_layer::composite_into(&mut expected, source, operator, clip.as_deref())
                 .unwrap();
-            assert_eq!(render(&args).unwrap(), expected, "{mode}");
+            assert_eq!(render(&args, None).unwrap(), expected, "{mode}");
             assert_eq!(args, original, "host call must not mutate borrowed inputs");
         }
     }
@@ -97,9 +97,9 @@ fn copy_and_destination_in_do_not_flatten_the_shadow_with_source_over() {
     let args = arguments("copy");
     // Copy's final source operation erases the previously drawn shadow where
     // source is transparent. Flattening would wrongly retain shadow alpha.
-    assert_eq!(render(&args).unwrap(), args[2].as_bytes().unwrap());
+    assert_eq!(render(&args, None).unwrap(), args[2].as_bytes().unwrap());
     let args = arguments("destination-in");
-    let result = render(&args).unwrap();
+    let result = render(&args, None).unwrap();
     assert!(
         result
             .chunks_exact(4)
@@ -116,7 +116,7 @@ fn copy_and_destination_in_do_not_flatten_the_shadow_with_source_over() {
 fn transparent_shadow_is_still_an_operator_step_and_closed_clip_is_untouched() {
     let mut args = arguments("destination-in");
     args[10] = JsValue::Bytes(vec![0; 4]);
-    assert_eq!(render(&args).unwrap(), [0; 64]);
+    assert_eq!(render(&args, None).unwrap(), [0; 64]);
     args[4] = JsValue::Bytes(vec![0; 2]);
-    assert_eq!(render(&args).unwrap(), args[1].as_bytes().unwrap());
+    assert_eq!(render(&args, None).unwrap(), args[1].as_bytes().unwrap());
 }

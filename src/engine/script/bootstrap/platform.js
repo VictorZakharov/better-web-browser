@@ -120,7 +120,6 @@
         languages: ['en-CA', 'en'],
         onLine: true,
         cookieEnabled: true,
-        hardwareConcurrency: 1,
         maxTouchPoints: 0,
         requestMediaKeySystemAccess() {
             return Promise.reject(new DOMException(
@@ -130,6 +129,10 @@
         },
         javaEnabled() { return false; }
     };
+    const hardwareConcurrency = host('hardwareConcurrency');
+    Object.defineProperty(windowObject.navigator, 'hardwareConcurrency', {
+        get() { return hardwareConcurrency; }, enumerable: true, configurable: true
+    });
     if (geckoCompatibility) {
         windowObject.navigator.oscpu = 'Windows NT 10.0; Win64; x64';
         windowObject.navigator.taintEnabled = () => false;

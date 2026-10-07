@@ -1121,6 +1121,60 @@ before drawing instead of implementing full tainted-canvas propagation. No
 claim of complete Canvas/CSS Fonts conformance or playable gd-clone follows from
 the added API and pixel tests. See the [contracts and remaining gaps](docs/canvas-owned-compositing.md).
 
+### October 6: font readiness, SVG text and bounded Canvas work
+
+CSS Font Loading now tracks the renderer's actual pending environment: parsing,
+stylesheets, used font requests/decoding and unpublished layout. Canvas-only
+font use participates in loading, while unused faces do not manufacture
+requests. Script font fetching uses the normal CORS/Fetch path with the `font`
+destination and `font-src` policy. Bounded SFNT/table admission rejects unusable
+containers; it is not a complete OpenType sanitizer.
+
+SVG text uses the existing usvg shaping/outline backend and Breeze's font
+catalog, including loaded CSS family aliases. A pinned, licensed usvg patch
+corrects element-owned nested `textLength`; imports are excluded from the
+original-work batch size. Renderer image acknowledgements publish changed SVG
+pixels under stable keys and retire removed or rejected rasters. No synthetic
+SVG geometry API is exposed just to claim support.
+
+Canvas clipping, compact source/shadow storage and immutable coverage reuse
+reduce redundant work while retaining independent dense/scalar pixel oracles.
+V8 foreground tasks are pumped at bounded checkpoints, and hardware concurrency
+reflects the shared worker-admission limit. The two-second script/renderer
+watchdogs and containment budgets are unchanged.
+
+| Measurement | Before (`e349b7e`) | After | Chrome 154 |
+| --- | ---: | ---: | ---: |
+| HTML5test rendered score | 507 / 588 | 507 / 588 | 579 / 588 |
+| Unmodified CSS Font Loading assertions | 12 / 12 | 12 / 12 | Not replayed |
+| Canvas compound clips | 122.9 ms | 27.1 ms | 122.6 ms |
+| Canvas clipped strokes | 52.5 ms | 36.5 ms | 130.5 ms |
+| Canvas clipped fills | 16.5 ms | 6.4 ms | 0.6 ms |
+| Canvas changing shadow paint | 333.7 ms | 142.8 ms | 109.5 ms |
+| Canvas changed shadow kernel | 29.1 ms | 16.7 ms | 4.1 ms |
+
+Canvas rows are three-run medians from rotating-order fresh hidden release runs,
+with readback inside the timed interval. Fixed-size Canvas fixtures do not
+establish general browser speed or universal pixel parity. Breeze's recorded
+before/after samples were unchanged; Chrome remains faster on several workloads.
+The separate tall-stroke fixture had one baseline watchdog timeout in four runs
+and none after; completed-run timings and that failure are both recorded in
+[coverage measurements](docs/canvas-coverage-reuse.md). The score uses one fresh
+sample per browser at 125% scale with ten seconds of settling, not time-to-score
+or matched-viewport visual acceptance. No HTML5test point gain is claimed.
+
+The matched-viewport game replay still shows loading in Breeze, while Chrome
+reaches the lobby. Breeze's single-sample first presentation regressed from
+893.5 ms to 2,780.7 ms, despite lower cumulative JavaScript time; this is not
+accepted game startup. See [the full game result](docs/gd-clone-compatibility.md).
+
+These are incomplete standards slices, not a claim of universal Chromium pixel
+parity or playable gd-clone. SVG bidi/text-path/baseline limitations, composite
+Unicode-range shaping and custom SVG font-feature selection remain open. See
+[font readiness](docs/font-loading-readiness.md),
+[SVG contracts and provenance](docs/svg-text-rendering.md), and
+[Canvas coverage contracts](docs/canvas-coverage-reuse.md).
+
 YouTube remains work in progress: non-DRM video/audio can play, but startup, seeking/recovery,
 video frame cadence, layout fidelity, and memory use are not an accepted browser baseline.
 Passing media fixtures does not establish usable live-site playback. Wikipedia has dedicated

@@ -169,7 +169,11 @@
             catch (error) { reportGlobalException(error, 'microtask'); }
         });
     };
-    globalThis.navigator = { userAgent: host('userAgent'), language: 'en-CA', languages: ['en-CA', 'en'], onLine: true, hardwareConcurrency: 1 };
+    globalThis.navigator = { userAgent: host('userAgent'), language: 'en-CA', languages: ['en-CA', 'en'], onLine: true };
+    const hardwareConcurrency = host('hardwareConcurrency');
+    Object.defineProperty(globalThis.navigator, 'hardwareConcurrency', {
+        get() { return hardwareConcurrency; }, enumerable: true, configurable: true
+    });
     globalThis.location = new URL(host('workerLocation'));
     globalThis.name = host('workerName');
     globalThis.console = Object.fromEntries(['log', 'info', 'warn', 'error', 'debug'].map(level => [level,

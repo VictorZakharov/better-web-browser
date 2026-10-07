@@ -205,6 +205,9 @@ pub(super) fn dispatch_worker_host_call(
         "apiBaseUrl" | "apiOriginUrl" => Ok(js_string(state.source_url.clone())),
         "workerLocation" => Ok(js_string(state.source_url.clone())),
         "workerName" => Ok(js_string(state.name.clone())),
+        "hardwareConcurrency" => Ok(JsValue::from(
+            super::runtime::platform_info::hardware_concurrency() as f64,
+        )),
         "userAgent" => Ok(js_string(
             crate::branding::renderer_user_agent().to_string(),
         )),
@@ -214,16 +217,17 @@ pub(super) fn dispatch_worker_host_call(
             state.console.push(format!("{level}: {message}"));
             Ok(JsValue::undefined())
         }
-        "fetchStart" => {
+        "fetchStart" | "fontFetchStart" => {
             let serialized = argument_string(args, 1)?;
-            let request = super::network::request_from_serialized(&state.source_url, &serialized)?;
+            let mut request =
+                super::network::request_from_serialized(&state.source_url, &serialized)?;
+            if operation == "fontFetchStart" {
+                super::network::font_request::prepare(&mut request)?;
+            }
+            request.policy = state.policy.clone();
             state
                 .policy
-                .check_request(
-                    crate::fetch::RequestDestination::Fetch,
-                    request.url.as_str(),
-                    0,
-                )
+                .check_request(request.destination, request.url.as_str(), 0)
                 .map_err(|error| JsNativeError::typ().with_message(error.to_string()))?;
             let id = state.next_fetch_id;
             state.next_fetch_id = state.next_fetch_id.checked_add(1).ok_or_else(|| {

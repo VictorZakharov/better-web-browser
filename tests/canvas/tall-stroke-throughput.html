@@ -1,0 +1,43 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Readback-fenced tall procedural Canvas strokes</title>
+<canvas id="canvas" width="256" height="640"></canvas>
+<pre id="probe">Measuring independent long diagonal strokes.</pre>
+<script>
+const context=canvas.getContext('2d'),times={},samples={};
+const measure=(name,draw)=>{
+    const start=performance.now();draw();
+    const pixels=context.getImageData(0,0,256,640).data;
+    times[name]=performance.now()-start;
+    // Hash every readback byte, not only a convenient opaque interior pixel.
+    let checksum=2166136261;
+    for(const byte of pixels)checksum=Math.imul(checksum^byte,16777619)>>>0;
+    samples[name]={checksum,points:[[0,0],[128,160],[128,320],[32,600]].map(([x,y])=>
+        Array.from(pixels.slice((y*256+x)*4,(y*256+x)*4+4)))};
+};
+context.fillStyle='#969696';context.fillRect(0,0,256,640);
+measure('coldWeave',()=>{
+    context.strokeStyle='rgba(0,0,0,.25)';context.lineWidth=1;
+    for(let x=-640;x<256;x+=3){
+        context.beginPath();context.moveTo(x,0);context.lineTo(x+640,640);context.stroke();
+    }
+});
+// Restore the same destination while retaining pure coverage cache entries.
+context.fillStyle='#969696';context.fillRect(0,0,256,640);
+measure('warmWeave',()=>{
+    for(let x=-640;x<256;x+=3){
+        context.beginPath();context.moveTo(x,0);context.lineTo(x+640,640);context.stroke();
+    }
+});
+context.fillStyle='#969696';context.fillRect(0,0,256,640);
+measure('changedPen',()=>{
+    context.lineWidth=1.25;context.strokeStyle='rgba(20,70,110,.35)';
+    for(let x=-640;x<256;x+=3){
+        context.beginPath();context.moveTo(x,0);context.lineTo(x+640,640);context.stroke();
+    }
+});
+probe.setAttribute('data-ms',JSON.stringify(times));
+for(const [name,value]of Object.entries(samples))
+    probe.setAttribute('data-'+name.toLowerCase(),JSON.stringify(value));
+probe.textContent=JSON.stringify({times,samples});
+</script>

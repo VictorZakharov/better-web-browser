@@ -73,7 +73,10 @@ if (Test-Path -LiteralPath $destinationPath) {
 
 & git -C $destinationPath sparse-checkout init --no-cone
 if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the sparse WPT checkout.' }
-& git -C $destinationPath sparse-checkout set --no-cone -- $sparsePatterns
+# The curated suite can exceed Windows' command-line length. Paths have already
+# passed the strict ASCII/path validation above; stream one sparse pattern per
+# line instead of passing the complete suite as process arguments.
+$sparsePatterns | & git -C $destinationPath sparse-checkout set --no-cone --stdin
 if ($LASTEXITCODE -ne 0) { throw 'Could not configure the sparse WPT checkout.' }
 & git -C $destinationPath fetch --depth 1 origin $revision
 if ($LASTEXITCODE -ne 0) { throw "Could not fetch pinned WPT revision $revision." }

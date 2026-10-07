@@ -4,14 +4,22 @@ use crate::engine::dom::{Node, NodeRef};
 use crate::limits::MAX_SVG_SOURCE_BYTES;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
+mod admission;
 mod decoder;
 mod expansion;
+mod fonts;
+#[cfg(test)]
+mod publication_tests;
 #[cfg(test)]
 mod reference_tests;
 mod references;
 mod serialize;
 #[cfg(test)]
 mod tests;
+#[cfg(all(test, windows))]
+mod text_length_tests;
+#[cfg(all(test, windows))]
+mod text_tests;
 mod urls;
 
 const MAX_INLINE_SVG_DIAGNOSTICS: usize = 8;
@@ -38,23 +46,30 @@ impl Page {
             .retain(|node, _| active_ids.contains(node));
         self.images
             .retain(|key, _| !key.starts_with("inline-svg:") || active_keys.contains(key));
+        self.image_updates
+            .retain(|key| self.images.contains_key(key));
 
+        let font_input = fonts::Input::new(&self.fonts);
         for svg in svgs {
             let key = inline_svg_key(&svg);
             let styles = self.cached_styles.as_ref().map(|(_, _, styles)| styles);
-            let input = InlineSvgInput::new(&svg, styles);
+            let input = InlineSvgInput::with_font_input(&svg, styles, &font_input);
             let version = input.version;
             let changed = self.inline_svg_versions.get(&svg.id()).copied() != Some(version);
             if !changed {
                 continue;
             }
             self.inline_svg_versions.insert(svg.id(), version);
-            match input.decode() {
-                Ok(image) => {
-                    let _ = self.install_decoded_image(key, image);
+            let result = input
+                .decode()
+                .and_then(|image| self.install_decoded_image(key.clone(), image));
+            match result {
+                Ok(()) => {
+                    self.image_updates.insert(key);
                 }
                 Err(error) => {
                     self.images.remove(&key);
+                    self.image_updates.remove(&key);
                     if self
                         .diagnostics
                         .iter()
@@ -82,10 +97,27 @@ pub(crate) fn inline_svg_key(node: &NodeRef) -> String {
 pub(super) struct InlineSvgInput {
     pub version: u64,
     source: Result<String, String>,
+    fonts: std::sync::Arc<[crate::engine::font::WebFont]>,
 }
 
 impl InlineSvgInput {
     pub fn new(node: &NodeRef, styles: Option<&StyleSet>) -> Self {
+        Self::with_fonts(node, styles, &[])
+    }
+
+    pub fn with_fonts(
+        node: &NodeRef,
+        styles: Option<&StyleSet>,
+        fonts: &[crate::engine::font::WebFont],
+    ) -> Self {
+        Self::with_font_input(node, styles, &fonts::Input::new(fonts))
+    }
+
+    fn with_font_input(
+        node: &NodeRef,
+        styles: Option<&StyleSet>,
+        font_input: &fonts::Input,
+    ) -> Self {
         let mut hash = std::collections::hash_map::DefaultHasher::new();
         // Key the raster by its actual decoder input. DOM mutation generations also
         // advance for animation samples (including compositor opacity/transform)
@@ -95,15 +127,30 @@ impl InlineSvgInput {
         // so real drawing changes still invalidate the cached pixels.
         let source = serialize::source(node, styles);
         source.hash(&mut hash);
+        let has_text = source
+            .as_ref()
+            .is_ok_and(|source| source.contains("<text") || source.contains("<tspan"));
+        let fonts = if has_text {
+            font_input.version().hash(&mut hash);
+            font_input.snapshot()
+        } else {
+            std::sync::Arc::default()
+        };
         Self {
             version: hash.finish(),
             source,
+            fonts,
         }
     }
 
     pub fn decode(self) -> Result<DecodedImage, String> {
         let source = self.source?;
-        decode_svg(source.as_bytes(), "inline SVG")
+        decode_svg_with_fonts(
+            source.as_bytes(),
+            "inline SVG",
+            crate::engine::image_decode::DecodeLimits::PAGE,
+            &self.fonts,
+        )
     }
 }
 
@@ -134,14 +181,25 @@ pub(crate) fn decode_svg_with_limits(
     description: &str,
     limits: crate::engine::image_decode::DecodeLimits,
 ) -> Result<DecodedImage, String> {
+    decode_svg_with_fonts(source, description, limits, &[])
+}
+
+fn decode_svg_with_fonts(
+    source: &[u8],
+    description: &str,
+    limits: crate::engine::image_decode::DecodeLimits,
+    fonts: &[crate::engine::font::WebFont],
+) -> Result<DecodedImage, String> {
     if source.len() > MAX_SVG_SOURCE_BYTES {
         return Err(format!(
             "{description} exceeds the {MAX_SVG_SOURCE_BYTES}-byte limit"
         ));
     }
     let source = decoder::payload(source)?;
-    let options = decoder::options(limits);
-    let tree = resvg::usvg::Tree::from_data(&source, &options)
+    let mut options = decoder::options(limits);
+    self::fonts::configure(&mut options, fonts);
+    let document = admission::document(&source)?;
+    let tree = resvg::usvg::Tree::from_xmltree(&document, &options)
         .map_err(|error| format!("parse {description}: {error}"))?;
     let size = tree.size().to_int_size();
     let width = size.width();

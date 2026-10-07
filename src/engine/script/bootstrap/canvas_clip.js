@@ -11,9 +11,16 @@
         bits[index >> 3] |= 1 << (index & 7);
     };
     const canvasRasterClip = (path, rule, state, previous) => {
+        const [left, top, right, bottom] = canvasPixelBounds(path, state, 0);
+        if(state.width*state.height>=256 && left<=right && top<=bottom) {
+            const native=canvasRasterHost('canvasClipMask',canvasRasterStringify({
+                width:state.width,height:state.height,bounds:[left,top,right,bottom],rule,
+                parts:path.subpaths.map(part=>part.points)
+            }),previous||null);
+            if(native && canvasPixelLength(native)===Math.ceil(state.width*state.height/8))return native;
+        }
         const bits = new Uint8Array(Math.ceil(state.width * state.height / 8));
         const edges = pathEdges(path);
-        const [left, top, right, bottom] = canvasPixelBounds(path, state, 0);
         const work = Math.max(0, right - left) * Math.max(0, bottom - top) * edges.length;
         if (work > 50000000)
             throw new DOMException('Canvas clip exceeds the raster budget', 'NotSupportedError');

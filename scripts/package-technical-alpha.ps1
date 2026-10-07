@@ -99,6 +99,13 @@ license: $($package.license)
 source: $repository
 "@
         $sourceDirectory = Split-Path -Parent $package.manifest_path
+        if ([string] $package.name -eq 'usvg') {
+            $patchNotice = Join-Path $sourceDirectory 'BREEZE_PATCHES.md'
+            if (-not (Test-Path -LiteralPath $patchNotice -PathType Leaf)) {
+                throw 'Pinned usvg patch/provenance notice is missing.'
+            }
+            Copy-ReleaseText $patchNotice (Join-Path $destination 'BREEZE_PATCHES.md')
+        }
         Copy-NativeGraphicsNotices -PackageName $package.name -SourceDirectory $sourceDirectory `
             -Destination $destination -RepositoryRoot $repoRoot
         if ([string] $package.name -eq 'opusic-sys') {

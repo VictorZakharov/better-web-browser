@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn child_canvas_update_survives_discarded_paint_snapshot_until_emitted() {
+fn child_image_update_survives_discarded_paint_snapshot_until_emitted() {
     let (_dom, mut runtime) = start(
         r#"<body><script>
             const frame = document.createElement('iframe');
@@ -22,17 +22,17 @@ fn child_canvas_update_survives_discarded_paint_snapshot_until_emitted() {
         .find(|key| key.starts_with("breeze-internal:canvas:"))
         .expect("child Canvas bitmap")
         .clone();
-    assert!(frame.canvas_updates.contains(&key));
+    assert!(frame.image_updates.contains(&key));
     assert_eq!(&*frame.images[&key].bgra, &[0, 0, 0, 0, 255, 0, 0, 255]);
 
     // A snapshot can be discarded when its iframe has no paint box. A later
     // snapshot must still carry the pending replacement for an already-sent key.
     let later = runtime.frame_paint_snapshots();
-    assert!(later[0].canvas_updates.contains(&key));
-    runtime.acknowledge_frame_canvas_updates(&[(frame.document, key.clone())]);
+    assert!(later[0].image_updates.contains(&key));
+    runtime.acknowledge_frame_image_updates(&[(frame.document, key.clone())]);
     assert!(
         !runtime.frame_paint_snapshots()[0]
-            .canvas_updates
+            .image_updates
             .contains(&key)
     );
 }

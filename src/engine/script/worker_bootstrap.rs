@@ -97,6 +97,7 @@ pub(super) const WORKER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/canvas_offscreen.js"),
     include_str!("bootstrap/canvas_shadow.js"),
     include_str!("bootstrap/canvas_filter.js"),
+    include_str!("bootstrap/canvas_shadow_path.js"),
     include_str!("bootstrap/canvas_composite_surface.js"),
     include_str!("bootstrap/canvas_draw_path_arguments.js"),
     include_str!("bootstrap/canvas_text.js"),

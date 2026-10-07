@@ -12,6 +12,7 @@ pub(super) fn initialize(context: &mut Context) -> Result<(), String> {
         .map_err(|error| format!("capture private module completion hook: {error}"))?;
     for name in [
         "__parserDomChanged",
+        "__fontEnvironmentChanged",
         "__constructParserElement",
         "__resumeDocumentStream",
         "__setCurrentScript",

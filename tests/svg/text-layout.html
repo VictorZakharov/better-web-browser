@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SVG text layout reference</title>
+<style>body { margin: 0; background: white; } svg { display: block; }</style>
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="100">
+  <g transform="translate(10 10)">
+    <text id="spanned" x="180" y="55" text-anchor="end" font-family="Arial" font-size="40"
+          textLength="120" lengthAdjust="spacingAndGlyphs"><tspan fill="blue">SVG</tspan></text>
+  </g>
+</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="100">
+  <g transform="translate(10 10)">
+    <text id="direct" x="180" y="55" text-anchor="end" font-family="Arial" font-size="40"
+          fill="blue" textLength="120" lengthAdjust="spacingAndGlyphs">SVG</text>
+  </g>
+</svg>
+<pre id="samples"></pre>
+<script>
+  var result = {};
+  ['spanned', 'direct'].forEach(function (id) {
+    var element = document.getElementById(id);
+    if (typeof element.getBBox !== 'function') {
+      result[id] = { bbox: 'unimplemented' };
+      return;
+    }
+    var box = element.getBBox();
+    result[id] = { x: box.x, y: box.y, width: box.width, height: box.height };
+  });
+  document.getElementById('samples').textContent = JSON.stringify(result);
+</script>

@@ -10,6 +10,7 @@ mod clipboard;
 mod document_lifecycle;
 mod dynamic_modules;
 mod dynamic_readiness;
+mod font_environment;
 mod frame_navigation;
 mod frames;
 mod geolocation;

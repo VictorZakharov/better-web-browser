@@ -105,5 +105,6 @@ impl HostState {
             .record_elapsed("layoutFlush::pseudos", metrics.pseudos);
         self.layout_geometry_version = version;
         self.layout_geometry_initialized = true;
+        self.acknowledge_font_layout();
     }
 }

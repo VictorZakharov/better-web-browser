@@ -61,7 +61,7 @@ fn candidate(url: String, width: u32, height: u32) -> ImageDelta {
                 bgra: vec![0; width as usize * height as usize * 4].into(),
             },
         },
-        canvas_update: false,
+        image_update: false,
         frame: None,
         already_sent: false,
     }

@@ -70,10 +70,14 @@ pub(super) fn stroke_mask(args: &[JsValue]) -> JsValue {
 }
 
 pub(super) fn mask_from_source(source: &str) -> Option<Vec<u8>> {
+    coverage_from_source(source).map(std::sync::Arc::unwrap_or_clone)
+}
+
+pub(super) fn coverage_from_source(source: &str) -> Option<std::sync::Arc<Vec<u8>>> {
     if source.len() > MAX_REQUEST_BYTES {
         return None;
     }
-    super::mask_cache::rasterize(super::mask_cache::Kind::Stroke, source, || {
+    super::mask_cache::rasterize_shared(super::mask_cache::Kind::Stroke, source, || {
         serde_json::from_str::<Request>(source)
             .ok()
             .and_then(rasterize)

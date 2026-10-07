@@ -17,11 +17,15 @@ impl ScriptRuntime {
             .take(crate::limits::MAX_WEB_FONTS)
             .cloned()
             .collect();
-        host.loaded_css_font_urls = fonts
+        let loaded_css_font_urls = fonts
             .iter()
             .filter(|font| font.script_source_id.is_none())
             .map(|font| font.source_url.clone())
             .collect();
+        if host.loaded_css_font_urls != loaded_css_font_urls {
+            host.loaded_css_font_urls = loaded_css_font_urls;
+            host.invalidate_font_layout();
+        }
     }
 }
 

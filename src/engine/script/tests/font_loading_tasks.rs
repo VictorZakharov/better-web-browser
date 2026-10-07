@@ -60,6 +60,17 @@ fn font_completion_is_not_a_microtask_and_ready_precedes_the_done_event() {
         let turn = runtime.advance_time(Duration::ZERO, 1);
         assert!(turn.errors.is_empty(), "{:?}", turn.errors);
     }
+    assert_eq!(
+        log(&dom),
+        format!("{INITIAL}|loading:loading:true|loaded:loaded"),
+        "font bytes may settle before the document environment, but ready must wait"
+    );
+    let finish = runtime.finish_document_lifecycle();
+    assert!(finish.errors.is_empty(), "{:?}", finish.errors);
+    for _ in 0..8 {
+        let turn = runtime.advance_time(Duration::ZERO, 1);
+        assert!(turn.errors.is_empty(), "{:?}", turn.errors);
+    }
     assert_eq!(log(&dom), FINISHED);
 }
 

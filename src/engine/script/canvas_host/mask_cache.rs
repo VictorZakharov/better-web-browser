@@ -4,6 +4,7 @@
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 const MAX_ENTRIES: usize = 32;
 const MAX_BYTES: usize = 8 * 1024 * 1024;
@@ -24,7 +25,7 @@ pub(super) enum Kind {
 struct Entry {
     kind: Kind,
     request: String,
-    mask: Vec<u8>,
+    mask: Arc<Vec<u8>>,
 }
 
 impl Entry {
@@ -40,20 +41,20 @@ struct Cache {
 }
 
 impl Cache {
-    fn get(&mut self, kind: Kind, request: &str) -> Option<Vec<u8>> {
+    fn get_shared(&mut self, kind: Kind, request: &str) -> Option<Arc<Vec<u8>>> {
         let index = self
             .entries
             .iter()
             .position(|entry| entry.kind == kind && entry.request == request)?;
         let entry = self.entries.remove(index)?;
-        // Each host call transfers its own bytes to JavaScript. A caller cannot
-        // mutate the cached coverage through a previous returned typed array.
-        let mask = entry.mask.clone();
+        // Native fused painters only read coverage. Sharing the immutable
+        // allocation avoids a second full-mask copy on hits and insertions.
+        let mask = Arc::clone(&entry.mask);
         self.entries.push_back(entry);
         Some(mask)
     }
 
-    fn insert(&mut self, kind: Kind, request: &str, mask: &[u8]) {
+    fn insert_shared(&mut self, kind: Kind, request: &str, mask: Arc<Vec<u8>>) {
         if request.len() > MAX_KEY_BYTES || mask.len() > MAX_MASK_BYTES {
             return;
         }
@@ -75,32 +76,91 @@ impl Cache {
         self.entries.push_back(Entry {
             kind,
             request: request.to_owned(),
-            mask: mask.to_vec(),
+            mask,
         });
         self.bytes += needed;
     }
+
+    #[cfg(test)]
+    fn get(&mut self, kind: Kind, request: &str) -> Option<Vec<u8>> {
+        self.get_shared(kind, request).map(Arc::unwrap_or_clone)
+    }
+
+    #[cfg(test)]
+    fn insert(&mut self, kind: Kind, request: &str, mask: &[u8]) {
+        self.insert_shared(kind, request, Arc::new(mask.to_vec()));
+    }
 }
 
-pub(super) fn rasterize(
+#[cfg(test)]
+fn rasterize(
     kind: Kind,
     request: &str,
     render: impl FnOnce() -> Option<Vec<u8>>,
 ) -> Option<Vec<u8>> {
+    // JavaScript receives owned bytes, never an alias of cached storage.
+    rasterize_shared(kind, request, render).map(Arc::unwrap_or_clone)
+}
+
+pub(super) fn rasterize_shared(
+    kind: Kind,
+    request: &str,
+    render: impl FnOnce() -> Option<Vec<u8>>,
+) -> Option<Arc<Vec<u8>>> {
     if request.len() <= MAX_KEY_BYTES
-        && let Some(mask) = MASKS.with(|cache| cache.borrow_mut().get(kind, request))
+        && let Some(mask) = MASKS.with(|cache| cache.borrow_mut().get_shared(kind, request))
     {
         return Some(mask);
     }
     // Do not hold a RefCell borrow across rasterization. Unsupported/invalid
     // requests are never cached: their normal validation and fallback remain.
-    let mask = render()?;
-    MASKS.with(|cache| cache.borrow_mut().insert(kind, request, &mask));
+    let mask = Arc::new(render()?);
+    MASKS.with(|cache| {
+        cache
+            .borrow_mut()
+            .insert_shared(kind, request, Arc::clone(&mask))
+    });
     Some(mask)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_consumers_share_storage_without_aliasing_owned_js_results() {
+        let key = "shared coverage ownership regression";
+        let first = rasterize_shared(Kind::Stroke, key, || Some(vec![0, 127, 255])).unwrap();
+        let second = rasterize_shared(Kind::Stroke, key, || panic!("cache hit")).unwrap();
+        assert!(Arc::ptr_eq(&first, &second));
+        let mut owned = rasterize(Kind::Stroke, key, || panic!("cache hit")).unwrap();
+        owned.fill(99);
+        assert_eq!(first.as_slice(), &[0, 127, 255]);
+        assert_eq!(second.as_slice(), &[0, 127, 255]);
+        let mut detached = second;
+        Arc::make_mut(&mut detached).fill(17);
+        assert_eq!(first.as_slice(), &[0, 127, 255]);
+        let third = rasterize_shared(Kind::Stroke, key, || panic!("cache hit")).unwrap();
+        assert!(Arc::ptr_eq(&first, &third));
+    }
+
+    #[test]
+    fn cache_ownership_does_not_extend_accounted_storage_after_eviction() {
+        let mut cache = Cache::default();
+        let retained = Arc::new(vec![128; MAX_MASK_BYTES]);
+        cache.insert_shared(Kind::Fill, "retained", Arc::clone(&retained));
+        assert_eq!(Arc::strong_count(&retained), 2);
+        for index in 0..MAX_ENTRIES {
+            cache.insert_shared(
+                Kind::Fill,
+                &index.to_string(),
+                Arc::new(vec![255; MAX_MASK_BYTES]),
+            );
+        }
+        assert_eq!(Arc::strong_count(&retained), 1);
+        assert!(cache.bytes <= MAX_BYTES);
+        assert_eq!(retained.len(), MAX_MASK_BYTES);
+    }
 
     #[test]
     fn exact_request_and_operation_are_both_required() {

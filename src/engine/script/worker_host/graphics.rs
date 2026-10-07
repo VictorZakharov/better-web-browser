@@ -9,6 +9,12 @@ pub(super) fn dispatch(
     args: &[JsValue],
     state: &mut WorkerHostState,
 ) -> JsResult<Option<JsValue>> {
+    if operation == "fontFaceEnvironmentPending" {
+        return Ok(Some(JsValue::Boolean(false)));
+    }
+    if operation == "fontFaceEnvironmentObserve" {
+        return Ok(Some(JsValue::Null));
+    }
     if operation == "fontFaceCSSFaces" {
         // Workers have FontFaceSource, but no CSS-connected faces or document.
         return Ok(Some(js_string("[]".into())));

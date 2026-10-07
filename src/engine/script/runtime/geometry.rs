@@ -63,6 +63,7 @@ impl ScriptRuntime {
         host.pending_layout_invalidation
             .acknowledge_published_geometry();
         host.layout_geometry_initialized = true;
+        host.acknowledge_font_layout();
     }
 
     pub(crate) fn set_layout_flush_callback(&mut self, callback: LayoutFlushCallback) {

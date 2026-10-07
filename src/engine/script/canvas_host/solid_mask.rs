@@ -32,7 +32,26 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
         };
         *output = value;
     }
-    composite_region(mask, destination, color, opacity).map_or(JsValue::Null, JsValue::Bytes)
+    let clip = match args.get(5) {
+        None | Some(JsValue::Null) => None,
+        Some(_) => {
+            let Some(width) = args.get(10).and_then(super::source_layer::dimension) else {
+                return JsValue::Null;
+            };
+            let Some(height) = args.get(11).and_then(super::source_layer::dimension) else {
+                return JsValue::Null;
+            };
+            if width as usize * height as usize != destination.len() / 4 {
+                return JsValue::Null;
+            }
+            let Some(clip) = super::raster_clip::Clip::from_args(args, 5, [width, height]) else {
+                return JsValue::Null;
+            };
+            clip
+        }
+    };
+    composite_clipped_region(mask, destination, color, opacity, clip.as_ref())
+        .map_or(JsValue::Null, JsValue::Bytes)
 }
 
 #[cfg(test)]
@@ -40,11 +59,22 @@ fn composite(mask: &[u8], destination: &[u8], color: [f64; 4], opacity: f64) -> 
     composite_region(Some(mask), destination, color, opacity)
 }
 
+#[cfg(test)]
 pub(super) fn composite_region(
     mask: Option<&[u8]>,
     destination: &[u8],
     color: [f64; 4],
     opacity: f64,
+) -> Option<Vec<u8>> {
+    composite_clipped_region(mask, destination, color, opacity, None)
+}
+
+pub(super) fn composite_clipped_region(
+    mask: Option<&[u8]>,
+    destination: &[u8],
+    color: [f64; 4],
+    opacity: f64,
+    clip: Option<&super::raster_clip::Clip<'_>>,
 ) -> Option<Vec<u8>> {
     let pixels = destination.len() / 4;
     if pixels == 0
@@ -64,7 +94,7 @@ pub(super) fn composite_region(
         // An aligned integer rectangle has complete coverage. Do not allocate
         // a redundant all-255 mask just to move its paint off the JS pixel loop.
         let coverage = mask.map_or(255, |mask| mask[index]);
-        if coverage == 0 {
+        if coverage == 0 || clip.is_some_and(|clip| !clip.allows(index)) {
             continue;
         }
         source_over(pixel, color, opacity * (f64::from(coverage) / 255.0));
@@ -74,6 +104,16 @@ pub(super) fn composite_region(
 
 pub(super) fn source_over(pixel: &mut [u8], color: [f64; 4], opacity: f64) {
     let source_alpha = color[3] / 255.0 * opacity;
+    if source_alpha == 1.0 {
+        // Fully covered opaque source-over replaces the backdrop. Keep the
+        // same round() conversion as the scalar equation (including fractional
+        // channels), without its redundant destination load/divisions.
+        for channel in 0..3 {
+            pixel[channel] = color[channel].round() as u8;
+        }
+        pixel[3] = 255;
+        return;
+    }
     let backdrop_weight = f64::from(pixel[3]) / 255.0 * (1.0 - source_alpha);
     let output_alpha = source_alpha + backdrop_weight;
     if output_alpha == 0.0 {
@@ -90,8 +130,35 @@ pub(super) fn source_over(pixel: &mut [u8], color: [f64; 4], opacity: f64) {
 }
 
 #[cfg(test)]
+#[path = "solid_mask/sparse_tests.rs"]
+mod sparse_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opaque_replacement_matches_the_original_equation_for_every_backdrop_alpha() {
+        for backdrop_alpha in 0..=255 {
+            for channel in [0.0, 0.49, 0.5, 1.5, 63.5, 127.5, 254.5, 255.0] {
+                let color = [channel, 255.0 - channel, channel / 2.0, 255.0];
+                let mut actual = [19, 91, 213, backdrop_alpha];
+                source_over(&mut actual, color, 1.0);
+                let source_alpha = color[3] / 255.0;
+                let backdrop_weight = f64::from(backdrop_alpha) / 255.0 * (1.0 - source_alpha);
+                let output_alpha = source_alpha + backdrop_weight;
+                let mut expected = [19, 91, 213, backdrop_alpha];
+                for index in 0..3 {
+                    expected[index] = ((source_alpha * color[index]
+                        + backdrop_weight * f64::from(expected[index]))
+                        / output_alpha)
+                        .round() as u8;
+                }
+                expected[3] = (output_alpha * 255.0).round() as u8;
+                assert_eq!(actual, expected);
+            }
+        }
+    }
 
     #[test]
     fn complete_rectangles_equal_full_coverage_masks_without_allocating_one() {

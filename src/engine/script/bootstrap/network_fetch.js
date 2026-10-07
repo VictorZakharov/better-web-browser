@@ -3,6 +3,8 @@
     const urlApi = globalThis.__urlInternals;
     const host = (...args) => __hostCall(...args);
     const NativeRequest = Request;
+    const FetchPromise = Promise;
+    const serializeRequest = Function.call.bind(NativeRequest.prototype.__serialize);
     const responseFromNetwork = Response.__fromNetwork.bind(Response);
     const pending = new Map();
     const concatenate = chunks => {
@@ -22,16 +24,16 @@
         }
     };
 
-    globalThis.fetch = function fetch(input, init = undefined) {
+    const startFetch = (input, init, operationName) => {
         let request;
         try {
             request = new NativeRequest(input, init);
             request.signal.throwIfAborted();
         } catch (error) {
-            return Promise.reject(error);
+            return FetchPromise.reject(error);
         }
 
-        return new Promise((resolve, reject) => {
+        return new FetchPromise((resolve, reject) => {
             const operation = {
                 id: null, request, resolve, reject, responseStarted: false,
                 completed: false, controller: null, received: 0, consumed: 0
@@ -48,10 +50,10 @@
                 else reject(request.signal.reason);
             };
             request.signal.addEventListener('abort', operation.abort, { once: true });
-            request.__serialize().then(serialized => {
+            serializeRequest(request).then(serialized => {
                 if (operation.completed) return;
                 try {
-                    operation.id = Number(host('fetchStart', JSON.stringify(serialized)));
+                    operation.id = Number(host(operationName, JSON.stringify(serialized)));
                     pending.set(operation.id, operation);
                 } catch (error) {
                     operation.completed = true;
@@ -66,6 +68,14 @@
             });
         });
     };
+    globalThis.fetch = function fetch(input, init = undefined) {
+        return startFetch(input, init, 'fetchStart');
+    };
+    // Private font fetches share normal stream/cancellation/error processing,
+    // but their destination selects font-src rather than connect-src. Consume
+    // this handoff during bootstrap; author fetch options cannot select it.
+    globalThis.__fontFaceFetch = url => startFetch(url,
+        {mode:'cors',credentials:'same-origin'}, 'fontFetchStart');
 
     const finish = operation => {
         operation.completed = true;

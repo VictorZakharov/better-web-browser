@@ -75,6 +75,7 @@ pub(super) fn options(limits: DecodeLimits) -> resvg::usvg::Options<'static> {
                         .ok()?;
                     let _depth = DepthGuard(&budget.depth);
                     let source = payload(&data).ok()?;
+                    super::admission::document(&source).ok()?;
                     if source.iter().filter(|&&byte| byte == b'<').count()
                         > crate::limits::MAX_DOM_NODES
                     {

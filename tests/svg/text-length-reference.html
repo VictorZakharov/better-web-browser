@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SVG nested textLength and font publication reference</title>
+<style>
+  @font-face { font-family: LengthFixture; src: url(../canvas/fonts/ahem.ttf); }
+  body { margin: 0; background: white; }
+  svg { display: block; font-family: LengthFixture; font-size: 20px; }
+  #probe { position: absolute; left: 260px; top: 0; font: 14px Arial; }
+</style>
+<svg width="240" height="70">
+  <text x="10" y="40" textLength="120" lengthAdjust="spacingAndGlyphs"><tspan fill="red">X</tspan><tspan fill="blue">YZ</tspan></text>
+</svg>
+<svg width="240" height="70">
+  <text x="10" y="40" textLength="120"><tspan fill="red">X</tspan><tspan fill="blue">YZ</tspan></text>
+</svg>
+<svg width="240" height="70">
+  <text x="10" y="40" textLength="140">X<tspan textLength="80" lengthAdjust="spacingAndGlyphs" fill="blue">YZ</tspan>W</text>
+</svg>
+<svg width="240" height="70">
+  <text x="10" y="40" textLength="120" lengthAdjust="spacingAndGlyphs"><tspan><tspan>X</tspan>Y<tspan>Z</tspan></tspan></text>
+</svg>
+<svg width="240" height="70">
+  <text x="130" y="40" text-anchor="end" textLength="120" lengthAdjust="spacingAndGlyphs"><tspan>X</tspan><tspan>YZ</tspan></text>
+</svg>
+<svg width="240" height="70">
+  <text x="70" y="40" text-anchor="middle" textLength="120" lengthAdjust="spacingAndGlyphs"><tspan>X</tspan><tspan>YZ</tspan></text>
+</svg>
+<svg width="240" height="70">
+  <text x="10" y="40" textLength="0" lengthAdjust="spacingAndGlyphs"><tspan>XYZ</tspan></text>
+</svg>
+<svg width="240" height="70">
+  <text x="10" y="40" textLength="160" lengthAdjust="spacingAndGlyphs">X<tspan textLength="80" lengthAdjust="spacingAndGlyphs" fill="blue">YZ</tspan>W</text>
+</svg>
+<output id="probe" data-ready="false">waiting for the real font</output>
+<script>
+  document.fonts.load('20px LengthFixture', 'XYZW').then(function () {
+    return document.fonts.ready;
+  }).then(function () {
+    var context = document.createElement('canvas').getContext('2d');
+    context.font = '20px LengthFixture';
+    probe.setAttribute('data-width', context.measureText('XYZW').width);
+    probe.setAttribute('data-status', document.fonts.status);
+    probe.setAttribute('data-ready', 'true');
+    probe.textContent = 'font loaded; compare the eight SVG rows';
+  }).catch(function (error) {
+    probe.textContent = error.name + ': ' + error.message;
+  });
+</script>

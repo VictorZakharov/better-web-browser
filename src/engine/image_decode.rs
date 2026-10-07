@@ -111,12 +111,19 @@ impl RasterImage {
     }
 
     pub fn into_premultiplied_bgra(mut self) -> crate::engine::page::DecodedImage {
-        for pixel in self.rgba.chunks_exact_mut(4) {
-            let alpha = u16::from(pixel[3]);
-            for channel in &mut pixel[..3] {
-                *channel = ((u16::from(*channel) * alpha + 127) / 255) as u8;
-            }
-            pixel.swap(0, 2);
+        for pixel in self.rgba.as_chunks_mut::<4>().0 {
+            let [red, green, blue, alpha] = *pixel;
+            // Most large Canvas snapshots are transparent or opaque. Preserve
+            // the exact scalar equation without three divisions in those cases.
+            *pixel = match alpha {
+                0 => [0; 4],
+                255 => [blue, green, red, 255],
+                alpha => {
+                    let multiply =
+                        |channel: u8| ((u16::from(channel) * u16::from(alpha) + 127) / 255) as u8;
+                    [multiply(blue), multiply(green), multiply(red), alpha]
+                }
+            };
         }
         crate::engine::page::DecodedImage {
             width: self.width,

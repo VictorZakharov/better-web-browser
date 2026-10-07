@@ -1,0 +1,41 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Readback-fenced shadowed Canvas paths</title>
+<canvas id="canvas" width="1024" height="1024"></canvas>
+<pre id="probe">Measuring repeated Gaussian shadows with live paint changes.</pre>
+<script>
+const context=canvas.getContext('2d'),times={},samples={};
+const ring=new Path2D();ring.arc(512,512,280,0,2*Math.PI);
+context.lineWidth=7.25;
+context.shadowBlur=11.377;
+const measure=(name,draw)=>{
+    const start=performance.now();draw();
+    const pixels=context.getImageData(0,0,1024,1024).data;
+    times[name]=performance.now()-start;
+    if(pixels.length!==1024*1024*4)throw Error('incomplete readback');
+    samples[name]=[[512,232],[512,226],[800,512],[10,10]].map(([x,y])=>
+        Array.from(pixels.slice((y*1024+x)*4,(y*1024+x)*4+4)));
+};
+measure('coldShadow',()=>{
+    context.strokeStyle='#ffffff';context.shadowColor='rgba(80,120,240,.5)';
+    context.stroke(ring);
+});
+measure('livePaintShadows',()=>{
+    for(let index=0;index<12;index++){
+        context.clearRect(0,0,1024,1024);
+        context.globalAlpha=index%2?.5:1;
+        context.strokeStyle=index%2?'#ff4050':'#30c0ff';
+        context.shadowColor=index%2?'rgba(20,60,240,.5)':'rgba(240,180,20,.75)';
+        context.shadowOffsetX=index%3-.5;context.shadowOffsetY=index%4-.25;
+        context.stroke(ring);
+    }
+});
+measure('changedKernel',()=>{
+    context.clearRect(0,0,1024,1024);context.shadowBlur=13.75;
+    context.stroke(ring);
+});
+probe.setAttribute('data-ms',JSON.stringify(times));
+for(const [name,value]of Object.entries(samples))
+    probe.setAttribute('data-'+name.toLowerCase(),JSON.stringify(value));
+probe.textContent=JSON.stringify({times,samples});
+</script>

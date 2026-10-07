@@ -3,6 +3,7 @@ use crate::engine::DecodedImage;
 use crate::engine::dom::{Dom, NodeId, NodeRef};
 use crate::limits::{MAX_PAGE_DECODED_IMAGE_BYTES, MAX_PRESENTED_IMAGES};
 use std::collections::HashMap;
+mod publication;
 
 const MEDIA_FRAME_KEY_PREFIX: &str = "breeze-internal:media-frame:";
 pub(crate) const MEDIA_VIDEO_PLACEHOLDER: &str = "breeze-internal:media-placeholder";

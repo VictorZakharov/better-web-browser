@@ -62,6 +62,19 @@ fn stylesheet_font_opaque_response_is_never_installed_and_advances_to_clean_cand
 }
 
 #[test]
+fn sfnt_signature_without_glyph_tables_advances_to_the_real_fallback_font() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut driver = styled_driver("url(/header.ttf),url(/usable.ttf)");
+    driver.until_request("header.ttf");
+    driver.respond_bytes("header.ttf", &[0, 1, 0, 0], "font/ttf", 200);
+    driver.until_request("usable.ttf");
+    driver.respond_bytes("usable.ttf", AHEM, "font/ttf", 200);
+    driver.until_text("loaded:80");
+    assert_eq!(driver.requests.len(), 2);
+    driver.session.shutdown().unwrap();
+}
+
+#[test]
 fn unsupported_font_source_hints_are_not_downloaded_and_success_stops_before_later_candidates() {
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
     let mut driver = styled_driver(
