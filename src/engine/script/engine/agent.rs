@@ -1,6 +1,6 @@
 //! Related document realms share one isolate and one execution deadline.
 use super::value::JsResult;
-use super::watchdog::ExecutionWatchdog;
+use super::watchdog::{ExecutionWatchdog, ScriptCancellation};
 
 pub(super) struct Agent {
     // Stop cross-thread termination before releasing V8.
@@ -12,8 +12,17 @@ pub(super) struct Agent {
 }
 
 impl Agent {
+    #[cfg(test)]
     pub(super) fn new(isolate: v8::OwnedIsolate) -> JsResult<Self> {
-        let watchdog = ExecutionWatchdog::new(isolate.thread_safe_handle())?;
+        Self::with_cancellation(isolate, ScriptCancellation::default())
+    }
+
+    pub(super) fn with_cancellation(
+        isolate: v8::OwnedIsolate,
+        cancellation: ScriptCancellation,
+    ) -> JsResult<Self> {
+        let watchdog =
+            ExecutionWatchdog::with_cancellation(isolate.thread_safe_handle(), cancellation)?;
         // New isolates are entered. Each subsequent task uses the watchdog's entry guard.
         unsafe { isolate.exit() };
         Ok(Self {
@@ -23,6 +32,10 @@ impl Agent {
             task_profile: Default::default(),
             cpu_samples: Default::default(),
         })
+    }
+
+    pub(super) fn cancellation(&self) -> ScriptCancellation {
+        self.watchdog.cancellation()
     }
 
     pub(super) fn set_gc_profiling(&mut self, enabled: bool) {
@@ -67,7 +80,7 @@ impl Agent {
                 // Ok even when V8 was terminated and cleared its termination bit.
                 // Read the watchdog's authoritative flag before exiting the isolate;
                 // the watchdog still owns the public error and unchanged deadline.
-                cpu_samples.finish(recording, result.is_err() || termination.timed_out());
+                cpu_samples.finish(recording, result.is_err() || termination.interrupted());
                 result
             });
         self.task_profile
@@ -89,6 +102,63 @@ mod tests {
     use super::*;
 
     #[test]
+    fn native_unwinding_disarms_watchdog_before_later_work() {
+        super::super::runtime::initialize_v8();
+        let isolate = v8::Isolate::new(v8::CreateParams::default());
+        let mut agent = Agent::new(isolate).unwrap();
+        let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _: JsResult<()> = agent.run(|_| panic!("test native binding failure"));
+        }));
+        assert!(failed.is_err());
+        assert!(!agent.cancellation().is_cancelled());
+        assert_eq!(agent.run(|_| Ok(42)).unwrap(), 42);
+    }
+
+    #[test]
+    fn external_cancellation_interrupts_running_javascript_and_retires_agent() {
+        let control = ScriptCancellation::default();
+        let remote = control.clone();
+        let (ready, waiting) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            super::super::runtime::initialize_v8();
+            let isolate = v8::Isolate::new(v8::CreateParams::default());
+            let mut agent = Agent::with_cancellation(isolate, control).unwrap();
+            let result = agent.run(|isolate| {
+                v8::scope!(let scope, isolate);
+                let context = v8::Context::new(scope, Default::default());
+                let scope = &mut v8::ContextScope::new(scope, context);
+                let source =
+                    v8::String::new(scope, "try { while(true) {} } catch (_) { 42 }").unwrap();
+                let script = v8::Script::compile(scope, source, None).unwrap();
+                ready.send(()).unwrap();
+                assert!(
+                    script.run(scope).is_none(),
+                    "author code caught host cancellation"
+                );
+                Ok(())
+            });
+            assert!(result.unwrap_err().message.contains("cancelled"));
+            let mut executed = false;
+            assert!(
+                agent
+                    .run(|_| {
+                        executed = true;
+                        Ok(())
+                    })
+                    .is_err()
+            );
+            assert!(!executed);
+        });
+        waiting
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+        let start = std::time::Instant::now();
+        remote.cancel();
+        thread.join().unwrap();
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    #[test]
     fn terminated_microtask_records_samples_even_when_checkpoint_returns_ok() {
         super::super::runtime::initialize_v8();
         let mut isolate = v8::Isolate::new(v8::CreateParams::default());
@@ -106,7 +176,7 @@ mod tests {
             scope.perform_microtask_checkpoint();
             Ok(())
         });
-        assert!(result.unwrap_err().message.contains("2000 ms"));
+        assert!(result.unwrap_err().message.contains("10000 ms"));
         let rows = agent.take_cpu_diagnostics();
         assert!(rows.iter().any(|row| row.starts_with("engine CPU samples")));
         assert!(rows.iter().any(|row| row.starts_with("engine CPU source")));

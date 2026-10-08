@@ -10,11 +10,20 @@ pub(crate) enum PixelReply {
 }
 
 impl BackendContexts {
-    pub(super) fn read_pixels(
+    pub(super) fn read_pixels_owned(
         &mut self,
         id: u32,
         command: &str,
-        input: Option<&[u8]>,
+        input: Option<Vec<u8>>,
+    ) -> PixelReply {
+        self.read_pixels_data(id, command, input.map(std::borrow::Cow::Owned))
+    }
+
+    fn read_pixels_data(
+        &mut self,
+        id: u32,
+        command: &str,
+        input: Option<std::borrow::Cow<'_, [u8]>>,
     ) -> PixelReply {
         let other_bytes: usize = self
             .contexts
@@ -27,7 +36,11 @@ impl BackendContexts {
         };
         context.resource_limit = super::MAX_RESOURCE_BYTES
             .min(super::MAX_PROCESS_RESOURCE_BYTES.saturating_sub(other_bytes));
-        if command.len() > 1024 || input.is_some_and(|bytes| bytes.len() > MAX_UPLOAD_BYTES) {
+        if command.len() > 1024
+            || input
+                .as_ref()
+                .is_some_and(|bytes| bytes.len() > MAX_UPLOAD_BYTES)
+        {
             context.error(gl::OUT_OF_MEMORY);
             return PixelReply::Error;
         }
@@ -49,7 +62,7 @@ impl BackendContexts {
         let result = if command.op == "getBufferSubData" {
             context.read_buffer(&command)
         } else {
-            context.read_pixels(&command, input)
+            context.read_pixels_data(&command, input)
         };
         match result {
             Ok(bytes) => PixelReply::Bytes(bytes),

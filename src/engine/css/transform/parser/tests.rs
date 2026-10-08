@@ -28,12 +28,23 @@ fn invalid_coordinate_invalidates_the_entire_declaration() {
         "translate(,10px)",
         "translate(10px, calc(1s))",
         "translateX(10px, 20px)",
-        "translate(10px",
+        "translate(10px junk",
         "matrix(1, 0, 0, 1, 10%, 0)",
         "matrix(1, 0.000001, 0, 1, 0, 0)",
         "matrix(1,0,0,1,calc(10px),0)",
         "rotate(0deg)",
     ] {
+        assert!(parse_transform(value).is_none(), "{value}");
+    }
+}
+
+#[test]
+fn end_of_input_closes_functions_but_does_not_supply_missing_arguments() {
+    // CSS Syntax's consume-a-function algorithm returns the function at EOF.
+    // The transform grammar must still validate all of its coordinates.
+    let parsed = parse_transform("translate(10px").unwrap();
+    assert_eq!(parsed.resolve(100.0, 80.0, 16.0), (10.0, 0.0));
+    for value in ["translate(", "translate(10px,", "translate(10px, auto"] {
         assert!(parse_transform(value).is_none(), "{value}");
     }
 }

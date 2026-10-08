@@ -47,6 +47,14 @@ impl WebGl {
     }
 
     pub(super) fn read_pixels(&mut self, c: &Command, input: Option<&[u8]>) -> Result<Vec<u8>> {
+        self.read_pixels_data(c, input.map(std::borrow::Cow::Borrowed))
+    }
+
+    pub(super) fn read_pixels_data(
+        &mut self,
+        c: &Command,
+        input: Option<std::borrow::Cow<'_, [u8]>>,
+    ) -> Result<Vec<u8>> {
         let _default_read = self.resolved_default_read()?;
         if self.options.api == super::ApiVersion::Two
             && self
@@ -96,7 +104,7 @@ impl WebGl {
         if (c.u(6)? as usize) < size {
             return Err(gl::INVALID_OPERATION);
         }
-        if input.is_some_and(|data| data.len() < size) {
+        if input.as_ref().is_some_and(|data| data.len() < size) {
             return Err(gl::INVALID_OPERATION);
         }
         let default_read = if core {
@@ -129,8 +137,17 @@ impl WebGl {
         // Preserve destination padding and out-of-bounds pixels, just like the
         // byte path. The native driver receives only our bounded owned storage.
         let mut bytes = match input {
-            Some(data) if data.len() >= size => data[..size].to_vec(),
-            Some(_) => return Err(gl::INVALID_OPERATION),
+            Some(data) => {
+                let mut data = data.into_owned();
+                data.truncate(size);
+                // Exact-sized V8 copies move unchanged. Do not return excess
+                // retained capacity or bytes beyond the admitted layout.
+                if data.capacity() == size {
+                    data
+                } else {
+                    data.into_boxed_slice().into_vec()
+                }
+            }
             None => vec![0u8; size],
         };
         unsafe {
@@ -173,3 +190,6 @@ impl WebGl {
         Ok(bytes)
     }
 }
+
+#[cfg(test)]
+mod owned_tests;

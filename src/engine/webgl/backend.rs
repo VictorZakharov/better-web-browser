@@ -30,6 +30,22 @@ impl BackendContexts {
         self.contexts.remove(&id);
     }
     pub(crate) fn execute(&mut self, id: u32, command: &str, bytes: Option<&[u8]>) -> Value {
+        self.execute_data(id, command, bytes.map(std::borrow::Cow::Borrowed))
+    }
+    pub(crate) fn execute_owned(
+        &mut self,
+        id: u32,
+        command: &str,
+        bytes: Option<Vec<u8>>,
+    ) -> Value {
+        self.execute_data(id, command, bytes.map(std::borrow::Cow::Owned))
+    }
+    fn execute_data(
+        &mut self,
+        id: u32,
+        command: &str,
+        bytes: Option<std::borrow::Cow<'_, [u8]>>,
+    ) -> Value {
         let other_bytes: usize = self
             .contexts
             .iter()
@@ -41,7 +57,9 @@ impl BackendContexts {
         };
         context.resource_limit =
             MAX_RESOURCE_BYTES.min(MAX_PROCESS_RESOURCE_BYTES.saturating_sub(other_bytes));
-        if command.len() > MAX_COMMAND_BYTES || bytes.is_some_and(|b| b.len() > MAX_UPLOAD_BYTES) {
+        if command.len() > MAX_COMMAND_BYTES
+            || bytes.as_ref().is_some_and(|b| b.len() > MAX_UPLOAD_BYTES)
+        {
             context.error(gl::OUT_OF_MEMORY);
             return Value::Null;
         }
@@ -55,7 +73,14 @@ impl BackendContexts {
         if context.native.make_current().is_err() {
             return json!({"lost":true});
         }
-        let result = context.dispatch(&command, bytes);
+        let result = context.dispatch_data(&command, bytes);
+        if matches!(command.op.as_str(), "compileShader" | "linkProgram")
+            && let Err(error) = context.progress_program_links(1)
+        {
+            // Pipeline ready links while later shader pairs are submitted,
+            // without waiting for unfinished translations or mailbox space.
+            context.error(error);
+        }
         if context.objects.poisoned {
             self.remove(id);
             return json!({"lost":true});

@@ -17,11 +17,11 @@
                 width:state.width,height:state.height,bounds:[left,top,right,bottom],rule,
                 parts:path.subpaths.map(part=>part.points)
             }),previous||null);
-            if(native && canvasPixelLength(native)===Math.ceil(state.width*state.height/8))return native;
+            if(native && canvasPixelLength(native)===canvasPrivateMath.ceil(state.width*state.height/8))return native;
         }
-        const bits = new Uint8Array(Math.ceil(state.width * state.height / 8));
+        const bits = new canvasPrivateByteArray(canvasPrivateMath.ceil(state.width * state.height / 8));
         const edges = pathEdges(path);
-        const work = Math.max(0, right - left) * Math.max(0, bottom - top) * edges.length;
+        const work = canvasPrivateMath.max(0, right - left) * canvasPrivateMath.max(0, bottom - top) * edges.length;
         if (work > 50000000)
             throw new DOMException('Canvas clip exceeds the raster budget', 'NotSupportedError');
         for (let y = top; y < bottom; y++) {

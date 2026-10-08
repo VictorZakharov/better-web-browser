@@ -57,7 +57,7 @@
         }
         if (gradient.kind === 'conic') {
             const [startAngle, centerX, centerY] = coordinates;
-            const turn = (Math.atan2(y - centerY, x - centerX) - startAngle % (2 * Math.PI)) / (2 * Math.PI);
+            const turn = (canvasPrivateMath.atan2(y - centerY, x - centerX) - startAngle % (2 * canvasPrivateMath.PI)) / (2 * canvasPrivateMath.PI);
             return ((turn % 1) + 1) % 1;
         }
         const [x0, y0, r0, x1, y1, r1] = coordinates;
@@ -66,13 +66,13 @@
         const a = dx * dx + dy * dy - dr * dr;
         const b = -2 * (px * dx + py * dy + r0 * dr);
         const c = px * px + py * py - r0 * r0;
-        if (Math.abs(a) < 1e-12) return b === 0 ? null : -c / b;
+        if (canvasPrivateMath.abs(a) < 1e-12) return b === 0 ? null : -c / b;
         const discriminant = b * b - 4 * a * c;
         if (discriminant < 0) return null;
-        const root = Math.sqrt(discriminant);
+        const root = canvasPrivateMath.sqrt(discriminant);
         const first = (-b - root) / (2 * a), second = (-b + root) / (2 * a);
         const valid = [first, second].filter(t => r0 + t * dr >= 0);
-        return valid.length ? Math.max(...valid) : null;
+        return valid.length ? canvasPrivateMath.max(...valid) : null;
     };
     const canvasPaintAt = (style, x, y, inverse = null) => {
         if (inverse && (canvasIsGradient(style) || canvasIsPattern(style)))

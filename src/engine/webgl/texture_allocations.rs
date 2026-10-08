@@ -35,11 +35,7 @@ impl WebGl {
                 .checked_add(bytes.saturating_sub(previous))
                 .ok_or(gl::OUT_OF_MEMORY)?;
         }
-        let counter = self
-            .resource_bytes
-            .checked_add(growth.checked_mul(2).ok_or(gl::OUT_OF_MEMORY)?)
-            .filter(|counter| *counter <= self.resource_limit)
-            .ok_or(gl::OUT_OF_MEMORY)?;
+        let counter = self.admit_storage_growth(growth.checked_mul(2).ok_or(gl::OUT_OF_MEMORY)?)?;
         let capacity = object
             .capacity
             .checked_add(growth)

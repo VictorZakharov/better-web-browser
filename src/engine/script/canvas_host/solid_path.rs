@@ -19,14 +19,8 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
 }
 
 pub(super) fn paint_owned(args: &mut [JsValue]) -> JsValue {
-    let Some(destination) = args.get_mut(3) else {
+    let Some(destination) = super::owned_pixels::take(args, 3) else {
         return JsValue::Null;
-    };
-    if !matches!(destination, JsValue::Bytes(_)) {
-        return JsValue::Null;
-    }
-    let JsValue::Bytes(destination) = std::mem::replace(destination, JsValue::Null) else {
-        unreachable!("byte argument checked before taking ownership");
     };
     // value_from_v8 made this independent of the author's ArrayBuffer. Taking
     // that allocation is safe even when the author aliases input and clip.
@@ -88,8 +82,8 @@ fn finish(args: &[JsValue], destination: Cow<'_, [u8]>) -> JsValue {
     };
     mask.and_then(|mask| {
         let mut destination = destination.into_owned();
-        super::solid_mask::composite_in_place(
-            Some(mask.as_slice()),
+        super::solid_mask::composite_coverage_in_place(
+            &mask,
             &mut destination,
             color,
             opacity,

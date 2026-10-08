@@ -55,13 +55,7 @@ impl WebGl {
         // Private attachments cannot be referenced by author objects. They are really
         // destroyed on replacement, so unlike author-resource high-water accounting their
         // storage may be reclaimed. Admit the temporary overlap before allocation.
-        let peak = self
-            .resource_bytes
-            .checked_add(next_bytes)
-            .ok_or(gl::OUT_OF_MEMORY)?;
-        if peak > self.resource_limit {
-            return Err(gl::OUT_OF_MEMORY);
-        }
+        self.admit_storage_growth(next_bytes)?;
         let mut viewport = [0; 4];
         let mut clear = [0.0; 4];
         let mut texture = 0;

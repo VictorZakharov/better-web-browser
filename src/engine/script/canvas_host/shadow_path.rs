@@ -4,6 +4,7 @@
 
 use super::*;
 use serde::Deserialize;
+use std::borrow::Cow;
 
 #[derive(Deserialize)]
 struct Region {
@@ -18,6 +19,20 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
 }
 
 fn render(args: &[JsValue]) -> Option<Vec<u8>> {
+    let destination = args.get(1)?.as_bytes()?;
+    render_destination(args, Cow::Borrowed(destination))
+}
+
+pub(super) fn paint_owned(args: &mut [JsValue]) -> JsValue {
+    let Some(destination) = super::owned_pixels::take(args, 1) else {
+        return JsValue::Null;
+    };
+    // This allocation was copied from V8 by the bridge. It is not an author's
+    // ArrayBuffer, even if the author passed the same view for destination/clip.
+    render_destination(args, Cow::Owned(destination)).map_or(JsValue::Null, JsValue::Bytes)
+}
+
+fn render_destination(args: &[JsValue], destination: Cow<'_, [u8]>) -> Option<Vec<u8>> {
     let JsValue::String(request) = args.get(2)? else {
         return None;
     };
@@ -28,7 +43,6 @@ fn render(args: &[JsValue]) -> Option<Vec<u8>> {
     let width = super::source_layer::dimension(args.get(5)?)?;
     let height = super::source_layer::dimension(args.get(6)?)?;
     let pixels = (width as usize).checked_mul(height as usize)?;
-    let destination = args.get(1)?.as_bytes()?;
     if pixels > MAX_CANVAS_PIXELS
         || destination.len() != pixels.checked_mul(4)?
         || region.width == 0
@@ -67,11 +81,10 @@ fn render(args: &[JsValue]) -> Option<Vec<u8>> {
         return None;
     }
     let mut source = vec![0; region.width as usize * region.height as usize * 4];
-    for (y, row) in mask.chunks_exact(region.width as usize).enumerate() {
-        let start = y * region.width as usize * 4;
-        for (pixel, coverage) in source[start..start + row.len() * 4]
+    mask.runs(|start, coverage| {
+        for (pixel, coverage) in source[start * 4..(start + coverage.len()) * 4]
             .chunks_exact_mut(4)
-            .zip(row)
+            .zip(coverage)
         {
             if *coverage != 0 {
                 super::solid_mask::source_over(
@@ -81,10 +94,10 @@ fn render(args: &[JsValue]) -> Option<Vec<u8>> {
                 );
             }
         }
-    }
+    });
     // The final drawing clip is intentionally applied only after generating
     // coverage and shadow, exactly as the ordinary source-layer path does.
-    super::source_layer::render_region(
+    super::source_layer::render_region_destination(
         args,
         &super::shadow::Layer {
             bounds: [
@@ -95,8 +108,12 @@ fn render(args: &[JsValue]) -> Option<Vec<u8>> {
             ],
             pixels: source,
         },
+        destination,
     )
 }
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod owned_tests;

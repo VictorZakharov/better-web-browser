@@ -11,8 +11,8 @@
                 gx,gy,width*scale,height,state);
             if (bounds) {
                 packet.push([gx,gy,width,height,bounds,color,data]);
-                regionLeft=Math.min(regionLeft,bounds[0]);regionTop=Math.min(regionTop,bounds[1]);
-                regionRight=Math.max(regionRight,bounds[2]);regionBottom=Math.max(regionBottom,bounds[3]);
+                regionLeft=canvasPrivateMath.min(regionLeft,bounds[0]);regionTop=canvasPrivateMath.min(regionTop,bounds[1]);
+                regionRight=canvasPrivateMath.max(regionRight,bounds[2]);regionBottom=canvasPrivateMath.max(regionBottom,bounds[3]);
             }
         }
         if (!packet.length) return true;

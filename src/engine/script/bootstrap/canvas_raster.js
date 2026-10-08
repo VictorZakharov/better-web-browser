@@ -9,6 +9,8 @@
         get() { return canvasIsGradient(canvasDrawingState(this).stroke) ||
             canvasIsPattern(canvasDrawingState(this).stroke) ? canvasDrawingState(this).stroke : canvasDrawingState(this).stroke.serialized; },
         set(value) {
+            if (canvasIsPattern(value) && canvasPatternGet(canvasPatternStates, value).source.originClean === false)
+                stateForCanvas(this.canvas).originClean = false;
             if (canvasIsGradient(value) || canvasIsPattern(value)) {
                 canvasDrawingState(this).stroke = value; return;
             }
@@ -45,15 +47,15 @@
     const pathBounds = path => {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         for (const part of path.subpaths) for (const [x, y] of part.points) {
-            minX = Math.min(minX, x); minY = Math.min(minY, y);
-            maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+            minX = canvasPrivateMath.min(minX, x); minY = canvasPrivateMath.min(minY, y);
+            maxX = canvasPrivateMath.max(maxX, x); maxY = canvasPrivateMath.max(maxY, y);
         }
         return [minX, minY, maxX, maxY];
     };
     const canvasPixelBounds = (path, state, inset) => {
         const [minX, minY, maxX, maxY] = pathBounds(path);
-        return [Math.max(0, Math.floor(minX - inset)), Math.max(0, Math.floor(minY - inset)),
-            Math.min(state.width, Math.ceil(maxX + inset)), Math.min(state.height, Math.ceil(maxY + inset))];
+        return [canvasPrivateMath.max(0, canvasPrivateMath.floor(minX - inset)), canvasPrivateMath.max(0, canvasPrivateMath.floor(minY - inset)),
+            canvasPrivateMath.min(state.width, canvasPrivateMath.ceil(maxX + inset)), canvasPrivateMath.min(state.height, canvasPrivateMath.ceil(maxY + inset))];
     };
     const canvasStrokeSegments = path => {
         const segments = [];
@@ -63,7 +65,7 @@
             const count = points.length - 1 + (part.closed && points.length > 1 ? 1 : 0);
             for (let index = 0; index < count; index++) {
                 const start = points[index], end = points[(index + 1) % points.length];
-                const length = Math.hypot(end[0] - start[0], end[1] - start[1]);
+                const length = canvasPrivateMath.hypot(end[0] - start[0], end[1] - start[1]);
                 if (length > 0) segments.push({ start, end, length, distance,
                     startCap: !part.closed && index === 0,
                     endCap: !part.closed && index === count - 1 });
@@ -106,7 +108,7 @@
         const paintInverse = matrixInverse2D(canvasDrawingState(context).transform);
         if (!fill && !paintInverse) return;
         const [a, b, c, d] = canvasDrawingState(context).transform;
-        const penScale = Math.max(Math.hypot(a, c), Math.hypot(b, d));
+        const penScale = canvasPrivateMath.max(canvasPrivateMath.hypot(a, c), canvasPrivateMath.hypot(b, d));
         const inset = fill ? 0 : canvasDrawingState(context).lineWidth / 2 *
             penScale * (canvasDrawingState(context).lineJoin === 'miter' ? canvasDrawingState(context).miterLimit : 1) + 1;
         const [left, top, right, bottom] = canvasPixelBounds(path, state, inset);
@@ -119,7 +121,7 @@
                 width: right - left, height: bottom - top, left, top, rule,
                 parts: geometry ? [] : path.subpaths.map(part => ({points: part.points, closed: !!part.closed}))
             });
-            if (canvasPaintSolidPath(context,state,'fill',request,style,left,top,right,bottom,geometry)) return;
+            if (canvasPaintNativePath(context,state,'fill',request,style,left,top,right,bottom,geometry)) return;
             const nativeFill = geometry ? canvasRasterHost('canvasFillMask', request, geometry) :
                 canvasRasterHost('canvasFillMask', request);
             if (nativeFill) {
@@ -163,15 +165,15 @@
         const strokePath = transformCanvasPath(path, paintInverse);
         const geometry = canvasPackGeometry(strokePath);
         const request = canvasNativeStrokeRequest(context, strokePath, maskWidth, bottom-top, left, top, !!geometry);
-        if (canvasPaintSolidPath(context,state,'stroke',request,style,left,top,right,bottom,geometry)) return;
+        if (canvasPaintNativePath(context,state,'stroke',request,style,left,top,right,bottom,geometry)) return;
         const nativeCoverage = geometry ? canvasRasterHost('canvasStrokeMask', request, geometry) :
             canvasRasterHost('canvasStrokeMask', request);
-        const coverage = nativeCoverage || new Uint8Array(maskWidth * (bottom - top));
+        const coverage = nativeCoverage || new canvasPrivateByteArray(maskWidth * (bottom - top));
         if (nativeCoverage && canvasPaintSolidMask(context, state, nativeCoverage, style,
             left, top, right, bottom)) return;
         if (!nativeCoverage && !canvasIsIdentity(canvasDrawingState(context).transform)) {
             const segments = canvasStrokeSegments(strokePath);
-            const work = maskWidth * (bottom - top) * Math.max(1, strokePath.pointCount);
+            const work = maskWidth * (bottom - top) * canvasPrivateMath.max(1, strokePath.pointCount);
             if (work > 50000000)
                 throw new DOMException('Canvas stroke exceeds the raster budget', 'NotSupportedError');
             for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
@@ -186,11 +188,11 @@
             for (const segment of canvasStrokeSegments(path)) {
                 const [[x0, y0], [x1, y1]] = [segment.start, segment.end];
                 const radius = canvasDrawingState(context).lineWidth / 2;
-                const minX = Math.max(left, Math.floor(Math.min(x0, x1) - radius));
-                const maxX = Math.min(right, Math.ceil(Math.max(x0, x1) + radius));
-                const minY = Math.max(top, Math.floor(Math.min(y0, y1) - radius));
-                const maxY = Math.min(bottom, Math.ceil(Math.max(y0, y1) + radius));
-                coverageWork += Math.max(0, maxX - minX) * Math.max(0, maxY - minY);
+                const minX = canvasPrivateMath.max(left, canvasPrivateMath.floor(canvasPrivateMath.min(x0, x1) - radius));
+                const maxX = canvasPrivateMath.min(right, canvasPrivateMath.ceil(canvasPrivateMath.max(x0, x1) + radius));
+                const minY = canvasPrivateMath.max(top, canvasPrivateMath.floor(canvasPrivateMath.min(y0, y1) - radius));
+                const maxY = canvasPrivateMath.min(bottom, canvasPrivateMath.ceil(canvasPrivateMath.max(y0, y1) + radius));
+                coverageWork += canvasPrivateMath.max(0, maxX - minX) * canvasPrivateMath.max(0, maxY - minY);
                 if (coverageWork > 50000000)
                     throw new DOMException('Canvas stroke exceeds the raster budget', 'NotSupportedError');
                 for (let y = minY; y < maxY; y++) for (let x = minX; x < maxX; x++) {
@@ -205,11 +207,11 @@
             for (const [previous, point, next] of canvasStrokeJoins(path)) {
                 const radius = canvasDrawingState(context).lineWidth / 2;
                 const extent = radius * (canvasDrawingState(context).lineJoin === 'miter' ? canvasDrawingState(context).miterLimit : 1);
-                const minX = Math.max(left, Math.floor(point[0] - extent));
-                const maxX = Math.min(right, Math.ceil(point[0] + extent));
-                const minY = Math.max(top, Math.floor(point[1] - extent));
-                const maxY = Math.min(bottom, Math.ceil(point[1] + extent));
-                coverageWork += Math.max(0, maxX - minX) * Math.max(0, maxY - minY);
+                const minX = canvasPrivateMath.max(left, canvasPrivateMath.floor(point[0] - extent));
+                const maxX = canvasPrivateMath.min(right, canvasPrivateMath.ceil(point[0] + extent));
+                const minY = canvasPrivateMath.max(top, canvasPrivateMath.floor(point[1] - extent));
+                const maxY = canvasPrivateMath.min(bottom, canvasPrivateMath.ceil(point[1] + extent));
+                coverageWork += canvasPrivateMath.max(0, maxX - minX) * canvasPrivateMath.max(0, maxY - minY);
                 if (coverageWork > 50000000)
                     throw new DOMException('Canvas stroke exceeds the raster budget', 'NotSupportedError');
                 for (let y = minY; y < maxY; y++) for (let x = minX; x < maxX; x++)

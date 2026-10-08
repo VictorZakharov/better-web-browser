@@ -1,5 +1,6 @@
     const canvasPatternMaskHost=__hostCall;
-    const canvasPaintPatternMask=(context,state,mask,style,left,top,right,bottom)=>{
+    const canvasPaintPatternMask=(context,state,mask,style,left,top,right,bottom,
+        pathKind,pathRequest,geometry)=>{
         const pattern=canvasPatternGet(canvasPatternStates,style);
         if(!pattern||pattern.repetition!=='repeat'||pattern.source.pixels16)return false;
         const width=right-left,height=bottom-top,pixels=width*height;
@@ -11,6 +12,10 @@
         request.transform=canvasGradientMaskNumbers(matrixMultiply2D(canvasDrawingState(context).transform,pattern.transform));
         request.opacity=canvasDrawingState(context).globalAlpha;
         const encoded=canvasGradientMaskStringify(request);
+        if(pathKind)return paintCanvasRegion(state,left,top,right,bottom,
+            region=>canvasPatternMaskHost('canvasPaintPatternPath',encoded,region,pattern.source.pixels,
+                pathKind,pathRequest,canvasDrawingState(context).clipBits||null,
+                state.width,state.height,left,top,geometry||null));
         return paintCanvasRegion(state,left,top,right,bottom,
             region=>canvasPatternMaskHost('canvasPaintPatternMask',encoded,region,mask,pattern.source.pixels,
                 canvasDrawingState(context).clipBits||null,state.width,state.height,left,top));

@@ -31,11 +31,7 @@ impl WebGl {
                 Kind::Renderbuffer => gl::IsRenderbuffer(native),
                 Kind::Shader => gl::IsShader(native),
                 Kind::Program => gl::IsProgram(native),
-                Kind::Uniform
-                | Kind::VertexArray
-                | Kind::Sampler
-                | Kind::Query
-                | Kind::TransformFeedback => 0,
+                Kind::VertexArray | Kind::Sampler | Kind::Query | Kind::TransformFeedback => 0,
             }
         };
         Ok(json!(value != 0))

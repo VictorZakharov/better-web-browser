@@ -77,5 +77,8 @@ impl WorkerRuntime {
                 .diagnostics
                 .push(format!("could not sample worker heap: {error}")),
         }
+        outcome
+            .diagnostics
+            .extend(self.context.gpu_resource_diagnostics());
     }
 }

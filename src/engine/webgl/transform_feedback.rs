@@ -178,6 +178,7 @@ impl WebGl {
             // again, so resume must invalidate too. No synchronous GPU map here.
             for binding in &self.transform_feedback.records[&bound].bindings {
                 if binding.id != 0 {
+                    self.index_cache.remove(binding.id);
                     self.objects
                         .get_mut(binding.id, Kind::Buffer)?
                         .buffer_mirror_valid = false;

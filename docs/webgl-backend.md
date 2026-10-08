@@ -34,11 +34,16 @@ notices. Packaging fails closed if the pinned native revision changes.
 `UPSTREAM` pins `FIREFOX_153_3_0esr_RELEASE`, revision
 `861fdeb0d32fe1bd101fea886687e680f612d735`.
 
-`.cargo/config.toml` selects ANGLE's upstream-supported
-`ANGLE_STD_ASYNC_WORKERS=0` policy. This keeps shader compilation within the
-renderer task and avoids the default `std::async` worker's exception-runtime symbol
-conflict with the pinned static V8 archive. It does not disable shader validation,
-rewrite third-party headers, or suppress linker diagnostics. The actual EGL context
+`.cargo/config.toml` disables ANGLE's `std::async` implementation, whose
+exception-runtime symbols conflict with the pinned static V8 archive, and enables
+its existing `ANGLE_DELEGATE_WORKERS` interface instead. A small adapter compiled
+against the pinned public header installs a renderer-owned Rust worker pool.
+Four workers are shared across all contexts, with 128 queued native closures and
+backpressure at that limit. Compiler tasks remain inside the renderer Job and its
+memory/process cancellation boundaries; native context operations stay on their
+single GPU owner. No third-party source/header is rewritten and no linker
+diagnostics are suppressed. See the [compiler scheduling contract](webgl-compiler-scheduling.md).
+The actual EGL context
 requests WebGL compatibility, robust resource initialization and disabled client
 arrays. Backend failure must produce context-creation failure, not a fake context.
 

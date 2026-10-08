@@ -2,6 +2,21 @@
     // https://html.spec.whatwg.org/multipage/canvas.html#drawing-rectangles-to-the-bitmap
     // Integrate the transformed convex quadrilateral over each pixel square.
     // Axis-aligned rectangles use interval overlap, including reflected matrices.
+    const canvasRectangleHost = __hostCall;
+    const canvasPaintNativeRectangle = (context,state,rect,style,left,top,right,bottom) => {
+        const width=right-left,height=bottom-top,pixels=width*height;
+        if(pixels<256 || pixels>MAX_CANVAS_PIXELS || !(left<right && top<bottom) ||
+            style && (canvasIsGradient(style) || canvasIsPattern(style) || !style.channels ||
+                canvasDrawingState(context).compositeOperation!=='source-over')) return false;
+        const drawing=canvasDrawingState(context);
+        const request=canvasPrivateWireStringify({width,height,left,top,
+            rect:[rect.x,rect.y,rect.width,rect.height],matrix:drawing.transform,
+            color:style ? style.channels : null,opacity:drawing.globalAlpha,
+            opaque:canvasBitmapIsOpaque(state.pixels)});
+        return paintCanvasRegion(state,left,top,right,bottom,region =>
+            canvasRectangleHost('canvasPaintRectangle',request,region,drawing.clipBits || null,
+                state.width,state.height,left,top));
+    };
     const canvasClipPolygonAxis = (points, axis, boundary, greater) => {
         const output = [];
         if (!points.length) return output;
@@ -33,7 +48,7 @@
             const a = points[index], b = points[(index + 1) % points.length];
             twiceArea += (a[0] - x) * (b[1] - y) - (a[1] - y) * (b[0] - x);
         }
-        return Math.min(1, Math.abs(twiceArea) / 2);
+        return canvasPrivateMath.min(1, canvasPrivateMath.abs(twiceArea) / 2);
     };
     const canvasRectSolidRows = (context, state, style, left, top, right, bottom) => {
         if (canvasDrawingState(context).clipBits || (style && (canvasDrawingState(context).compositeOperation !== 'source-over' ||
@@ -63,21 +78,22 @@
             .map(([x, y]) => matrixPoint2D(matrix, x, y));
         if (polygon.some(point => !point.every(Number.isFinite))) return;
         const xs = polygon.map(point => point[0]), ys = polygon.map(point => point[1]);
-        const minX = Math.min(...xs), maxX = Math.max(...xs);
-        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        const minX = canvasPrivateMath.min(...xs), maxX = canvasPrivateMath.max(...xs);
+        const minY = canvasPrivateMath.min(...ys), maxY = canvasPrivateMath.max(...ys);
         const aligned = (matrix[1] === 0 && matrix[2] === 0) || (matrix[0] === 0 && matrix[3] === 0);
         // clearRect erases whole pixels, unlike antialiased painting. Match the
         // reference rasterizer's nearest-edge interval for axis-aligned clears.
         const roundClear = !style && aligned;
-        const low = value => roundClear ? Math.floor(value + .5) : Math.floor(value);
-        const high = value => roundClear ? Math.floor(value + .5) : Math.ceil(value);
-        const left = Math.max(0, low(minX)), top = Math.max(0, low(minY));
-        const right = Math.min(state.width, high(maxX)), bottom = Math.min(state.height, high(maxY));
+        const low = value => roundClear ? canvasPrivateMath.floor(value + .5) : canvasPrivateMath.floor(value);
+        const high = value => roundClear ? canvasPrivateMath.floor(value + .5) : canvasPrivateMath.ceil(value);
+        const left = canvasPrivateMath.max(0, low(minX)), top = canvasPrivateMath.max(0, low(minY));
+        const right = canvasPrivateMath.min(state.width, high(maxX)), bottom = canvasPrivateMath.min(state.height, high(maxY));
         if (roundClear && canvasRectSolidRows(context, state, null, left, top, right, bottom)) return;
         if (aligned && [minX, maxX, minY, maxY].every(Number.isInteger) &&
             canvasRectSolidRows(context, state, style, left, top, right, bottom)) return;
         if (aligned && [minX, maxX, minY, maxY].every(Number.isInteger) && style &&
             canvasPaintSolidMask(context, state, null, style, left, top, right, bottom)) return;
+        if (canvasPaintNativeRectangle(context,state,rect,style,left,top,right,bottom)) return;
         for (let row = top; row < bottom; row++) for (let column = left; column < right; column++) {
             if (!canvasClipAllows(context, column, row, state.width)) continue;
             if (!style) {
@@ -89,8 +105,8 @@
                 continue;
             }
             const coverage = aligned ?
-                Math.max(0, Math.min(column + 1, maxX) - Math.max(column, minX)) *
-                Math.max(0, Math.min(row + 1, maxY) - Math.max(row, minY)) :
+                canvasPrivateMath.max(0, canvasPrivateMath.min(column + 1, maxX) - canvasPrivateMath.max(column, minX)) *
+                canvasPrivateMath.max(0, canvasPrivateMath.min(row + 1, maxY) - canvasPrivateMath.max(row, minY)) :
                 canvasRectPixelArea(polygon, column, row);
             if (!(coverage > 0)) continue;
             const offset = (row * state.width + column) * 4;

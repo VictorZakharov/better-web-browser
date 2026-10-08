@@ -1,23 +1,23 @@
     // Reuse the existing resvg/usvg provider's pinned SVG 2 grammar. The owned
     // command stream retains original coordinates for our Canvas flattening.
     const svgPathArc = (path, x0, y0, rx, ry, degrees, large, sweep, x1, y1) => {
-        rx = Math.abs(rx); ry = Math.abs(ry);
+        rx = canvasPrivateMath.abs(rx); ry = canvasPrivateMath.abs(ry);
         if (x0 === x1 && y0 === y1) return;
         if (rx === 0 || ry === 0) { lineCanvasPath(path, x1, y1); return; }
-        const rotation = degrees * Math.PI / 180;
-        const cosine = Math.cos(rotation), sine = Math.sin(rotation);
+        const rotation = degrees * canvasPrivateMath.PI / 180;
+        const cosine = canvasPrivateMath.cos(rotation), sine = canvasPrivateMath.sin(rotation);
         const dx = (x0 - x1) / 2, dy = (y0 - y1) / 2;
         const middleX = cosine * dx + sine * dy;
         const middleY = -sine * dx + cosine * dy;
         let radiiScale = middleX * middleX / (rx * rx) + middleY * middleY / (ry * ry);
         if (radiiScale > 1) {
-            radiiScale = Math.sqrt(radiiScale);
+            radiiScale = canvasPrivateMath.sqrt(radiiScale);
             rx *= radiiScale; ry *= radiiScale;
         }
-        const numerator = Math.max(0, rx * rx * ry * ry - rx * rx * middleY * middleY -
+        const numerator = canvasPrivateMath.max(0, rx * rx * ry * ry - rx * rx * middleY * middleY -
             ry * ry * middleX * middleX);
         const denominator = rx * rx * middleY * middleY + ry * ry * middleX * middleX;
-        const factor = (large === sweep ? -1 : 1) * Math.sqrt(numerator / denominator);
+        const factor = (large === sweep ? -1 : 1) * canvasPrivateMath.sqrt(numerator / denominator);
         const centerXPrime = factor * rx * middleY / ry;
         const centerYPrime = -factor * ry * middleX / rx;
         const centerX = cosine * centerXPrime - sine * centerYPrime + (x0 + x1) / 2;
@@ -26,11 +26,11 @@
         const startY = (middleY - centerYPrime) / ry;
         const endX = (-middleX - centerXPrime) / rx;
         const endY = (-middleY - centerYPrime) / ry;
-        const start = Math.atan2(startY, startX);
-        let delta = Math.atan2(startX * endY - startY * endX,
+        const start = canvasPrivateMath.atan2(startY, startX);
+        let delta = canvasPrivateMath.atan2(startX * endY - startY * endX,
             startX * endX + startY * endY);
-        if (sweep && delta < 0) delta += 2 * Math.PI;
-        if (!sweep && delta > 0) delta -= 2 * Math.PI;
+        if (sweep && delta < 0) delta += 2 * canvasPrivateMath.PI;
+        if (!sweep && delta > 0) delta -= 2 * canvasPrivateMath.PI;
         ellipseCanvasPath(path, centerX, centerY, rx, ry, rotation, start, start + delta,
             !sweep);
         // Avoid accumulated trigonometric error at the endpoint of connected segments.

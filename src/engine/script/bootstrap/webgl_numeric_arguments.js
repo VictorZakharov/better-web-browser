@@ -108,13 +108,17 @@
             if (entry) webGlConvertInterface(args, ...entry);
             if (signature[index] && signature[index] !== '-') args[index] = webGlScalar(signature[index], args[index]);
             if ((signature[index] === 'F' || signature[index] === 'I') && webGlDetachedNumericLists.has(args[index])) valid=false;
-            if (name === 'bufferData' && index === 1 && args[index] !== null &&
-                !(args[index] instanceof ArrayBuffer) && !ArrayBuffer.isView(args[index])) args[index] = webGlLongLong(args[index]);
+            if (name === 'bufferData' && index === 1 && args[index] !== null) {
+                if (webGl2IsBuffer(args[index]) || webGl2IsView(args[index])) webGl2Source(args[index]);
+                else args[index] = webGlLongLong(args[index]);
+            }
             if ((name === 'readPixels' && index === 6 || name.startsWith('compressedTex') && index === signature.length - 1 ||
                 (name === 'texImage2D' || name === 'texSubImage2D') && signature.length === 9 && index === 8) &&
-                args[index] !== null && !ArrayBuffer.isView(args[index])) throw new TypeError('Expected ArrayBufferView');
-            if (name === 'bufferSubData' && index === 2 && !(args[index] instanceof ArrayBuffer) && !ArrayBuffer.isView(args[index]))
-                throw new TypeError('Expected BufferSource');
+                args[index] !== null) webGl2View(args[index]);
+            if (name === 'bufferSubData' && index === 2) {
+                if (args[index] === null) throw new TypeError('Expected BufferSource');
+                webGl2Source(args[index]);
+            }
         }
         // Web IDL ignores additional arguments. Texture overload selection uses
         // effective argument count first; its implementation receives that shape.

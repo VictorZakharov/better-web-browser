@@ -3,7 +3,7 @@
     const canvasPathApply = Reflect.apply;
     const canvasPathDefine = Object.defineProperty;
     const canvasPathReceiver = (receiver, pathReceiver) => {
-        const valid = pathReceiver ? canvasPathData.has(receiver) : canvas2dOwners.has(receiver);
+        const valid = pathReceiver ? canvasPathData.has(receiver) : canvasPrivateWeakHas(canvas2dOwners, receiver);
         if (!valid) throw new TypeError('Illegal CanvasPath receiver');
     };
     const canvasPathNumbers = (args, required, name) => {

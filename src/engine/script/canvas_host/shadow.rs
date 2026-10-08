@@ -8,6 +8,7 @@ use super::*;
 #[cfg(test)]
 mod dense_oracle_tests;
 mod kernel_cache;
+mod sampling;
 mod sampling_bounds;
 
 pub(super) struct Layer {
@@ -159,8 +160,6 @@ pub(super) fn render_region_layer(
     if left >= right || top >= bottom {
         return Some(Layer::empty());
     }
-    let output_width = (right - left) as usize;
-    let mut result = vec![0; output_width * (bottom - top) as usize * 4];
     let mut source_alpha =
         Vec::with_capacity((bounds[2] - bounds[0]) as usize * (bounds[3] - bounds[1]) as usize);
     for y in bounds[1]..bounds[3] {
@@ -182,44 +181,14 @@ pub(super) fn render_region_layer(
     // Sampling outside this translated support is exactly transparent. Keep
     // the same Gaussian/interpolation arithmetic inside, without scanning the
     // entire destination for a small shadow on a large texture.
-    for y in top..bottom {
-        for x in left..right {
-            let sx = f64::from(x) - offset_x - origin_x;
-            let sy = f64::from(y) - offset_y - origin_y;
-            if sx < -1.0 || sy < -1.0 || sx >= f64::from(mask_width) || sy >= f64::from(mask_height)
-            {
-                continue;
-            }
-            let sample_left = sx.floor() as i64;
-            let sample_top = sy.floor() as i64;
-            let fx = sx - sample_left as f64;
-            let fy = sy - sample_top as f64;
-            let mut coverage = 0.0;
-            for dy in 0..=1 {
-                for dx in 0..=1 {
-                    let px = sample_left + dx;
-                    let py = sample_top + dy;
-                    if px < 0
-                        || py < 0
-                        || px >= i64::from(mask_width)
-                        || py >= i64::from(mask_height)
-                    {
-                        continue;
-                    }
-                    let weight =
-                        if dx == 0 { 1.0 - fx } else { fx } * if dy == 0 { 1.0 - fy } else { fy };
-                    coverage += f64::from(alpha.get_pixel(px as u32, py as u32)[0]) * weight;
-                }
-            }
-            let index = ((y - top) as usize * output_width + (x - left) as usize) * 4;
-            let opacity = (coverage * f64::from(color[3])).clamp(0.0, 255.0);
-            // Uint8ClampedArray's round-to-even conversion, including half ties.
-            result[index + 3] = opacity.round_ties_even() as u8;
-            if result[index + 3] != 0 {
-                result[index..index + 3].copy_from_slice(&color[..3]);
-            }
-        }
-    }
+    let result = sampling::paint(
+        alpha.as_raw(),
+        [mask_width, mask_height],
+        [left, top, right, bottom],
+        [origin_x, origin_y],
+        [offset_x, offset_y],
+        color,
+    );
     Some(Layer {
         bounds: [left, top, right, bottom],
         pixels: result,

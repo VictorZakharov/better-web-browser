@@ -298,16 +298,48 @@ fn invalid_native_cube_generation_and_zero_size_do_not_charge_mips() {
 }
 
 #[test]
-fn deleted_texture_names_do_not_reclaim_driver_retained_lifetime_budget() {
+fn deleted_texture_names_reclaim_only_after_retained_framebuffer_is_retired() {
     session::run_native_test(|| {
         let mut context = context();
+        let baseline = context.resource_bytes;
         let id = texture(&mut context, gl::TEXTURE_2D);
         image(&mut context, 4, 4).unwrap();
+        let framebuffer = call(&mut context, "createFramebuffer", &[], "")
+            .as_i64()
+            .unwrap();
+        call(
+            &mut context,
+            "bindFramebuffer",
+            &[gl::FRAMEBUFFER as i64, framebuffer],
+            "",
+        );
+        call(
+            &mut context,
+            "framebufferTexture2D",
+            &[
+                gl::FRAMEBUFFER as i64,
+                gl::COLOR_ATTACHMENT0 as i64,
+                gl::TEXTURE_2D as i64,
+                id as i64,
+                0,
+            ],
+            "",
+        );
+        call(
+            &mut context,
+            "bindFramebuffer",
+            &[gl::FRAMEBUFFER as i64, 0],
+            "",
+        );
         let charged = context.resource_bytes;
         call(&mut context, "deleteTexture", &[id as i64], "");
         assert_eq!(context.resource_bytes, charged);
-        texture(&mut context, gl::TEXTURE_2D);
+        let replacement = texture(&mut context, gl::TEXTURE_2D);
         image(&mut context, 4, 4).unwrap();
         assert_eq!(context.resource_bytes, charged + 4 * 4 * 4 * 2);
+        call(&mut context, "deleteFramebuffer", &[framebuffer], "");
+        assert_eq!(context.resource_bytes, charged);
+        call(&mut context, "deleteTexture", &[replacement as i64], "");
+        assert_eq!(context.resource_bytes, baseline);
     });
 }

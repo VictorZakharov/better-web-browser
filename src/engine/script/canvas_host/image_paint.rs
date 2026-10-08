@@ -3,8 +3,9 @@
 //! borrowed JS storage are retained across this host operation.
 use super::{JsValue, MAX_CANVAS_PIXELS, composite::Operator};
 use serde::Deserialize;
+use std::borrow::Cow;
 
-mod sample;
+pub(super) mod sample;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -23,15 +24,26 @@ struct Request {
 }
 
 pub(super) fn paint(args: &[JsValue]) -> JsValue {
+    let Some(destination) = args.get(2).and_then(JsValue::as_bytes) else {
+        return JsValue::Null;
+    };
+    paint_destination(args, Cow::Borrowed(destination))
+}
+
+pub(super) fn paint_owned(args: &mut [JsValue]) -> JsValue {
+    let Some(destination) = super::owned_pixels::take(args, 2) else {
+        return JsValue::Null;
+    };
+    paint_destination(args, Cow::Owned(destination))
+}
+
+fn paint_destination(args: &[JsValue], destination: Cow<'_, [u8]>) -> JsValue {
     let Some(JsValue::String(encoded)) = args.get(1) else {
         return JsValue::Null;
     };
     if encoded.len() > 2048 {
         return JsValue::Null;
     }
-    let Some(destination) = args.get(2).and_then(JsValue::as_bytes) else {
-        return JsValue::Null;
-    };
     let Some(source) = args.get(3).and_then(JsValue::as_bytes) else {
         return JsValue::Null;
     };
@@ -45,7 +57,7 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
     };
     serde_json::from_str::<Request>(encoded)
         .ok()
-        .and_then(|request| render(&request, destination, source, clip))
+        .and_then(|request| render_destination(&request, destination, source, clip))
         .map_or(JsValue::Null, JsValue::Bytes)
 }
 
@@ -58,13 +70,23 @@ fn bitmap_pixels(width: u32, height: u32, bytes: &[u8]) -> Option<usize> {
     .then_some(pixels)
 }
 
+#[cfg(test)]
 fn render(
     request: &Request,
     destination: &[u8],
     source: &[u8],
     clip: Option<&[u8]>,
 ) -> Option<Vec<u8>> {
-    let pixels = bitmap_pixels(request.width, request.height, destination)?;
+    render_destination(request, Cow::Borrowed(destination), source, clip)
+}
+
+fn render_destination(
+    request: &Request,
+    destination: Cow<'_, [u8]>,
+    source: &[u8],
+    clip: Option<&[u8]>,
+) -> Option<Vec<u8>> {
+    let pixels = bitmap_pixels(request.width, request.height, &destination)?;
     bitmap_pixels(request.source_width, request.source_height, source)?;
     let operator = Operator::parse(&request.operator)?;
     let [left, top, right, bottom] = request.bounds;
@@ -88,7 +110,7 @@ fn render(
     {
         return None;
     }
-    let mut output = destination.to_vec();
+    let mut output = destination.into_owned();
     let [a, b, c, d, e, f] = request.inverse;
     let [sx, sy, sw, sh] = request.source;
     let [dx, dy, dw, dh] = request.destination;

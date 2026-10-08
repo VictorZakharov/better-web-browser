@@ -4,6 +4,7 @@ use super::*;
 
 mod audio_decode;
 mod broadcast_channel;
+mod canvas_filter_environment;
 mod canvas_presentation;
 mod canvas_text_environment;
 pub(in crate::engine::script) mod clipboard;

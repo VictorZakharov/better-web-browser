@@ -70,14 +70,17 @@ pub(super) fn run_worker(config: WorkerConfig) {
             response.content_type(),
         ))
     });
-    let (runtime, initial) = WorkerRuntime::start_with_creator_context(
+    let (runtime, initial) = WorkerRuntime::start_with_execution_control(
         response_url,
         &source,
         &config.name,
         config.kind,
         loader,
-        policy,
-        config.creator_secure_context,
+        WorkerExecutionPolicy {
+            policy,
+            creator_secure_context: config.creator_secure_context,
+            cancellation: config.execution.clone(),
+        },
     );
     let Some(mut runtime) = runtime else {
         emit(&config, initial);

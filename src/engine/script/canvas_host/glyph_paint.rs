@@ -4,6 +4,7 @@
 
 use super::{JsValue, MAX_CANVAS_PIXELS, composite::Operator};
 use serde::Deserialize;
+use std::borrow::Cow;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -85,15 +86,26 @@ fn glyph(value: &JsValue) -> Option<Glyph<'_>> {
 }
 
 pub(super) fn paint(args: &[JsValue]) -> JsValue {
+    let Some(destination) = args.get(2).and_then(JsValue::as_bytes) else {
+        return JsValue::Null;
+    };
+    finish(args, Cow::Borrowed(destination))
+}
+
+pub(super) fn paint_owned(args: &mut [JsValue]) -> JsValue {
+    let Some(destination) = super::owned_pixels::take(args, 2) else {
+        return JsValue::Null;
+    };
+    finish(args, Cow::Owned(destination))
+}
+
+fn finish(args: &[JsValue], destination: Cow<'_, [u8]>) -> JsValue {
     let Some(JsValue::String(encoded)) = args.get(1) else {
         return JsValue::Null;
     };
     if encoded.len() > 2048 {
         return JsValue::Null;
     }
-    let Some(destination) = args.get(2).and_then(JsValue::as_bytes) else {
-        return JsValue::Null;
-    };
     let Some(JsValue::Array(glyphs)) = args.get(3) else {
         return JsValue::Null;
     };
@@ -107,13 +119,23 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
     };
     serde_json::from_str::<Request>(encoded)
         .ok()
-        .and_then(|request| render(&request, destination, glyphs, clip))
+        .and_then(|request| render_destination(&request, destination, glyphs, clip))
         .map_or(JsValue::Null, JsValue::Bytes)
 }
 
+#[cfg(test)]
 fn render(
     request: &Request,
     destination: &[u8],
+    glyphs: &[JsValue],
+    clip: Option<&[u8]>,
+) -> Option<Vec<u8>> {
+    render_destination(request, Cow::Borrowed(destination), glyphs, clip)
+}
+
+fn render_destination(
+    request: &Request,
+    destination: Cow<'_, [u8]>,
     glyphs: &[JsValue],
     clip: Option<&[u8]>,
 ) -> Option<Vec<u8>> {
@@ -162,7 +184,7 @@ fn render(
             return None;
         }
     }
-    let mut output = destination.to_vec();
+    let mut output = destination.into_owned();
     let [a, b, c, d, e, f] = request.inverse;
     for glyph in glyphs {
         let [left, top, right, bottom] = glyph.bounds;

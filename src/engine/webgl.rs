@@ -10,17 +10,26 @@ mod api_version;
 mod api_version_tests;
 #[cfg(test)]
 mod array_copy_boundary_tests;
+mod attribute_reflection;
+mod attribute_validation;
 mod backend_policy;
 #[cfg(test)]
 mod buffer_mirror_tests;
 mod buffer_retirement;
 #[cfg(test)]
 mod buffer_retirement_tests;
+mod buffer_upload;
 mod buffers;
 mod command_batch;
 #[cfg(test)]
 mod command_batch_tests;
 mod commands;
+mod compiler_events;
+mod compiler_policy;
+mod compiler_retirement;
+#[cfg(test)]
+mod compiler_retirement_tests;
+mod compiler_workers;
 #[cfg(test)]
 mod compressed_buffer_tests;
 mod compressed_capabilities;
@@ -39,6 +48,8 @@ mod compressed_validation_tests;
 mod compressed_volumes;
 mod construction;
 mod context;
+mod context_state;
+use context_state::WebGl;
 mod copy_texture;
 mod copy_texture_conversion;
 mod core_attachment_queries;
@@ -93,6 +104,7 @@ mod draw_buffers;
 mod drawing_buffer_extent;
 #[cfg(test)]
 mod drawing_buffer_extent_tests;
+mod error_state;
 mod extension_commands;
 mod extension_draw_dispatch;
 mod extensions;
@@ -116,6 +128,9 @@ mod framebuffers;
 mod image_uploads;
 #[cfg(test)]
 mod immutable_attachment_tests;
+mod index_cache;
+#[cfg(test)]
+mod index_cache_native_tests;
 mod index_ranges;
 mod indexed_blend;
 mod indexed_blend_entries;
@@ -124,6 +139,11 @@ mod indexed_range_admission_tests;
 mod indexed_uniform_buffers;
 mod instancing;
 mod legacy_mip_allocations;
+#[cfg(test)]
+mod link_reflection_tests;
+mod link_submission;
+#[cfg(test)]
+mod link_submission_tests;
 mod multi_draw;
 mod multi_draw_entries;
 mod multisample;
@@ -139,7 +159,10 @@ mod object_queries;
 mod objects;
 #[cfg(test)]
 mod parallel_compile_tests;
+#[cfg(test)]
+mod parallel_lifetime_tests;
 mod parameters;
+mod pending_links;
 mod pixel_buffer_guard;
 #[cfg(test)]
 mod pixel_buffer_tests;
@@ -165,6 +188,8 @@ mod readback_cache;
 #[cfg(test)]
 mod readback_cache_tests;
 mod resize;
+mod resource_budget;
+mod resource_diagnostics;
 #[cfg(test)]
 mod same_size_resize_tests;
 #[cfg(test)]
@@ -180,6 +205,8 @@ mod shader_queries;
 mod shader_source_budget_tests;
 mod shader_validation;
 mod shader_validation_cache;
+mod shader_validator_resources;
+mod shader_validators;
 mod stencil_masks;
 mod surface;
 mod surface_multisample;
@@ -230,7 +257,13 @@ mod uniform_block_tests;
 #[cfg(test)]
 mod uniform_block_validation_tests;
 mod uniform_blocks;
+#[cfg(test)]
+mod uniform_metadata_tests;
 mod uniform_queries;
+mod uniform_reflection;
+#[cfg(test)]
+mod uniform_reflection_tests;
+mod uniform_type;
 #[cfg(test)]
 mod uniform_validation_tests;
 mod uniforms;
@@ -274,7 +307,11 @@ use objects::{Kind, Objects};
 use surface::Surface;
 
 pub(crate) const MAX_CONTEXTS: usize = 8;
-const MAX_OBJECTS: usize = 1024;
+// Generated object names have bounded browser metadata even before they own
+// storage. Asset-heavy applications legitimately exceed 1,024 names during
+// loading; storage remains independently subject to the per-context/process
+// byte ledgers. This is an admission limit, not an advertised GL capability.
+const MAX_OBJECTS: usize = 8192;
 const MAX_RESOURCE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_PROCESS_RESOURCE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_NATIVE_CONTEXTS: usize = 16;
@@ -322,75 +359,5 @@ impl Command {
             .copied()
             .map(|n| n as f32)
             .ok_or(gl::INVALID_VALUE)
-    }
-}
-
-struct WebGl {
-    // Surface/resources must be deleted with their owning context current, before EGL teardown.
-    native: NativeContext,
-    core: Option<core_entries::CoreEntries>,
-    core_buffer_bindings: HashMap<u32, u32>,
-    surface: Surface,
-    readback_cache: readback_cache::Cache,
-    shader_validation_cache: shader_validation_cache::Cache,
-    objects: Objects,
-    errors: VecDeque<u32>,
-    options: Options,
-    stencil_masks: stencil_masks::StencilMasks,
-    resource_bytes: usize,
-    resource_limit: usize,
-    array_buffer: u32,
-    element_buffer: u32,
-    program: u32,
-    attributes: Vec<buffers::Attribute>,
-    attribute_values: Vec<vertex_attributes::ValueKind>,
-    extensions: extensions::Extensions,
-    vertex_arrays: vertex_arrays::VertexArrays,
-    framebuffer: u32,
-    read_framebuffer: u32,
-    default_read_buffer: u32,
-    renderbuffer: u32,
-    texture_unit: usize,
-    textures: Vec<[u32; 4]>,
-    samplers: Vec<u32>,
-    indexed_uniforms: indexed_uniform_buffers::Bindings,
-    query_objects: query_objects::State,
-    sync_objects: sync_objects::State,
-    transform_feedback: transform_feedback::State,
-    default_draw_buffer: u32,
-}
-impl WebGl {
-    fn error(&mut self, error: u32) {
-        if error != gl::NO_ERROR && !self.errors.contains(&error) && self.errors.len() < 8 {
-            self.errors.push_back(error);
-        }
-    }
-    fn charge(&mut self, previous: usize, next: usize) -> Result<()> {
-        // Lifetime high-water accounting: deleted resources may remain referenced by unbound
-        // framebuffer/program/vertex state in GLES. Never reclaim their charge prematurely.
-        // Buffer storage also has a CPU mirror for indexed-draw validation.
-        let growth = next
-            .saturating_sub(previous)
-            .checked_mul(2)
-            .ok_or(gl::OUT_OF_MEMORY)?;
-        self.resource_bytes = self
-            .resource_bytes
-            .checked_add(growth)
-            .filter(|n| *n <= self.resource_limit)
-            .ok_or(gl::OUT_OF_MEMORY)?;
-        Ok(())
-    }
-    fn driver_result(&mut self) -> Result<()> {
-        // Drain into WebGL's per-context sticky error set, rather than losing an earlier error.
-        let mut first = None;
-        for _ in 0..8 {
-            let error = unsafe { gl::GetError() };
-            if error == gl::NO_ERROR {
-                break;
-            }
-            first.get_or_insert(error);
-            self.error(error);
-        }
-        first.map_or(Ok(()), Err)
     }
 }

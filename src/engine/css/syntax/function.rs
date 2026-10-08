@@ -4,7 +4,7 @@ use cssparser::{Parser, ParserInput, Token};
 
 pub(in crate::engine::css) fn function(value: &str) -> Option<(String, &str)> {
     let value = value.trim();
-    if value.len() > 16_384 || !value.ends_with(')') {
+    if value.len() > 16_384 {
         return None;
     }
     let mut source = ParserInput::new(value);
@@ -19,6 +19,8 @@ pub(in crate::engine::css) fn function(value: &str) -> Option<(String, &str)> {
             Ok(nested.slice_from(start))
         })
         .ok()?;
+    // CSS Syntax closes an unfinished function at EOF. Nested grammar still
+    // decides whether its body is valid, and trailing tokens remain invalid.
     input.expect_exhausted().ok()?;
     Some((name.to_ascii_lowercase(), body))
 }
@@ -38,6 +40,7 @@ mod tests {
     use super::*;
     #[test]
     fn escaped_names_and_nested_arguments_retain_source_boundaries() {
+        assert_eq!(function("brightness(2"), Some(("brightness".into(), "2")));
         assert_eq!(
             function(r"r\67 b(calc(1 + 2), min(3, 4), 5)"),
             Some(("rgb".into(), "calc(1 + 2), min(3, 4), 5"))

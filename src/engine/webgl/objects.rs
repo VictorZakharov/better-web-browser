@@ -5,6 +5,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 static NEXT_OBJECT: AtomicU32 = AtomicU32::new(1);
 
+mod storage_summary;
+mod uniform_locations;
+use uniform_locations::{UniformLocation, UniformLocations};
+
 pub(super) fn next_browser_name() -> Result<u32> {
     NEXT_OBJECT
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
@@ -18,7 +22,6 @@ pub(super) enum Kind {
     Buffer,
     Shader,
     Program,
-    Uniform,
     Texture,
     Framebuffer,
     Renderbuffer,
@@ -36,14 +39,12 @@ pub(super) struct Object {
     pub buffer_mirror_valid: bool,
     pub capacity: usize,
     pub buffer_target: u32,
-    pub owner: u32,
     pub generation: u32,
     pub pending_delete: bool,
     // GLES3 detaches current bindings. An uninstantiated reservation prevents
     // ANGLE from recycling the numeric name while inactive containers retain it.
     pub native_deleted: bool,
     pub shader_log: String,
-    pub uniform_type: u32,
     pub texture_images: HashMap<(u32, i32), (u32, u32)>,
     pub texture_allocations: HashMap<(u32, i32), usize>,
     pub core_images: HashMap<(u32, i32), super::core_textures::Image>,
@@ -60,6 +61,8 @@ pub(super) struct Objects {
     pub(super) poisoned: bool,
     api: super::ApiVersion,
     entries: HashMap<u32, Object>,
+    uniforms: UniformLocations,
+    retired_capacity: usize,
 }
 impl Objects {
     pub(super) fn new(api: super::ApiVersion) -> Self {
@@ -67,19 +70,35 @@ impl Objects {
             poisoned: false,
             api,
             entries: HashMap::new(),
+            uniforms: UniformLocations::default(),
+            retired_capacity: 0,
         }
     }
     pub fn uniform(&self, owner: u32, generation: u32, native: u32) -> Option<u32> {
-        self.entries.iter().find_map(|(&id, object)| {
-            (object.kind == Kind::Uniform
-                && object.owner == owner
-                && object.generation == generation
-                && object.native == native)
-                .then_some(id)
+        self.uniforms.find(owner, generation, native)
+    }
+    pub fn insert_uniform(&mut self, owner: u32, native: u32, uniform_type: u32) -> Result<u32> {
+        let generation = self.get(owner, Kind::Program)?.generation;
+        self.uniforms.insert(UniformLocation {
+            native,
+            owner,
+            generation,
+            uniform_type,
         })
     }
+    pub fn uniform_location(&self, id: u32) -> Result<&UniformLocation> {
+        self.uniforms.get(id)
+    }
+    pub fn begin_link(&mut self, id: u32) -> Result<u32> {
+        let object = self.get_mut(id, Kind::Program)?;
+        object.generation = object.generation.checked_add(1).ok_or(gl::OUT_OF_MEMORY)?;
+        let native = object.native;
+        // WebGL locations expire on every relink, even when the link fails.
+        self.uniforms.retire(id);
+        Ok(native)
+    }
     pub fn insert(&mut self, kind: Kind, native: u32) -> Result<u32> {
-        if (native == 0 && kind != Kind::Uniform) || self.entries.len() >= MAX_OBJECTS {
+        if native == 0 || self.entries.len() >= MAX_OBJECTS {
             return Err(gl::OUT_OF_MEMORY);
         }
         // Names must not alias in peer contexts or after a context is restored.
@@ -93,12 +112,10 @@ impl Objects {
                 buffer_mirror_valid: true,
                 capacity: 0,
                 buffer_target: 0,
-                owner: 0,
                 generation: 0,
                 pending_delete: false,
                 native_deleted: false,
                 shader_log: String::new(),
-                uniform_type: 0,
                 texture_images: HashMap::new(),
                 texture_allocations: HashMap::new(),
                 core_images: HashMap::new(),
@@ -178,6 +195,7 @@ impl Objects {
             return Ok(());
         }
         if let Some(object) = self.entries.remove(&id) {
+            self.retired_capacity += object.capacity;
             let attached: Vec<_> = object
                 .framebuffer_attachments
                 .values()
@@ -191,7 +209,9 @@ impl Objects {
         Ok(())
     }
     pub fn delete_all(&mut self) {
+        self.uniforms.clear();
         for (_, object) in self.entries.drain() {
+            self.retired_capacity += object.capacity;
             destroy(object, self.api);
         }
     }
@@ -200,6 +220,9 @@ impl Objects {
         let object = self.get_mut(shader, Kind::Shader)?;
         object.references = object.references.checked_add(1).ok_or(gl::OUT_OF_MEMORY)?;
         Ok(())
+    }
+    pub(super) fn attached_shaders(&self, program: u32) -> Result<&[u32]> {
+        Ok(&self.get(program, Kind::Program)?.attached)
     }
     pub fn detach(&mut self, program: u32, shader: u32) -> Result<()> {
         self.get_mut(program, Kind::Program)?
@@ -254,6 +277,11 @@ impl Objects {
             .is_some_and(|o| o.pending_delete && o.references == 0)
             && let Some(object) = self.entries.remove(&id)
         {
+            self.retired_capacity += object.capacity;
+            if object.kind == Kind::Program {
+                // A deleted current program remains alive until it is unbound.
+                self.uniforms.retire(id);
+            }
             // GLES already received Delete*. Names are held only while attached/current;
             // once the last reference disappears they must never alias a recycled driver ID.
             if matches!(
@@ -273,6 +301,9 @@ impl Objects {
             (object.kind == kind && object.native == native).then_some(id)
         })
     }
+    pub(super) fn take_retired_capacity(&mut self) -> usize {
+        std::mem::take(&mut self.retired_capacity)
+    }
 }
 fn destroy(object: Object, api: super::ApiVersion) {
     // SAFETY: called only with the owning context current and a typed live driver name.
@@ -284,7 +315,6 @@ fn destroy(object: Object, api: super::ApiVersion) {
             Kind::Shader if !object.pending_delete => gl::DeleteShader(object.native),
             Kind::Program if !object.pending_delete => gl::DeleteProgram(object.native),
             Kind::Shader | Kind::Program => {}
-            Kind::Uniform => {}
             Kind::Texture => gl::DeleteTextures(1, &object.native),
             Kind::Framebuffer => gl::DeleteFramebuffers(1, &object.native),
             Kind::Renderbuffer => gl::DeleteRenderbuffers(1, &object.native),

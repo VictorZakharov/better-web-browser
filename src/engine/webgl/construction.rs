@@ -57,6 +57,12 @@ impl WebGl {
             surface,
             readback_cache: readback_cache::Cache::default(),
             shader_validation_cache: shader_validation_cache::Cache::default(),
+            shader_validators: shader_validators::Validators::default(),
+            pending_links: pending_links::PendingLinks::default(),
+            compiler_events: compiler_events::Events::default(),
+            uniform_reflection: uniform_reflection::Cache::default(),
+            attribute_reflection: attribute_reflection::Cache::default(),
+            index_cache: index_cache::Cache::default(),
             objects: Objects::new(options.api),
             default_draw_buffer: gl::BACK,
             errors: VecDeque::new(),
@@ -64,6 +70,7 @@ impl WebGl {
             stencil_masks: stencil_masks::StencilMasks::default(),
             resource_bytes: surface_bytes,
             resource_limit: MAX_RESOURCE_BYTES,
+            resource_diagnostics: Default::default(),
             array_buffer: 0,
             element_buffer: 0,
             program: 0,
@@ -96,11 +103,16 @@ impl WebGl {
                 .driver_result()
                 .map_err(|error| format!("Initialize WebGL2 core state: GL {error:#x}"))?;
         }
+        context.extensions.initialize_compiler()?;
         Ok(context)
     }
 }
 impl Drop for WebGl {
     fn drop(&mut self) {
+        // gl::Compiler::onDestroy finalizes shared translator TLS when the last
+        // native compiler is released. Destroy explicit validator handles first;
+        // their destructors still require that TLS, even with no current EGL binding.
+        self.shader_validators.clear();
         if self.native.make_current().is_ok() {
             if self.vertex_arrays.default_native != 0 {
                 unsafe {

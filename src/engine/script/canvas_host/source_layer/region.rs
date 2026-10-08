@@ -2,12 +2,19 @@
 //! outside the rectangle still participate as transparent source in destructive
 //! Porter-Duff modes; they are never silently omitted from composition.
 use super::*;
+use std::borrow::Cow;
 
-pub(in crate::engine::script::canvas_host) fn render_region(
+#[cfg(test)]
+fn render_region(args: &[JsValue], source: &shadow::Layer) -> Option<Vec<u8>> {
+    let destination = args.get(1)?.as_bytes()?;
+    render_region_destination(args, source, Cow::Borrowed(destination))
+}
+
+pub(in crate::engine::script::canvas_host) fn render_region_destination(
     args: &[JsValue],
     source: &shadow::Layer,
+    destination: Cow<'_, [u8]>,
 ) -> Option<Vec<u8>> {
-    let destination = args.get(1)?.as_bytes()?;
     let JsValue::String(operator) = args.get(3)? else {
         return None;
     };
@@ -45,7 +52,7 @@ pub(in crate::engine::script::canvas_host) fn render_region(
         [offset_x, offset_y],
         color,
     )?;
-    let mut output = destination.to_vec();
+    let mut output = destination.into_owned();
     sparse::composite(&mut output, width, height, &shadow, operator, clip, opaque)?;
     sparse::composite(&mut output, width, height, source, operator, clip, opaque)?;
     Some(output)

@@ -3,9 +3,31 @@
 //! compositing equation as the scalar JS path, not a second rasterizer.
 
 use super::*;
+use std::borrow::Cow;
 mod prepared;
+mod scalar;
+pub(super) use scalar::source_over;
+
+#[cfg(test)]
+mod compact_tests;
+#[cfg(test)]
+mod workload_tests;
 
 pub(super) fn paint(args: &[JsValue]) -> JsValue {
+    let Some(destination) = args.get(2).and_then(JsValue::as_bytes) else {
+        return JsValue::Null;
+    };
+    finish(args, Cow::Borrowed(destination))
+}
+
+pub(super) fn paint_owned(args: &mut [JsValue]) -> JsValue {
+    let Some(destination) = super::owned_pixels::take(args, 2) else {
+        return JsValue::Null;
+    };
+    finish(args, Cow::Owned(destination))
+}
+
+fn finish(args: &[JsValue], destination: Cow<'_, [u8]>) -> JsValue {
     let mask = match args.get(1) {
         Some(JsValue::Null) => None,
         Some(value) => match value.as_bytes() {
@@ -13,9 +35,6 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
             None => return JsValue::Null,
         },
         None => return JsValue::Null,
-    };
-    let Some(destination) = args.get(2).and_then(JsValue::as_bytes) else {
-        return JsValue::Null;
     };
     let Some(JsValue::Array(channels)) = args.get(3) else {
         return JsValue::Null;
@@ -51,7 +70,7 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
             clip
         }
     };
-    composite_clipped_region(mask, destination, color, opacity, clip.as_ref())
+    composite_destination(mask, destination, color, opacity, clip.as_ref())
         .map_or(JsValue::Null, JsValue::Bytes)
 }
 
@@ -70,6 +89,7 @@ pub(super) fn composite_region(
     composite_clipped_region(mask, destination, color, opacity, None)
 }
 
+#[cfg(test)]
 pub(super) fn composite_clipped_region(
     mask: Option<&[u8]>,
     destination: &[u8],
@@ -77,8 +97,18 @@ pub(super) fn composite_clipped_region(
     opacity: f64,
     clip: Option<&super::raster_clip::Clip<'_>>,
 ) -> Option<Vec<u8>> {
-    validate(mask, destination, color, opacity)?;
-    let mut output = destination.to_vec();
+    composite_destination(mask, Cow::Borrowed(destination), color, opacity, clip)
+}
+
+fn composite_destination(
+    mask: Option<&[u8]>,
+    destination: Cow<'_, [u8]>,
+    color: [f64; 4],
+    opacity: f64,
+    clip: Option<&super::raster_clip::Clip<'_>>,
+) -> Option<Vec<u8>> {
+    validate(mask, &destination, color, opacity)?;
+    let mut output = destination.into_owned();
     composite_in_place(mask, &mut output, color, opacity, clip)?;
     Some(output)
 }
@@ -111,9 +141,9 @@ pub(super) fn composite_in_place(
 ) -> Option<()> {
     validate(mask, destination, color, opacity)?;
     let pixels = destination.len() / 4;
-    // Tiny regions do not amortize preparing 256 coverage samples. Keep their
+    // Tiny regions do not amortize the coverage table. Keep their
     // scalar path; this changes only arithmetic placement, not edge quality.
-    let paint = (pixels >= 256).then(|| prepared::Paint::new(color, opacity));
+    let paint = (pixels >= 256).then(|| prepared::Paint::shared(color, opacity, mask.is_some()));
     for (index, pixel) in destination.chunks_exact_mut(4).enumerate() {
         // An aligned integer rectangle has complete coverage. Do not allocate
         // a redundant all-255 mask just to move its paint off the JS pixel loop.
@@ -130,31 +160,35 @@ pub(super) fn composite_in_place(
     Some(())
 }
 
-pub(super) fn source_over(pixel: &mut [u8], color: [f64; 4], opacity: f64) {
-    let source_alpha = color[3] / 255.0 * opacity;
-    if source_alpha == 1.0 {
-        // Fully covered opaque source-over replaces the backdrop. Keep the
-        // same round() conversion as the scalar equation (including fractional
-        // channels), without its redundant destination load/divisions.
-        for channel in 0..3 {
-            pixel[channel] = color[channel].round() as u8;
-        }
-        pixel[3] = 255;
-        return;
+/// Fused native geometry can read compact coverage directly. Zero gaps leave
+/// even hidden destination RGB untouched; final clipping uses bitmap indices.
+pub(super) fn composite_coverage_in_place(
+    mask: &super::coverage_storage::Coverage,
+    destination: &mut [u8],
+    color: [f64; 4],
+    opacity: f64,
+    clip: Option<&super::raster_clip::Clip<'_>>,
+) -> Option<()> {
+    validate(None, destination, color, opacity)?;
+    let pixels = destination.len() / 4;
+    if mask.len() != pixels {
+        return None;
     }
-    let backdrop_weight = f64::from(pixel[3]) / 255.0 * (1.0 - source_alpha);
-    let output_alpha = source_alpha + backdrop_weight;
-    if output_alpha == 0.0 {
-        pixel.fill(0);
-    } else if source_alpha != 0.0 {
-        for channel in 0..3 {
-            pixel[channel] = ((source_alpha * color[channel]
-                + backdrop_weight * f64::from(pixel[channel]))
-                / output_alpha)
-                .round() as u8;
+    let paint = (pixels >= 256).then(|| prepared::Paint::shared(color, opacity, true));
+    mask.runs(|start, coverage| {
+        let region = &mut destination[start * 4..(start + coverage.len()) * 4];
+        for (offset, (pixel, &coverage)) in region.chunks_exact_mut(4).zip(coverage).enumerate() {
+            if coverage == 0 || clip.is_some_and(|clip| !clip.allows(start + offset)) {
+                continue;
+            }
+            if let Some(paint) = &paint {
+                paint.apply(pixel, coverage);
+            } else {
+                source_over(pixel, color, opacity * (f64::from(coverage) / 255.0));
+            }
         }
-        pixel[3] = (output_alpha * 255.0).round() as u8;
-    }
+    });
+    Some(())
 }
 
 #[cfg(test)]

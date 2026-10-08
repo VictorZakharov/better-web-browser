@@ -1,6 +1,26 @@
 use super::*;
 
 #[test]
+fn bounded_document_callback_longer_than_old_budget_completes_normally() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><script>setTimeout(() => {
+          const start = performance.now();
+          while (performance.now() - start < 2200) {}
+          document.body.setAttribute('data-finished', 'yes');
+        }, 1);</script></body>"#,
+        true,
+    );
+    let body = dom.elements_named("body").next().unwrap();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let initial = runtime.execute_initial_before_document_completion(&script_inputs(&dom), None);
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    let completed = runtime.advance_time(Duration::from_millis(1), 1);
+    assert!(completed.errors.is_empty(), "{:?}", completed.errors);
+    assert_eq!(body.attr("data-finished").as_deref(), Some("yes"));
+    assert!(runtime.is_active());
+}
+
+#[test]
 fn timed_out_timer_preserves_partial_mutations_and_allows_later_tasks() {
     let dom = dom::parse_with_scripting(
         r#"<body><script>

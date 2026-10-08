@@ -14,7 +14,6 @@ impl WebGl {
             }
             let location = unsafe { gl::GetUniformLocation(object.native, name.as_ptr()) };
             let generation = object.generation;
-            let native = object.native;
             self.driver_result()?;
             if location < 0 {
                 return Ok(Value::Null);
@@ -22,12 +21,8 @@ impl WebGl {
             if let Some(id) = self.objects.uniform(owner, generation, location as u32) {
                 return Ok(json!(id));
             }
-            let kind = self.uniform_type(native, name.to_str().map_err(|_| gl::INVALID_VALUE)?)?;
-            let id = self.objects.insert(Kind::Uniform, location as u32)?;
-            let location = self.objects.get_mut(id, Kind::Uniform)?;
-            location.owner = owner;
-            location.generation = generation;
-            location.uniform_type = kind;
+            let kind = self.uniform_type(owner, name.to_str().map_err(|_| gl::INVALID_VALUE)?)?;
+            let id = self.objects.insert_uniform(owner, location as u32, kind)?;
             return Ok(json!(id));
         }
         let id = c.u(0)?;
@@ -35,7 +30,7 @@ impl WebGl {
         if id == 0 {
             return Ok(Value::Null);
         }
-        let object = self.objects.get(id, Kind::Uniform)?;
+        let object = self.objects.uniform_location(id)?;
         let program = self.objects.get(object.owner, Kind::Program)?;
         if self.program != object.owner || program.generation != object.generation {
             return Err(gl::INVALID_OPERATION);

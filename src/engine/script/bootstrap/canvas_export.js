@@ -3,6 +3,8 @@
     const encodedCanvas = (canvas, type, quality) => {
         const owned = stateForCanvas(canvas);
         const state = owned.placeholder ? stateForCanvas(owned.placeholder) : owned;
+        if (state.originClean === false)
+            throw new DOMException('Canvas bitmap is not origin-clean', 'SecurityError');
         if (!state.width || !state.height || !state.pixels) return null;
         return host('canvasEncode', state.width, state.height, type, quality, state.pixels);
     };

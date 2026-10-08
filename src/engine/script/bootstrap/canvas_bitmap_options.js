@@ -8,14 +8,14 @@
     const bitmapLong = value => {
         const number = bitmapNumber(value);
         if (!Number.isFinite(number) || number === 0) return 0;
-        const integer = Math.trunc(number);
+        const integer = canvasPrivateMath.trunc(number);
         const wrapped = ((integer % 0x100000000) + 0x100000000) % 0x100000000;
         return wrapped >= 0x80000000 ? wrapped - 0x100000000 : wrapped;
     };
     const bitmapUnsignedRange = value => {
         const number = bitmapNumber(value);
         if (!Number.isFinite(number)) throw new TypeError('ImageBitmap resize dimension must be finite');
-        const integer = Math.trunc(number);
+        const integer = canvasPrivateMath.trunc(number);
         if (integer < 0 || integer > 0xffffffff)
             throw new TypeError('ImageBitmap resize dimension is out of range');
         return integer;
@@ -55,32 +55,32 @@
     };
     const flipBitmapVertically = source => {
         const pixels16=flipBitmapWords(source);
-        const pixels = new Uint8ClampedArray(source.pixels.length);
+        const pixels = new canvasPrivatePixelArray(canvasPrivateCount(source.pixels));
         const stride = source.width * 4;
         for (let row = 0; row < source.height; row++)
-            pixels.set(source.pixels.subarray(row * stride, (row + 1) * stride),
-                (source.height - row - 1) * stride);
+            copyCanvasPixelRow(pixels, (source.height - row - 1) * stride,
+                source.pixels, row * stride, stride);
         return {width: source.width, height: source.height,
             pixels:pixels16?narrowBitmapWords(pixels16):pixels,pixels16};
     };
     const applyBitmapPremultiplication = source => {
         const pixels16=premultiplyBitmapWords(source);
-        const pixels = new Uint8ClampedArray(source.pixels);
-        for (let offset = 0; offset < pixels.length; offset += 4) {
+        const pixels = new canvasPrivatePixelArray(source.pixels);
+        for (let offset = 0; offset < canvasPrivateCount(pixels); offset += 4) {
             const alpha = pixels[offset + 3];
             for (let channel = 0; channel < 3; channel++)
-                pixels[offset + channel] = Math.floor((pixels[offset + channel] * alpha + 127) / 255);
+                pixels[offset + channel] = canvasPrivateMath.floor((pixels[offset + channel] * alpha + 127) / 255);
         }
         return {...source, pixels:pixels16?narrowBitmapWords(pixels16):pixels,pixels16,premultiplied:true};
     };
     const bitmapStraightPixels = state => {
         if (state.pixels16) return narrowBitmapWords(copyBitmapWords(state));
-        const pixels = new Uint8ClampedArray(state.pixels);
-        if (state.premultiplied) for (let offset = 0; offset < pixels.length; offset += 4) {
+        const pixels = new canvasPrivatePixelArray(state.pixels);
+        if (state.premultiplied) for (let offset = 0; offset < canvasPrivateCount(pixels); offset += 4) {
             const alpha = pixels[offset + 3];
             for (let channel = 0; channel < 3; channel++)
                 pixels[offset + channel] = alpha === 0 ? 0 :
-                    Math.min(255, Math.floor((pixels[offset + channel] * 255 + alpha / 2) / alpha));
+                    canvasPrivateMath.min(255, canvasPrivateMath.floor((pixels[offset + channel] * 255 + alpha / 2) / alpha));
         }
         return pixels;
     };
@@ -89,8 +89,8 @@
         if (quality !== 'pixelated') return resizeBitmapSamples(source, width, height, true);
         // HTML's pixelated filter: nearest-neighbor to the closest positive
         // integer multiple, then bilinear to the exact requested dimensions.
-        const intermediateWidth = source.width * Math.max(1, Math.round(width / source.width));
-        const intermediateHeight = source.height * Math.max(1, Math.round(height / source.height));
+        const intermediateWidth = source.width * canvasPrivateMath.max(1, canvasPrivateMath.round(width / source.width));
+        const intermediateHeight = source.height * canvasPrivateMath.max(1, canvasPrivateMath.round(height / source.height));
         bitmapPixelBudget(intermediateWidth, intermediateHeight);
         const intermediate = resizeBitmapSamples(source, intermediateWidth, intermediateHeight, false);
         return width === intermediateWidth && height === intermediateHeight ? intermediate :
@@ -98,9 +98,9 @@
     };
     const formatImageBitmap = (source, options) => {
         const width = options.resizeWidth ?? (options.resizeHeight === undefined ? source.width :
-            Math.ceil(source.width * options.resizeHeight / source.height));
+            canvasPrivateMath.ceil(source.width * options.resizeHeight / source.height));
         const height = options.resizeHeight ?? (options.resizeWidth === undefined ? source.height :
-            Math.ceil(source.height * options.resizeWidth / source.width));
+            canvasPrivateMath.ceil(source.height * options.resizeWidth / source.width));
         bitmapPixelBudget(width, height);
         let output = resizeImageBitmap(source, width, height, options.resizeQuality);
         if (options.imageOrientation === 'flipY') output = flipBitmapVertically(output);

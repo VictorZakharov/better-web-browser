@@ -13,39 +13,42 @@
     const placeholderOwners = new WeakMap();
 
     const forgetDetachedCanvases = () => {
-        for (const canvas of presentedCanvases) {
-            if (canvas.isConnected) continue;
-            detachedCanvases.add(new WeakRef(canvas));
-            presentedCanvases.delete(canvas);
-            dirtyCanvases.delete(canvas);
-            presentedDimensions.delete(canvas);
-            exportedBitmaps.delete(canvas);
+        canvasPrivateSetEach(presentedCanvases, canvas => {
+            if (canvas.isConnected) return;
+            canvasPrivateSetAdd(detachedCanvases, new canvasPrivateWeakRef(canvas));
+            canvasPrivateSetDelete(presentedCanvases, canvas);
+            canvasPrivateSetDelete(dirtyCanvases, canvas);
+            canvasPrivateWeakDelete(presentedDimensions, canvas);
+            canvasPrivateWeakSetDelete(exportedBitmaps, canvas);
+        });
+        while (canvasPrivateSetSize(detachedCanvases) > MAX_PRESENTED_CANVASES) {
+            let first;
+            canvasPrivateSetEach(detachedCanvases, reference => { if (!first) first = reference; });
+            canvasPrivateSetDelete(detachedCanvases, first);
         }
-        while (detachedCanvases.size > MAX_PRESENTED_CANVASES)
-            detachedCanvases.delete(detachedCanvases.values().next().value);
     };
     const restoreReattachedCanvases = () => {
-        for (const reference of detachedCanvases) {
-            const canvas = reference.deref();
-            if (!canvas) { detachedCanvases.delete(reference); continue; }
-            if (!canvas.isConnected || presentedCanvases.size >= MAX_PRESENTED_CANVASES) continue;
-            presentedCanvases.add(canvas);
-            dirtyCanvases.add(canvas);
-            detachedCanvases.delete(reference);
-        }
+        canvasPrivateSetEach(detachedCanvases, reference => {
+            const canvas = canvasPrivateDeref(reference);
+            if (!canvas) { canvasPrivateSetDelete(detachedCanvases, reference); return; }
+            if (!canvas.isConnected || canvasPrivateSetSize(presentedCanvases) >= MAX_PRESENTED_CANVASES) return;
+            canvasPrivateSetAdd(presentedCanvases, canvas);
+            canvasPrivateSetAdd(dirtyCanvases, canvas);
+            canvasPrivateSetDelete(detachedCanvases, reference);
+        });
     };
 
     const dirtyCanvas = surface => {
         const canvas = surface instanceof OffscreenCanvas
-            ? placeholderOwners.get(surface) : surface;
+            ? canvasPrivateWeakGet(placeholderOwners, surface) : surface;
         if (!(canvas instanceof HTMLCanvasElement)) return;
-        if (!presentedCanvases.has(canvas) && presentedCanvases.size >= MAX_PRESENTED_CANVASES) {
+        if (!canvasPrivateSetHas(presentedCanvases, canvas) && canvasPrivateSetSize(presentedCanvases) >= MAX_PRESENTED_CANVASES) {
             forgetDetachedCanvases();
-            if (presentedCanvases.size >= MAX_PRESENTED_CANVASES) return;
+            if (canvasPrivateSetSize(presentedCanvases) >= MAX_PRESENTED_CANVASES) return;
         }
-        presentedCanvases.add(canvas);
-        if (dirtyCanvases.has(canvas)) return;
-        dirtyCanvases.add(canvas);
+        canvasPrivateSetAdd(presentedCanvases, canvas);
+        if (canvasPrivateSetHas(dirtyCanvases, canvas)) return;
+        canvasPrivateSetAdd(dirtyCanvases, canvas);
         host('canvasPaintDirty', nodeId(canvas));
     };
     const paintMethod = (prototype, name, owner = receiver => receiver.canvas) => {
@@ -53,7 +56,7 @@
         if (typeof descriptor?.value !== 'function') return;
         const original = descriptor.value;
         const wrapped = function(...args) {
-            const result = Reflect.apply(original, this, args);
+            const result = canvasPrivateApply(original, this, args);
             dirtyCanvas(owner(this));
             return result;
         };
@@ -79,8 +82,8 @@
 
     const originalGetContext = HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext = function(...args) {
-        const context = Reflect.apply(originalGetContext, this, args);
-        if (context && !presentedCanvases.has(this)) dirtyCanvas(this);
+        const context = canvasPrivateApply(originalGetContext, this, args);
+        if (context && !canvasPrivateSetHas(presentedCanvases, this)) dirtyCanvas(this);
         return context;
     };
     Object.defineProperty(HTMLCanvasElement.prototype.getContext, 'length',
@@ -90,23 +93,23 @@
         Object.defineProperty(HTMLCanvasElement.prototype, name, {
             ...descriptor,
             set(value) {
-                descriptor.set.call(this, value);
-                if (presentedCanvases.has(this)) dirtyCanvas(this);
+                canvasPrivateApply(descriptor.set, this, [value]);
+                if (canvasPrivateSetHas(presentedCanvases, this)) dirtyCanvas(this);
             }
         });
         const offscreenDescriptor = Object.getOwnPropertyDescriptor(OffscreenCanvas.prototype, name);
         Object.defineProperty(OffscreenCanvas.prototype, name, {
             ...offscreenDescriptor,
             set(value) {
-                offscreenDescriptor.set.call(this, value);
+                canvasPrivateApply(offscreenDescriptor.set, this, [value]);
                 dirtyCanvas(this);
             }
         });
     }
     const originalTransfer = HTMLCanvasElement.prototype.transferControlToOffscreen;
     HTMLCanvasElement.prototype.transferControlToOffscreen = function(...args) {
-        const offscreen = Reflect.apply(originalTransfer, this, args);
-        placeholderOwners.set(offscreen, this);
+        const offscreen = canvasPrivateApply(originalTransfer, this, args);
+        canvasPrivateWeakSet(placeholderOwners, offscreen, this);
         dirtyCanvas(this);
         return offscreen;
     };
@@ -119,32 +122,35 @@
         let deferred = false;
         forgetDetachedCanvases();
         restoreReattachedCanvases();
-        const ordered = [...presentedCanvases];
+        const ordered = [];
+        canvasPrivateSetEach(presentedCanvases, canvas => canvasPrivatePush(ordered, canvas));
         // A repainting earlier Canvas must not starve one whose pixels have
         // never crossed this export boundary.
-        ordered.sort((left, right) => Number(exportedBitmaps.has(left)) -
-            Number(exportedBitmaps.has(right)));
-        for (const canvas of ordered) {
-            const [width,height] = canvasOwnedDimensions(canvas);
-            const previous = presentedDimensions.get(canvas);
+        canvasPrivateSort(ordered, (left, right) => (canvasPrivateWeakSetHas(exportedBitmaps, left) ? 1 : 0) -
+            (canvasPrivateWeakSetHas(exportedBitmaps, right) ? 1 : 0));
+        for (let index = 0; index < ordered.length; index++) {
+            const canvas = ordered[index];
+            const dimensions = canvasOwnedDimensions(canvas);
+            const width = dimensions[0], height = dimensions[1];
+            const previous = canvasPrivateWeakGet(presentedDimensions, canvas);
             if (previous?.[0] !== width || previous?.[1] !== height) {
                 stateForCanvas(canvas);
-                dirtyCanvases.add(canvas);
+                canvasPrivateSetAdd(dirtyCanvases, canvas);
             }
-            if (!dirtyCanvases.has(canvas)) continue;
+            if (!canvasPrivateSetHas(dirtyCanvases, canvas)) continue;
             // Draw/clear wrappers conservatively schedule a checkpoint, including
             // FBO-only passes. Ask the native owner once here, after its ordered
             // command batch, rather than querying on every draw or trusting a
             // JavaScript copy of framebuffer bindings. Export APIs still read
             // the actual (possibly implicitly cleared) drawing buffer.
-            const cached = canvasStates.get(canvas);
+            const cached = canvasPrivateWeakGet(canvasStates, canvas);
             const backing = cached?.placeholder && !canvasOffscreenDetached(cached.placeholder)
-                ? canvasStates.get(cached.placeholder) : cached;
-            if (exportedBitmaps.has(canvas) && previous?.[0] === width && previous?.[1] === height &&
+                ? canvasPrivateWeakGet(canvasStates, cached.placeholder) : cached;
+            if (canvasPrivateWeakSetHas(exportedBitmaps, canvas) && previous?.[0] === width && previous?.[1] === height &&
                 backing?.mode === 'webgl') {
                 const native = webGlContexts.get(backing.context);
                 if (native && !native.lost && webGlCall(backing.context, 'drawingBufferDirty') === false) {
-                    dirtyCanvases.delete(canvas);
+                    canvasPrivateSetDelete(dirtyCanvases, canvas);
                     continue;
                 }
             }
@@ -156,26 +162,26 @@
             if (canvasOffscreenDetached(placeholder) || !output.width || !output.height ||
                 !width || !height || !pixels)
                 pixels = null;
-            else if (pixels.byteLength > MAX_PRESENTED_CANVAS_BYTES) {
+            else if (canvasPrivateByteLength(pixels) > MAX_PRESENTED_CANVAS_BYTES) {
                 // The atomic bitmap cannot fit in any batch. Keep it dirty but
                 // do not spin zero-delay checkpoints for an impossible export.
                 continue;
             }
-            else if (bytes + pixels.byteLength > MAX_PRESENTED_CANVAS_BYTES) {
+            else if (bytes + canvasPrivateByteLength(pixels) > MAX_PRESENTED_CANVAS_BYTES) {
                 // Null means "remove the current bitmap" to the renderer. Keep
                 // both pixels and the dirty marker for the next bounded batch.
                 if (!deferred) host('canvasPaintDirty', nodeId(canvas));
                 deferred = true;
                 continue;
-            } else bytes += pixels.byteLength;
+            } else bytes += canvasPrivateByteLength(pixels);
             // The backing bitmap may have different natural dimensions after
             // bitmaprenderer transfer. Preserve both it and the attribute-size
             // stamp, so native painting can reject stale post-resize assets.
-            snapshots.push([nodeId(canvas), output.width, output.height, width, height, pixels]);
+            canvasPrivatePush(snapshots, [nodeId(canvas), output.width, output.height, width, height, pixels]);
             if (pixels && output.mode === 'webgl') webGlPresented(output);
-            if (pixels) exportedBitmaps.add(canvas);
-            presentedDimensions.set(canvas, [width, height]);
-            dirtyCanvases.delete(canvas);
+            if (pixels) canvasPrivateWeakSetAdd(exportedBitmaps, canvas);
+            canvasPrivateWeakSet(presentedDimensions, canvas, [width, height]);
+            canvasPrivateSetDelete(dirtyCanvases, canvas);
         }
         return snapshots;
     };

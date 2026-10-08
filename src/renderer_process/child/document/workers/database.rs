@@ -135,6 +135,7 @@ mod tests {
             WorkerHandle {
                 commands,
                 cancelled: Arc::new(AtomicBool::new(false)),
+                execution: ScriptCancellation::default(),
             },
         );
         let first = WORKER_DATABASE_BIT | 1;
@@ -200,6 +201,7 @@ mod tests {
             WorkerHandle {
                 commands,
                 cancelled: Arc::new(AtomicBool::new(false)),
+                execution: ScriptCancellation::default(),
             },
         );
         let wire = WORKER_DATABASE_BIT | 1;

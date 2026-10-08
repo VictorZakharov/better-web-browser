@@ -11,16 +11,19 @@ impl WebGl {
                 if c.text.len() > MAX_SHADER_SOURCE_BYTES || c.text.contains('\0') {
                     return Err(gl::INVALID_VALUE);
                 }
-                let previous = self.objects.get(c.u(0)?, Kind::Shader)?.capacity;
-                self.charge(previous, c.text.len() + MAX_SHADER_BYTES)?;
-                let object = self.objects.get_mut(c.u(0)?, Kind::Shader)?;
-                object.bytes = c.text.as_bytes().to_vec();
-                object.capacity = previous.max(c.text.len() + MAX_SHADER_BYTES);
+                let reservation = self.prepare_object_storage(
+                    c.u(0)?,
+                    Kind::Shader,
+                    c.text.len() + MAX_SHADER_BYTES,
+                )?;
                 let source = CString::new(c.text.as_str()).map_err(|_| gl::INVALID_VALUE)?;
                 let pointer = source.as_ptr();
                 unsafe {
                     gl::ShaderSource(shader, 1, &pointer, ptr::null());
                 }
+                self.driver_result()?;
+                self.commit_object_storage(reservation)?;
+                self.objects.get_mut(c.u(0)?, Kind::Shader)?.bytes = c.text.as_bytes().to_vec();
             }
             "compileShader" => {
                 let shader = self.objects.get(c.u(0)?, Kind::Shader)?.native;
@@ -32,25 +35,26 @@ impl WebGl {
                     gl::GetShaderiv(shader, gl::SHADER_TYPE, &mut kind);
                 }
                 let translated = self.translate_shader(kind as u32, &source);
-                let previous = self.objects.get(c.u(0)?, Kind::Shader)?.capacity;
                 let translated_bytes = translated.as_ref().map(String::len).unwrap_or(0);
                 let capacity = source.len() + MAX_SHADER_BYTES + translated_bytes;
-                self.charge(previous, capacity)?;
-                let object = self.objects.get_mut(c.u(0)?, Kind::Shader)?;
-                object.capacity = previous.max(capacity);
+                let reservation = self.prepare_object_storage(c.u(0)?, Kind::Shader, capacity)?;
                 let (driver_source, log) = match translated {
                     Ok(source) => (source, String::new()),
                     // Compile invalid ESSL as well, so native linkage cannot reuse
                     // an earlier successful shader after validation has failed.
                     Err(log) => ("!".to_owned(), log),
                 };
-                self.objects.get_mut(c.u(0)?, Kind::Shader)?.shader_log = log;
                 let source = CString::new(driver_source).map_err(|_| gl::INVALID_VALUE)?;
                 let pointer = source.as_ptr();
+                self.prepare_compiler_event(true, c.u(0)?)?;
                 unsafe {
                     gl::ShaderSource(shader, 1, &pointer, ptr::null());
                     gl::CompileShader(shader);
                 }
+                self.driver_result()?;
+                self.commit_object_storage(reservation)?;
+                self.objects.get_mut(c.u(0)?, Kind::Shader)?.shader_log = log;
+                self.record_compiler_event(true, c.u(0)?, shader)?;
             }
             "attachShader" | "detachShader" => {
                 let program_id = c.u(0)?;
@@ -75,18 +79,19 @@ impl WebGl {
                 if c.op == "linkProgram" {
                     self.validate_transform_program_link(c.u(0)?)?;
                 }
-                let object = self.objects.get_mut(c.u(0)?, Kind::Program)?;
+                let program = if c.op == "linkProgram" {
+                    self.objects.begin_link(c.u(0)?)?
+                } else {
+                    self.objects.get(c.u(0)?, Kind::Program)?.native
+                };
                 if c.op == "linkProgram" {
-                    object.generation =
-                        object.generation.checked_add(1).ok_or(gl::OUT_OF_MEMORY)?;
-                }
-                let program = object.native;
-                unsafe {
-                    if c.op == "linkProgram" {
-                        gl::LinkProgram(program);
-                    } else {
-                        gl::ValidateProgram(program);
-                    }
+                    // Reflection belongs to the invocation generation, not the
+                    // retained executable of a failed/pending relink.
+                    self.uniform_reflection.remove(c.u(0)?);
+                    self.attribute_reflection.remove(c.u(0)?);
+                    self.submit_program_link(c.u(0)?, program)?;
+                } else {
+                    unsafe { gl::ValidateProgram(program) };
                 }
             }
             "useProgram" => {
@@ -125,6 +130,14 @@ impl WebGl {
                 let completion = pname == 0x91b1 && self.extensions.parallel_compile;
                 if !allowed && !core_blocks && !completion {
                     return Err(gl::INVALID_ENUM);
+                }
+                self.objects
+                    .get(c.u(0)?, if shader { Kind::Shader } else { Kind::Program })?;
+                if completion && !shader {
+                    self.progress_program_links(1)?;
+                    if self.pending_links.contains(c.u(0)?) {
+                        return Ok(json!(false));
+                    }
                 }
                 let object = self
                     .objects

@@ -2,8 +2,8 @@
 # Hash of rusty_v8_release_x86_64-pc-windows-msvc.lib.gz for pinned v8 152.2.0.
 # The crate verifies this before decompression even when prepare-v8.ps1 is not used.
 RUSTY_V8_ARCHIVE_SHA256 = "0b17ca072bae37dd4ff00e6014d2b413becb031c9342ee11cb8226a5881f62b2"
-# ANGLE's supported synchronous worker policy keeps GLSL compilation inside the bounded
-# renderer task. Its default std::async implementation also conflicts with the C++
-# exception ABI bundled in the pinned V8 archive when both are statically linked.
-# No linker errors are suppressed and no third-party source/header is rewritten.
-CXXFLAGS_x86_64_pc_windows_msvc = "/DANGLE_STD_ASYNC_WORKERS=0"
+# Reuse ANGLE's worker-delegation contract with our bounded renderer-owned Rust pool.
+# std::async conflicts with the exception ABI in the pinned static V8 archive.
+# Delegation enables real asynchronous shader work without that implementation,
+# suppressing linker errors, or rewriting third-party headers.
+CXXFLAGS_x86_64_pc_windows_msvc = "/DANGLE_STD_ASYNC_WORKERS=0 /DANGLE_DELEGATE_WORKERS=1"

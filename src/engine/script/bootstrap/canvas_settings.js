@@ -41,7 +41,7 @@
         const settings = canvasSettingsGet(canvasContextSettings, context);
         if (pixels && settings && !settings.alpha) {
             canvasOpaqueAdd(canvasOpaqueBitmaps, pixels);
-            canvasClearBitmapRange(pixels, 0, pixels.length);
+            canvasClearBitmapRange(pixels, 0, canvasPrivateCount(pixels));
         }
     };
     const canvasInitializeContextSettings = (context, settings) => {
@@ -51,7 +51,7 @@
             alpha:settings.alpha, colorSpace:'srgb', colorType:'unorm8',
             desynchronized:false, willReadFrequently:settings.willReadFrequently
         });
-        canvasInitializeOutputBitmap(context, stateForCanvas(canvas2dOwners.get(context)).pixels);
+        canvasInitializeOutputBitmap(context, stateForCanvas(canvasPrivateWeakGet(canvas2dOwners, context)).pixels);
     };
     const canvasGetContextSettings = context => {
         const settings = canvasSettingsGet(canvasContextSettings, context);

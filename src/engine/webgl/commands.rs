@@ -1,9 +1,10 @@
 //! Strict command boundary. No arbitrary GL entry point or pointer-valued parameter is exposed.
 use super::{Command, Kind, Result, WebGl, gl, json};
 use serde_json::Value;
+mod ownership;
 
 impl WebGl {
-    pub(super) fn dispatch(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
+    fn dispatch_inner(&mut self, c: &Command, bytes: Option<&[u8]>) -> Result<Value> {
         self.invalidate_default_resolve(&c.op);
         // WebGL's default antialiased buffer resolves transparently for reads
         // and texture copies. Author multisample FBOs still require a blit.
@@ -155,7 +156,6 @@ impl WebGl {
                                 Kind::Buffer => gl::DeleteBuffers(1, &name),
                                 Kind::Shader => gl::DeleteShader(name),
                                 Kind::Program => gl::DeleteProgram(name),
-                                Kind::Uniform => unreachable!(),
                                 _ => unreachable!(),
                             }
                         }

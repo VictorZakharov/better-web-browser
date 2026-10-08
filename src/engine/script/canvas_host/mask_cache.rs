@@ -2,11 +2,14 @@
 //! equality includes geometry, pen, transform, fill rule and raster region. Paint,
 //! clipping and compositing are still evaluated separately on every draw.
 
+use super::coverage_storage::Coverage;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-const MAX_ENTRIES: usize = 32;
+// Compressed thin strokes can fit many more exact keys under the unchanged
+// byte budget. Bound entry metadata as well as retained sample/key storage.
+const MAX_ENTRIES: usize = 512;
 const MAX_BYTES: usize = 8 * 1024 * 1024;
 const MAX_KEY_BYTES: usize = 256 * 1024;
 const MAX_MASK_BYTES: usize = 1024 * 1024;
@@ -15,6 +18,9 @@ thread_local! {
     // Renderer threads do not share mutable masks or synchronisation locks.
     static MASKS: RefCell<Cache> = RefCell::new(Cache::default());
 }
+
+#[cfg(test)]
+mod compact_tests;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Kind {
@@ -26,12 +32,12 @@ struct Entry {
     kind: Kind,
     request: String,
     geometry: Option<Vec<u8>>,
-    mask: Arc<Vec<u8>>,
+    mask: Arc<Coverage>,
 }
 
 impl Entry {
     fn bytes(&self) -> usize {
-        self.request.len() + self.geometry.as_ref().map_or(0, Vec::len) + self.mask.len()
+        self.request.len() + self.geometry.as_ref().map_or(0, Vec::len) + self.mask.bytes()
     }
 }
 
@@ -42,7 +48,7 @@ struct Cache {
 }
 
 impl Cache {
-    fn get_shared(&mut self, kind: Kind, request: &str) -> Option<Arc<Vec<u8>>> {
+    fn get_shared(&mut self, kind: Kind, request: &str) -> Option<Arc<Coverage>> {
         self.get_payload(kind, request, None)
     }
 
@@ -51,7 +57,7 @@ impl Cache {
         kind: Kind,
         request: &str,
         geometry: Option<&[u8]>,
-    ) -> Option<Arc<Vec<u8>>> {
+    ) -> Option<Arc<Coverage>> {
         let index = self.entries.iter().position(|entry| {
             entry.kind == kind && entry.request == request && entry.geometry.as_deref() == geometry
         })?;
@@ -63,7 +69,7 @@ impl Cache {
         Some(mask)
     }
 
-    fn insert_shared(&mut self, kind: Kind, request: &str, mask: Arc<Vec<u8>>) {
+    fn insert_shared(&mut self, kind: Kind, request: &str, mask: Arc<Coverage>) {
         self.insert_payload(kind, request, None, mask);
     }
 
@@ -72,7 +78,7 @@ impl Cache {
         kind: Kind,
         request: &str,
         geometry: Option<&[u8]>,
-        mask: Arc<Vec<u8>>,
+        mask: Arc<Coverage>,
     ) {
         let key_bytes = request
             .len()
@@ -86,7 +92,7 @@ impl Cache {
             let previous = self.entries.remove(index).expect("located entry");
             self.bytes -= previous.bytes();
         }
-        let needed = key_bytes + mask.len();
+        let needed = key_bytes + mask.bytes();
         while self.entries.len() >= MAX_ENTRIES || self.bytes + needed > MAX_BYTES {
             let Some(oldest) = self.entries.pop_front() else {
                 return;
@@ -104,12 +110,13 @@ impl Cache {
 
     #[cfg(test)]
     fn get(&mut self, kind: Kind, request: &str) -> Option<Vec<u8>> {
-        self.get_shared(kind, request).map(Arc::unwrap_or_clone)
+        self.get_shared(kind, request)
+            .map(|mask| Arc::unwrap_or_clone(mask).into_vec())
     }
 
     #[cfg(test)]
     fn insert(&mut self, kind: Kind, request: &str, mask: &[u8]) {
-        self.insert_shared(kind, request, Arc::new(mask.to_vec()));
+        self.insert_shared(kind, request, Arc::new(Coverage::new(mask.to_vec())));
     }
 }
 
@@ -120,14 +127,14 @@ fn rasterize(
     render: impl FnOnce() -> Option<Vec<u8>>,
 ) -> Option<Vec<u8>> {
     // JavaScript receives owned bytes, never an alias of cached storage.
-    rasterize_shared(kind, request, render).map(Arc::unwrap_or_clone)
+    rasterize_shared(kind, request, render).map(|mask| Arc::unwrap_or_clone(mask).into_vec())
 }
 
 pub(super) fn rasterize_shared(
     kind: Kind,
     request: &str,
     render: impl FnOnce() -> Option<Vec<u8>>,
-) -> Option<Arc<Vec<u8>>> {
+) -> Option<Arc<Coverage>> {
     if request.len() <= MAX_KEY_BYTES
         && let Some(mask) = MASKS.with(|cache| cache.borrow_mut().get_shared(kind, request))
     {
@@ -135,7 +142,7 @@ pub(super) fn rasterize_shared(
     }
     // Do not hold a RefCell borrow across rasterization. Unsupported/invalid
     // requests are never cached: their normal validation and fallback remain.
-    let mask = Arc::new(render()?);
+    let mask = Arc::new(Coverage::new(render()?));
     MASKS.with(|cache| {
         cache
             .borrow_mut()
@@ -149,7 +156,7 @@ pub(super) fn rasterize_packed(
     request: &str,
     geometry: &[u8],
     render: impl FnOnce() -> Option<Vec<u8>>,
-) -> Option<Arc<Vec<u8>>> {
+) -> Option<Arc<Coverage>> {
     if geometry.len() > super::packed_geometry::MAX_BYTES {
         return None;
     }
@@ -165,7 +172,7 @@ pub(super) fn rasterize_packed(
     }
     // Exact independent metadata/byte equality: no hash collision or alias can
     // substitute another path. The existing cache budget counts both fields.
-    let mask = Arc::new(render()?);
+    let mask = Arc::new(Coverage::new(render()?));
     MASKS.with(|cache| {
         cache
             .borrow_mut()
@@ -186,7 +193,7 @@ mod tests {
             Kind::Fill,
             "metadata",
             Some(&geometry),
-            Arc::new(vec![128; 16]),
+            Arc::new(Coverage::new(vec![128; 16])),
         );
         assert_eq!(cache.bytes, 8 + 1024 + 16);
         geometry.fill(99);
@@ -204,7 +211,7 @@ mod tests {
             Kind::Fill,
             "too big",
             Some(&vec![0; MAX_KEY_BYTES]),
-            Arc::new(vec![1]),
+            Arc::new(Coverage::new(vec![1])),
         );
         assert_eq!(cache.entries.len(), 1);
         for index in 0..MAX_ENTRIES {
@@ -212,7 +219,7 @@ mod tests {
                 Kind::Stroke,
                 &index.to_string(),
                 Some(&geometry),
-                Arc::new(vec![128; MAX_MASK_BYTES]),
+                Arc::new(Coverage::new(vec![128; MAX_MASK_BYTES])),
             );
             assert!(cache.bytes <= MAX_BYTES);
             assert_eq!(
@@ -230,11 +237,11 @@ mod tests {
         assert!(Arc::ptr_eq(&first, &second));
         let mut owned = rasterize(Kind::Stroke, key, || panic!("cache hit")).unwrap();
         owned.fill(99);
-        assert_eq!(first.as_slice(), &[0, 127, 255]);
-        assert_eq!(second.as_slice(), &[0, 127, 255]);
-        let mut detached = second;
-        Arc::make_mut(&mut detached).fill(17);
-        assert_eq!(first.as_slice(), &[0, 127, 255]);
+        assert_eq!(first.to_vec(), [0, 127, 255]);
+        assert_eq!(second.to_vec(), [0, 127, 255]);
+        let mut detached = Arc::unwrap_or_clone(second).into_vec();
+        detached.fill(17);
+        assert_eq!(first.to_vec(), [0, 127, 255]);
         let third = rasterize_shared(Kind::Stroke, key, || panic!("cache hit")).unwrap();
         assert!(Arc::ptr_eq(&first, &third));
     }
@@ -242,14 +249,14 @@ mod tests {
     #[test]
     fn cache_ownership_does_not_extend_accounted_storage_after_eviction() {
         let mut cache = Cache::default();
-        let retained = Arc::new(vec![128; MAX_MASK_BYTES]);
+        let retained = Arc::new(Coverage::new(vec![128; MAX_MASK_BYTES]));
         cache.insert_shared(Kind::Fill, "retained", Arc::clone(&retained));
         assert_eq!(Arc::strong_count(&retained), 2);
         for index in 0..MAX_ENTRIES {
             cache.insert_shared(
                 Kind::Fill,
                 &index.to_string(),
-                Arc::new(vec![255; MAX_MASK_BYTES]),
+                Arc::new(Coverage::new(vec![255; MAX_MASK_BYTES])),
             );
         }
         assert_eq!(Arc::strong_count(&retained), 1);

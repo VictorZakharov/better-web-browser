@@ -3,7 +3,7 @@
     const canvasImagePaintEncode = canvasPrivateWireStringify;
     const canvasImageDrawArguments = (context, args) => {
         canvasImageDataContext(context);
-        const count = Math.min(args.length, 9);
+        const count = canvasPrivateMath.min(args.length, 9);
         if (![3, 5, 9].includes(count))
             throw new TypeError('drawImage requires 3, 5, or 9 arguments');
         if (!canvasImageSourceSupported(args[0]))
@@ -17,12 +17,12 @@
     };
     const sampleCanvasBitmap = (source, x, y, smooth) => {
         if (!smooth) {
-            const column = Math.max(0, Math.min(source.width - 1, Math.round(x)));
-            const row = Math.max(0, Math.min(source.height - 1, Math.round(y)));
-            return source.pixels.subarray((row * source.width + column) * 4,
+            const column = canvasPrivateMath.max(0, canvasPrivateMath.min(source.width - 1, canvasPrivateMath.round(x)));
+            const row = canvasPrivateMath.max(0, canvasPrivateMath.min(source.height - 1, canvasPrivateMath.round(y)));
+            return canvasPrivateView(source.pixels, (row * source.width + column) * 4,
                 (row * source.width + column) * 4 + 4);
         }
-        const left = Math.floor(x), top = Math.floor(y);
+        const left = canvasPrivateMath.floor(x), top = canvasPrivateMath.floor(y);
         const fractionX = x - left, fractionY = y - top;
         const samples = [
             [left, top, (1 - fractionX) * (1 - fractionY)],
@@ -33,8 +33,8 @@
         let alpha = 0;
         const premultiplied = [0, 0, 0];
         for (const [column, row, weight] of samples) {
-            const clampedX = Math.max(0, Math.min(source.width - 1, column));
-            const clampedY = Math.max(0, Math.min(source.height - 1, row));
+            const clampedX = canvasPrivateMath.max(0, canvasPrivateMath.min(source.width - 1, column));
+            const clampedY = canvasPrivateMath.max(0, canvasPrivateMath.min(source.height - 1, row));
             const offset = (clampedY * source.width + clampedX) * 4;
             const sampleAlpha = source.pixels[offset + 3] * weight;
             alpha += sampleAlpha;
@@ -49,12 +49,24 @@
         if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0 ||
             width * height > MAX_CANVAS_PIXELS)
             throw new DOMException('Image resize exceeds the bitmap budget', 'NotSupportedError');
-        const pixels = precise ? new preciseBitmapWords(width * height * 4) : new Uint8ClampedArray(width * height * 4);
+        if (!precise) {
+            const resized = canvasImagePaintHost('canvasResizeImage', canvasImagePaintEncode({
+                width, height, source_width:source.width, source_height:source.height, smooth
+            }), source.pixels);
+            if (!resized || canvasPrivateByteLength(resized) !== width * height * 4)
+                throw new DOMException('Image resize exceeds the native working budget', 'NotSupportedError');
+            const pixels = new canvasPrivatePixelArray(canvasPrivateBuffer(resized),
+                canvasPrivateOffset(resized), canvasPrivateCount(resized));
+            return {width, height, pixels};
+        }
+        const pixels = precise ? new preciseBitmapWords(width * height * 4) : new canvasPrivatePixelArray(width * height * 4);
         for (let row = 0; row < height; row++) for (let column = 0; column < width; column++) {
             const x = (column + 0.5) * source.width / width - 0.5;
             const y = (row + 0.5) * source.height / height - 0.5;
             const sample=sampleCanvasBitmap(source,x,y,smooth);
-            pixels.set(precise?Array.from(sample,value=>Math.round(value)):sample,(row*width+column)*4);
+            const offset = (row * width + column) * 4;
+            for (let channel = 0; channel < 4; channel++)
+                pixels[offset + channel] = precise ? canvasPrivateMath.round(sample[channel]) : sample[channel];
         }
         return { width, height, pixels };
     };
@@ -77,7 +89,7 @@
         const values = coordinates.map(Number);
         if (!values.every(Number.isFinite)) return false;
         if (!canvasImageSourceUsable(source)) return false;
-        const image = imageSourceSnapshot(source);
+        const image = imageSourceSnapshot(source, false, true);
         let sourceX = 0, sourceY = 0, sourceWidth = image.width, sourceHeight = image.height;
         let destinationX, destinationY, destinationWidth, destinationHeight;
         if (values.length === 2) {
@@ -100,6 +112,7 @@
             destinationX, destinationY, destinationWidth, destinationHeight, target);
         const inverse = matrixInverse2D(canvasDrawingState(this).transform);
         if (!inverse) return false;
+        if (image.originClean === false) target.originClean = false;
         // A valid image entirely outside the bitmap still has a transparent source
         // layer for whole-canvas Porter-Duff operators such as copy/source-in.
         if (!bounds) return true;
@@ -115,8 +128,8 @@
                 opacity: canvasDrawingState(this).globalAlpha, smooth: canvasDrawingState(this).imageSmoothingEnabled,
                 operator: canvasDrawingState(this).compositeOperation
             }), target.pixels, image.pixels, canvasDrawingState(this).clipBits || null);
-            if (painted && canvasPixelLength(painted) === target.pixels.length) {
-                copyCanvasPixelRow(target.pixels, 0, painted, 0, target.pixels.length);
+            if (painted && canvasPixelLength(painted) === canvasPrivateCount(target.pixels)) {
+                copyCanvasPixelRow(target.pixels, 0, painted, 0, canvasPrivateCount(target.pixels));
                 return true;
             }
         }

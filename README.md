@@ -1266,6 +1266,78 @@ and do not expand the hosted CI smoke gate. The October 7 score captures show
 507/588 in Breeze before and after, versus 579/588 in Chrome; their ten-second
 settling interval is not a time-to-score measurement.
 
+### October 8: bounded graphics work and cancellable script agents
+
+Canvas filter parsing now shares the CSS tokenizer, typed math and color parser.
+Native color matrices, alpha-aware Gaussian effects, fractional rectangles,
+compact path coverage and ImageBitmap resize reuse existing project backends.
+Origin-clean state follows filter-dependent drawing and bitmap ownership;
+private presentation pixels are not exposed through author-modified intrinsics.
+Bounds and remaining raster differences are documented in
+[filter effects](docs/canvas-filter-effects.md),
+[compact coverage](docs/canvas-compact-coverage.md), and
+[native resize](docs/imagebitmap-native-resize.md).
+
+WebGL uses the existing pinned ANGLE compiler's worker-delegation interface with
+a bounded renderer-owned pool. Native completion, link success and shader
+validation remain distinct. Pending links preserve mutation/query ordering,
+and ready compiler payloads are retired without deleting author executables.
+Owner/generation-keyed uniform and attribute reflection and mutation-invalidated
+index-range caches avoid repeated scans; mutable draw bounds are still checked.
+Independent upload/readback allocations move internally without transferring
+an author's ArrayBuffer or widening a destination view. See
+[compiler scheduling](docs/webgl-compiler-scheduling.md),
+[uniform storage](docs/webgl-uniform-location-storage.md),
+[index ranges](docs/webgl-index-range-cache.md), and
+[transfer ownership](docs/webgl-transfer-ownership.md).
+
+Document and dedicated Worker entries have a general ten-second author-task
+budget; the private regular-expression evaluator keeps two seconds. Explicit
+agent retirement interrupts running JavaScript independently of a full Worker
+mailbox and permanently rejects later entries. Native work retains its own
+bounds and the renderer Job remains the hard backstop. This is an execution
+policy change, not a speedup or site exception; see
+[execution and cancellation](docs/script-execution-policy.md).
+
+Production GPU storage limits remain 64 MiB per context and 128 MiB per renderer,
+with the unchanged 1 GiB renderer Job. The unchanged sibling game is still not
+accepted as rendered gameplay: its final production replay gets past loading
+but has a blank 3D view and shader errors. An authorized larger-budget experiment is
+separate from production policy, and faster owned fixtures alone cannot establish
+game readiness. See [resource accounting](docs/webgl-resource-accounting.md) and
+[the game acceptance history](docs/gd-clone-compatibility.md).
+
+Fresh October 8 captures still render **507/588 before and after**, compared
+with **579/588 in Chrome 154**. No score gain is claimed. Three fresh alternating
+release runs on the same machine give these combined-batch medians, with CPU
+sampling disabled and no concurrent builds/tests:
+
+| Completed owned workload | Merged #229 | October 8 release | Chrome 154 |
+| --- | ---: | ---: | ---: |
+| Compile/link 24 materials | 533.3 ms | 163.0 ms | 104.8 ms |
+| 2,000 draws, eight active attributes | 28.4 ms | 15.3 ms | 2.5 ms |
+| 32 replacements of one 4-MiB buffer | 84.7 ms | 32.1 ms | 176.8 ms |
+| 100 draws, 120,000 indices each | 7.0 ms | 3.4 ms | 3.3 ms |
+| Twelve bilinear bitmap enlargements | 132.0 ms | 67.7 ms | 116.4 ms |
+| Warm tall-stroke weave | 304.6 ms | 73.6 ms | 1.7 ms |
+| Fractional rectangle fills | 12.9 ms | 3.6 ms | 0.2 ms |
+
+Shader completion uses real native status; subsequent per-program pixel checks
+pass in all runs. Other timed rows include completion/readback. Uploads also
+preserve source independence after mutation. Canvas before/after hashes match
+for the listed workloads, while Chrome raster/resize results generally differ.
+Cold/changed tall geometry remains substantially slower than the warm case;
+full measurements and limits are in the linked documents. These fixtures do not
+measure game readiness, establish identical driver/kernel behavior, or rank
+whole-browser speed. No dependency or copied upstream source is added.
+
+Local verification of this source release passes 5,238 library tests, 273
+renderer-process tests, 138 live-runtime tests and the three dedicated smoke
+tests. Curated WPT passes all 583 files / 6,425 subtests; curated Khronos passes
+all 74 files / 8,696 subtests, without expectation waivers. Full-target Clippy,
+format and source-size checks also pass. These local suites do not expand CI
+beyond its existing smoke workers or imply complete web-platform compliance.
+
 YouTube remains work in progress: non-DRM video/audio can play, but startup, seeking/recovery,
 video frame cadence, layout fidelity, and memory use are not an accepted browser baseline.
 Passing media fixtures does not establish usable live-site playback. Wikipedia has dedicated

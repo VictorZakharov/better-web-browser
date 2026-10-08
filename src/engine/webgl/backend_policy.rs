@@ -22,6 +22,13 @@ impl Backend {
                 Self::Hardware(_) => 0x320a,
                 Self::Software => 0x320b,
             },
+            // EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED_ANGLE: do not let
+            // installed developer SDK layers change the production working set
+            // or latency. This disables optional backend debugging, NOT GLES/
+            // WebGL validation, robustness, shader rules, or initialization.
+            // https://github.com/google/angle/blob/main/extensions/EGL_ANGLE_platform_angle.txt
+            0x3451,
+            mozangle::egl::ffi::FALSE as i32,
         ];
         if let Self::Hardware(Some(id)) = self {
             attributes.extend([0x34a0, id.high, 0x34a1, id.low as i32]);

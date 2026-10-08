@@ -77,8 +77,8 @@
         const fontSize = canvasDrawingState(context).fontSpec[1];
         const [width, height, rootSize] = environment;
         return terms[0] + terms[1] * fontSize + terms[2] * rootSize +
-            (terms[3] * width + terms[4] * height + terms[5] * Math.min(width, height) +
-                terms[6] * Math.max(width, height)) / 100;
+            (terms[3] * width + terms[4] * height + terms[5] * canvasPrivateMath.min(width, height) +
+                terms[6] * canvasPrivateMath.max(width, height)) / 100;
     };
     const canvasTextRun = (context, text, stroke = false) => {
         text = canvasTextValue(text);
@@ -95,9 +95,9 @@
     const canvasTextInkBounds = glyphs => {
         let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
         for (const glyph of glyphs) {
-            left = Math.min(left, glyph[0]); top = Math.min(top, glyph[1]);
-            right = Math.max(right, glyph[0] + glyph[2]);
-            bottom = Math.max(bottom, glyph[1] + glyph[3]);
+            left = canvasPrivateMath.min(left, glyph[0]); top = canvasPrivateMath.min(top, glyph[1]);
+            right = canvasPrivateMath.max(right, glyph[0] + glyph[2]);
+            bottom = canvasPrivateMath.max(bottom, glyph[1] + glyph[3]);
         }
         return glyphs.length ? [left, top, right, bottom] : [0, 0, 0, 0];
     };
@@ -169,7 +169,7 @@
             for (let py = minY; py < maxY; py++) for (let px = minX; px < maxX; px++) {
                 if (!canvasClipAllows(this, px, py, state.width)) continue;
                 const [ux, uy] = matrixPoint2D(inverse, px + 0.5, py + 0.5);
-                const sx = Math.floor((ux - gx) / scale), sy = Math.floor(uy - gy);
+                const sx = canvasPrivateMath.floor((ux - gx) / scale), sy = canvasPrivateMath.floor(uy - gy);
                 if (sx < 0 || sy < 0 || sx >= glyphWidth || sy >= glyphHeight) continue;
                 const source = sy * glyphWidth + sx;
                 const coverage = colorGlyph ? data[source * 4 + 3] : data[source];

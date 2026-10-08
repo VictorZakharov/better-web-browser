@@ -1,7 +1,7 @@
     // Binding validation remains outside source-layer painting: an empty path
     // must not suppress enum conversion, receiver checks, or overload errors.
     const canvasDrawPathReceiver = context => {
-        if (!canvas2dOwners.has(context)) throw new TypeError('Illegal CanvasRenderingContext2D receiver');
+        if (!canvasPrivateWeakHas(canvas2dOwners, context)) throw new TypeError('Illegal CanvasRenderingContext2D receiver');
     };
     const canvasDrawPathRule = value => {
         if (value === undefined) return 'nonzero';

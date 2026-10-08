@@ -103,7 +103,8 @@ impl WebGl {
             .and_then(|n| n.checked_mul(bytes))
             .and_then(|n| n.checked_mul(native_samples))
             .ok_or(gl::OUT_OF_MEMORY)?;
-        self.charge(0, allocation)?;
+        let reservation =
+            self.prepare_object_storage(self.renderbuffer, Kind::Renderbuffer, allocation)?;
         let function = self
             .core
             .as_ref()
@@ -111,6 +112,7 @@ impl WebGl {
             .renderbuffer_multisample;
         unsafe { function(gl::RENDERBUFFER, samples, format, width, height) };
         self.driver_result()?;
+        self.commit_object_storage(reservation)?;
         self.objects
             .get_mut(self.renderbuffer, Kind::Renderbuffer)?
             .renderbuffer_format = format;

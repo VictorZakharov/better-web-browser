@@ -8,12 +8,12 @@
     const canvasPixelLength = Function.call.bind(Object.getOwnPropertyDescriptor(canvasTypedPrototype, 'byteLength').get);
     const canvasPixelTag = Function.call.bind(Object.getOwnPropertyDescriptor(canvasTypedPrototype, Symbol.toStringTag).get);
     const canvasImageDataContext = context => {
-        const canvas = canvas2dOwners.get(context);
+        const canvas = canvasPrivateWeakGet(canvas2dOwners, context);
         if (!canvas) throw new TypeError('Pixel operation requires a CanvasRenderingContext2D');
         return canvas;
     };
     const canvasPixelInteger = value => {
-        const number = Math.trunc(+value);
+        const number = canvasPrivateMath.trunc(+value);
         if (!Number.isFinite(number) || number < -2147483648 || number > 2147483647)
             throw new TypeError('ImageData coordinates must fit an EnforceRange long');
         return number;
@@ -44,11 +44,13 @@
         if (!rect || rect.width === 0 || rect.height === 0)
             throw new DOMException('ImageData dimensions must be non-zero', 'IndexSizeError');
         const state = stateForCanvas(canvas);
+        if (state.originClean === false)
+            throw new DOMException('Canvas bitmap is not origin-clean', 'SecurityError');
         if (!state.pixels || rect.width * rect.height > MAX_CANVAS_PIXELS)
             throw new DOMException('The requested bitmap exceeds the canvas budget', 'NotSupportedError');
         const result = new ImageData(rect.width, rect.height, settings);
-        const left = Math.max(0, rect.x), right = Math.min(state.width, rect.x + rect.width);
-        const top = Math.max(0, rect.y), bottom = Math.min(state.height, rect.y + rect.height);
+        const left = canvasPrivateMath.max(0, rect.x), right = canvasPrivateMath.min(state.width, rect.x + rect.width);
+        const top = canvasPrivateMath.max(0, rect.y), bottom = canvasPrivateMath.min(state.height, rect.y + rect.height);
         if (right <= left || bottom <= top) return result;
         const length = (right - left) * 4;
         // Setting the new platform object's pixels is not an author property
@@ -74,9 +76,9 @@
         if (dirtyWidth < 0) { dirtyX += dirtyWidth; dirtyWidth = -dirtyWidth; }
         if (dirtyHeight < 0) { dirtyY += dirtyHeight; dirtyHeight = -dirtyHeight; }
         // Intersect in source coordinates before choosing a contiguous copy.
-        const left = Math.max(0, dirtyX, -x), top = Math.max(0, dirtyY, -y);
-        const right = Math.min(image.width, dirtyX + dirtyWidth, state.width - x);
-        const bottom = Math.min(image.height, dirtyY + dirtyHeight, state.height - y);
+        const left = canvasPrivateMath.max(0, dirtyX, -x), top = canvasPrivateMath.max(0, dirtyY, -y);
+        const right = canvasPrivateMath.min(image.width, dirtyX + dirtyWidth, state.width - x);
+        const bottom = canvasPrivateMath.min(image.height, dirtyY + dirtyHeight, state.height - y);
         if (right <= left || bottom <= top) return;
         const length = (right - left) * 4;
         copyCanvasPixelRectangle(state.pixels, ((y + top) * state.width + x + left) * 4,

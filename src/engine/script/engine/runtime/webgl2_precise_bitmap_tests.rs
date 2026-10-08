@@ -33,6 +33,43 @@ const READ_RGB10: &str = r#"
 "#;
 
 #[test]
+fn precise_bitmap_private_word_views_do_not_escape_through_data_view_hooks() {
+    let bytes = encoded(
+        8,
+        1,
+        (0..8).flat_map(|step| [step * 64, 0, 0, 65535]).collect(),
+    );
+    run(&format!(
+        r#"
+        {READ_RGB10}
+        const originalGet=DataView.prototype.getUint16;
+        const originalSet=DataView.prototype.setUint16;
+        let escaped=0;
+        DataView.prototype.getUint16=function(...args){{
+            escaped++;return originalGet.apply(this,args);
+        }};
+        DataView.prototype.setUint16=function(...args){{
+            escaped++;return originalSet.apply(this,args);
+        }};
+        let bitmap,copy,moved;
+        try{{
+            bitmap=await createImageBitmap(new Blob([new Uint8Array({bytes})]),{{premultiplyAlpha:'none'}});
+            copy=structuredClone(bitmap);
+            moved=structuredClone(bitmap,{{transfer:[bitmap]}});
+        }}finally{{
+            DataView.prototype.getUint16=originalGet;
+            DataView.prototype.setUint16=originalSet;
+        }}
+        if(escaped!==0)throw Error('private word views escaped: '+escaped);
+        if(bitmap.width!==0)throw Error('source was not detached');
+        expect(read(copy),[0,1,2,3,4,5,6,7]);
+        expect(read(moved),[0,1,2,3,4,5,6,7]);
+        copy.close();moved.close();
+    "#
+    ));
+}
+
+#[test]
 fn webgl2_precise_bitmap_blob_clone_transfer_and_peer_close_preserve_all_steps() {
     let bytes = encoded(
         8,

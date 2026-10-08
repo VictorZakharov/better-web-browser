@@ -2,6 +2,7 @@
 
 pub(crate) use super::values::transitions::normalize_easing;
 use super::*;
+pub(crate) mod filter_functions;
 pub(in crate::engine::css) mod math;
 pub(in crate::engine::css) mod numbers;
 pub(in crate::engine::css) mod time;

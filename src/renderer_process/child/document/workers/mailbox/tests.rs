@@ -78,12 +78,18 @@ fn termination_never_waits_for_a_saturated_mailbox() {
             .unwrap();
     }
     let cancelled = Arc::new(AtomicBool::new(false));
+    let execution = ScriptCancellation::default();
     WorkerHandle {
         commands,
         cancelled: cancelled.clone(),
+        execution: execution.clone(),
     }
     .terminate();
     assert!(cancelled.load(Ordering::Acquire));
+    assert!(
+        execution.is_cancelled(),
+        "full mailbox bypassed script interruption"
+    );
     drop(receiver);
     assert_eq!(document_bytes.load(Ordering::Acquire), 0);
 }

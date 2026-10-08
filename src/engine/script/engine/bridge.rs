@@ -4,6 +4,8 @@ use crate::engine::script::worker_host::WorkerHostState;
 use std::cell::RefCell;
 use std::rc::Weak;
 use std::time::Instant;
+#[cfg(windows)]
+mod gpu;
 mod paint;
 mod values;
 pub(super) use values::{value_from_v8, value_to_v8};
