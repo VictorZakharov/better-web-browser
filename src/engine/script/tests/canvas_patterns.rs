@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn canvas_patterns_native_batch_matches_managed_clip_fallback() {
+fn canvas_patterns_native_and_clipped_batches_match_independent_scalar_rows() {
     let source = include_str!("../../../../tests/canvas/pattern-paint.js");
     let (_, outcome) = execute_html(&format!(
         "<script>{source}\ntestPatternPainting(()=>document.createElement('canvas'));</script>"

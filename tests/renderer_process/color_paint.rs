@@ -91,8 +91,8 @@ fn has_pad(presentation: &RendererPresentation, width: f32, green: bool) -> bool
 fn color_hover_batches_one_paint_but_delivers_every_move_and_wheel_verdict_first() {
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
     let mut session = RendererSession::launch(options()).expect("hidden renderer");
-    let initial = load_html_document(&session, 310, include_str!("../fixtures/color-paint.html"));
-    acknowledge(&session, &initial);
+    let initial =
+        load_scripted_html_document(&session, 310, include_str!("../fixtures/color-paint.html"));
     for (sequence, x) in [(1, 20.0), (2, 320.0), (3, 20.0), (4, 320.0), (5, 20.0)] {
         move_pointer(&session, initial.document, sequence, x);
     }
@@ -244,8 +244,7 @@ fn author_geometry_flush_absorbs_pending_color_and_updates_the_next_native_hit()
         }
     "#,
     );
-    let initial = load_html_document(&session, 311, &html);
-    acknowledge(&session, &initial);
+    let initial = load_scripted_html_document(&session, 311, &html);
     move_pointer(&session, initial.document, 1, 20.0);
     let mut first_move = false;
     for _ in 0..40 {
@@ -318,8 +317,7 @@ fn non_color_hover_effects_and_hit_changes_are_not_deferred() {
         let mut session = RendererSession::launch(options()).expect("hidden renderer");
         let html =
             include_str!("../fixtures/color-paint-author.html").replace("/* EFFECT */", effect);
-        let initial = load_html_document(&session, 312 + index as u64, &html);
-        acknowledge(&session, &initial);
+        let initial = load_scripted_html_document(&session, 312 + index as u64, &html);
         move_pointer(&session, initial.document, 1, 20.0);
         let changed = paint(&session);
         assert!(

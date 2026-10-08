@@ -58,16 +58,53 @@
     };
     const webGl2NumericConstructors = {f:Float32Array,i:Int32Array,u:Uint32Array};
     const webGl2NumericNames = {f:'Float32Array',i:'Int32Array',u:'Uint32Array'};
-    const webGl2NumericArgument = kind => value => {
-        if (webGl2IsView(value)) {
-            const view = webGl2View(value);
-            if (view.name === webGl2NumericNames[kind]) {
-                const values = new webGl2NumericConstructors[kind](view.buffer,view.byteOffset,view.length);
-                return {values,length:view.length};
-            }
+    const webGlNumericResizable = webGl2Getter(ArrayBuffer.prototype,'resizable');
+    const webGlNumericGrowable = typeof SharedArrayBuffer === 'function' ?
+        webGl2Getter(SharedArrayBuffer.prototype,'growable') : null;
+    const webGlNumericDetached = buffer => {
+        try { new webGl2ByteArray(buffer,0,0); return false; }
+        catch (error) { if (error instanceof TypeError) return true; throw error; }
+    };
+    const webGlNumericTypedArgument = (kind,value,limit=1048576) => {
+        if (!webGl2IsView(value) || Reflect.apply(webGl2TypedName,value,[]) !== webGl2NumericNames[kind])
+            return null;
+        // Float32List/Int32List/Uint32List select genuine buffer-view brands
+        // before consulting an author's iterator, including in another realm.
+        // [AllowShared] does not imply [AllowResizable]. Detached buffers are
+        // a WebGL INVALID_VALUE, not an IDL exception or a sequence fallback.
+        // https://registry.khronos.org/webgl/specs/latest/1.0/#TYPES
+        const buffer=Reflect.apply(webGl2TypedGetters.buffer,value,[]);
+        let resizable;
+        try { resizable=Reflect.apply(webGlNumericResizable,buffer,[]); }
+        catch (error) {
+            if (!webGlNumericGrowable) throw error;
+            resizable=Reflect.apply(webGlNumericGrowable,buffer,[]);
         }
+        if (resizable) throw new TypeError('WebGL numeric lists require a fixed-length backing store');
+        if (webGlNumericDetached(buffer)) return {values:[],length:0,detached:true};
+        const offset=Reflect.apply(webGl2TypedGetters.byteOffset,value,[]);
+        const length=Reflect.apply(webGl2TypedGetters.length,value,[]);
+        if (length>limit) throw new RangeError('WebGL typed numeric list exceeds the snapshot budget');
+        const source=new webGl2NumericConstructors[kind](buffer,offset,length);
+        const values=new webGl2NumericConstructors[kind](length);
+        // Match the existing multi-draw contract and Chrome: conversion takes
+        // an independent snapshot before later offset/length getters can mutate
+        // or detach the author buffer. Builtin set safely reads shared memory;
+        // no shared byte span crosses into Rust or the separate GL owner thread.
+        Reflect.apply(webGl2ByteSet,values,[source]);
+        return {values,length,detached:false};
+    };
+    const webGl2NumericArgument = kind => value => {
+        const typed=webGlNumericTypedArgument(kind,value);
+        if (typed) return typed;
         const values = webGl2Sequence(value,kind);
         return {values,length:values.length};
+    };
+    const webGlNumericValidate = (context,source) => {
+        if (source.detached) {
+            webGlError(context,0x0501);return false;
+        }
+        return true;
     };
     const webGl2NumericSlice = (context,source,offset,length) => {
         const count = length === 0 ? source.length-offset : length;

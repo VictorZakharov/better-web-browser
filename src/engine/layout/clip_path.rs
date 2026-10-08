@@ -18,6 +18,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let Some(inset) =
             style
                 .clip_path
+                .clone()
                 .inset(border_box.width, border_box.height, style.font_size)
         else {
             return;

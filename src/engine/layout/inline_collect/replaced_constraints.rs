@@ -23,7 +23,7 @@ pub(super) fn constrain(
         .unwrap_or(f32::INFINITY)
         .max(min_width);
     let min_height = resolve_height_value(
-        style.min_height,
+        style.min_height.clone(),
         containing.height,
         viewport,
         style.font_size,
@@ -31,7 +31,7 @@ pub(super) fn constrain(
     .unwrap_or(0.0)
     .max(0.0);
     let max_height = resolve_height_value(
-        style.max_height,
+        style.max_height.clone(),
         containing.height,
         viewport,
         style.font_size,

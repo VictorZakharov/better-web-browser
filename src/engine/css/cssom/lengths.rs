@@ -2,6 +2,12 @@ use super::{Length, serialize_number, serialize_px};
 
 pub(super) fn serialize_computed_length(value: Length, font_size: f32) -> String {
     let value = match value {
+        Length::Math(value) => value
+            .map_lengths(&|length| match length {
+                Length::Em(value) => Length::Px(value * font_size),
+                value => value.clone(),
+            })
+            .into_length(),
         Length::Em(em) => Length::Px(em * font_size),
         Length::Calc {
             px,
@@ -37,6 +43,7 @@ pub(super) fn serialize_computed_length(value: Length, font_size: f32) -> String
 pub(in crate::engine::css) fn serialize_length(value: Length) -> String {
     match value {
         Length::Auto => "auto".to_string(),
+        Length::Math(value) => value.css_text(),
         Length::Px(value) => serialize_px(value),
         Length::Percent(value) => format!("{}%", serialize_number(value)),
         Length::Em(value) => format!("{}em", serialize_number(value)),

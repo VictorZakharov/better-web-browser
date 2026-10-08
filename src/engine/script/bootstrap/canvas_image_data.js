@@ -22,6 +22,19 @@
         const row = new canvasPixelArray(canvasPixelBuffer(source), canvasPixelOffset(source) + sourceStart, length);
         canvasPixelSet(destination, row, destinationStart);
     };
+    const copyCanvasPixelRectangle = (destination, destinationStart, destinationStride,
+        source, sourceStart, sourceStride, rowLength, rows) => {
+        // A full-width vertical intersection is contiguous in both buffers.
+        // Any horizontal crop or unequal stride must retain row-wise copying;
+        // copying its enclosing span would overwrite padding/unrelated pixels.
+        if (rowLength === sourceStride && rowLength === destinationStride) {
+            copyCanvasPixelRow(destination, destinationStart, source, sourceStart, rowLength * rows);
+            return;
+        }
+        for (let row = 0; row < rows; row++)
+            copyCanvasPixelRow(destination, destinationStart + row * destinationStride,
+                source, sourceStart + row * sourceStride, rowLength);
+    };
 
     const readCanvasImageData = (context, x, y, width, height, settings) => {
         const canvas = canvasImageDataContext(context);
@@ -38,16 +51,18 @@
         const top = Math.max(0, rect.y), bottom = Math.min(state.height, rect.y + rect.height);
         if (right <= left || bottom <= top) return result;
         const length = (right - left) * 4;
-        for (let row = top; row < bottom; row++) {
-            copyCanvasPixelRow(result.data, ((row - rect.y) * rect.width + left - rect.x) * 4,
-                state.pixels, (row * state.width + left) * 4, length);
-        }
+        // Setting the new platform object's pixels is not an author property
+        // read of ImageData.prototype.data (HTML's getImageData algorithm).
+        const pixels = imageDataState(result).data;
+        copyCanvasPixelRectangle(pixels, ((top - rect.y) * rect.width + left - rect.x) * 4,
+            rect.width * 4, state.pixels, (top * state.width + left) * 4,
+            state.width * 4, length, bottom - top);
         return result;
     };
 
     const writeCanvasImageData = (context, imageData, x, y, dirty) => {
         const canvas = canvasImageDataContext(context);
-        const image = imageDataStates.get(imageData);
+        const image = imageDataWeakGet(imageDataStates, imageData);
         if (!image) throw new TypeError('putImageData requires ImageData');
         x = canvasPixelInteger(x); y = canvasPixelInteger(y);
         let [dirtyX, dirtyY, dirtyWidth, dirtyHeight] = dirty.length < 4
@@ -58,17 +73,17 @@
         if (!state.pixels) return;
         if (dirtyWidth < 0) { dirtyX += dirtyWidth; dirtyWidth = -dirtyWidth; }
         if (dirtyHeight < 0) { dirtyY += dirtyHeight; dirtyHeight = -dirtyHeight; }
-        // Intersect in source coordinates before copying. One typed-array copy
-        // per surviving row replaces a temporary view allocation per pixel.
+        // Intersect in source coordinates before choosing a contiguous copy.
         const left = Math.max(0, dirtyX, -x), top = Math.max(0, dirtyY, -y);
         const right = Math.min(image.width, dirtyX + dirtyWidth, state.width - x);
         const bottom = Math.min(image.height, dirtyY + dirtyHeight, state.height - y);
         if (right <= left || bottom <= top) return;
         const length = (right - left) * 4;
-        for (let row = top; row < bottom; row++) {
-            copyCanvasPixelRow(state.pixels, ((y + row) * state.width + x + left) * 4,
-                image.data, (row * image.width + left) * 4, length);
-            if (canvasBitmapIsOpaque(state.pixels)) {
+        copyCanvasPixelRectangle(state.pixels, ((y + top) * state.width + x + left) * 4,
+            state.width * 4, image.data, (top * image.width + left) * 4,
+            image.width * 4, length, bottom - top);
+        if (canvasBitmapIsOpaque(state.pixels)) {
+            for (let row = top; row < bottom; row++) {
                 const start = ((y + row) * state.width + x + left) * 4;
                 for (let offset = start + 3; offset < start + length; offset += 4)
                     state.pixels[offset] = 255;

@@ -52,7 +52,7 @@ pub(super) fn apply_presentational_hints(node: &NodeRef, style: &mut ComputedSty
             .attr("cellspacing")
             .and_then(|v| parse_nonnegative_integer(&v))
     {
-        style.border_spacing = [Length::Px(spacing); 2];
+        style.border_spacing = [Length::Px(spacing), Length::Px(spacing)];
     }
     if matches!(node.tag_name(), Some("td" | "th"))
         && let Some(table) = std::iter::successors(node.parent(), |parent| parent.parent())

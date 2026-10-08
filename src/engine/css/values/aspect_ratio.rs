@@ -12,38 +12,7 @@ pub enum AspectRatio {
 
 impl AspectRatio {
     pub fn parse(input: &str) -> Option<Self> {
-        let input = input.trim();
-        if input.eq_ignore_ascii_case("auto") {
-            return Some(Self::Auto);
-        }
-        let parts = input.split_ascii_whitespace().collect::<Vec<_>>();
-        let (prefer_natural, ratio) = match parts.as_slice() {
-            ["auto", rest @ ..] => (true, rest.join(" ")),
-            [rest @ .., "auto"] => (true, rest.join(" ")),
-            _ => (false, input.to_string()),
-        };
-        if ratio.is_empty() || ratio.split_ascii_whitespace().any(|part| part == "auto") {
-            return None;
-        }
-        let values = ratio.split('/').map(str::trim).collect::<Vec<_>>();
-        let [width, height] = values.as_slice() else {
-            if values.len() == 1 {
-                let width = parse_nonnegative_number(values[0])?;
-                return Some(Self::Ratio {
-                    width,
-                    height: 1.0,
-                    prefer_natural,
-                });
-            }
-            return None;
-        };
-        let width = parse_nonnegative_number(width)?;
-        let height = parse_nonnegative_number(height)?;
-        Some(Self::Ratio {
-            width,
-            height,
-            prefer_natural,
-        })
+        super::scalars::RatioValue::parse(input)?.context_free()
     }
 
     pub fn preferred(self, natural: Option<(f32, f32)>) -> Option<(f32, bool)> {
@@ -83,10 +52,5 @@ impl AspectRatio {
     }
 }
 
-fn parse_nonnegative_number(input: &str) -> Option<f32> {
-    if input.is_empty() || input.chars().any(char::is_whitespace) {
-        return None;
-    }
-    let value = input.parse::<f32>().ok()?;
-    (value.is_finite() && value >= 0.0).then_some(value)
-}
+#[cfg(test)]
+mod tests;

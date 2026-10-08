@@ -5,6 +5,10 @@ use super::*;
 pub(in crate::engine::css) mod font;
 use crate::navigation::resolve_resource_url;
 pub(super) use font::apply_font_shorthand;
+mod background_size;
+pub(in crate::engine::css) mod flex;
+pub(super) use background_size::parse as parse_background_size;
+pub(super) use flex::assign as assign_flex;
 
 pub(super) fn apply_background_shorthand(style: &mut ComputedStyle, value: &str, base_url: &str) {
     style.background_color = Color::TRANSPARENT;
@@ -27,7 +31,7 @@ pub(super) fn apply_background_shorthand(style: &mut ComputedStyle, value: &str,
         style.background_position_x = x;
         style.background_position_y = y;
     }
-    if let Some(size) = size.and_then(parse_background_size) {
+    if let Some(size) = size.and_then(background_size::shorthand) {
         style.background_size = size;
     }
     if let Some(color) = value.split_ascii_whitespace().find_map(parse_color) {
@@ -149,96 +153,21 @@ pub(super) fn parse_background_axis(value: &str, horizontal: bool) -> Option<Len
     }
 }
 
-pub(super) fn parse_background_size(value: &str) -> Option<BackgroundSize> {
-    let first_layer = split_css_top_level(value, ',').next()?.trim();
-    match first_layer {
-        "cover" => return Some(BackgroundSize::Cover),
-        "contain" => return Some(BackgroundSize::Contain),
-        _ => {}
-    }
-    let mut lengths = first_layer
-        .split_ascii_whitespace()
-        .filter_map(parse_length);
-    let width = lengths.next()?;
-    let height = lengths.next().unwrap_or(Length::Auto);
-    if width == Length::Auto && height == Length::Auto {
-        Some(BackgroundSize::Auto)
-    } else {
-        Some(BackgroundSize::Explicit { width, height })
-    }
-}
-
 pub(super) fn assign_grid_gap(style: &mut ComputedStyle, value: &str) {
-    let values = value
-        .split_ascii_whitespace()
-        .filter_map(parse_length)
-        .collect::<Vec<_>>();
+    let Some(values) = parse_shorthand_lengths(value, 2) else {
+        return;
+    };
     match values.as_slice() {
         [both] => {
-            style.grid_row_gap = *both;
-            style.grid_column_gap = *both;
+            style.grid_row_gap = both.clone();
+            style.grid_column_gap = both.clone();
         }
-        [row, column, ..] => {
-            style.grid_row_gap = *row;
-            style.grid_column_gap = *column;
-        }
-        _ => {}
-    }
-}
-
-pub(super) fn assign_flex(style: &mut ComputedStyle, value: &str) {
-    match value {
-        "none" => {
-            style.flex_grow = 0.0;
-            style.flex_shrink = 0.0;
-            style.flex_basis = Length::Auto;
-            return;
-        }
-        "auto" => {
-            style.flex_grow = 1.0;
-            style.flex_shrink = 1.0;
-            style.flex_basis = Length::Auto;
-            return;
-        }
-        "initial" => {
-            style.flex_grow = 0.0;
-            style.flex_shrink = 1.0;
-            style.flex_basis = Length::Auto;
-            return;
+        [row, column] => {
+            style.grid_row_gap = row.clone();
+            style.grid_column_gap = column.clone();
         }
         _ => {}
     }
-    let mut grow = None;
-    let mut shrink = None;
-    let mut basis = None;
-    for token in value.split_ascii_whitespace() {
-        if let Ok(number) = token.parse::<f32>() {
-            if !number.is_finite() || number < 0.0 {
-                return;
-            }
-            if grow.is_none() {
-                grow = Some(number);
-                continue;
-            }
-            if shrink.is_none() {
-                shrink = Some(number);
-                continue;
-            }
-            return;
-        }
-        let Some(length) = parse_length(token) else {
-            return;
-        };
-        if basis.replace(length).is_some() {
-            return;
-        }
-    }
-    if grow.is_none() && basis.is_none() {
-        return;
-    }
-    style.flex_grow = grow.unwrap_or(1.0);
-    style.flex_shrink = shrink.unwrap_or(1.0);
-    style.flex_basis = basis.unwrap_or(Length::Px(0.0));
 }
 
 pub(super) fn assign_grid_axis(start: &mut Option<usize>, end: &mut Option<usize>, value: &str) {
@@ -345,47 +274,52 @@ pub(super) fn parse_line_height_for_viewport(
 }
 
 pub(super) fn assign_length(target: &mut Length, value: &str) {
-    if let Some(length) = parse_length(value)
-        .or_else(|| parse_length(value.split_ascii_whitespace().next().unwrap_or(value)))
-    {
+    if let Some(length) = parse_length(value) {
         *target = length;
     }
 }
 
 pub(super) fn assign_edges(target: &mut Edges, value: &str) {
-    let lengths = value
-        .split_ascii_whitespace()
-        .filter_map(parse_length)
-        .collect::<Vec<_>>();
+    let Some(lengths) = parse_shorthand_lengths(value, 4) else {
+        return;
+    };
     match lengths.as_slice() {
-        [all] => *target = uniform_edges(*all),
+        [all] => *target = uniform_edges(all.clone()),
         [vertical, horizontal] => {
-            target.top = *vertical;
-            target.bottom = *vertical;
-            target.left = *horizontal;
-            target.right = *horizontal;
+            target.top = vertical.clone();
+            target.bottom = vertical.clone();
+            target.left = horizontal.clone();
+            target.right = horizontal.clone();
         }
         [top, horizontal, bottom] => {
-            target.top = *top;
-            target.left = *horizontal;
-            target.right = *horizontal;
-            target.bottom = *bottom;
+            target.top = top.clone();
+            target.left = horizontal.clone();
+            target.right = horizontal.clone();
+            target.bottom = bottom.clone();
         }
-        [top, right, bottom, left, ..] => {
-            target.top = *top;
-            target.right = *right;
-            target.bottom = *bottom;
-            target.left = *left;
+        [top, right, bottom, left] => {
+            target.top = top.clone();
+            target.right = right.clone();
+            target.bottom = bottom.clone();
+            target.left = left.clone();
         }
         _ => {}
     }
 }
 
+fn parse_shorthand_lengths(value: &str, maximum: usize) -> Option<Vec<Length>> {
+    let parts = scroll_spacing::split_components(value)?;
+    if parts.is_empty() || parts.len() > maximum {
+        return None;
+    }
+    parts.into_iter().map(parse_length).collect()
+}
+
 pub(super) fn uniform_edges(value: Length) -> Edges {
     Edges {
-        top: value,
-        right: value,
-        bottom: value,
+        top: value.clone(),
+        right: value.clone(),
+        bottom: value.clone(),
         left: value,
     }
 }

@@ -8,7 +8,7 @@ fn snapping_a_computed_border_again_does_not_lose_pixels_at_fractional_dpi() {
             style.border_width = uniform_edges(Length::Px(width));
             let scale = dpi as f32 / 96.0;
             style.snap_border_widths(scale);
-            let once = style.border_width;
+            let once = style.border_width.clone();
             style.snap_border_widths(scale);
             assert_eq!(style.border_width, once, "DPI {dpi}, width {width}");
         }

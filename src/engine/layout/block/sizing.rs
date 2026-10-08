@@ -43,7 +43,7 @@ pub(super) fn resolve_height_constraints(
             style.box_sizing,
         )
     };
-    let mut specified = used_content_height.or_else(|| resolve(style.height));
+    let mut specified = used_content_height.or_else(|| resolve(style.height.clone()));
     if specified.is_none()
         && !popover_fit_content
         && matches!(style.position, Position::Absolute | Position::Fixed)
@@ -59,8 +59,8 @@ pub(super) fn resolve_height_constraints(
     }
     (
         specified,
-        resolve(style.min_height).unwrap_or(0.0),
-        resolve(style.max_height),
+        resolve(style.min_height.clone()).unwrap_or(0.0),
+        resolve(style.max_height.clone()),
     )
 }
 
@@ -76,7 +76,7 @@ pub(super) fn resolve_used_border_box_width(
         .map(|size| (size.outer - margins.horizontal()).max(0.0))
         .or_else(|| {
             resolve_outer_size(
-                style.width,
+                style.width.clone(),
                 containing_width,
                 style.font_size,
                 horizontal_insets,
@@ -88,7 +88,7 @@ pub(super) fn resolve_used_border_box_width(
         return width;
     }
     if let Some(maximum) = resolve_outer_size(
-        style.max_width,
+        style.max_width.clone(),
         containing_width,
         style.font_size,
         horizontal_insets,
@@ -97,7 +97,7 @@ pub(super) fn resolve_used_border_box_width(
         width = width.min(maximum);
     }
     if let Some(minimum) = resolve_outer_size(
-        style.min_width,
+        style.min_width.clone(),
         containing_width,
         style.font_size,
         horizontal_insets,

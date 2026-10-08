@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+fn duplicated_endpoint_inputs_follow_the_specified_outer_output_rules() {
+    // CSS Easing 2 output steps 5.1/5.2 distinguish the leading/trailing
+    // duplicated input. Chrome 154 chooses the second leading output too;
+    // retain a hard-coded standards oracle, not calculated/literal agreement.
+    let (dom, outcome) = execute_html(
+        r#"<body><div id=target></div><script>
+        const target=document.getElementById('target');
+        const sample=(easing,times) => {
+            const animation=target.animate([{opacity:0},{opacity:1}],
+                {duration:1000,fill:'both',easing});
+            animation.pause();
+            const values=times.map(time => {
+                animation.currentTime=time;
+                return animation.effect.getComputedTiming().progress.toFixed(2);
+            });
+            animation.cancel();return values;
+        };
+        document.body.setAttribute('data-result',[
+            ...sample('linear(.2 75%, .6 25%, 1)',[0,500,750,1000]),
+            ...sample('linear(0, .2 25%, .6 0%)',[500,1000])
+        ].join(','));
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-result")
+            .as_deref(),
+        Some("0.20,0.20,0.60,1.00,0.60,0.60")
+    );
+}
+
+#[test]
 fn linear_easing_distributes_missing_positions_and_interpolates_segments() {
     let (dom, outcome) = execute_html(
         r#"<body><div id=target></div><script>
@@ -45,7 +80,7 @@ fn linear_easing_handles_plateaus_discontinuities_and_out_of_order_inputs() {
             sample('linear(0, .5 25% 75%, 1)', 50) === .5,
             sample('linear(0 0%, .3 50%, .7 50%, 1 100%)', 50) === .7,
             sample('linear(0 0%, .3 50%, .7 25%, 1 100%)', 50) === .7,
-            sample('linear(.4)', 50) === .4,
+            sample('linear(.4, .4)', 50) === .4,
             sample('linear(0 0%, 1 100%)', 25) === .25
         ];
         document.body.setAttribute('data-result', checks.join(':'));
@@ -81,7 +116,7 @@ fn linear_easing_is_available_per_keyframe_and_invalid_syntax_preserves_effect()
             catch (error) { return error instanceof TypeError; }
         };
         const checks = [first === '0', second === '0.5',
-            rejects('linear()'), rejects('linear(0 2px, 1)'),
+            rejects('linear()'), rejects('linear(.4)'), rejects('linear(0 2px, 1)'),
             rejects('linear(0 20% 40% 60%, 1)'),
             JSON.stringify(effect.getKeyframes()) === old];
         animation.cancel();
@@ -95,7 +130,7 @@ fn linear_easing_is_available_per_keyframe_and_invalid_syntax_preserves_effect()
             .unwrap()
             .attr("data-result")
             .as_deref(),
-        Some("true:true:true:true:true:true")
+        Some("true:true:true:true:true:true:true")
     );
 }
 

@@ -41,6 +41,9 @@ fn media_length(value: &str, environment: MediaEnvironment) -> Option<f32> {
     let width = environment.viewport_width;
     let height = environment.viewport_height;
     let result = match length {
+        Length::Math(value) => value
+            .map_lengths(&|length| length.clone().resolve_viewport_units(width, height))
+            .resolve(None, 16.0)?,
         Length::Auto | Length::Percent(_) => return None,
         Length::Px(n) => n,
         Length::Em(n) | Length::Rem(n) => 16.0 * n,

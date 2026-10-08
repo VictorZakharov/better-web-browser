@@ -47,7 +47,7 @@
     }
     webGl2Method('transformFeedbackVaryings', 3, '-Su', [[0,'WebGLProgram',false]], function(program, varyings, mode) {
         const id = webGl2Handle(this, program, 'WebGLProgram');
-        if (id >= 0) webGl2Invoke(this, 'transformFeedbackVaryings', [id, mode], [], JSON.stringify(varyings));
+        if (id >= 0) webGl2Invoke(this, 'transformFeedbackVaryings', [id, mode], [], webGlWireList(varyings));
     });
     webGl2Method('getTransformFeedbackVarying', 2, '-u', [[0,'WebGLProgram',false]], function(program, index) {
         const id = webGl2Handle(this, program, 'WebGLProgram');

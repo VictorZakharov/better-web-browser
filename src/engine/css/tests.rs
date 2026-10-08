@@ -3,17 +3,26 @@
 use super::*;
 
 mod aspect_ratio;
+mod background_resources;
+mod easing_context;
 mod flex_flow;
 mod fullscreen;
+mod iteration_context;
 mod layers;
+mod math;
+mod math_functions;
 mod nesting;
 mod object;
 mod popover;
 mod queries;
 mod root_units;
+mod scalar_context;
+mod selectors;
 mod shadow;
+mod spacing_context;
 mod table_spacing;
 mod text_transform;
+mod time_context;
 #[path = "tests_truncation.rs"]
 mod truncation;
 mod wide_keywords;
@@ -119,7 +128,7 @@ fn flex_shorthand_distinguishes_growth_numbers_from_a_definite_basis() {
     assert_eq!(three.flex_basis, Length::Px(732.0));
     let number = styles.get(&by_id("number"));
     assert_eq!((number.flex_grow, number.flex_shrink), (2.0, 1.0));
-    assert_eq!(number.flex_basis, Length::Px(0.0));
+    assert_eq!(number.flex_basis, Length::Percent(0.0));
     let basis = styles.get(&by_id("basis"));
     assert_eq!((basis.flex_grow, basis.flex_shrink), (1.0, 1.0));
     assert_eq!(basis.flex_basis, Length::Em(10.0));
@@ -188,173 +197,6 @@ fn computes_inherited_css_text_spacing_in_pixels() {
     assert!(super::supports::supports_matches(
         "@supports (word-spacing: 0.25em)"
     ));
-}
-
-#[test]
-fn resolves_background_images_against_the_stylesheet_url() {
-    let dom = dom::parse(r#"<a class="logo"></a>"#);
-    let stylesheets = vec![(
-            "https://cdn.example/assets/css/site.css".to_string(),
-            r#".logo {
-                width: 65px;
-                height: 60px;
-                background: no-repeat center/auto 36px url('../logo.svg'), linear-gradient(transparent, transparent);
-            }"#
-                .to_string(),
-        )];
-    let styles = StyleSet::from_sources_for_viewport(
-        &dom,
-        "https://example.com/page/",
-        &stylesheets,
-        1000.0,
-        1000.0,
-    );
-    let logo = dom.elements_named("a").next().unwrap();
-    let style = styles.get(&logo);
-    assert_eq!(
-        style.background_image.as_deref(),
-        Some("https://cdn.example/assets/logo.svg")
-    );
-    assert!(!style.background_repeat_x);
-    assert!(!style.background_repeat_y);
-    assert_eq!(style.background_position_x, Length::Percent(50.0));
-    assert_eq!(style.background_position_y, Length::Percent(50.0));
-    assert_eq!(
-        style.background_size,
-        BackgroundSize::Explicit {
-            width: Length::Auto,
-            height: Length::Px(36.0)
-        }
-    );
-}
-
-#[test]
-fn resolves_standard_and_prefixed_mask_images() {
-    let dom = dom::parse(r#"<span class="icon"></span>"#);
-    let stylesheets = vec![(
-        "https://cdn.example/assets/css/icons.css".to_string(),
-        ".icon { -webkit-mask-image: url('../menu.svg'); mask-image: url('../menu.svg') }"
-            .to_string(),
-    )];
-    let styles = StyleSet::from_sources_for_viewport(
-        &dom,
-        "https://example.com/",
-        &stylesheets,
-        1000.0,
-        1000.0,
-    );
-    let icon = dom.elements_named("span").next().unwrap();
-
-    assert_eq!(
-        styles.get(&icon).mask_image.as_deref(),
-        Some("https://cdn.example/assets/menu.svg")
-    );
-}
-
-#[test]
-fn resolves_mask_shorthand_images_after_custom_property_substitution() {
-    let dom = dom::parse(r#"<span class="icon"></span>"#);
-    let stylesheets = vec![(
-        "https://cdn.example/assets/css/icons.css".to_string(),
-        ".icon { --logo: url('../menu.svg'); mask: var(--logo) center no-repeat }".to_string(),
-    )];
-    let styles = StyleSet::from_sources_for_viewport(
-        &dom,
-        "https://example.com/",
-        &stylesheets,
-        1000.0,
-        1000.0,
-    );
-    let icon = dom.elements_named("span").next().unwrap();
-
-    assert_eq!(
-        styles.get(&icon).mask_image.as_deref(),
-        Some("https://cdn.example/assets/menu.svg")
-    );
-}
-
-#[test]
-fn matches_descendants_children_compounds_and_not() {
-    let dom = dom::parse(
-        r#"<style>
-                #app > .row a.link { color: rgb(1,2,3); }
-                .row:not(.hidden) { background-color: #abcdef; }
-               </style><div id="app"><div class="row"><a class="link">x</a></div></div>"#,
-    );
-    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
-    let link = dom.elements_named("a").next().unwrap();
-    let row = dom
-        .elements_named("div")
-        .find(|node| node.has_class("row"))
-        .unwrap();
-    assert_eq!(styles.get(&link).color, Color::rgb(1, 2, 3));
-    assert_eq!(
-        styles.get(&row).background_color,
-        Color::rgb(0xab, 0xcd, 0xef)
-    );
-}
-
-#[test]
-fn matches_functional_selector_lists_root_and_has() {
-    let dom = dom::parse(
-        r#"<style>
-                :root { background-color: #010203; }
-                :is(#links, #ads) .result { color: #123456; }
-                p:not(.muted, .hidden) { background-color: #abcdef; }
-                .outside:has(.result) { color: red; }
-               </style>
-               <main id="links"><p class="result">shown</p></main>
-               <p class="muted">muted</p><div class="outside"><span class="result">x</span></div>"#,
-    );
-    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
-    let html = dom.elements_named("html").next().unwrap();
-    let result = dom
-        .elements_named("p")
-        .find(|node| node.has_class("result"))
-        .unwrap();
-    let muted = dom
-        .elements_named("p")
-        .find(|node| node.has_class("muted"))
-        .unwrap();
-    let outside = dom
-        .elements_named("div")
-        .find(|node| node.has_class("outside"))
-        .unwrap();
-    assert_eq!(styles.get(&html).background_color, Color::rgb(1, 2, 3));
-    assert_eq!(
-        styles.get(&result).background_color,
-        Color::rgb(0xab, 0xcd, 0xef)
-    );
-    assert_eq!(styles.get(&result).color, Color::rgb(0x12, 0x34, 0x56));
-    assert_eq!(styles.get(&muted).background_color, Color::TRANSPARENT);
-    assert_eq!(styles.get(&outside).color, Color::rgb(255, 0, 0));
-}
-
-#[test]
-fn matches_attribute_selectors_instead_of_treating_them_as_wildcards() {
-    let dom = dom::parse(
-        r#"<style>
-                .item[data-display="block"] { display: block; color: green; }
-                .item[data-display="none"] { display: none; color: red; }
-                [data-tags~="featured"] { background-color: #123456; }
-               </style>
-               <div class="item" data-display="block" data-tags="home featured">visible</div>
-               <div class="item" data-display="none">hidden</div>"#,
-    );
-    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
-    let mut items = dom
-        .elements_named("div")
-        .filter(|node| node.has_class("item"));
-    let visible = items.next().unwrap();
-    let hidden = items.next().unwrap();
-    assert_eq!(styles.get(&visible).display, Display::Block);
-    assert_eq!(styles.get(&visible).color, Color::rgb(0, 128, 0));
-    assert_eq!(
-        styles.get(&visible).background_color,
-        Color::rgb(0x12, 0x34, 0x56)
-    );
-    assert_eq!(styles.get(&hidden).display, Display::None);
-    assert_eq!(styles.get(&hidden).color, Color::rgb(255, 0, 0));
 }
 
 #[test]

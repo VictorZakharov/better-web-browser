@@ -4,6 +4,7 @@ use super::*;
 impl ComputedStyle {
     pub(crate) fn initial() -> Self {
         Self {
+            scalar_calculations: scalars::ScalarCalculations::default(),
             transition: transitions::TransitionSettings::default(),
             animation: animations::AnimationSettings::initial(),
             generated_content: GeneratedContent::Normal,
@@ -34,6 +35,8 @@ impl ComputedStyle {
             font_ligatures: FontLigatures::default(),
             font_numeric: FontNumeric::default(),
             letter_spacing: 0.0,
+            letter_spacing_normal: true,
+            pending_spacing: text_spacing::PendingSpacing::default(),
             word_spacing: 0.0,
             line_height: 19.2,
             line_height_value: LineHeight::Normal,
@@ -94,7 +97,7 @@ impl ComputedStyle {
             flex_basis: Length::Auto,
             box_sizing: BoxSizing::ContentBox,
             border_collapse: false,
-            border_spacing: [Length::Px(0.0); 2],
+            border_spacing: [const { Length::Px(0.0) }; 2],
             caption_side_bottom: false,
             vertical_align: VerticalAlign::Baseline,
             list_style_type: ListStyleType::Disc,
@@ -126,15 +129,16 @@ impl ComputedStyle {
             style.font_ligatures = parent.font_ligatures;
             style.font_numeric = parent.font_numeric;
             style.letter_spacing = parent.letter_spacing;
+            style.letter_spacing_normal = parent.letter_spacing_normal;
             style.word_spacing = parent.word_spacing;
             style.line_height = parent.line_height;
-            style.line_height_value = parent.line_height_value;
+            style.line_height_value = parent.line_height_value.clone();
             style.text_align = parent.text_align;
             style.direction = parent.direction;
             style.text_transform = parent.text_transform;
             style.white_space = parent.white_space;
             style.border_collapse = parent.border_collapse;
-            style.border_spacing = parent.border_spacing;
+            style.border_spacing = parent.border_spacing.clone();
             style.caption_side_bottom = parent.caption_side_bottom;
             style.list_style_type = parent.list_style_type;
             style.visibility = parent.visibility;

@@ -23,7 +23,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let available = (width - gap * tracks.len().saturating_sub(1) as f32).max(0.0);
         let mut sizes = tracks
             .iter()
-            .map(|track| initial(track, available, font))
+            // Percentages use the container's inner size, before gutters are
+            // subtracted. Only free-space distribution uses `available`.
+            // https://drafts.csswg.org/css-grid-2/#track-breadth
+            .map(|track| initial(track, width, font))
             .collect::<Vec<_>>();
         let mut items = items.iter().collect::<Vec<_>>();
         items.sort_by_key(|item| item.column_end - item.column);

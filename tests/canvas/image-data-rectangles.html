@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ImageData rectangle copying</title>
+<h1>ImageData rectangle copying</h1>
+<p>Checking clipped reads, dirty writes, transparent padding and independent pixel storage.</p>
+<pre id="probe">Pending</pre>
+<script src="image-data-rectangles.js"></script>
+<script>
+try {
+    const assertions = testImageDataRectangles((width, height) => {
+        const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height; return canvas;
+    });
+    document.querySelector('#probe').setAttribute('data-result', JSON.stringify({assertions}));
+    document.querySelector('#probe').textContent = 'Passed ' + assertions + ' pixel and ownership checks.';
+} catch (error) { document.querySelector('#probe').setAttribute('data-result', 'FAIL: ' + error.message); throw error; }
+</script>

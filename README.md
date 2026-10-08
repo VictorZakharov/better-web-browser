@@ -42,9 +42,9 @@ Current page support includes:
 - [Detached HTML/XML DOMParser documents](docs/detached-document-parsing.md), inert parsing, namespace-aware XML nodes, and shared XHR document-response parsing
 - [URL and native request resolution](docs/url-request-resolution.md), explicit public bases, live query parameters, and requests independent of author URL replacements
 - [Synchronous document streams and replacement](docs/document-streams-and-pre-wrap.md), plus [parser mutation notifications and autonomous custom-element construction](docs/parser-observation-and-cssom.md)
-- A growing CSS cascade with custom properties, `calc()` lengths, [cascade layers](docs/css-cascade-layers.md), [nested rules and Selectors Level 4 features](docs/css-nesting-selectors.md), [conditional queries and scoped rules](docs/css-conditional-scope.md), block/inline flow, flex, grid, table, float, and positioned layout
+- A growing CSS cascade with custom properties, [typed comparison lengths](docs/css-comparison-lengths.md), [stepped, exponential and trigonometric math](docs/css-math-functions.md), [cascade layers](docs/css-cascade-layers.md), [nested rules and Selectors Level 4 features](docs/css-nesting-selectors.md), [conditional queries and scoped rules](docs/css-conditional-scope.md), block/inline flow, flex, grid, table, float, and positioned layout
 - Standards-based layout fixes and their headless Chrome comparisons are tracked in [layout compatibility](docs/layout-standards.md), including explicit remaining gaps.
-- External stylesheets with [nested import loading and separate script/paint gates](docs/stylesheet-loading-dependencies.md), CSS background images, raster images, alpha compositing, inline/external SVG geometry (SVG text is not yet painted), and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
+- External stylesheets with [nested import loading and separate script/paint gates](docs/stylesheet-loading-dependencies.md), CSS background images, raster images, alpha compositing, inline/external SVG geometry and [bounded shaped SVG text](docs/svg-text-rendering.md), and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
 - [AVIF and JPEG XL decoding](docs/modern-images-and-bitmaps.md) through shared page/Canvas/worker paths, with real alpha/color/orientation handling and bounded ImageBitmap crop, resize, ownership and bitmaprenderer presentation contracts
 - [ImageDecoder and VideoFrame](docs/image-decoder-and-video-frame.md) with animated GIF/APNG/WebP frame decoding, image streams, eleven 8-bit pixel layouts, frame transfer, and Canvas/worker rendering; complete-input CPU decoding with explicit resource and SDR limits
 - [Owned and imported CSSOM](docs/parser-observation-and-cssom.md): preferred titled sheets, per-occurrence import identity, rule edits reflected in the cascade, and constructed/adopted sheets
@@ -1174,6 +1174,95 @@ Unicode-range shaping and custom SVG font-feature selection remain open. See
 [font readiness](docs/font-loading-readiness.md),
 [SVG contracts and provenance](docs/svg-text-rendering.md), and
 [Canvas coverage contracts](docs/canvas-coverage-reuse.md).
+
+### October 7: responsive comparison lengths and Canvas region ownership
+
+Typed CSS comparison lengths preserve percentage, font and viewport dependencies
+until the correct sizing context is available. Responsive SVG sizing and the
+following sibling's flow match Chrome for nine rectangles at three viewport
+widths, plus a matched 125%-scale capture, within 0.02 CSS pixels. The aspect-ratio margin fix is general block
+layout behavior, not a game stylesheet override.
+
+| Controlled CPU/readback Canvas fixture | Before (#228) | After | Chrome |
+| --- | ---: | ---: | ---: |
+| Median of nine warmed batches across three fresh runs | 18.8 ms | 10.5 ms | 1.2 ms |
+| Stable whole-bitmap checksum | 1672046960 | 1672046960 | 405226884 |
+
+This is about a 44% Breeze median improvement on that fixture, not a general
+browser-speed claim. Breeze's before/after pixels are identical; Chrome's
+different, stable checksum reflects remaining raster differences. The fixture
+requests CPU-oriented storage and includes a readback fence in every timed
+batch. No deferred work or initial GPU-to-CPU migration is counted as a win.
+
+The same native shader backend now handles bitmap clips for gradients and
+repeating patterns. Three fresh matched runs, nine warmed batches per shader,
+retain identical Breeze before/after pixels on the clipped readback fixture:
+
+| Clipped shader median | Before extension | After extension | Chrome 154 |
+| --- | ---: | ---: | ---: |
+| Linear gradient | 9.7 ms | 1.6 ms | 0.4 ms |
+| Radial gradient | 12.0 ms | 2.0 ms | 0.3 ms |
+| Repeating pattern | 16.4 ms | 1.9 ms | 1.8 ms |
+
+The before column already includes the ownership changes above. Chrome's
+gradient pixels still differ; its pattern checksum matches. These are bounded
+CPU/readback workloads, not evidence that the game now completes startup.
+
+The private Canvas geometry transport also reduces a dense 64-square Path2D
+readback workload from **51.5 to 7.2 ms** median, versus **5.5 ms** in Chrome,
+with unchanged Breeze pixels. The before binary already includes the preceding
+Canvas improvements. See [transport, ownership and measurement limits](docs/canvas-geometry-transport.md);
+the combined gain is not attributed solely to binary encoding or to game startup.
+
+Game startup is still unaccepted. Failed texture-generation worker tasks consume
+substantial owner-thread CPU; sampled GC callback spans do not explain most of
+their two-second execution budget. Diagnostics are opt-in, privacy-bounded and
+do not raise that watchdog. Numerical worker measurements show no reliable
+speedup from the WorkerGlobalScope correction. See
+[CSS comparison and geometry contracts](docs/css-comparison-lengths.md),
+[broader typed math and scalar-property contracts](docs/css-math-functions.md),
+[Canvas ownership and measurements](docs/canvas-region-ownership.md), and
+[the remaining game blocker](docs/gd-clone-compatibility.md).
+
+Fresh October 7 captures still render **507/588 before and after** this batch;
+the matched Chrome 154 reference renders **579/588**. CSS/Canvas correctness
+and throughput work here is not a claimed score increase. Both Breeze captures
+report no JavaScript errors. WebGL numeric-list conversion also has
+[typed-array ownership/error regressions](docs/webgl-numeric-unions.md) checked
+against Chrome, independently of the feature-detection score.
+
+The broader CSS math slice includes stepped, exponential and trigonometric
+functions, typed animation times, color components, easing and deferred
+translation interpolation. Fresh hidden Chrome comparisons at 100% and 125%
+device scale retain independent expected-value checks: all 364 translation
+checks match within 0.02 CSS pixels. Known NaN, duplicated easing endpoint,
+translucent readback and CSS/API timing discrepancies remain explicit in
+[the comparison results](docs/css-math-functions.md); passing fixtures do not
+imply universal pixel parity. Successful API timing/keyframe overrides survive
+later CSS changes without suppressing updates to unclaimed properties.
+
+Computed scalar math now uses the final element font, root font and viewport
+for opacity, flex factors, z-index, preferred ratios and unitless line height.
+The same phase resolves animation/transition times, font-dependent `linear()`
+outputs, iteration counts and letter/word spacing. This removes declaration-order
+guesses without reinterpreting inherited computed values using the child's font.
+Shared native/reference fixtures check CSSOM, actual flex/inline rectangles,
+live font changes, native timing and terminal paint—not only feature admission.
+Text spacing implements CSS Text 3 length values, not a guessed percentage basis.
+
+CSS variable expansion preserves token boundaries and decimal spellings and has
+per-declaration limits on serialized size, nesting, token work, cumulative source
+scanning and intermediate copying. Exhaustion invalidates the computed winner
+instead of selecting a fallback or reviving an earlier declaration. This does
+not claim complete computed custom-property graph or registered-property support.
+
+Earlier checkpoints of this slice passed 582 curated upstream WPT files / 6,424
+subtests and 74 required Khronos files / 8,696 subtests, without failure or
+timeout overrides. Full unit and renderer/runtime integration suites also ran
+locally. These are selected contracts, not full standards conformance, and do
+not expand the hosted CI smoke gate. The measured score checkpoints still show
+507/588 in Breeze before and after, versus 579/588 in Chrome; their ten-second
+settling interval is not a time-to-score measurement.
 
 YouTube remains work in progress: non-DRM video/audio can play, but startup, seeking/recovery,
 video frame cadence, layout fidelity, and memory use are not an accepted browser baseline.

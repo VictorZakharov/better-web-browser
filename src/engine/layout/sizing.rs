@@ -76,6 +76,13 @@ pub(super) fn resolve_height_value(
     font_size: f32,
 ) -> Option<f32> {
     match length {
+        Length::Math(value) => value
+            .map_lengths(&|length| {
+                length
+                    .clone()
+                    .resolve_viewport_units(viewport.width, viewport.height)
+            })
+            .resolve(percentage_basis, font_size),
         Length::Auto => None,
         Length::Percent(value) => percentage_basis.map(|basis| basis * value / 100.0),
         Length::Px(value) => Some(value),
@@ -127,7 +134,7 @@ pub(super) fn style_collapses_overflow(style: &ComputedStyle, viewport: RectF) -
     if !style.overflow_hidden {
         return false;
     }
-    if resolve_height_value(style.max_height, None, viewport, style.font_size)
+    if resolve_height_value(style.max_height.clone(), None, viewport, style.font_size)
         .is_some_and(|height| height <= 0.0)
     {
         return true;
@@ -137,7 +144,7 @@ pub(super) fn style_collapses_overflow(style: &ComputedStyle, viewport: RectF) -
             .width
             .resolve(viewport.width, style.font_size)
             .is_some_and(|width| width <= 1.0)
-        && resolve_height_value(style.height, None, viewport, style.font_size)
+        && resolve_height_value(style.height.clone(), None, viewport, style.font_size)
             .is_some_and(|height| height <= 1.0)
 }
 
@@ -151,14 +158,14 @@ pub(super) fn resolve_svg_replaced_size(
     let width = resolve_svg_replaced_length(
         node,
         "width",
-        style.width,
+        style.width.clone(),
         Some(containing_block.width),
         style.font_size,
     );
     let height = resolve_svg_replaced_length(
         node,
         "height",
-        style.height,
+        style.height.clone(),
         containing_block.height,
         style.font_size,
     );
@@ -212,6 +219,7 @@ fn resolve_replaced_css_length(
     font_size: f32,
 ) -> Option<f32> {
     let resolved = match length {
+        Length::Math(value) => value.resolve(percentage_basis, font_size),
         Length::Percent(_) => percentage_basis.and_then(|basis| length.resolve(basis, font_size)),
         Length::Calc { percent, .. } if percent.abs() > f32::EPSILON => {
             percentage_basis.and_then(|basis| length.resolve(basis, font_size))

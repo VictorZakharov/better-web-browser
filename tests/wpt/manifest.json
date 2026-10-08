@@ -16,6 +16,7 @@
     "css/css-font-loading/resources/Rochester.otf",
     "css/css-font-loading/resources/GenR102.woff2",
     "css/support/parsing-testcommon.js",
+    "css/css-animations/support/testcommon.js",
     "common/media.js",
     "webcodecs/utils.js",
     "resources/testharnessreport.js",
@@ -73,6 +74,7 @@
     "html/semantics/forms/constraints/support/validator.js"
   ],
   "tests": [
+    {"path":"css/css-variables/variable-exponential-blowup.html","area":"CSS variable expansion safety","expected":"pass"},
     {"path":"webcodecs/audio-data.any.js","area":"WebCodecs audio","expected":"pass"},
     {"path":"webcodecs/audio-data-copyTo.any.js","area":"WebCodecs audio","expected":"pass"},
     {"path":"webcodecs/encoded-audio-chunk.any.js","area":"WebCodecs audio","expected":"pass"},
@@ -1311,6 +1313,7 @@
     {"path":"css/css-cascade/scope-import-multiple.html","area":"CSS scoped imports","expected":"pass"},
     {"path":"css/css-cascade/scope-declarations.html","area":"CSS Scope","expected":"pass"},
     {"path":"css/css-cascade/scope-implicit.html","area":"CSS Scope","expected":"pass"},
+    {"path":"css/css-animations/AnimationEffect-updateTiming.tentative.html","area":"CSS Animations API timing ownership","expected":"pass"},
     {"path":"css/css-animations/parsing/keyframes-name-valid.html","area":"CSS Animations names","expected":"pass"},
     {"path":"css/css-animations/parsing/keyframes-name-invalid.html","area":"CSS Animations names","expected":"pass"},
     {"path":"css/css-animations/parsing/animation-name-valid.html","area":"CSS Animations authored values","expected":"pass"},
@@ -1336,6 +1339,11 @@
     {"path":"css/css-fonts/parsing/font-variant-ligatures-computed.html","area":"CSS Fonts ligatures","expected":"pass"},
     {"path":"css/css-fonts/parsing/font-variant-numeric-valid.html","area":"CSS Fonts numeric variants","expected":"pass"},
     {"path":"css/css-fonts/parsing/font-variant-numeric-invalid.html","area":"CSS Fonts numeric variants","expected":"pass"},
-    {"path":"css/css-fonts/parsing/font-variant-numeric-computed.html","area":"CSS Fonts numeric variants","expected":"pass"}
+    {"path":"css/css-fonts/parsing/font-variant-numeric-computed.html","area":"CSS Fonts numeric variants","expected":"pass"},
+    {"path":"css/css-values/minmax-length-invalid.html","area":"CSS comparison length type checking","expected":"pass"},
+    {"path":"css/css-values/clamp-length-invalid.html","area":"CSS comparison syntax checking","expected":"pass"},
+    {"path":"css/css-values/round-mod-rem-invalid.html","area":"CSS stepped math syntax and typing","expected":"pass"},
+    {"path":"css/css-values/calc-time-values.html","area":"CSS time calculations and computed values","expected":"pass"},
+    {"path":"css/css-values/minmax-time-invalid.html","area":"CSS time comparison type checking","expected":"pass"}
   ]
 }

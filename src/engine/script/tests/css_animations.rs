@@ -2,14 +2,18 @@
 use super::*;
 
 mod cssom;
+mod easing_math;
 mod events;
 mod layers;
 mod lifecycle;
 mod limits;
+mod math;
 mod ordering;
+mod overrides;
 mod scope;
 mod stylesheet_changes;
 mod timing;
+mod transform_math;
 mod values;
 
 fn assert_script(styles: &str, script: &str) {

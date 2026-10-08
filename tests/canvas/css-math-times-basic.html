@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Computed CSS math times and iteration counts</title>
+<div id="results">Checking…</div>
+<script src="css-math-times.js"></script>
+<script>
+// Run timing/iteration contracts independently of context-dependent easing,
+// which some reference browsers cannot parse in the animation shorthand.
+try {
+    runCSSMathTimes(false);
+    document.getElementById('results').setAttribute('data-context-easing-supported',
+        String(CSS.supports('animation', 'context-time-fade 1s linear(0, calc(1em / 20px)) -.5s both paused')));
+} catch (error) {
+    document.getElementById('results').textContent = 'Fixture failed: ' + error.stack;
+    document.getElementById('results').setAttribute('data-error', String(error));
+}
+</script>

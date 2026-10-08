@@ -26,10 +26,10 @@ pub(super) fn apply(style: &mut ComputedStyle, property: &str, value: &str) {
     };
     match property {
         "scroll-margin" | "scroll-padding" => *target = expand_edges(&parts),
-        name if name.ends_with("-top") => target.top = parts[0],
-        name if name.ends_with("-right") => target.right = parts[0],
-        name if name.ends_with("-bottom") => target.bottom = parts[0],
-        name if name.ends_with("-left") => target.left = parts[0],
+        name if name.ends_with("-top") => target.top = parts[0].clone(),
+        name if name.ends_with("-right") => target.right = parts[0].clone(),
+        name if name.ends_with("-bottom") => target.bottom = parts[0].clone(),
+        name if name.ends_with("-left") => target.left = parts[0].clone(),
         _ => {}
     }
 }
@@ -44,6 +44,7 @@ fn parse_parts(value: &str, padding: bool) -> Option<Vec<Length>> {
         .map(|token| {
             let length = parse_length(token)?;
             let valid = match length {
+                Length::Math(ref value) => padding || !value.has_percentage(),
                 Length::Auto => padding,
                 Length::Percent(value) => padding && value >= 0.0,
                 Length::Px(value)
@@ -60,39 +61,20 @@ fn parse_parts(value: &str, padding: bool) -> Option<Vec<Length>> {
         .collect()
 }
 
-// Whitespace separates shorthand sides except within a CSS function such as calc().
+// CSS token boundaries separate shorthand sides; comments and escapes must not
+// be mistaken for parentheses. Reuse the parser used for other CSS components.
 pub(super) fn split_components(value: &str) -> Option<Vec<&str>> {
-    let mut parts = Vec::new();
-    let mut depth = 0_u32;
-    let mut start = None;
-    for (offset, character) in value.char_indices() {
-        match character {
-            '(' => depth += 1,
-            ')' => depth = depth.checked_sub(1)?,
-            _ => {}
-        }
-        if character.is_ascii_whitespace() && depth == 0 {
-            if let Some(begin) = start.take() {
-                parts.push(&value[begin..offset]);
-            }
-        } else if start.is_none() {
-            start = Some(offset);
-        }
-    }
-    if depth != 0 {
+    if value.len() > 16_384 {
         return None;
     }
-    if let Some(begin) = start {
-        parts.push(&value[begin..]);
-    }
-    Some(parts)
+    super::syntax::borrowed_components(value)
 }
 
 pub(super) fn expand_edges(parts: &[Length]) -> Edges {
-    let top = parts[0];
-    let right = *parts.get(1).unwrap_or(&top);
-    let bottom = *parts.get(2).unwrap_or(&top);
-    let left = *parts.get(3).unwrap_or(&right);
+    let top = parts[0].clone();
+    let right = parts.get(1).unwrap_or(&top).clone();
+    let bottom = parts.get(2).unwrap_or(&top).clone();
+    let left = parts.get(3).unwrap_or(&right).clone();
     Edges {
         top,
         right,

@@ -84,6 +84,21 @@ pub(super) fn style_host_call(
         let value = argument_string(args, 1)?;
         return Ok(Some(normalize_css_color(&value)));
     }
+    if operation == "normalizeCssEasing" {
+        let value = argument_string(args, 1)?;
+        return Ok(Some(
+            crate::engine::css::normalize_easing(&value).map_or(JsValue::null(), JsValue::from),
+        ));
+    }
+    if operation == "interpolateCssTransform" {
+        let from = argument_string(args, 1)?;
+        let to = argument_string(args, 2)?;
+        let progress = args.get(3).and_then(JsValue::as_number).unwrap_or(f64::NAN);
+        return Ok(Some(
+            crate::engine::css::transform::interpolate(&from, &to, progress)
+                .map_or(JsValue::null(), JsValue::from),
+        ));
+    }
     if operation == "computedStyleBatch" {
         let Some(JsValue::Array(properties)) = args.get(2) else {
             return Ok(Some(JsValue::Array(Vec::new())));

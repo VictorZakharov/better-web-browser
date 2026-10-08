@@ -3,7 +3,7 @@
 
 use super::{Edges, Length, ResolvedEdges, parse_length, scroll_spacing};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) enum ClipPath {
     #[default]
     None,
@@ -35,7 +35,11 @@ impl ClipPath {
         root_font_size: f32,
     ) {
         if let Self::Inset(edges) = self {
-            *edges = edges.resolve_relative_units(viewport_width, viewport_height, root_font_size);
+            *edges = edges.clone().resolve_relative_units(
+                viewport_width,
+                viewport_height,
+                root_font_size,
+            );
         }
     }
 
@@ -60,7 +64,7 @@ impl ClipPath {
         format!("inset({})", parts.join(" "))
     }
 
-    pub(crate) fn is_none(self) -> bool {
+    pub(crate) fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }
 }

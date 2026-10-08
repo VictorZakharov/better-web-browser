@@ -29,6 +29,11 @@ impl ScriptRuntime {
                 .push(format!("finish document task: {error}"));
         }
         self.append_memory_diagnostic(&mut outcome);
+        if let Some(context) = self.context.as_deref_mut() {
+            outcome
+                .diagnostics
+                .extend(context.take_document_task_diagnostics());
+        }
         let outcome = finish_host(outcome, &self.host);
         self.collect_child_outcomes(outcome)
     }

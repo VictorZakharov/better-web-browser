@@ -3,10 +3,16 @@
 //! https://drafts.csswg.org/css-animations-1/#animation-shorthand
 
 use super::super::{Parser, ParserInput, Token, split_css_top_level};
-use super::transitions::{easing, time};
+use super::calculated_easing::{self, EasingValue};
+use super::calculated_times::{self, CalculatedTimes};
 use std::sync::{Arc, LazyLock};
 
+mod iterations;
+#[cfg(test)]
+mod math_tests;
 mod shorthand;
+use super::scalars::NumberValue;
+use iterations::IterationValue;
 #[cfg(test)]
 mod tests;
 
@@ -84,6 +90,9 @@ fn reserved(value: &str) -> bool {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct AnimationSettings {
+    pub(crate) calculated_times: CalculatedTimes,
+    pub(crate) calculated_easings: Vec<Option<EasingValue>>,
+    pub(crate) calculated_iterations: Vec<Option<NumberValue>>,
     /// Tree scope of the winning name declaration, including :host and ::slotted rules.
     pub(crate) name_scope: Option<crate::engine::dom::NodeId>,
     pub(crate) names: Vec<AnimationName>,
@@ -99,6 +108,9 @@ pub(crate) struct AnimationSettings {
 impl Default for AnimationSettings {
     fn default() -> Self {
         Self {
+            calculated_times: CalculatedTimes::default(),
+            calculated_easings: Vec::new(),
+            calculated_iterations: Vec::new(),
             name_scope: None,
             names: vec![AnimationName::None],
             durations: vec![0.0],
@@ -132,14 +144,22 @@ pub(crate) fn apply(settings: &mut AnimationSettings, name: &str, value: &str) -
     let valid = match name {
         "animation" => shorthand::parse(value).map(|value| next = value),
         "animation-name" => list(value, AnimationName::parse).map(|v| next.names = v),
-        "animation-duration" => list(value, |v| time(v, false)).map(|v| next.durations = v),
-        "animation-delay" => list(value, |v| time(v, true)).map(|v| next.delays = v),
-        "animation-timing-function" => list(value, |v| {
-            let lower = v.to_ascii_lowercase();
-            easing(&lower).map(str::to_owned)
-        })
-        .map(|v| next.easings = v),
-        "animation-iteration-count" => list(value, iteration).map(|v| next.iterations = v),
+        "animation-duration" => calculated_times::list(value, false).map(|(values, pending)| {
+            next.durations = values;
+            next.calculated_times.durations = pending;
+        }),
+        "animation-delay" => calculated_times::list(value, true).map(|(values, pending)| {
+            next.delays = values;
+            next.calculated_times.delays = pending;
+        }),
+        "animation-timing-function" => calculated_easing::list(value).map(|(values, pending)| {
+            next.easings = values;
+            next.calculated_easings = pending;
+        }),
+        "animation-iteration-count" => iterations::list(value).map(|(values, pending)| {
+            next.iterations = values;
+            next.calculated_iterations = pending;
+        }),
         "animation-direction" => keywords(
             value,
             &["normal", "reverse", "alternate", "alternate-reverse"],
@@ -176,18 +196,6 @@ fn keywords(value: &str, allowed: &[&str]) -> Option<Vec<String>> {
     })
 }
 
-pub(super) fn iteration(value: &str) -> Option<f64> {
-    if value.eq_ignore_ascii_case("infinite") {
-        return Some(f64::INFINITY);
-    }
-    let mut input = ParserInput::new(value);
-    let mut parser = Parser::new(&mut input);
-    let Token::Number { value, .. } = parser.next().ok()?.clone() else {
-        return None;
-    };
-    (parser.is_exhausted() && value.is_finite() && value >= 0.0).then_some(f64::from(value))
-}
-
 impl AnimationSettings {
     pub(crate) fn copy_property(&mut self, source: &Self, property: &str) -> bool {
         match property {
@@ -196,10 +204,28 @@ impl AnimationSettings {
                 self.names.clone_from(&source.names);
                 self.name_scope = source.name_scope;
             }
-            "animation-duration" => self.durations.clone_from(&source.durations),
-            "animation-delay" => self.delays.clone_from(&source.delays),
-            "animation-timing-function" => self.easings.clone_from(&source.easings),
-            "animation-iteration-count" => self.iterations.clone_from(&source.iterations),
+            "animation-duration" => {
+                self.durations.clone_from(&source.durations);
+                self.calculated_times
+                    .durations
+                    .clone_from(&source.calculated_times.durations);
+            }
+            "animation-delay" => {
+                self.delays.clone_from(&source.delays);
+                self.calculated_times
+                    .delays
+                    .clone_from(&source.calculated_times.delays);
+            }
+            "animation-timing-function" => {
+                self.easings.clone_from(&source.easings);
+                self.calculated_easings
+                    .clone_from(&source.calculated_easings);
+            }
+            "animation-iteration-count" => {
+                self.iterations.clone_from(&source.iterations);
+                self.calculated_iterations
+                    .clone_from(&source.calculated_iterations);
+            }
             "animation-direction" => self.directions.clone_from(&source.directions),
             "animation-fill-mode" => self.fills.clone_from(&source.fills),
             "animation-play-state" => self.states.clone_from(&source.states),
@@ -216,24 +242,21 @@ impl AnimationSettings {
                 .map(AnimationName::css_text)
                 .collect::<Vec<_>>()
                 .join(", "),
-            "animation-duration" => super::transitions::serialize_times(&self.durations),
-            "animation-delay" => super::transitions::serialize_times(&self.delays),
-            "animation-timing-function" => self.easings.join(", "),
+            "animation-duration" => {
+                calculated_times::serialize(&self.durations, &self.calculated_times.durations)
+            }
+            "animation-delay" => {
+                calculated_times::serialize(&self.delays, &self.calculated_times.delays)
+            }
+            "animation-timing-function" => {
+                calculated_easing::serialize(&self.easings, &self.calculated_easings)
+            }
             "animation-direction" => self.directions.join(", "),
             "animation-fill-mode" => self.fills.join(", "),
             "animation-play-state" => self.states.join(", "),
-            "animation-iteration-count" => self
-                .iterations
-                .iter()
-                .map(|v| {
-                    if v.is_infinite() {
-                        "infinite".into()
-                    } else {
-                        v.to_string()
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(", "),
+            "animation-iteration-count" => {
+                iterations::serialize(&self.iterations, &self.calculated_iterations)
+            }
             _ => return None,
         })
     }

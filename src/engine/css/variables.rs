@@ -1,6 +1,8 @@
 //! Custom-property cascade and var() substitution.
 
 use super::*;
+mod substitution;
+use substitution::{substitute_component_values, substitute_variable_references};
 
 const MAX_CACHED_LITERAL_BYTES: usize = 4 * 1024;
 
@@ -91,16 +93,28 @@ pub(super) fn apply_scoped_declaration(
     if declaration.name.starts_with("--") {
         return;
     }
+    let variable_reference =
+        declaration.may_use_var && contains_valid_variable_reference(&declaration.value);
     let substituted;
     let value = if let Some(literal) = declaration.prepared_literal() {
         literal
     } else {
         let Some(value) = substitute_variables(&declaration.value, &style.custom_properties) else {
+            if variable_reference {
+                apply_declaration(style, (&declaration.name, "unset"), context);
+            }
             return;
         };
         substituted = value;
         &substituted
     };
+    if variable_reference && !supports::supports_declaration_value(&declaration.name, value) {
+        // Substitution happens after the cascade chose this declaration. An
+        // invalid result cannot resurrect a lower-priority authored value.
+        // https://drafts.csswg.org/css-variables-1/#invalid-at-computed-value-time
+        apply_declaration(style, (&declaration.name, "unset"), context);
+        return;
+    }
     // CSS-wide keywords copy the source's scope. Literal names and var() results instead
     // refer to the scope of their winning declaration, not the animated element's scope.
     // https://drafts.csswg.org/css-scoping-1/#shadow-names
@@ -133,13 +147,17 @@ pub(super) fn contains_valid_variable_reference(value: &str) -> bool {
     let mut input = ParserInput::new(value);
     let mut parser = Parser::new(&mut input);
     let mut found = false;
-    validate_variable_references(&mut parser, &mut found).is_ok() && found
+    validate_variable_references(&mut parser, &mut found, 0).is_ok() && found
 }
 
 fn validate_variable_references<'i, 't>(
     parser: &mut Parser<'i, 't>,
     found: &mut bool,
+    depth: usize,
 ) -> Result<(), cssparser::ParseError<'i, ()>> {
+    if depth > 32 {
+        return Err(parser.new_custom_error(()));
+    }
     while !parser.is_exhausted() {
         let token = parser.next_including_whitespace_and_comments()?.clone();
         match &token {
@@ -155,14 +173,16 @@ fn validate_variable_references<'i, 't>(
                         return Ok(());
                     }
                     nested.expect_comma()?;
-                    validate_variable_references(nested, found)
+                    validate_variable_references(nested, found, depth + 1)
                 })?;
             }
             Token::Function(_)
             | Token::ParenthesisBlock
             | Token::SquareBracketBlock
             | Token::CurlyBracketBlock => {
-                parser.parse_nested_block(|nested| validate_variable_references(nested, found))?;
+                parser.parse_nested_block(|nested| {
+                    validate_variable_references(nested, found, depth + 1)
+                })?;
             }
             Token::BadUrl(_)
             | Token::BadString(_)
@@ -171,121 +191,6 @@ fn validate_variable_references<'i, 't>(
             | Token::CloseCurlyBracket
             | Token::Semicolon => return Err(parser.new_custom_error(())),
             _ => {}
-        }
-    }
-    Ok(())
-}
-
-pub(super) fn substitute_variable_references(
-    value: &str,
-    custom_properties: &HashMap<String, String>,
-    stack: &mut Vec<String>,
-    depth: usize,
-) -> Option<String> {
-    if depth > 32 {
-        return None;
-    }
-    let mut input = ParserInput::new(value);
-    let mut parser = Parser::new(&mut input);
-    substitute_component_values(&mut parser, Some(custom_properties), stack, depth)
-}
-
-pub(super) fn substitute_component_values<'i, 't>(
-    parser: &mut Parser<'i, 't>,
-    custom_properties: Option<&HashMap<String, String>>,
-    stack: &mut Vec<String>,
-    depth: usize,
-) -> Option<String> {
-    let mut output = String::new();
-    while !parser.is_exhausted() {
-        let token = parser.next_including_whitespace().ok()?.clone();
-        match &token {
-            Token::Function(name) if name.eq_ignore_ascii_case("var") => {
-                let custom_properties = custom_properties?;
-                let replacement = parser
-                    .parse_nested_block(|nested| -> Result<String, cssparser::ParseError<'i, ()>> {
-                        let name = nested.expect_ident_cloned()?.to_string();
-                        if !name.starts_with("--") {
-                            return Err(nested.new_custom_error(()));
-                        }
-                        nested.skip_whitespace();
-                        let has_fallback = if nested.is_exhausted() {
-                            false
-                        } else {
-                            nested.expect_comma()?;
-                            true
-                        };
-
-                        let replacement = if stack.iter().any(|active| active == &name) {
-                            None
-                        } else if let Some(custom_value) = custom_properties.get(&name) {
-                            stack.push(name.clone());
-                            let replacement = substitute_variable_references(
-                                custom_value,
-                                custom_properties,
-                                stack,
-                                depth + 1,
-                            );
-                            stack.pop();
-                            replacement
-                        } else {
-                            None
-                        };
-                        if let Some(replacement) = replacement {
-                            consume_component_values(nested)?;
-                            Ok(replacement)
-                        } else if has_fallback {
-                            substitute_component_values(
-                                nested,
-                                Some(custom_properties),
-                                stack,
-                                depth + 1,
-                            )
-                            .ok_or_else(|| nested.new_custom_error(()))
-                        } else {
-                            Err(nested.new_custom_error(()))
-                        }
-                    })
-                    .ok()?;
-                output.push_str(&replacement);
-            }
-            Token::Function(_)
-            | Token::ParenthesisBlock
-            | Token::SquareBracketBlock
-            | Token::CurlyBracketBlock => {
-                token.to_css(&mut output).ok()?;
-                let nested = parser
-                    .parse_nested_block(|nested| {
-                        substitute_component_values(nested, custom_properties, stack, depth + 1)
-                            .ok_or_else(|| nested.new_custom_error::<(), ()>(()))
-                    })
-                    .ok()?;
-                output.push_str(&nested);
-                output.push(match token {
-                    Token::SquareBracketBlock => ']',
-                    Token::CurlyBracketBlock => '}',
-                    _ => ')',
-                });
-            }
-            _ => token.to_css(&mut output).ok()?,
-        }
-    }
-    Some(output)
-}
-
-fn consume_component_values<'i, 't>(
-    parser: &mut Parser<'i, 't>,
-) -> Result<(), cssparser::ParseError<'i, ()>> {
-    while !parser.is_exhausted() {
-        let token = parser.next_including_whitespace_and_comments()?.clone();
-        if matches!(
-            token,
-            Token::Function(_)
-                | Token::ParenthesisBlock
-                | Token::SquareBracketBlock
-                | Token::CurlyBracketBlock
-        ) {
-            parser.parse_nested_block(consume_component_values)?;
         }
     }
     Ok(())

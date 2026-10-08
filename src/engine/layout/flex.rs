@@ -106,7 +106,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let insets = border.horizontal() + padding.horizontal();
         let specified = if style.flex_basis != Length::Auto {
             resolve_outer_size(
-                style.flex_basis,
+                style.flex_basis.clone(),
                 available_width,
                 style.font_size,
                 insets,
@@ -114,7 +114,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             )
         } else {
             resolve_outer_size(
-                style.width,
+                style.width.clone(),
                 available_width,
                 style.font_size,
                 insets,
@@ -131,7 +131,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let mut basis =
             specified.unwrap_or(intrinsic_width + insets).max(0.0) + margin.horizontal();
         if let Some(minimum) = resolve_outer_size(
-            style.min_width,
+            style.min_width.clone(),
             available_width,
             style.font_size,
             insets,
@@ -140,7 +140,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             basis = basis.max(minimum + margin.horizontal());
         }
         if let Some(maximum) = resolve_outer_size(
-            style.max_width,
+            style.max_width.clone(),
             available_width,
             style.font_size,
             insets,
@@ -303,7 +303,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             self.block_container_intrinsic_width(node, intrinsic_basis)
         } + insets;
         let preferred = resolve_outer_size(
-            style.width,
+            style.width.clone(),
             available_width,
             style.font_size,
             insets,
@@ -312,7 +312,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         .unwrap_or(0.0);
         let mut contribution = intrinsic.max(preferred);
         if let Some(minimum) = resolve_outer_size(
-            style.min_width,
+            style.min_width.clone(),
             available_width,
             style.font_size,
             insets,
@@ -326,7 +326,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         {
             Length::Auto
         } else {
-            style.max_width
+            style.max_width.clone()
         };
         if let Some(maximum) = resolve_outer_size(
             maximum_width,

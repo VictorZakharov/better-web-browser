@@ -10,7 +10,7 @@
         const gradient = canvasGradientGet(canvasGradientStates, style);
         if (!gradient || gradient.stops.length > 256) return false;
         const width = right - left, height = bottom - top, pixels = width * height;
-        if (pixels < 256 || pixels > MAX_CANVAS_PIXELS || canvasDrawingState(context).clipBits ||
+        if (pixels < 256 || pixels > MAX_CANVAS_PIXELS ||
             canvasDrawingState(context).compositeOperation !== 'source-over') return false;
         // Null-prototype snapshots prevent inherited toJSON/index hooks from
         // observing or mutating private gradient state during host serialization.
@@ -26,14 +26,7 @@
         }
         snapshot.opacity = canvasDrawingState(context).globalAlpha;
         const request = canvasGradientMaskStringify(snapshot);
-        const region = new canvasPixelArray(pixels * 4);
-        for (let row = 0; row < height; row++)
-            copyCanvasPixelRow(region, row * width * 4, state.pixels,
-                ((row + top) * state.width + left) * 4, width * 4);
-        const painted = canvasGradientMaskHost('canvasPaintGradientMask', request, region, mask);
-        if (!painted || canvasPixelLength(painted) !== region.length) return false;
-        for (let row = 0; row < height; row++)
-            copyCanvasPixelRow(state.pixels, ((row + top) * state.width + left) * 4,
-                painted, row * width * 4, width * 4);
-        return true;
+        return paintCanvasRegion(state, left, top, right, bottom,
+            region => canvasGradientMaskHost('canvasPaintGradientMask', request, region, mask,
+                canvasDrawingState(context).clipBits || null, state.width, state.height, left, top));
     };

@@ -268,6 +268,9 @@ impl ScriptRuntime {
             .borrow_mut()
             .host_call_profile
             .set_enabled(enabled);
+        if let Some(context) = self.context.as_deref_mut() {
+            context.set_document_task_profiling(enabled);
+        }
     }
 
     /// Dispatches one browser-normalized native event as a bounded task in this realm.

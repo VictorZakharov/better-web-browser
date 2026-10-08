@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CSS math: colors and native animation timing</title>
+<style>
+body { font-family:Arial }
+@keyframes mathFade { from {opacity:0} to {opacity:1} }
+#animated { width:40px; height:40px; background:blue;
+  animation:mathFade min(2s,1000ms) linear calc(-250ms) sqrt(4) alternate both paused }
+</style>
+<h1>CSS mathematical component integration</h1>
+<p>Calculated colors must paint real pixels; calculated timing must drive an actual animation.</p>
+<div id="animated"></div>
+<div id="results">Checking colors and timing…</div>
+<script src="css-math-components.js"></script>
+<script>runCSSMathComponents();</script>

@@ -21,6 +21,16 @@ pub(super) struct ExecutionWatchdog {
     worker: Option<thread::JoinHandle<()>>,
 }
 
+/// Read-only task cancellation while the isolate is entered. A microtask
+/// checkpoint can clear V8's own termination bit when it unwinds.
+pub(super) struct TaskTermination<'a>(&'a AtomicBool);
+
+impl TaskTermination<'_> {
+    pub(super) fn timed_out(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
 struct IsolateEntry {
     isolate: *mut v8::OwnedIsolate,
     /// Whether a page isolate was already entered (nested same-isolate
@@ -105,6 +115,14 @@ impl ExecutionWatchdog {
         isolate: &mut v8::OwnedIsolate,
         action: impl FnOnce(&mut v8::OwnedIsolate) -> JsResult<T>,
     ) -> JsResult<T> {
+        self.run_observed(isolate, |isolate, _| action(isolate))
+    }
+
+    pub(super) fn run_observed<T>(
+        &mut self,
+        isolate: &mut v8::OwnedIsolate,
+        action: impl FnOnce(&mut v8::OwnedIsolate, TaskTermination<'_>) -> JsResult<T>,
+    ) -> JsResult<T> {
         self.timed_out.store(false, Ordering::Release);
         let generation = self.next_generation;
         self.next_generation = self.next_generation.checked_add(1).unwrap_or(1);
@@ -117,7 +135,7 @@ impl ExecutionWatchdog {
             })?;
 
         let entry = IsolateEntry::new(isolate);
-        let result = action(isolate);
+        let result = action(isolate, TaskTermination(&self.timed_out));
         self.active.store(0, Ordering::Release);
         let timed_out = self.timed_out.swap(false, Ordering::AcqRel);
         drop(entry);

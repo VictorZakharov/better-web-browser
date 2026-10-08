@@ -34,6 +34,9 @@ fn runtime() -> WorkerRuntime {
         module_loader: Rc::new(WebModuleLoader::new()),
         total_script_bytes: 0,
         pending_messages: VecDeque::new(),
+        execution_profiling: false,
+        remaining_diagnostic_samples: 0,
+        remaining_failed_diagnostic_sample: false,
     }
 }
 fn evaluate(runtime: &mut WorkerRuntime, code: &str) -> String {

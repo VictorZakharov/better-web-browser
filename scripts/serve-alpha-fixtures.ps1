@@ -42,15 +42,22 @@ function Write-Response {
         [string] $ContentType = 'text/plain; charset=utf-8'
     )
 
-    $Context.Response.StatusCode = $Status
-    $Context.Response.ContentType = $ContentType
-    $Context.Response.ContentLength64 = $Body.Length
-    $Context.Response.Headers['Cache-Control'] = 'no-store'
-    $Context.Response.Headers['X-Content-Type-Options'] = 'nosniff'
-    if ($Context.Request.HttpMethod -ne 'HEAD' -and $Body.Length -gt 0) {
-        $Context.Response.OutputStream.Write($Body, 0, $Body.Length)
+    try {
+        $Context.Response.StatusCode = $Status
+        $Context.Response.ContentType = $ContentType
+        $Context.Response.ContentLength64 = $Body.Length
+        $Context.Response.Headers['Cache-Control'] = 'no-store'
+        $Context.Response.Headers['X-Content-Type-Options'] = 'nosniff'
+        if ($Context.Request.HttpMethod -ne 'HEAD' -and $Body.Length -gt 0) {
+            $Context.Response.OutputStream.Write($Body, 0, $Body.Length)
+        }
+        $Context.Response.Close()
+    } catch [Net.HttpListenerException], [IO.IOException] {
+        # IgnoreWriteExceptions does not cover every Windows header/close path.
+        # This catch contains only response I/O, never fixture file reads. Once
+        # sending has started, abort this response instead of reusing its headers.
+        $Context.Response.Abort()
     }
-    $Context.Response.Close()
 }
 
 function Resolve-FixturePath {
@@ -69,6 +76,12 @@ function Resolve-FixturePath {
 }
 
 $listener = [Net.HttpListener]::new()
+# Fresh-profile browser cleanup can abandon in-flight resource responses. That
+# is a client lifecycle event, not a fatal fixture-server failure. Keep file,
+# path and startup errors visible; ignore only response-send exceptions through
+# the listener's documented option, rather than retrying submitted headers.
+# https://learn.microsoft.com/dotnet/api/system.net.httplistener.ignorewriteexceptions
+$listener.IgnoreWriteExceptions = $true
 $prefix = "http://127.0.0.1:$Port/"
 $listener.Prefixes.Add($prefix)
 $listener.Start()

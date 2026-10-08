@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Computed CSS math time contexts</title>
+<div id="results">Checking…</div>
+<script src="css-math-times.js"></script>
+<script>
+try { runCSSMathTimes(); }
+catch (error) {
+    document.getElementById('results').textContent = 'Fixture failed: ' + error.stack;
+    document.getElementById('results').setAttribute('data-error', String(error));
+}
+</script>

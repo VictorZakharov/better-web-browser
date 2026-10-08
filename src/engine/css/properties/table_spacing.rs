@@ -12,7 +12,7 @@ pub(crate) fn parse(value: &str) -> Option<[Length; 2]> {
     let vertical = if parts.len() == 2 {
         parse_component(parts[1])?
     } else {
-        horizontal
+        horizontal.clone()
     };
     Some([horizontal, vertical])
 }
@@ -21,9 +21,7 @@ fn parse_component(value: &str) -> Option<Length> {
     let length = parse_length(value)?;
     // Percentages and auto are not part of the border-spacing grammar. A
     // relative length is checked again after the cascade resolves its units.
-    if matches!(length, Length::Auto | Length::Percent(_))
-        || matches!(length, Length::Calc { percent, .. } if percent != 0.0)
-    {
+    if matches!(length, Length::Auto) || length.has_percentage() {
         return None;
     }
     let used = length.resolve(0.0, 16.0)?;
@@ -40,8 +38,8 @@ pub(crate) fn used(style: &ComputedStyle) -> (f32, f32) {
 pub(crate) fn computed(style: &ComputedStyle) -> (f32, f32) {
     let resolve = |length: Length| length.resolve(0.0, style.font_size).unwrap_or(0.0).max(0.0);
     (
-        resolve(style.border_spacing[0]),
-        resolve(style.border_spacing[1]),
+        resolve(style.border_spacing[0].clone()),
+        resolve(style.border_spacing[1].clone()),
     )
 }
 
@@ -57,7 +55,7 @@ mod tests {
 
     #[test]
     fn accepts_one_or_two_nonnegative_lengths() {
-        assert_eq!(parse("2px"), Some([Length::Px(2.0); 2]));
+        assert_eq!(parse("2px"), Some([const { Length::Px(2.0) }; 2]));
         assert_eq!(parse("2px 4px"), Some([Length::Px(2.0), Length::Px(4.0)]));
         assert_eq!(
             parse("calc(2px + 3px) 1em"),

@@ -3,11 +3,13 @@
 use super::values::LineHeight;
 use super::values::{BoxOrient, LineClamp, TextOverflow};
 use super::*;
+mod flex;
 mod helpers;
+mod scalars;
 pub(super) mod table_spacing;
 mod text;
+pub(super) use helpers::parse_text_spacing;
 use helpers::*;
-pub(super) use helpers::{parse_text_spacing, parse_text_spacing_for_viewport};
 
 pub(super) fn apply_declaration(
     style: &mut ComputedStyle,
@@ -55,6 +57,9 @@ pub(super) fn apply_declaration(
     }
     if values::transitions::supported_property(name) {
         values::transitions::apply(&mut style.transition, name, value);
+        return;
+    }
+    if scalars::apply(style, name, value) || flex::apply(style, name, value) {
         return;
     }
     match name {
@@ -109,13 +114,6 @@ pub(super) fn apply_declaration(
                 "fixed" => Position::Fixed,
                 _ => Position::Static,
             };
-        }
-        "z-index" => {
-            if value.eq_ignore_ascii_case("auto") {
-                style.z_index = None;
-            } else if let Ok(level) = value.parse::<i32>() {
-                style.z_index = Some(level);
-            }
         }
         "clear" => {
             if let Some(clear) = Clear::parse(value) {
@@ -182,11 +180,6 @@ pub(super) fn apply_declaration(
                 style.object_position = position;
             }
         }
-        "aspect-ratio" => {
-            if let Some(ratio) = AspectRatio::parse(value) {
-                style.aspect_ratio = ratio;
-            }
-        }
         "background" => apply_background_shorthand(style, value, base_url),
         "width" => assign_length(&mut style.width, value),
         "height" => assign_length(&mut style.height, value),
@@ -200,10 +193,10 @@ pub(super) fn apply_declaration(
         "left" => assign_length(&mut style.left, value),
         "inset" => {
             let mut inset = Edges {
-                top: style.top,
-                right: style.right,
-                bottom: style.bottom,
-                left: style.left,
+                top: style.top.clone(),
+                right: style.right.clone(),
+                bottom: style.bottom.clone(),
+                left: style.left.clone(),
             };
             assign_edges(&mut inset, value);
             style.top = inset.top;
@@ -233,11 +226,11 @@ pub(super) fn apply_declaration(
         | "scroll-padding-left" => {
             super::scroll_spacing::apply(style, name, value);
         }
-        "border-width" => assign_edges(&mut style.border_width, value),
-        "border-top-width" => assign_length(&mut style.border_width.top, value),
-        "border-right-width" => assign_length(&mut style.border_width.right, value),
-        "border-bottom-width" => assign_length(&mut style.border_width.bottom, value),
-        "border-left-width" => assign_length(&mut style.border_width.left, value),
+        "border-width"
+        | "border-top-width"
+        | "border-right-width"
+        | "border-bottom-width"
+        | "border-left-width" => values::border_widths::apply(style, name, value),
         "border-color"
         | "border-top-color"
         | "border-right-color"
@@ -267,7 +260,6 @@ pub(super) fn apply_declaration(
                 style.pointer_events = value == "auto";
             }
         }
-        "opacity" => style.opacity = parse_opacity(value).unwrap_or(style.opacity),
         "transform" => {
             if let Some(transform) = super::transform::parse_transform(value) {
                 style.transform = transform;
@@ -326,23 +318,6 @@ pub(super) fn apply_declaration(
                 _ => AlignItems::Stretch,
             };
         }
-        "flex-direction" | "-webkit-flex-direction" | "-moz-flex-direction" => {
-            if let Some(direction) = parse_flex_direction(value) {
-                style.flex_direction = direction;
-            }
-        }
-        "flex-wrap" | "-webkit-flex-wrap" | "-moz-flex-wrap" => style.flex_wrap = value != "nowrap",
-        "flex-flow" | "-webkit-flex-flow" | "-moz-flex-flow" => assign_flex_flow(style, value),
-        "flex-grow" | "-webkit-flex-grow" | "-moz-flex-grow" | "-webkit-box-flex" => {
-            style.flex_grow = value.parse::<f32>().unwrap_or(style.flex_grow).max(0.0)
-        }
-        "flex-shrink" | "-webkit-flex-shrink" | "-moz-flex-shrink" => {
-            style.flex_shrink = value.parse::<f32>().unwrap_or(style.flex_shrink).max(0.0)
-        }
-        "flex-basis" | "-webkit-flex-basis" | "-moz-flex-basis" => {
-            assign_length(&mut style.flex_basis, value)
-        }
-        "flex" | "-webkit-flex" | "-moz-flex" => assign_flex(style, value),
         "box-sizing" | "-webkit-box-sizing" => {
             style.box_sizing = if value == "border-box" {
                 BoxSizing::BorderBox
@@ -372,10 +347,12 @@ pub(super) fn apply_declaration(
                 ListStyleType::Disc
             };
         }
-        "grid-template-columns" | "-ms-grid-columns" => {
-            style.grid_template_columns = value.to_string()
+        "grid-template-columns" | "-ms-grid-columns" if parse_grid_track_list(value).is_some() => {
+            style.grid_template_columns = value.to_string();
         }
-        "grid-template-rows" | "-ms-grid-rows" => style.grid_template_rows = value.to_string(),
+        "grid-template-rows" | "-ms-grid-rows" if parse_grid_track_list(value).is_some() => {
+            style.grid_template_rows = value.to_string();
+        }
         "grid-template-areas" => style.grid_template_areas = value.to_string(),
         "grid-template" => assign_grid_template(style, value),
         "column-gap" | "grid-column-gap" => assign_length(&mut style.grid_column_gap, value),

@@ -4,6 +4,7 @@ use std::{env, fs, path::PathBuf};
 pub fn build() {
     println!("cargo:rerun-if-changed=src/engine/script/engine/v8_api.cc");
     println!("cargo:rerun-if-changed=src/engine/script/engine/window_access.cc");
+    println!("cargo:rerun-if-changed=src/engine/script/engine/cpu_samples.cc");
     println!("cargo:rerun-if-changed=build/v8_api.rs");
     println!("cargo:rerun-if-env-changed=BREEZE_V8_SOURCE_DIR");
     println!("cargo:rerun-if-env-changed=CARGO_HOME");
@@ -31,6 +32,7 @@ pub fn build() {
         .define("_ITERATOR_DEBUG_LEVEL", "0")
         .file("src/engine/script/engine/v8_api.cc")
         .file("src/engine/script/engine/window_access.cc")
+        .file("src/engine/script/engine/cpu_samples.cc")
         .compile("breeze_v8_api");
 }
 

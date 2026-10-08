@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(test)]
+mod math_tests;
 
 pub(super) fn parse_grid_template_areas(input: &str) -> Option<GridTemplateAreas> {
     // Named areas are valid only when every name forms one filled rectangle.
@@ -92,116 +94,7 @@ fn quoted_grid_rows(input: &str) -> Option<Vec<Vec<String>>> {
 }
 
 pub(super) fn parse_grid_tracks(input: &str) -> Vec<GridTrack> {
-    let mut tracks = Vec::new();
-    for token in grid_track_tokens(input) {
-        if let Some(arguments) = token
-            .strip_prefix("repeat(")
-            .and_then(|value| value.strip_suffix(')'))
-            && let Some((count, repeated)) = split_grid_once(arguments, ',')
-        {
-            let repetitions = count.trim().parse::<usize>().unwrap_or(1).clamp(1, 64);
-            let repeated_tracks = parse_grid_tracks(repeated);
-            for _ in 0..repetitions {
-                tracks.extend(repeated_tracks.iter().cloned());
-            }
-        } else if let Some(track) = parse_grid_track(token) {
-            tracks.push(track);
-        }
-    }
-    tracks
-}
-
-pub(super) fn grid_track_tokens(input: &str) -> Vec<&str> {
-    let mut tokens = Vec::new();
-    let mut cursor = 0;
-    let bytes = input.as_bytes();
-    while cursor < bytes.len() {
-        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
-            cursor += 1;
-        }
-        if cursor >= bytes.len() {
-            break;
-        }
-        if bytes[cursor] == b'['
-            && let Some(end) = input[cursor + 1..].find(']')
-        {
-            cursor += end + 2;
-            continue;
-        }
-
-        let start = cursor;
-        let mut depth = 0_i32;
-        while cursor < bytes.len() {
-            match bytes[cursor] {
-                b'(' => depth += 1,
-                b')' => {
-                    depth = (depth - 1).max(0);
-                    cursor += 1;
-                    if depth == 0 {
-                        break;
-                    }
-                    continue;
-                }
-                byte if byte.is_ascii_whitespace() && depth == 0 => break,
-                _ => {}
-            }
-            cursor += 1;
-        }
-        if start < cursor {
-            tokens.push(input[start..cursor].trim());
-        }
-    }
-    tokens
-}
-
-pub(super) fn parse_grid_track(token: &str) -> Option<GridTrack> {
-    let token = token.trim();
-    if token.is_empty() || token == "none" || token.starts_with('[') {
-        return None;
-    }
-    match token {
-        "auto" => return Some(GridTrack::Auto),
-        "min-content" => return Some(GridTrack::MinContent),
-        "max-content" => return Some(GridTrack::MaxContent),
-        _ => {}
-    }
-    if let Some(fraction) = token.strip_suffix("fr") {
-        return Some(GridTrack::Fraction(
-            fraction.trim().parse::<f32>().unwrap_or(1.0).max(0.0),
-        ));
-    }
-    if let Some(arguments) = token
-        .strip_prefix("minmax(")
-        .and_then(|value| value.strip_suffix(')'))
-        && let Some((minimum, maximum)) = split_grid_once(arguments, ',')
-    {
-        return Some(GridTrack::MinMax(
-            Box::new(parse_grid_track(minimum).unwrap_or(GridTrack::Auto)),
-            Box::new(parse_grid_track(maximum).unwrap_or(GridTrack::Auto)),
-        ));
-    }
-    if let Some(argument) = token
-        .strip_prefix("fit-content(")
-        .and_then(|value| value.strip_suffix(')'))
-    {
-        return parse_length(argument).map(GridTrack::Fixed);
-    }
-    parse_length(token).map(GridTrack::Fixed)
-}
-
-pub(super) fn split_grid_once(input: &str, delimiter: char) -> Option<(&str, &str)> {
-    let mut depth = 0_i32;
-    for (index, character) in input.char_indices() {
-        match character {
-            '(' => depth += 1,
-            ')' => depth = (depth - 1).max(0),
-            candidate if candidate == delimiter && depth == 0 => {
-                return Some((&input[..index], &input[index + character.len_utf8()..]));
-            }
-            _ => {}
-        }
-    }
-    None
+    layout_grid_track_listing(input).unwrap_or_default()
 }
 
 pub(super) fn resolve_grid_row_minimum(track: &GridTrack, basis: f32, font_size: f32) -> f32 {
@@ -212,7 +105,10 @@ pub(super) fn resolve_grid_row_minimum(track: &GridTrack, basis: f32, font_size:
         | GridTrack::Fraction(_) => 0.0,
         GridTrack::Fixed(length) => length.resolve(basis, font_size).unwrap_or(0.0).max(0.0),
         GridTrack::MinMax(minimum, maximum) => match maximum.as_ref() {
-            GridTrack::Fixed(length) => length.resolve(basis, font_size).unwrap_or(0.0).max(0.0),
+            GridTrack::Fixed(length) => length
+                .resolve(basis, font_size)
+                .unwrap_or(0.0)
+                .max(resolve_grid_row_minimum(minimum, basis, font_size)),
             _ => resolve_grid_row_minimum(minimum, basis, font_size),
         },
     }

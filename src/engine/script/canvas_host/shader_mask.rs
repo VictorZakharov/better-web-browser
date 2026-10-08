@@ -8,6 +8,7 @@ pub(super) fn render(
     destination: &[u8],
     mask: Option<&[u8]>,
     opacity: f64,
+    clip: Option<&super::raster_clip::Clip<'_>>,
 ) -> Option<Vec<u8>> {
     let pixels = (width as usize).checked_mul(height as usize)?;
     if pixels == 0
@@ -37,7 +38,7 @@ pub(super) fn render(
     let mut output = destination.to_vec();
     for (index, (pixel, source)) in output.chunks_exact_mut(4).zip(source.pixels()).enumerate() {
         let coverage = mask.map_or(255, |mask| mask[index]);
-        if coverage == 0 {
+        if coverage == 0 || clip.is_some_and(|clip| !clip.allows(index)) {
             continue;
         }
         let color = source.demultiply();

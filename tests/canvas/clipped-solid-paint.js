@@ -19,7 +19,9 @@ function testClippedSolidPaint(make, clipCase) {
         if(transformed)c.setTransform(1,.125,-.25,1,7,1);
         const color='rgba(231,53,141,.75)';
         let paint=color;
-        if(scalar){const g=c.createLinearGradient(0,0,53,0);g.addColorStop(0,color);g.addColorStop(1,color);paint=g;}
+        // Exceed native shader admission (256 stops) to keep an independent
+        // scalar arithmetic oracle even when clipped gradients are accelerated.
+        if(scalar){const g=c.createLinearGradient(0,0,53,0);for(let i=0;i<=256;i++)g.addColorStop(i/256,color);paint=g;}
         c.fillStyle=paint;c.strokeStyle=paint;c.globalAlpha=opacity;
         c.lineWidth=2.75;c.lineCap='round';c.lineJoin='bevel';c.setLineDash([3,2]);c.lineDashOffset=.75;
         if(operation===0){c.beginPath();c.rect(1.25,3.75,44,28);c.arc(25,16,9,0,Math.PI*2);c.fill('evenodd');}

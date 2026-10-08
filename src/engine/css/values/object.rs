@@ -36,7 +36,7 @@ impl ObjectFit {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum PositionAxis {
     /// A percentage is relative to the leftover space, not to the element's size.
     Value(Length),
@@ -90,7 +90,7 @@ impl PositionAxis {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ObjectPosition {
     horizontal: PositionAxis,
     vertical: PositionAxis,

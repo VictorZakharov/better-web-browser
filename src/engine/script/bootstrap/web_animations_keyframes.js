@@ -2,6 +2,10 @@
     // from DOM style attributes; the animation origin is applied by the CSS host.
     // https://www.w3.org/TR/web-animations-1/#the-keyframeeffect-interface
     const animationMetadata = new Set(['offset', 'easing', 'composite', 'computedOffset']);
+    // CSS-owned effects must observe pending stylesheet changes before a
+    // timing query. Ordinary script-owned effects do not need a style flush.
+    let syncAnimationEffectStyles = () => {};
+    let noteAnimationEffectMutation = () => {};
     const animationProperty = name => {
         name = String(name);
         const property = name.startsWith('--') ? name : name.includes('-') ? name.toLowerCase() :
@@ -117,6 +121,11 @@
         const value = String(source).trim().toLowerCase();
         if (/^(linear|ease|ease-in|ease-out|ease-in-out|step-start|step-end)$/.test(value))
             return value;
+        // One admission grammar for stylesheet and script-created effects.
+        // Number() alone accepts non-CSS hexadecimal spellings, and the
+        // sampler's old linear parser admitted a single authored stop.
+        const normalized = host('normalizeCssEasing', value);
+        if (typeof normalized !== 'string') throw new TypeError('Unsupported animation easing');
         if (value.startsWith('linear(') && parseLinearAnimationEasing(value)) return value;
         const bezier = /^cubic-bezier\(\s*([^,]+),\s*([^,]+),\s*([^,]+),\s*([^,]+)\s*\)$/.exec(value);
         if (bezier) {
@@ -128,7 +137,10 @@
         const steps = /^steps\(\s*(\d+)\s*(?:,\s*(start|end|jump-start|jump-end|jump-none|jump-both))?\s*\)$/.exec(value);
         if (steps && Number(steps[1]) > 0 &&
             (steps[2] !== 'jump-none' || Number(steps[1]) > 1)) return value;
-        throw new TypeError('Unsupported animation easing');
+        // Typed math in easing arguments uses the same native CSS parser as
+        // stylesheet declarations. The result contains resolved numeric stops,
+        // so the existing sampler never evaluates authored expressions.
+        return normalized;
     };
     // CSS Easing 2 §2.1: missing input positions are distributed after the
     // explicitly positioned stops have been clamped to nondecreasing order.
@@ -137,7 +149,7 @@
         const match = /^linear\((.*)\)$/.exec(source);
         if (!match) return null;
         const entries = match[1].split(',');
-        if (!entries.length || entries.length > 64) return null;
+        if (entries.length < 2 || entries.length > 64) return null;
         const number = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
         const percent = /^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)%$/i;
         const points = [];
@@ -205,12 +217,28 @@
         constructor() {
             if (new.target === AnimationEffect) throw new TypeError('Illegal constructor');
         }
-        getTiming() { return { ...this.__timing }; }
+        getTiming() {
+            syncAnimationEffectStyles(this);
+            return { ...this.__timing };
+        }
         updateTiming(options = {}) {
-            this.__timing = normalizeAnimationTiming({ ...this.__timing, ...Object(options) });
+            syncAnimationEffectStyles(this);
+            if (options != null && !['object', 'function'].includes(typeof options))
+                throw new TypeError('Timing update must be a dictionary');
+            const input = options == null ? {} : options, updates = {};
+            // Dictionary members can be inherited. Ignore undefined and unknown
+            // members; only successfully supplied timing members claim ownership.
+            for (const name of ['delay','direction','duration','easing','endDelay',
+                'fill','iterationStart','iterations']) {
+                const value = input[name];
+                if (value !== undefined) updates[name] = value;
+            }
+            this.__timing = normalizeAnimationTiming({ ...this.__timing, ...updates });
+            noteAnimationEffectMutation(this, 'timing', Object.keys(updates));
             this.__animation?.__refresh();
         }
         getComputedTiming() {
+            syncAnimationEffectStyles(this);
             const duration = animationDuration(this.__timing);
             const activeDuration = animationActiveDuration(this.__timing);
             const localTime = this.__animation?.currentTime ?? null;
@@ -270,13 +298,16 @@
                 throw new DOMException('Pseudo-element animation is not supported', 'NotSupportedError');
         }
         getKeyframes() {
+            syncAnimationEffectStyles(this);
             return this.__frames.map(frame => ({ offset: frame.offset,
                 computedOffset: frame.computedOffset, easing: frame.easing, composite: 'replace',
                 ...Object.fromEntries([...frame.values].map(([property, value]) =>
                     [animationIdlProperty(property), value])) }));
         }
         setKeyframes(keyframes) {
+            syncAnimationEffectStyles(this);
             this.__frames = normalizeAnimationFrames(keyframes);
+            noteAnimationEffectMutation(this, 'keyframes');
             this.__animation?.__rekeyframe();
         }
     }

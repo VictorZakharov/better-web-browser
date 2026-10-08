@@ -60,8 +60,20 @@
         // BigInt is used internally only to retain the 64-bit modulo operation.
         return Number(BigInt.asIntN(64, BigInt(Math.trunc(number))));
     };
+    const webGlDetachedNumericLists = new WeakSet();
     const webGlScalar = (kind, value) => {
         if (kind === 'F' || kind === 'I') {
+            const scalarKind=kind === 'F' ? 'f' : 'i';
+            const typed=webGlNumericTypedArgument(scalarKind,value,8192);
+            if (typed) {
+                const values=[];
+                if (typed.detached) {webGlDetachedNumericLists.add(values);return values;}
+                if (typed.length > 8192) throw new RangeError('WebGL numeric list exceeds the command budget');
+                // Indexed reads avoid author-controlled iterators and preserve
+                // single-precision values without another numeric conversion.
+                for (let i=0;i<typed.length;i++) values.push(typed.values[i]);
+                return values;
+            }
             const method = value === null || value === undefined ? undefined : value[Symbol.iterator];
             if (typeof method !== 'function')
                 throw new TypeError('WebGL numeric list must be iterable');
@@ -85,6 +97,7 @@
         return value;
     };
     const webGlConvertArguments = (name, args) => {
+        let valid=true;
         let signature = webGlScalarArguments.get(name) ?? '';
         if (name === 'texImage2D') signature = args.length >= 9 ? 'uiiiiiuu-' : 'uiiuu-';
         if (name === 'texSubImage2D') signature = args.length >= 9 ? 'uiiiiiuu-' : 'uiiiuu-';
@@ -94,6 +107,7 @@
             const entry = interfaces.find(entry => entry[0] === index);
             if (entry) webGlConvertInterface(args, ...entry);
             if (signature[index] && signature[index] !== '-') args[index] = webGlScalar(signature[index], args[index]);
+            if ((signature[index] === 'F' || signature[index] === 'I') && webGlDetachedNumericLists.has(args[index])) valid=false;
             if (name === 'bufferData' && index === 1 && args[index] !== null &&
                 !(args[index] instanceof ArrayBuffer) && !ArrayBuffer.isView(args[index])) args[index] = webGlLongLong(args[index]);
             if ((name === 'readPixels' && index === 6 || name.startsWith('compressedTex') && index === signature.length - 1 ||
@@ -106,4 +120,5 @@
         // effective argument count first; its implementation receives that shape.
         if (name === 'texImage2D' || name === 'texSubImage2D') args.length = signature.length;
         else args.length = Math.min(args.length, webGlArities[name]);
+        return valid;
     };

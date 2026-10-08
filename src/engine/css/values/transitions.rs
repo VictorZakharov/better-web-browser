@@ -3,10 +3,19 @@
 //! https://drafts.csswg.org/css-transitions-1/#transitions
 
 use super::super::split_css_top_level;
+use super::calculated_easing::{self, EasingValue};
+use super::calculated_times::{self, CalculatedTimes, TimeValue};
+mod computed_times;
+mod easing;
+#[cfg(test)]
 mod linear;
+#[cfg(test)]
+mod math_tests;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TransitionSettings {
+    pub(crate) calculated_times: CalculatedTimes,
+    pub(crate) calculated_easings: Vec<Option<EasingValue>>,
     pub properties: Vec<String>,
     pub durations: Vec<f32>, // seconds
     pub delays: Vec<f32>,    // seconds
@@ -16,6 +25,8 @@ pub(crate) struct TransitionSettings {
 impl Default for TransitionSettings {
     fn default() -> Self {
         Self {
+            calculated_times: CalculatedTimes::default(),
+            calculated_easings: Vec::new(),
             properties: vec!["all".into()],
             durations: vec![0.0],
             delays: vec![0.0],
@@ -52,22 +63,25 @@ pub(crate) fn apply(settings: &mut TransitionSettings, name: &str, value: &str) 
             settings.properties = properties;
         }
         "transition-duration" => {
-            let Some(durations) = time_list(value, false) else {
+            let Some((durations, pending)) = calculated_times::list(value, false) else {
                 return false;
             };
             settings.durations = durations;
+            settings.calculated_times.durations = pending;
         }
         "transition-delay" => {
-            let Some(delays) = time_list(value, true) else {
+            let Some((delays, pending)) = calculated_times::list(value, true) else {
                 return false;
             };
             settings.delays = delays;
+            settings.calculated_times.delays = pending;
         }
         "transition-timing-function" => {
-            let Some(easings) = easing_list(value) else {
+            let Some((easings, pending)) = calculated_easing::list(value) else {
                 return false;
             };
             settings.easings = easings;
+            settings.calculated_easings = pending;
         }
         "transition" => {
             let Some(next) = shorthand(value) else {
@@ -108,110 +122,53 @@ fn property_name(value: &str) -> bool {
         })
 }
 
-fn time_list(value: &str, allow_negative: bool) -> Option<Vec<f32>> {
-    let times = split_css_top_level(value, ',')
-        .map(|part| time(part.trim(), allow_negative))
-        .collect::<Option<Vec<_>>>()?;
-    (!times.is_empty() && times.len() <= 64).then_some(times)
-}
-
-pub(super) fn time(value: &str, allow_negative: bool) -> Option<f32> {
-    let (number, scale) = if let Some(number) = value.strip_suffix("ms") {
-        (number, 0.001)
-    } else if let Some(number) = value.strip_suffix('s') {
-        (number, 1.0)
+pub(super) fn easing(value: &str) -> Option<String> {
+    let normalized = normalize_easing(value)?;
+    // Preserve existing authored formatting for elementary functions. Math
+    // arguments and comments need a resolved string for the shared sampler.
+    if value.contains("calc(")
+        || value.contains("min(")
+        || value.contains("max(")
+        || value.matches('(').count() > 1
+        || value.contains("/*")
+        || value.contains('\\')
+    {
+        Some(normalized)
     } else {
-        return None;
-    };
-    // Whitespace separates CSS tokens: `1 s` is not a time dimension.
-    if number.trim() != number {
-        return None;
+        Some(value.to_owned())
     }
-    let seconds = number.parse::<f32>().ok()? * scale;
-    (seconds.is_finite() && (allow_negative || seconds >= 0.0)).then_some(seconds)
 }
 
-fn easing_list(value: &str) -> Option<Vec<String>> {
-    let easings = split_css_top_level(value, ',')
-        .map(|part| easing(part.trim()).map(str::to_owned))
-        .collect::<Option<Vec<_>>>()?;
-    (!easings.is_empty() && easings.len() <= 64).then_some(easings)
-}
-
-pub(super) fn easing(value: &str) -> Option<&str> {
-    if linear::valid(value) {
-        return Some(value);
-    }
-    if matches!(
-        value,
-        "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out" | "step-start" | "step-end"
-    ) {
-        return Some(value);
-    }
-    if let Some(inner) = value
-        .strip_prefix("cubic-bezier(")
-        .and_then(|part| part.strip_suffix(')'))
-    {
-        let points = inner
-            .split(',')
-            .map(|part| part.trim().parse::<f32>().ok())
-            .collect::<Option<Vec<_>>>()?;
-        if points.len() == 4
-            && points.iter().all(|point| point.is_finite())
-            && (0.0..=1.0).contains(&points[0])
-            && (0.0..=1.0).contains(&points[2])
-        {
-            return Some(value);
-        }
-    }
-    if let Some(inner) = value
-        .strip_prefix("steps(")
-        .and_then(|part| part.strip_suffix(')'))
-    {
-        let parts = inner.split(',').map(str::trim).collect::<Vec<_>>();
-        if parts.len() <= 2
-            && let Ok(count) = parts[0].parse::<usize>()
-            && count > 0
-            && (parts.len() == 1
-                || matches!(
-                    parts[1],
-                    "start" | "end" | "jump-start" | "jump-end" | "jump-both" | "jump-none"
-                ))
-            && (parts.len() == 1 || parts[1] != "jump-none" || count > 1)
-        {
-            return Some(value);
-        }
-    }
-    None
+pub(crate) fn normalize_easing(value: &str) -> Option<String> {
+    easing::normalize(value)
 }
 
 fn shorthand(value: &str) -> Option<TransitionSettings> {
     let mut settings = TransitionSettings {
+        calculated_times: CalculatedTimes::default(),
+        calculated_easings: Vec::new(),
         properties: Vec::new(),
         durations: Vec::new(),
         delays: Vec::new(),
         easings: Vec::new(),
     };
     for part in split_css_top_level(value, ',') {
-        let tokens = whitespace_components(part);
+        let tokens = super::super::syntax::borrowed_components(part)?;
         if tokens.is_empty() || tokens.len() > 4 || settings.properties.len() >= 64 {
             return None;
         }
         let (mut property, mut duration, mut delay, mut timing) = (None, None, None, None);
         for token in tokens {
-            if let Some(seconds) = time(token, true) {
+            if let Some(seconds) = TimeValue::parse(token, true) {
                 if duration.is_none() {
-                    if seconds < 0.0 {
-                        return None;
-                    }
-                    duration = Some(seconds);
+                    duration = Some(TimeValue::parse(token, false)?);
                 } else if delay.is_none() {
                     delay = Some(seconds);
                 } else {
                     return None;
                 }
-            } else if easing(token).is_some() && timing.is_none() {
-                timing = Some(token);
+            } else if EasingValue::parse(token).is_some() && timing.is_none() {
+                timing = EasingValue::parse(token);
             } else if property_name(token) && property.is_none() {
                 property = Some(token);
             } else {
@@ -221,37 +178,21 @@ fn shorthand(value: &str) -> Option<TransitionSettings> {
         settings
             .properties
             .push(property.unwrap_or("all").to_string());
-        settings.durations.push(duration.unwrap_or(0.0));
-        settings.delays.push(delay.unwrap_or(0.0));
-        settings.easings.push(timing.unwrap_or("ease").to_string());
+        duration.unwrap_or(TimeValue::Fixed(0.0)).append(
+            &mut settings.durations,
+            &mut settings.calculated_times.durations,
+        );
+        delay
+            .unwrap_or(TimeValue::Fixed(0.0))
+            .append(&mut settings.delays, &mut settings.calculated_times.delays);
+        timing
+            .unwrap_or_else(|| EasingValue::Fixed("ease".into()))
+            .append(&mut settings.easings, &mut settings.calculated_easings);
     }
+    settings.calculated_times.compact();
+    calculated_easing::compact(&mut settings.calculated_easings);
     (settings.properties.len() == 1 || !settings.properties.iter().any(|part| part == "none"))
         .then_some(settings)
-}
-
-pub(super) fn whitespace_components(value: &str) -> Vec<&str> {
-    let mut result = Vec::new();
-    let mut start = None;
-    let mut depth = 0u32;
-    for (index, character) in value.char_indices() {
-        match character {
-            '(' => depth += 1,
-            ')' => depth = depth.saturating_sub(1),
-            _ if character.is_ascii_whitespace() && depth == 0 => {
-                if let Some(begin) = start.take() {
-                    result.push(&value[begin..index]);
-                }
-            }
-            _ => {}
-        }
-        if !character.is_ascii_whitespace() || depth > 0 {
-            start.get_or_insert(index);
-        }
-    }
-    if let Some(begin) = start {
-        result.push(&value[begin..]);
-    }
-    result
 }
 
 pub(crate) fn serialize_times(values: &[f32]) -> String {

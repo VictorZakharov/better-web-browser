@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn offscreen_patterns_native_batch_matches_managed_clip_fallback() {
+fn offscreen_patterns_native_and_clipped_batches_match_independent_scalar_rows() {
     let source = format!(
         "{}\ntestPatternPainting(()=>new OffscreenCanvas(1,1));postMessage('passed');",
         include_str!("../../../../tests/canvas/pattern-paint.js")

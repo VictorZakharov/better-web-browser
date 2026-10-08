@@ -320,6 +320,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn only_the_explicit_sampling_flag_is_admitted_not_a_diagnostic_prefix() {
+        assert!(super::super::renderer_environment_name_allowed(
+            "breeze_diagnostic_cpu_sampling"
+        ));
+        for name in [
+            "BREEZE_DIAGNOSTIC",
+            "BREEZE_DIAGNOSTIC_CPU_SAMPLING_EXTRA",
+            "RUSTY_V8_ARCHIVE",
+        ] {
+            assert!(!super::super::renderer_environment_name_allowed(name));
+        }
+    }
+
+    #[test]
     fn renderer_environment_is_allowlisted_and_double_terminated() {
         let executable = std::env::current_exe().unwrap();
         let block = contained_environment(&executable).unwrap();

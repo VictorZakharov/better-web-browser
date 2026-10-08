@@ -60,11 +60,29 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
     };
     serde_json::from_str::<Request>(source)
         .ok()
-        .and_then(|request| render(&request, destination, mask))
+        .and_then(|request| {
+            let clip = super::raster_clip::Clip::from_args_at_region(
+                args,
+                4,
+                [request.width, request.height],
+                [request.left, request.top],
+            )?;
+            render_clipped(&request, destination, mask, clip.as_ref())
+        })
         .map_or(JsValue::Null, JsValue::Bytes)
 }
 
+#[cfg(test)]
 fn render(request: &Request, destination: &[u8], mask: Option<&[u8]>) -> Option<Vec<u8>> {
+    render_clipped(request, destination, mask, None)
+}
+
+fn render_clipped(
+    request: &Request,
+    destination: &[u8],
+    mask: Option<&[u8]>,
+    clip: Option<&super::raster_clip::Clip<'_>>,
+) -> Option<Vec<u8>> {
     let pixels = (request.width as usize).checked_mul(request.height as usize)?;
     if pixels == 0
         || pixels > MAX_CANVAS_PIXELS
@@ -93,6 +111,7 @@ fn render(request: &Request, destination: &[u8], mask: Option<&[u8]>) -> Option<
         destination,
         mask,
         request.opacity,
+        clip,
     )
 }
 

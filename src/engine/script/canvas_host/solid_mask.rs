@@ -3,6 +3,7 @@
 //! compositing equation as the scalar JS path, not a second rasterizer.
 
 use super::*;
+mod prepared;
 
 pub(super) fn paint(args: &[JsValue]) -> JsValue {
     let mask = match args.get(1) {
@@ -76,6 +77,13 @@ pub(super) fn composite_clipped_region(
     opacity: f64,
     clip: Option<&super::raster_clip::Clip<'_>>,
 ) -> Option<Vec<u8>> {
+    validate(mask, destination, color, opacity)?;
+    let mut output = destination.to_vec();
+    composite_in_place(mask, &mut output, color, opacity, clip)?;
+    Some(output)
+}
+
+fn validate(mask: Option<&[u8]>, destination: &[u8], color: [f64; 4], opacity: f64) -> Option<()> {
     let pixels = destination.len() / 4;
     if pixels == 0
         || pixels > MAX_CANVAS_PIXELS
@@ -89,17 +97,37 @@ pub(super) fn composite_clipped_region(
     {
         return None;
     }
-    let mut output = destination.to_vec();
-    for (index, pixel) in output.chunks_exact_mut(4).enumerate() {
+    Some(())
+}
+
+/// Only Rust-owned bridge copies reach this entry point. Validate the complete
+/// request before touching pixels, so a rejected native operation is atomic.
+pub(super) fn composite_in_place(
+    mask: Option<&[u8]>,
+    destination: &mut [u8],
+    color: [f64; 4],
+    opacity: f64,
+    clip: Option<&super::raster_clip::Clip<'_>>,
+) -> Option<()> {
+    validate(mask, destination, color, opacity)?;
+    let pixels = destination.len() / 4;
+    // Tiny regions do not amortize preparing 256 coverage samples. Keep their
+    // scalar path; this changes only arithmetic placement, not edge quality.
+    let paint = (pixels >= 256).then(|| prepared::Paint::new(color, opacity));
+    for (index, pixel) in destination.chunks_exact_mut(4).enumerate() {
         // An aligned integer rectangle has complete coverage. Do not allocate
         // a redundant all-255 mask just to move its paint off the JS pixel loop.
         let coverage = mask.map_or(255, |mask| mask[index]);
         if coverage == 0 || clip.is_some_and(|clip| !clip.allows(index)) {
             continue;
         }
-        source_over(pixel, color, opacity * (f64::from(coverage) / 255.0));
+        if let Some(paint) = &paint {
+            paint.apply(pixel, coverage);
+        } else {
+            source_over(pixel, color, opacity * (f64::from(coverage) / 255.0));
+        }
     }
-    Some(output)
+    Some(())
 }
 
 pub(super) fn source_over(pixel: &mut [u8], color: [f64; 4], opacity: f64) {

@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><title>WebGL numeric union contracts</title>
+<h1>WebGL numeric union contracts</h1>
+<p>This fixture checks typed-array brands, sequence conversion, detached buffers,
+fixed shared storage, and uniform snapshots before author-controlled offsets.</p>
+<pre id="probe">Running</pre><script src="numeric-unions.js"></script><script>
+try {
+    const result=testNumericUnions(()=>document.createElement('canvas'));
+    probe.setAttribute('data-result',JSON.stringify(result));probe.textContent='Passed';
+} catch(error) {
+    probe.setAttribute('data-error',String(error));probe.textContent=String(error);throw error;
+}
+</script>

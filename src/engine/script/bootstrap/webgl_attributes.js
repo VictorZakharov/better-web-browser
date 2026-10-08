@@ -27,7 +27,7 @@
     };
     // Restoration reuses converted, privately owned attributes. Never revisit
     // the author's dictionary or silently relax hardware-only admission.
-    const webGlNativeOptions = (attributes, api) => JSON.stringify({
+    const webGlNativeOptions = (attributes, api) => webGlWireOptions({
         api, alpha:attributes.alpha, depth:attributes.depth,
         stencil:attributes.stencil, antialias:attributes.antialias,
         preserve:attributes.preserveDrawingBuffer,

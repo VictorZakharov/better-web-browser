@@ -51,7 +51,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let url = style.background_image.as_ref()?;
         let image = self.page.images.get(url)?;
         let (width, height) = resolve_background_size(
-            style.background_size,
+            style.background_size.clone(),
             clip_rect,
             image.width as f32,
             image.height as f32,
@@ -60,7 +60,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         )?;
         let x = clip_rect.x
             + resolve_background_position(
-                style.background_position_x,
+                style.background_position_x.clone(),
                 clip_rect.width,
                 width,
                 style.font_size,
@@ -68,7 +68,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             );
         let y = clip_rect.y
             + resolve_background_position(
-                style.background_position_y,
+                style.background_position_y.clone(),
                 clip_rect.height,
                 height,
                 style.font_size,
@@ -179,6 +179,13 @@ pub(super) fn resolve_background_length(
     viewport: RectF,
 ) -> Option<f32> {
     match length {
+        Length::Math(value) => value
+            .map_lengths(&|length| {
+                length
+                    .clone()
+                    .resolve_viewport_units(viewport.width, viewport.height)
+            })
+            .resolve(Some(basis), font_size),
         Length::Auto => None,
         Length::Px(value) => Some(value),
         Length::Percent(value) => Some(basis * value / 100.0),

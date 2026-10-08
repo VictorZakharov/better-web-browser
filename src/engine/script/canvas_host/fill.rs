@@ -23,9 +23,38 @@ pub(super) fn mask(args: &[JsValue]) -> JsValue {
     let Some(JsValue::String(source)) = args.get(1) else {
         return JsValue::Null;
     };
-    mask_from_source(source).map_or(JsValue::Null, JsValue::Bytes)
+    coverage_from_arguments(source, args.get(2))
+        .map(std::sync::Arc::unwrap_or_clone)
+        .map_or(JsValue::Null, JsValue::Bytes)
 }
 
+pub(super) fn coverage_from_arguments(
+    source: &str,
+    geometry: Option<&JsValue>,
+) -> Option<std::sync::Arc<Vec<u8>>> {
+    match geometry {
+        None => coverage_from_source(source),
+        Some(JsValue::Bytes(bytes)) if source.len() <= 1024 * 1024 => {
+            super::mask_cache::rasterize_packed(
+                super::mask_cache::Kind::Fill,
+                source,
+                bytes,
+                || {
+                    let mut request = serde_json::from_str::<Request>(source).ok()?;
+                    // Packed metadata must not also carry a second geometry source.
+                    if !request.parts.is_empty() {
+                        return None;
+                    }
+                    request.parts = super::packed_geometry::decode(bytes)?;
+                    rasterize(request)
+                },
+            )
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
 pub(super) fn mask_from_source(source: &str) -> Option<Vec<u8>> {
     coverage_from_source(source).map(std::sync::Arc::unwrap_or_clone)
 }

@@ -63,6 +63,12 @@
         constructor(effect, record, token) {
             if (token !== cssAnimationToken) throw new TypeError('Illegal constructor');
             super(effect, document.timeline);
+            record.originalEffect = effect;
+            record.timingOverrides = new Set();
+            record.keyframesOverridden = false;
+            record.effectReplaced = false;
+            record.playStateOverridden = false;
+            record.controlDepth = 0;
             cssAnimationRecords.set(this, record);
         }
         get animationName() { return cssAnimationRecords.get(this)?.name ?? ''; }
@@ -97,14 +103,20 @@
         record.cssState = state;
         // Native discovery already bounds the whole snapshot; keep the larger stylesheet
         // limits without weakening the public setKeyframes() resource contract.
-        animation.effect.__frames = normalizeAnimationFrames(cssAnimationFrames(blocks, easing),
-            {frames:256, properties:64});
-        animation.__refresh();
-        animation.effect.updateTiming({duration,delay,iterations,direction,fill,easing:'linear'});
+        if (!record.effectReplaced && animation.effect) {
+            if (!record.keyframesOverridden) {
+                animation.effect.__frames = normalizeAnimationFrames(cssAnimationFrames(blocks, easing),
+                    {frames:256, properties:64});
+                animation.__refresh();
+            }
+            const timing = {duration,delay,iterations,direction,fill,easing:'linear'};
+            for (const name of record.timingOverrides) delete timing[name];
+            animation.effect.updateTiming(timing);
+        }
         const properties = [...animationTargetProperties(animation)];
         const values = host('cssAnimationUnderlying', nodeId(record.target), properties);
         animation.__underlying = new Map(properties.map((property,index) => [property,values[index]]));
-        if (previousState !== state) {
+        if (previousState !== state && !record.playStateOverridden) {
             if (state === 'paused') animation.pause();
             else animation.play();
         }
@@ -159,6 +171,21 @@
         } finally { cssAnimationSyncing = false; }
     };
     // Native checkpoints use the same private algorithm as author-facing style/animation queries.
+    // CSS Animations 2 §6.2: timing queries apply pending author style changes.
+    // The existing syncing/revision guard prevents recursion from native updates.
+    syncAnimationEffectStyles = effect => {
+        if (cssAnimationRecords.has(effect.__animation)) syncCssAnimations();
+    };
+    // CSS Animations 2 §2: successful API changes take precedence only over
+    // their corresponding CSS inputs. Native synchronization is not an author
+    // override, and failed normalization must not transfer ownership.
+    // https://www.w3.org/TR/css-animations-2/#animations
+    noteAnimationEffectMutation = (effect, kind, members) => {
+        const record = cssAnimationRecords.get(effect.__animation);
+        if (!record || cssAnimationSyncing) return;
+        if (kind === 'keyframes') record.keyframesOverridden = true;
+        else for (const name of members) record.timingOverrides.add(name);
+    };
     Object.defineProperty(windowObject, '__syncCssAnimations', {value:() => syncCssAnimations()});
     for (const constructor of [AnimationEvent, CSSAnimation])
         Object.defineProperty(constructor.prototype, Symbol.toStringTag,

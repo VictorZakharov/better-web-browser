@@ -112,14 +112,14 @@ impl BlockImage {
         let specified_width = self.resolve_length(
             node,
             "width",
-            style.width,
+            style.width.clone(),
             Some(percentage_basis),
             style.font_size,
         );
         let specified_height = self.resolve_length(
             node,
             "height",
-            style.height,
+            style.height.clone(),
             percentage_height_basis,
             style.font_size,
         );
@@ -181,7 +181,7 @@ impl BlockImage {
         self.resolve_length(
             node,
             "height",
-            style.height,
+            style.height.clone(),
             percentage_basis,
             style.font_size,
         )

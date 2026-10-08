@@ -51,25 +51,21 @@
         const state = webGlState(context);
         if (state.lost) {
             if (error === 0x0502) state.lossError = error;
-        } else host('webglCommand', state.id, JSON.stringify({op:'bridgeError', i:[error]}));
+        } else host('webglCommand', state.id, webGlWireCommand('bridgeError', [error]));
     };
     const webGlCall = (context, op, i = [], f = [], text = '', bytes = undefined) => {
         const state = webGlState(context);
         if (state.lost) return null;
-        if (!i.every(Number.isSafeInteger) || !f.every(value => typeof value === 'number')) {
+        const command = webGlWireCommand(op, i, f, text);
+        if (command === null) {
             webGlError(context, 0x0501); return null;
         }
-        const encoded = f.map(value => Object.is(value, -0) ? '-0' : Number.isFinite(value) ? value : Number.isNaN(value) ? 'nan' : value > 0 ? 'inf' : '-inf');
-        const raw = host(op==='readPixels'||op==='getBufferSubData'?'webglReadPixels':'webglCommand', state.id, JSON.stringify({op, i, f:encoded, text}), bytes);
-        if (raw instanceof Uint8Array) return raw;
+        const raw = host(op==='readPixels'||op==='getBufferSubData'?'webglReadPixels':'webglCommand', state.id, command, bytes);
+        if (webGlWireBytes(raw)) return raw;
         // Ordinary scalar/array replies do not need a recursive reviver walk.
         // Only native non-JSON float sentinels require the special conversion.
-        const value = raw ? JSON.parse(raw, raw.includes('"webglFloat"') ? (key, entry) => {
-            if (entry && typeof entry === 'object' && Object.keys(entry).length === 1 && 'webglFloat' in entry)
-                return entry.webglFloat === '-0' ? -0 : entry.webglFloat === 'nan' ? NaN : entry.webglFloat === 'inf' ? Infinity : -Infinity;
-            return entry;
-        } : undefined) : null;
-        if (value?.lost) {
+        const value = raw ? webGlWireParse(raw) : null;
+        if (webGlWireLost(value)) {
             loseWebGlContext(context, false);
             return null;
         }

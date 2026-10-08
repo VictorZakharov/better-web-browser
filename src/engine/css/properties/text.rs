@@ -71,26 +71,9 @@ pub(super) fn apply(
                 style.font_numeric = numeric;
             }
         }
-        "letter-spacing" => {
-            if let Some(spacing) = parse_text_spacing_for_viewport(
-                value,
-                style.font_size,
-                viewport_width,
-                viewport_height,
-                root_font_size,
-            ) {
-                style.letter_spacing = spacing;
-            }
-        }
-        "word-spacing" => {
-            if let Some(spacing) = parse_text_spacing_for_viewport(
-                value,
-                style.font_size,
-                viewport_width,
-                viewport_height,
-                root_font_size,
-            ) {
-                style.word_spacing = spacing;
+        "letter-spacing" | "word-spacing" => {
+            if let Some(spacing) = values::text_spacing::SpacingValue::parse(value) {
+                style.assign_spacing(name, spacing);
             }
         }
         "line-height" => {

@@ -274,7 +274,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let horizontal_insets = border.horizontal() + padding.horizontal();
         let vertical_insets = border.vertical() + padding.vertical();
         let specified_width = resolve_outer_size(
-            style.width,
+            style.width.clone(),
             containing_width,
             style.font_size,
             horizontal_insets,
@@ -296,7 +296,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
 
         let mut border_box_width = specified_width.unwrap_or(children_width + horizontal_insets);
         if let Some(minimum) = resolve_outer_size(
-            style.min_width,
+            style.min_width.clone(),
             containing_width,
             style.font_size,
             horizontal_insets,
@@ -305,7 +305,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             border_box_width = border_box_width.max(minimum);
         }
         if let Some(maximum) = resolve_outer_size(
-            style.max_width,
+            style.max_width.clone(),
             containing_width,
             style.font_size,
             horizontal_insets,
@@ -315,7 +315,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
 
         let mut border_box_height = resolve_content_height(
-            style.height,
+            style.height.clone(),
             None,
             self.viewport,
             style.font_size,
@@ -325,7 +325,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         .map(|height| height + vertical_insets)
         .unwrap_or(children_height + vertical_insets);
         if let Some(minimum) = resolve_content_height(
-            style.min_height,
+            style.min_height.clone(),
             None,
             self.viewport,
             style.font_size,
@@ -335,7 +335,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             border_box_height = border_box_height.max(minimum + vertical_insets);
         }
         if let Some(maximum) = resolve_content_height(
-            style.max_height,
+            style.max_height.clone(),
             None,
             self.viewport,
             style.font_size,

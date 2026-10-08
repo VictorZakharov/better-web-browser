@@ -41,6 +41,7 @@ pub(super) struct RendererWorkers {
     events: mpsc::Receiver<WorkerEvent>,
     mailbox_bytes: Arc<AtomicUsize>,
     pending_failures: Vec<(u32, String)>,
+    execution_diagnostics: bool,
 }
 
 pub(super) struct WorkerDriveContext<'a> {
@@ -53,7 +54,7 @@ pub(super) struct WorkerDriveContext<'a> {
 }
 
 impl RendererWorkers {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(execution_diagnostics: bool) -> Self {
         let (network_sender, network) = mpsc::channel();
         let (event_sender, events) = mpsc::channel();
         Self {
@@ -68,6 +69,7 @@ impl RendererWorkers {
             events,
             mailbox_bytes: Arc::new(AtomicUsize::new(0)),
             pending_failures: Vec::new(),
+            execution_diagnostics,
         }
     }
 
@@ -133,6 +135,12 @@ impl RendererWorkers {
                 let worker = runtime.complete_worker_port_event(event.id, endpoint, message);
                 merge_outcome(outcome, worker, document_root);
             }
+            outcome.diagnostics.extend(
+                event
+                    .diagnostics
+                    .into_iter()
+                    .map(|entry| format!("Worker {}: {entry}", event.id)),
+            );
             outcome.console.extend(
                 event
                     .console
@@ -200,6 +208,7 @@ impl RendererWorkers {
                         events: self.event_sender.clone(),
                         commands: receiver,
                         cancelled: cancelled.clone(),
+                        execution_diagnostics: self.execution_diagnostics,
                     };
                     std::thread::Builder::new()
                         .name(format!("breeze-renderer-worker-{id}"))
@@ -359,6 +368,7 @@ struct WorkerEvent {
     port_events: Vec<WorkerPortEvent>,
     console: Vec<String>,
     errors: Vec<String>,
+    diagnostics: Vec<String>,
     closed: bool,
 }
 
@@ -376,4 +386,5 @@ struct WorkerConfig {
     events: mpsc::Sender<WorkerEvent>,
     commands: mpsc::Receiver<mailbox::QueuedCommand>,
     cancelled: Arc<AtomicBool>,
+    execution_diagnostics: bool,
 }

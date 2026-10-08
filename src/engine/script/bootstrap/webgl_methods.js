@@ -36,7 +36,7 @@
         const method = function(...args) {
             webGlState(this);
             if (args.length < arity) throw new TypeError(name + ' requires at least ' + arity + ' arguments');
-            webGlConvertArguments(name, args);
+            const valid=webGlConvertArguments(name, args);
             if (webGlState(this).lost) {
                 // KHR_parallel_shader_compile requires true after loss so a
                 // retained extension's polling loop cannot wait forever.
@@ -49,6 +49,7 @@
                 if (/^(create|get)/.test(name)) return null;
                 return undefined;
             }
+            if (!valid) {webGlError(this,0x0501);return undefined;}
             const result = Reflect.apply(implementation, this, args);
             return /^(create|get|is)/.test(name) || webGlResultMethods.has(name) ? result : undefined;
         };

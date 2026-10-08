@@ -128,7 +128,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             background_image_index,
             mask_image_index,
         } = decoration;
-        let radius = resolve_border_radius(style.border_radius, rect, style.font_size);
+        let radius = resolve_border_radius(style.border_radius.clone(), rect, style.font_size);
         if let Some(index) = border_index
             && let DisplayItem::BorderRect {
                 rect: target,

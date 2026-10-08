@@ -13,7 +13,10 @@ fn html_table_defaults_apply_only_to_html_table_and_cells() {
          <div style='display:table'><div style='display:table-row'><div id=css-cell style='display:table-cell'>C</div></div></div>",
     );
     let table = dom.elements_named("table").next().unwrap();
-    assert_eq!(styles.get(&table).border_spacing, [Length::Px(2.0); 2]);
+    assert_eq!(
+        styles.get(&table).border_spacing,
+        [const { Length::Px(2.0) }; 2]
+    );
     for name in ["td", "th"] {
         let cell = dom.elements_named(name).next().unwrap();
         assert_eq!(styles.get(&cell).padding, uniform_edges(Length::Px(1.0)));
@@ -37,7 +40,10 @@ fn spacing_inherits_and_author_declarations_override_table_hints() {
         styles.get(&tables[0]).border_spacing,
         [Length::Px(7.0), Length::Px(9.0)]
     );
-    assert_eq!(styles.get(&tables[1]).border_spacing, [Length::Px(6.0); 2]);
+    assert_eq!(
+        styles.get(&tables[1]).border_spacing,
+        [const { Length::Px(6.0) }; 2]
+    );
     let cells = dom.elements_named("td").collect::<Vec<_>>();
     assert_eq!(
         styles.get(&cells[0]).padding,
@@ -47,7 +53,10 @@ fn spacing_inherits_and_author_declarations_override_table_hints() {
         styles.get(&cells[1]).padding,
         uniform_edges(Length::Px(8.0))
     );
-    assert_eq!(styles.get(&cells[1]).border_spacing, [Length::Px(6.0); 2]);
+    assert_eq!(
+        styles.get(&cells[1]).border_spacing,
+        [const { Length::Px(6.0) }; 2]
+    );
 }
 
 #[test]
@@ -57,9 +66,18 @@ fn nested_table_uses_own_default_or_hint_instead_of_inherited_spacing() {
          <table id=hint cellspacing=3><tr><td>two</td></tr></table></td></tr></table>",
     );
     let tables = dom.elements_named("table").collect::<Vec<_>>();
-    assert_eq!(styles.get(&tables[0]).border_spacing, [Length::Px(11.0); 2]);
-    assert_eq!(styles.get(&tables[1]).border_spacing, [Length::Px(2.0); 2]);
-    assert_eq!(styles.get(&tables[2]).border_spacing, [Length::Px(3.0); 2]);
+    assert_eq!(
+        styles.get(&tables[0]).border_spacing,
+        [const { Length::Px(11.0) }; 2]
+    );
+    assert_eq!(
+        styles.get(&tables[1]).border_spacing,
+        [const { Length::Px(2.0) }; 2]
+    );
+    assert_eq!(
+        styles.get(&tables[2]).border_spacing,
+        [const { Length::Px(3.0) }; 2]
+    );
 }
 
 #[test]
@@ -90,10 +108,13 @@ fn css_wide_keywords_restore_inherited_initial_and_ua_values() {
     );
     assert_eq!(
         styles.get(&sections[1]).border_spacing,
-        [Length::Px(0.0); 2]
+        [const { Length::Px(0.0) }; 2]
     );
     let table = dom.elements_named("table").next().unwrap();
-    assert_eq!(styles.get(&table).border_spacing, [Length::Px(2.0); 2]);
+    assert_eq!(
+        styles.get(&table).border_spacing,
+        [const { Length::Px(2.0) }; 2]
+    );
 }
 
 #[test]
