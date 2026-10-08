@@ -1256,11 +1256,13 @@ scanning and intermediate copying. Exhaustion invalidates the computed winner
 instead of selecting a fallback or reviving an earlier declaration. This does
 not claim complete computed custom-property graph or registered-property support.
 
-Earlier checkpoints of this slice passed 582 curated upstream WPT files / 6,424
-subtests and 74 required Khronos files / 8,696 subtests, without failure or
-timeout overrides. Full unit and renderer/runtime integration suites also ran
-locally. These are selected contracts, not full standards conformance, and do
-not expand the hosted CI smoke gate. The measured score checkpoints still show
+Final-source verification on October 8 passed 583 curated upstream WPT files /
+6,425 subtests and 74 required Khronos files / 8,696 subtests, without failure or
+timeout overrides. The serial unit suite passed 4,989 tests (four existing tests
+ignored); renderer integration passed 273, and live-runtime integration passed
+138 (three existing tests ignored). Full Clippy, formatting and source-size
+checks also passed. These are selected contracts, not full standards conformance,
+and do not expand the hosted CI smoke gate. The October 7 score captures show
 507/588 in Breeze before and after, versus 579/588 in Chrome; their ten-second
 settling interval is not a time-to-score measurement.
 

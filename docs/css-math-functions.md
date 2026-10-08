@@ -154,6 +154,13 @@ remain independent of the cross-browser comparison.
 | Deferred translation interpolation | 364/364 | 364/364 | Every row within 0.02 CSS pixels |
 | CSS/API animation ownership | 83/83 | 82/83 | 82 rows within 0.002; one negative-delay painting inconsistency |
 | Calculated Grid tracks | 324/324 | 324/324 | Every row within 0.02 CSS pixels |
+| Comment and variable token boundaries | 144/144 | 144/144 | Every row within 0.02 |
+| Computed scalar contexts | 80/80 | 80/80 | Every row within 0.02 |
+| Computed times and iteration counts, without contextual easing | 136/136 | 136/136 | Every row within 0.02; full native time fixture retains 168 checks |
+| Text 3 computed spacing | 80/80 | 76/80 | Four explicit Text 4 percentage-admission differences; other rows within 0.03 |
+
+These fixtures were replayed against the final source on October 8 at both
+scales, retaining the same expected-value assertions and documented differences.
 
 The color discrepancies come from the existing straight-alpha surface versus
 Chrome's premultiplied 8-bit readback: calculated and literal pixels match
