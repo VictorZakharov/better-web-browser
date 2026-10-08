@@ -6,7 +6,7 @@
         value = +value;
         if (!Number.isFinite(value))
             throw new TypeError('Canvas dimensions must be non-negative finite integers');
-        value = Math.trunc(value);
+        value = canvasPrivateMath.trunc(value);
         if (value < 0 || value > 9007199254740991)
             throw new TypeError('Canvas dimension is outside the unsigned integer range');
         return value === 0 ? 0 : value;
@@ -92,8 +92,9 @@
                 throw new DOMException('OffscreenCanvas has no rendering context', 'InvalidStateError');
             if (!state.pixels || !state.width || !state.height)
                 throw new DOMException('Canvas has no available bitmap', 'InvalidStateError');
-            const result = makeImageBitmap(state.width, state.height, state.pixels);
-            state.pixels = new Uint8ClampedArray(state.width * state.height * 4);
+            const result = makeImageBitmap(state.width, state.height, state.pixels, false, null, state.originClean !== false);
+            state.pixels = new canvasPrivatePixelArray(state.width * state.height * 4);
+            state.originClean = true;
             if (state.mode === '2d') canvasInitializeOutputBitmap(state.context, state.pixels);
             if (state.mode === 'webgl') resetWebGlCanvas(state);
             if (state.mode === 'bitmaprenderer') resetCanvasBitmapRenderer(state.context);
@@ -114,10 +115,10 @@
     // copied into the message record before the sender is detached; a cloned
     // ImageBitmap stays usable, while OffscreenCanvas requires transfer.
     globalThis.__cloneCanvasBindings = {
-        isBitmap: value => imageBitmapStates.has(value),
+        isBitmap: value => canvasPrivateWeakHas(imageBitmapStates, value),
         isOffscreen: value => canvasSourceSetHas(offscreenCanvasBrands,value),
         isDetached: value => canvasSourceSetHas(offscreenCanvasBrands,value) ? canvasOffscreenDetached(value) :
-            !imageBitmapStates.get(value)?.pixels,
+            !canvasPrivateWeakGet(imageBitmapStates, value)?.pixels,
         snapshot(value) {
             if (canvasSourceSetHas(offscreenCanvasBrands,value)) {
                 if (canvasOffscreenDetached(value)) throw new DOMException('Canvas is detached', 'DataCloneError');
@@ -128,10 +129,14 @@
                 if (!state.pixels) throw new DOMException('Canvas exceeds the bitmap budget', 'DataCloneError');
                 return { width: state.width, height: state.height, pixels: state.pixels,
                     canvasWidth: canvasOwnedDimensions(value)[0], canvasHeight: canvasOwnedDimensions(value)[1],
-                    alpha: bitmapRendererStates.get(state.context)?.alpha,
+                    alpha: canvasPrivateWeakGet(bitmapRendererStates, state.context)?.alpha,
                     mode: state.mode, kind: 'offscreencanvas' };
             }
             const state = imageBitmapPixels(value);
+            // HTML ImageBitmap serialization and transfer reject tainted data
+            // before exposing bytes to the clone wire or detaching the sender.
+            if (state.originClean === false)
+                throw new DOMException('ImageBitmap is not origin-clean', 'DataCloneError');
             bitmapPrecisionBudget(state,state.width,state.height);
             return { width: state.width, height: state.height, pixels: state.pixels,
                 precise:encodedBitmapWords(state.pixels16),
@@ -140,7 +145,7 @@
         detach(value) {
             if (canvasSourceSetHas(offscreenCanvasBrands,value)) {
                 canvasOffscreenDimensions(value).detached = true;
-                const state = canvasStates.get(value);
+                const state = canvasPrivateWeakGet(canvasStates, value);
                 if (state) { state.pixels = null; state.context = null; }
             } else closeImageBitmap(value);
         },
@@ -149,7 +154,7 @@
             if (!Number.isInteger(width) || !Number.isInteger(height) || width < 0 || height < 0 ||
                 width * height > MAX_CANVAS_PIXELS || bytes.length !== width * height * 4)
                 throw new DOMException('Invalid bitmap transfer', 'DataCloneError');
-            const pixels = new Uint8ClampedArray(bytes);
+            const pixels = new canvasPrivatePixelArray(bytes);
             if (preciseBytes && (record.t !== 'imagebitmap' || preciseBytes.byteLength!==width*height*8))
                 throw new DOMException('Invalid precise bitmap transfer','DataCloneError');
             if (record.t === 'imagebitmap') return makeImageBitmap(width, height, pixels,

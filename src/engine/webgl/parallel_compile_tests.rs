@@ -33,6 +33,10 @@ fn parallel_completion_requires_native_availability_and_author_admission() {
                 },
             )
             .unwrap();
+            assert!(
+                !context.extensions.parallel_compile,
+                "browser scheduling must not enable the author's completion API"
+            );
             let program = call(&mut context, "createProgram", &[], "")
                 .as_u64()
                 .unwrap() as u32;
@@ -100,6 +104,7 @@ fn native_completion_reports_finished_failed_and_successful_compiles_without_fak
         if !available {
             return;
         }
+        let submitted = compiler_workers::native_submissions();
         let vertex = compile(
             &mut context,
             gl::VERTEX_SHADER,
@@ -111,6 +116,10 @@ fn native_completion_reports_finished_failed_and_successful_compiles_without_fak
             "precision mediump float; void main(){gl_FragColor=vec4(1.0);}",
         );
         let program = link(&mut context, vertex, fragment);
+        assert!(
+            compiler_workers::native_submissions() > submitted,
+            "the advertised native path must actually delegate compiler work"
+        );
         // A background compiler may already finish this small input. Do not
         // require an artificial pending interval or conflate completion with success.
         assert!(query(&mut context, false, program).unwrap().is_boolean());

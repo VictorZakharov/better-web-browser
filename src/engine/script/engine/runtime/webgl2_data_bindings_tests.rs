@@ -25,7 +25,10 @@ fn webgl2_realm_detached_and_resizable_out_of_bounds_views_throw_before_upload()
         const result=new Uint8Array(2); gl.getBufferSubData(gl.ARRAY_BUFFER,0,result);
         if ([...result].join()!=='7,8' || gl.getError()!==0) throw Error('failed view conversion mutated GPU storage');
         resizable.resize(8); fixed.set([1,2,3,4]);
-        gl.bufferData(gl.ARRAY_BUFFER,fixed,gl.STATIC_DRAW);
+        let rejected=false;try {gl.bufferData(gl.ARRAY_BUFFER,fixed,gl.STATIC_DRAW);}
+        catch(error){rejected=error instanceof TypeError;}
+        if(!rejected)throw Error('regrown resizable store must still reject');
+        gl.bufferData(gl.ARRAY_BUFFER,new Uint8Array(fixed),gl.STATIC_DRAW);
         if (gl.getBufferParameter(gl.ARRAY_BUFFER,gl.BUFFER_SIZE)!==4 || gl.getError()!==0) throw Error('regrown view did not recover');
     "#,
     );

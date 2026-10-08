@@ -14,6 +14,9 @@ pub(super) fn dispatch(
     if operation == "canvasTextEnvironment" {
         return Ok(Some(canvas_text_environment::read(args, state)));
     }
+    if operation == "canvasFilterParse" {
+        return Ok(Some(canvas_filter_environment::parse(args, state)));
+    }
     if let Some(value) =
         super::super::canvas_host::webgl::dispatch(operation, args, &mut state.webgl)?
     {

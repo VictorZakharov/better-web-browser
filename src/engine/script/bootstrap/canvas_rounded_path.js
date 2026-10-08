@@ -25,14 +25,14 @@
         if (height < 0) [corners[0], corners[1], corners[2], corners[3]] =
             [corners[3], corners[2], corners[1], corners[0]];
         const [ul, ur, lr, ll] = corners;
-        const horizontal = Math.abs(width), vertical = Math.abs(height);
+        const horizontal = canvasPrivateMath.abs(width), vertical = canvasPrivateMath.abs(height);
         const ratios = [
             (ul.x + ur.x) ? horizontal / (ul.x + ur.x) : Infinity,
             (ur.y + lr.y) ? vertical / (ur.y + lr.y) : Infinity,
             (lr.x + ll.x) ? horizontal / (lr.x + ll.x) : Infinity,
             (ll.y + ul.y) ? vertical / (ll.y + ul.y) : Infinity
         ];
-        const scale = Math.min(1, ...ratios);
+        const scale = canvasPrivateMath.min(1, ...ratios);
         for (const point of corners) { point.x *= scale; point.y *= scale; }
         return corners;
     };
@@ -49,8 +49,8 @@
             const inverse = transform ? matrixInverse2D(transform) : null;
             if (transform && !inverse) return;
             const [x0, y0] = inverse ? matrixPoint2D(inverse, ...previous) : previous;
-            const firstLength = Math.hypot(x0 - x1, y0 - y1);
-            const secondLength = Math.hypot(x2 - x1, y2 - y1);
+            const firstLength = canvasPrivateMath.hypot(x0 - x1, y0 - y1);
+            const secondLength = canvasPrivateMath.hypot(x2 - x1, y2 - y1);
             if (!firstLength || !secondLength || radius === 0) {
                 lineCanvasPath(path, ...paint(x1, y1)); return;
             }
@@ -58,17 +58,17 @@
             const second = [(x2 - x1) / secondLength, (y2 - y1) / secondLength];
             const cross = first[0] * second[1] - first[1] * second[0];
             const dot = first[0] * second[0] + first[1] * second[1];
-            if (Math.abs(cross) < 1e-12 || dot <= -1) {
+            if (canvasPrivateMath.abs(cross) < 1e-12 || dot <= -1) {
                 lineCanvasPath(path, ...paint(x1, y1)); return;
             }
-            const distance = radius / Math.tan(Math.acos(Math.max(-1, Math.min(1, dot))) / 2);
+            const distance = radius / canvasPrivateMath.tan(canvasPrivateMath.acos(canvasPrivateMath.max(-1, canvasPrivateMath.min(1, dot))) / 2);
             const tangent0 = [x1 + first[0] * distance, y1 + first[1] * distance];
             const tangent1 = [x1 + second[0] * distance, y1 + second[1] * distance];
             const direction = cross < 0 ? -1 : 1;
             const center = [tangent0[0] + direction * -first[1] * radius,
                 tangent0[1] + direction * first[0] * radius];
-            const start = Math.atan2(tangent0[1] - center[1], tangent0[0] - center[0]);
-            const end = Math.atan2(tangent1[1] - center[1], tangent1[0] - center[0]);
+            const start = canvasPrivateMath.atan2(tangent0[1] - center[1], tangent0[0] - center[0]);
+            const end = canvasPrivateMath.atan2(tangent1[1] - center[1], tangent1[0] - center[0]);
             lineCanvasPath(path, ...paint(...tangent0));
             ellipseCanvasPath(path, ...center, radius, radius, 0, start, end, cross > 0, transform);
         };
@@ -79,22 +79,22 @@
             if (!corners) return;
             const path = pathFor(this), transform = transformFor(this);
             const paint = (px, py) => transform ? matrixPoint2D(transform, px, py) : [px, py];
-            const x0 = Math.min(x, x + width), x1 = Math.max(x, x + width);
-            const y0 = Math.min(y, y + height), y1 = Math.max(y, y + height);
+            const x0 = canvasPrivateMath.min(x, x + width), x1 = canvasPrivateMath.max(x, x + width);
+            const y0 = canvasPrivateMath.min(y, y + height), y1 = canvasPrivateMath.max(y, y + height);
             const [ul, ur, lr, ll] = corners;
             moveCanvasPath(path, ...paint(x0 + ul.x, y0));
             lineCanvasPath(path, ...paint(x1 - ur.x, y0));
             ellipseCanvasPath(path, x1 - ur.x, y0 + ur.y, ur.x, ur.y, 0,
-                -Math.PI / 2, 0, false, transform);
+                -canvasPrivateMath.PI / 2, 0, false, transform);
             lineCanvasPath(path, ...paint(x1, y1 - lr.y));
             ellipseCanvasPath(path, x1 - lr.x, y1 - lr.y, lr.x, lr.y, 0,
-                0, Math.PI / 2, false, transform);
+                0, canvasPrivateMath.PI / 2, false, transform);
             lineCanvasPath(path, ...paint(x0 + ll.x, y1));
             ellipseCanvasPath(path, x0 + ll.x, y1 - ll.y, ll.x, ll.y, 0,
-                Math.PI / 2, Math.PI, false, transform);
+                canvasPrivateMath.PI / 2, canvasPrivateMath.PI, false, transform);
             lineCanvasPath(path, ...paint(x0, y0 + ul.y));
             ellipseCanvasPath(path, x0 + ul.x, y0 + ul.y, ul.x, ul.y, 0,
-                Math.PI, Math.PI * 1.5, false, transform);
+                canvasPrivateMath.PI, canvasPrivateMath.PI * 1.5, false, transform);
             closeCanvasPath(path);
             // Reflecting exactly one axis reverses winding. Painting a compound
             // path must be able to cancel this contour with a clockwise one.

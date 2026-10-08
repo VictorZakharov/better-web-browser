@@ -290,3 +290,36 @@ Canvas solid-path calls total 610.692 ms in one task, while context creation tak
 the failing ordinary task has the same profile. They do argue against treating
 all previously unresolved non-script hits as V8 compiler work. No new engine
 backend or enlarged execution limit follows from them.
+
+## October 8 final-source production replay
+
+The complete graphics/cancellation batch uses the unchanged production game
+snapshot, normal shipped V8, a fresh profile, scale 1, and 30 seconds of settling.
+This ordinary replay disables source sampling and requests no DOM diagnostics.
+The loading overlay goes away, but the central 3D lobby remains black and the UI
+still differs from Chrome. Reaching the menu is not accepted rendered gameplay.
+
+The production 64/128-MiB GPU limits and 1-GiB renderer Job remain unchanged.
+The capture has no uncaught JavaScript error or renderer exit, but records 125
+shader console errors, beginning with an out-of-memory error and an uncompiled
+vertex shader. Its final renderer private memory is 727.1 MiB and peak renderer
+working set 672.1 MiB. These are not peak private bytes or exact driver VRAM.
+The earlier private-ledger experiment identifies storage admission as a blocker;
+the ordinary final capture itself requests no ledger snapshot.
+
+A matched fresh Chrome 154 capture renders the full training-dummy lobby after
+the same settling interval. Neither the Breeze harness page-ready observation
+of 1,950.8 ms nor Chrome's 1,087.4 ms is a matched time-to-lobby measurement:
+their completed rendering and process containment policies differ. The faster
+owned shader/Canvas fixtures are separate evidence, not a game acceptance pass.
+
+The authorized larger-budget replay of this same source release changes only
+the GPU limits to 256/512 MiB, preserving the 1-GiB Job. Its first ordinary fresh
+capture crashes the renderer after about 30.5 seconds with exit `0xc0000409`;
+stderr reports a failed 2-MiB allocation. The planned repeat set stops at this
+failure rather than collecting more crashing samples. No shader console errors
+or uncaught script errors are recorded, but the crash screenshot is an explicit
+failure. Renderer memory fields are zero after exit and must not be interpreted
+as a low-memory result or a measured peak. This does not identify every native
+allocation's owner or justify increasing production limits. The production
+source is restored byte-for-byte before final checks and handoff.

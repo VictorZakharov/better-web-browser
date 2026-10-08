@@ -1,8 +1,7 @@
 //! Use ANGLE's explicit WebGL validator before its native GLES compiler.
 //! ESSL output encodes public names and lifts extension directives legally;
 //! author source remains separate from the translated driver source.
-use super::{MAX_SHADER_BYTES, MAX_SHADER_SOURCE_BYTES, WebGl, gl};
-use mozangle::shaders::{self, BuiltInResources, Output, ShaderValidator};
+use super::{MAX_SHADER_BYTES, MAX_SHADER_SOURCE_BYTES, WebGl};
 
 impl WebGl {
     pub(super) fn translate_shader(&mut self, kind: u32, source: &str) -> Result<String, String> {
@@ -22,107 +21,35 @@ impl WebGl {
         if let Some(translated) = self.shader_validation_cache.lookup(environment, source) {
             return Ok(translated);
         }
-        let translated = self.translate_shader_uncached(kind, source)?;
+        if self.shader_validators.needs_resources(environment)? {
+            let resources = super::shader_validator_resources::current(self);
+            self.shader_validators.prepare(environment, &resources)?;
+        }
+        let translated = self.shader_validators.compile(environment, source)?;
+        let translated = self.admit_shader_translation(source, translated)?;
         self.shader_validation_cache
             .insert(environment, source, &translated);
         Ok(translated)
     }
 
-    fn translate_shader_uncached(&self, kind: u32, source: &str) -> Result<String, String> {
-        // ANGLE's driver also owns compiler initialization. Initialize is idempotent;
-        // do not finalize here, while other current contexts may still need it.
-        shaders::initialize().map_err(str::to_owned)?;
-        let mut range = [0; 2];
-        let mut precision = 0;
-        unsafe {
-            gl::GetShaderPrecisionFormat(
-                gl::FRAGMENT_SHADER,
-                gl::HIGH_FLOAT,
-                range.as_mut_ptr(),
-                &mut precision,
-            );
-        }
-        let mut resources = BuiltInResources {
-            MaxVertexAttribs: limit(gl::MAX_VERTEX_ATTRIBS),
-            MaxVertexUniformVectors: limit(gl::MAX_VERTEX_UNIFORM_VECTORS),
-            MaxVaryingVectors: limit(gl::MAX_VARYING_VECTORS),
-            MaxVertexTextureImageUnits: limit(gl::MAX_VERTEX_TEXTURE_IMAGE_UNITS),
-            MaxCombinedTextureImageUnits: self.textures.len() as i32,
-            MaxTextureImageUnits: limit(gl::MAX_TEXTURE_IMAGE_UNITS),
-            MaxFragmentUniformVectors: limit(gl::MAX_FRAGMENT_UNIFORM_VECTORS),
-            OES_standard_derivatives: i32::from(self.extensions.derivatives),
-            EXT_frag_depth: i32::from(self.extensions.frag_depth),
-            EXT_shader_texture_lod: i32::from(self.extensions.texture_lod),
-            EXT_draw_buffers: i32::from(self.extensions.draw_buffers),
-            ANGLE_multi_draw: i32::from(self.extensions.multi_draw),
-            MaxDrawBuffers: if self.extensions.draw_buffers {
-                self.extensions.max_draw_buffers as i32
-            } else {
-                1
-            },
-            FragmentPrecisionHigh: i32::from(precision > 0),
-            HashFunction: None,
-            ..BuiltInResources::default()
-        };
+    fn admit_shader_translation(&self, source: &str, translated: String) -> Result<String, String> {
         let version_two = self.options.api == super::ApiVersion::Two;
-        if version_two {
-            // ESSL300 limits are native scalar capabilities, not WebGL1's extension defaults.
-            resources.MaxVertexOutputVectors = limit(0x9122) / 4;
-            resources.MaxFragmentInputVectors = limit(0x9125) / 4;
-            resources.MinProgramTexelOffset = limit(0x8904);
-            resources.MaxProgramTexelOffset = limit(0x8905);
-            resources.MaxFragmentUniformBlocks = limit(0x8a2d);
-            resources.MaxVertexUniformBlocks = limit(0x8a2b);
-            resources.MaxDrawBuffers = limit(0x8824);
-        }
-        let validator = if version_two {
-            ShaderValidator::for_webgl2(kind, Output::Essl, &resources)
+        if translated.len() <= MAX_SHADER_SOURCE_BYTES * 8 {
+            if version_two || self.extensions.multi_draw {
+                // Preserve native draw-ID ownership in either version. In
+                // WebGL2, original names also avoid ANGLE's 1024-byte
+                // no-prefix boundary, which cannot be safely decoded by
+                // stripping a textual prefix. Native validation stays active.
+                return Ok(source.to_owned());
+            }
+            // Both compiler stages now use WebGL1's 256-byte token limit.
+            // Undo only the translator's reversible author-name prefix
+            // before the native compiler remangles names internally.
+            Ok(translated_names(&translated))
         } else {
-            ShaderValidator::for_webgl(kind, Output::Essl, &resources)
-        }
-        .ok_or_else(|| "Could not construct the WebGL shader validator".to_owned())?;
-        // The pinned ANGLE translator only admits gl_DrawID with its explicit
-        // emulation option. The native compiler owns the real per-draw uniform;
-        // do not feed its translator's generated uniform back as author source.
-        let mut compile_options = shaders::CompileOptions::mozangle();
-        compile_options.set_emulateGLDrawID(u64::from(self.extensions.multi_draw));
-        let translated = validator
-            .compile(&[source], compile_options)
-            .map(|()| validator.object_code());
-        match translated {
-            Ok(translated) if translated.len() <= MAX_SHADER_SOURCE_BYTES * 8 => {
-                if version_two || self.extensions.multi_draw {
-                    // Preserve native draw-ID ownership in either version. In
-                    // WebGL2, original names also avoid ANGLE's 1024-byte
-                    // no-prefix boundary, which cannot be safely decoded by
-                    // stripping a textual prefix. Native validation stays active.
-                    return Ok(source.to_owned());
-                }
-                // Both compiler stages now use WebGL1's 256-byte token limit.
-                // Undo only the translator's reversible author-name prefix
-                // before the native compiler remangles names internally.
-                Ok(translated_names(&translated))
-            }
-            Ok(_) => Err("Translated WebGL shader exceeds the compiler output budget".into()),
-            Err(reason) => {
-                let mut log = validator.info_log();
-                if log.is_empty() {
-                    log = reason.into();
-                }
-                truncate_log(&mut log);
-                Err(log)
-            }
+            Err("Translated WebGL shader exceeds the compiler output budget".into())
         }
     }
-}
-
-fn limit(pname: u32) -> i32 {
-    let mut value = 0;
-    // SAFETY: a closed scalar capability query with the owning context current.
-    unsafe {
-        gl::GetIntegerv(pname, &mut value);
-    }
-    value
 }
 
 pub(super) fn truncate_log(log: &mut String) {

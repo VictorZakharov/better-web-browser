@@ -61,11 +61,12 @@
         webGlState(this);
         if (pixels === null) { webGlError(this, 0x0501); return; }
         const kind=webGlUnsigned(type);
-        if (kind===0x1406 ? !(pixels instanceof Float32Array) :
-            !(pixels instanceof Uint8Array) && !(pixels instanceof Uint8ClampedArray)) {
+        const destination=webGl2View(pixels);
+        if (kind===0x1406 ? destination.name!=='Float32Array' :
+            !['Uint8Array','Uint8ClampedArray'].includes(destination.name)) {
             webGlError(this, 0x0502); return;
         }
         const bytes = webGlCall(this, 'readPixels', [webGlInteger(x), webGlInteger(y),
-            webGlInteger(width), webGlInteger(height), webGlUnsigned(format), webGlUnsigned(type), pixels.byteLength], [], '', webGlBytes(pixels));
-        if (bytes) new Uint8Array(pixels.buffer,pixels.byteOffset,pixels.byteLength).set(bytes);
+            webGlInteger(width), webGlInteger(height), webGlUnsigned(format), webGlUnsigned(type), destination.byteLength], [], '',destination.bytes);
+        if (bytes) webGl2Apply(webGl2ByteSet,destination.bytes,[bytes]);
     });

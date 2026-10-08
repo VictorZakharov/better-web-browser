@@ -87,6 +87,19 @@ fn parse_value(value: &str) -> Option<Value> {
     Some(result)
 }
 
+// Angle consumers also accept a bare CSS dimension. Keep the same tokenizer,
+// unit conversion, expression budget and exhaustive-input validation as math.
+fn parse_angle_value(value: &str) -> Option<Value> {
+    if value.len() > 16_384 {
+        return None;
+    }
+    let mut input = ParserInput::new(value);
+    let mut parser = Parser::new(&mut input);
+    let result = Budget::default().value(&mut parser, 0).ok()?;
+    parser.expect_exhausted().ok()?;
+    Some(result)
+}
+
 pub(super) fn parse(value: &str) -> Option<Length> {
     match parse_value(value)? {
         Value::Length(value) => Some(Length::Math(value)),

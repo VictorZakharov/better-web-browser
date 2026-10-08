@@ -21,7 +21,7 @@ fn compare(mut request: serde_json::Value, parts: &[(bool, Vec<[f64; 2]>)], stro
     };
     let original = provider(&json, None).unwrap();
     let packed = provider(&metadata, Some(&geometry)).unwrap();
-    assert_eq!(original.as_slice(), packed.as_slice(), "{json}");
+    assert_eq!(original.to_vec(), packed.to_vec(), "{json}");
 }
 
 #[test]
@@ -150,14 +150,14 @@ fn cache_keys_distinguish_bytes_metadata_and_legacy_transport() {
         || Some(vec![2]),
     )
     .unwrap();
-    assert_eq!(second.as_slice(), [2]);
+    assert_eq!(second.to_vec(), [2]);
     let legacy = super::super::mask_cache::rasterize_shared(
         super::super::mask_cache::Kind::Fill,
         key,
         || Some(vec![3]),
     )
     .unwrap();
-    assert_eq!(legacy.as_slice(), [3]);
+    assert_eq!(legacy.to_vec(), [3]);
     let different = super::super::mask_cache::rasterize_packed(
         super::super::mask_cache::Kind::Stroke,
         key,
@@ -165,6 +165,6 @@ fn cache_keys_distinguish_bytes_metadata_and_legacy_transport() {
         || Some(vec![4]),
     )
     .unwrap();
-    assert_eq!(different.as_slice(), [4]);
-    assert_eq!(first.as_slice(), [1]);
+    assert_eq!(different.to_vec(), [4]);
+    assert_eq!(first.to_vec(), [1]);
 }

@@ -116,8 +116,10 @@ The production code and locked dependency graph use V8 152.2.0 exclusively. Engi
 code lives behind focused adapters in `src/engine/script/engine/`; Web API hosts exchange owned,
 engine-neutral values across the `__hostCall` boundary. Document and Worker realms, retained
 functions, typed arrays, static module graphs, `import.meta.url`, top-level await, and Promise
-completion use V8 directly. A per-isolate watchdog terminates a JavaScript entry after two seconds
-in production and 100 ms in unit tests.
+completion use V8 directly. A per-isolate watchdog bounds author JavaScript entries at ten seconds
+in both production and unit tests; the private regular-expression isolate retains a two-second
+bound. Explicit cancellation can interrupt an active task and permanently retire its agent.
+See [script execution policy](../script-execution-policy.md).
 
 The Boa dependencies, local `vendor/boa_*` forks, temporary probe feature and commands, and the
 probe-only scripts have been removed. `scripts/prepare-v8.ps1` stages the official locked V8 archive

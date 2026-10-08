@@ -91,9 +91,8 @@
         return object;
     };
     const webGlBytes = value => {
-        if (value instanceof ArrayBuffer) return new Uint8Array(value);
-        if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-        throw new TypeError('Expected an ArrayBuffer or ArrayBufferView');
+        if (value === null) throw new TypeError('Expected an ArrayBuffer or ArrayBufferView');
+        return webGl2Source(value).bytes;
     };
     const webGlInteger = value => Number(value) | 0;
     const webGlUnsigned = value => Number(value) >>> 0;

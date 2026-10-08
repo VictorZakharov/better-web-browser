@@ -1,6 +1,6 @@
 //! Bilinear filtering interpolates premultiplied color, then unpremultiplies.
 //! Sampling clamps to the original image edge, not an artificial crop edge.
-pub(super) fn pixel(
+pub(in crate::engine::script::canvas_host) fn pixel(
     source: &[u8],
     width: u32,
     height: u32,

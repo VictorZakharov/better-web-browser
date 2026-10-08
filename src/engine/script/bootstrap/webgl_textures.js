@@ -20,25 +20,25 @@
             webGlError(context, 0x0502); return null;
         }
         const state = webGlState(context);
-        const bitmap = imageBitmapStates.get(source);
-        if (bitmap) snapshot.pixels = new Uint8ClampedArray(bitmap.pixels);
+        const bitmap = canvasPrivateWeakGet(imageBitmapStates, source);
+        if (bitmap) snapshot.pixels = new canvasPrivatePixelArray(bitmap.pixels);
         const components = [0x1908,0x8c42].includes(format) ? 4 : [0x1907,0x8c40].includes(format) ? 3 : format === 0x190a ? 2 : 1;
         const alignment = context.getParameter(0x0cf5);
         const componentBytes = type===0x1406 ? 4 : type===0x8d61 ? 2 : 1;
         const rowBytes = snapshot.width * components * componentBytes;
-        const stride = Math.ceil(rowBytes / alignment) * alignment;
+        const stride = canvasPrivateMath.ceil(rowBytes / alignment) * alignment;
         if (stride * snapshot.height > 16*1024*1024) { webGlError(context,0x0505); return null; }
-        const pixels = new Uint8Array(stride * snapshot.height);
+        const pixels = new canvasPrivateByteArray(stride * snapshot.height);
         // Reuse V8's IEEE binary16 conversion rather than a second half-float
         // implementation. The packed upload still uses WebGL's Uint16Array ABI.
-        const values = type===0x1406 ? new Float32Array(pixels.buffer) :
+        const values = type===0x1406 ? new canvasPrivateFloatArray(pixels.buffer) :
             type===0x8d61 ? new webGlBinary16Array(pixels.buffer) : pixels;
         for (let y = 0; y < snapshot.height; y++) for (let x = 0; x < snapshot.width; x++) {
             const sourceY = !bitmap && state.unpackFlip ? snapshot.height - 1 - y : y;
             const input = (sourceY * snapshot.width + x) * 4;
             const output = y * stride/componentBytes + x * components;
             const alpha = snapshot.pixels[input + 3];
-            const convert = value => componentBytes===1 ? Math.round(value) : value/255;
+            const convert = value => componentBytes===1 ? canvasPrivateMath.round(value) : value/255;
             const channel = offset => convert(!bitmap && state.unpackPremultiply ? snapshot.pixels[input + offset] * alpha / 255 : snapshot.pixels[input + offset]);
             if (format === 0x1906) values[output] = convert(alpha);
             else if (format === 0x1909 || format === 0x190a) {

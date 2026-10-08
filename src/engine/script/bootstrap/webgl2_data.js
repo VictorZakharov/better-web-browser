@@ -3,6 +3,7 @@
     // cross-realm views without trusting Symbol.toStringTag or instanceof.
     const webGl2TypedPrototype = Object.getPrototypeOf(Uint8Array.prototype);
     const webGl2ByteArray = Uint8Array;
+    const webGl2Apply = Reflect.apply;
     const webGl2IsView = ArrayBuffer.isView;
     const webGl2TypedValues = webGl2TypedPrototype.values;
     const webGl2ByteSubarray = webGl2TypedPrototype.subarray;
@@ -23,14 +24,15 @@
     };
     const webGl2View = value => {
         if (!webGl2IsView(value)) throw new TypeError('Expected an ArrayBufferView');
-        const name = Reflect.apply(webGl2TypedName,value,[]);
+        const name = webGl2Apply(webGl2TypedName,value,[]);
         // Intrinsic length getters return zero for an out-of-bounds resizable
         // view. ValidateTypedArray must reject it instead of uploading zero bytes.
-        if (name !== undefined) Reflect.apply(webGl2TypedValues,value,[]);
+        if (name !== undefined) webGl2Apply(webGl2TypedValues,value,[]);
         const getters = name === undefined ? webGl2DataGetters : webGl2TypedGetters;
-        const buffer = Reflect.apply(getters.buffer,value,[]);
-        const byteOffset = Reflect.apply(getters.byteOffset,value,[]);
-        const byteLength = Reflect.apply(getters.byteLength,value,[]);
+        const buffer = webGl2Apply(getters.buffer,value,[]);
+        webGlFixedBuffer(buffer);
+        const byteOffset = webGl2Apply(getters.byteOffset,value,[]);
+        const byteLength = webGl2Apply(getters.byteLength,value,[]);
         const elementSize = name === undefined ? 1 : webGl2ElementSizes[name];
         if (!elementSize) throw new TypeError('Unsupported buffer view');
         // Constructing the view detects detached backing stores before IPC.
@@ -41,12 +43,20 @@
         if (value === null) return {bytes:new webGl2ByteArray(),elementSize:1,length:0};
         if (webGl2IsView(value)) return webGl2View(value);
         let byteLength;
-        try { byteLength = Reflect.apply(webGl2BufferLength,value,[]); }
+        try { byteLength = webGl2Apply(webGl2BufferLength,value,[]); }
         catch (error) {
             if (!webGl2SharedLength) throw error;
-            byteLength = Reflect.apply(webGl2SharedLength,value,[]);
+            byteLength = webGl2Apply(webGl2SharedLength,value,[]);
         }
+        webGlFixedBuffer(value);
         return {bytes:new webGl2ByteArray(value,0,byteLength),elementSize:1,length:byteLength};
+    };
+    const webGl2IsBuffer = value => {
+        try { webGl2Apply(webGl2BufferLength,value,[]); return true; } catch {}
+        if (webGl2SharedLength) {
+            try { webGl2Apply(webGl2SharedLength,value,[]); return true; } catch {}
+        }
+        return false;
     };
     const webGl2Slice = (context, source, offset, length, error=0x0501) => {
         if (!Number.isSafeInteger(offset) || offset > source.length ||
@@ -54,36 +64,42 @@
             webGlError(context,error); return null;
         }
         const count = length === 0 ? source.length-offset : length;
-        return Reflect.apply(webGl2ByteSubarray,source.bytes,[offset*source.elementSize,(offset+count)*source.elementSize]);
+        return webGl2Apply(webGl2ByteSubarray,source.bytes,[offset*source.elementSize,(offset+count)*source.elementSize]);
     };
     const webGl2NumericConstructors = {f:Float32Array,i:Int32Array,u:Uint32Array};
     const webGl2NumericNames = {f:'Float32Array',i:'Int32Array',u:'Uint32Array'};
     const webGlNumericResizable = webGl2Getter(ArrayBuffer.prototype,'resizable');
     const webGlNumericGrowable = typeof SharedArrayBuffer === 'function' ?
         webGl2Getter(SharedArrayBuffer.prototype,'growable') : null;
+    const webGlFixedBuffer = buffer => {
+        // WebGL's [AllowShared] arguments do not have [AllowResizable]. Reuse
+        // the same intrinsic admission for numeric lists, uploads and replies.
+        // https://webidl.spec.whatwg.org/#AllowResizable
+        let resizable;
+        try { resizable=webGl2Apply(webGlNumericResizable,buffer,[]); }
+        catch (error) {
+            if (!webGlNumericGrowable) throw error;
+            resizable=webGl2Apply(webGlNumericGrowable,buffer,[]);
+        }
+        if (resizable) throw new TypeError('WebGL requires a fixed-length backing store');
+    };
     const webGlNumericDetached = buffer => {
         try { new webGl2ByteArray(buffer,0,0); return false; }
         catch (error) { if (error instanceof TypeError) return true; throw error; }
     };
     const webGlNumericTypedArgument = (kind,value,limit=1048576) => {
-        if (!webGl2IsView(value) || Reflect.apply(webGl2TypedName,value,[]) !== webGl2NumericNames[kind])
+        if (!webGl2IsView(value) || webGl2Apply(webGl2TypedName,value,[]) !== webGl2NumericNames[kind])
             return null;
         // Float32List/Int32List/Uint32List select genuine buffer-view brands
         // before consulting an author's iterator, including in another realm.
         // [AllowShared] does not imply [AllowResizable]. Detached buffers are
         // a WebGL INVALID_VALUE, not an IDL exception or a sequence fallback.
         // https://registry.khronos.org/webgl/specs/latest/1.0/#TYPES
-        const buffer=Reflect.apply(webGl2TypedGetters.buffer,value,[]);
-        let resizable;
-        try { resizable=Reflect.apply(webGlNumericResizable,buffer,[]); }
-        catch (error) {
-            if (!webGlNumericGrowable) throw error;
-            resizable=Reflect.apply(webGlNumericGrowable,buffer,[]);
-        }
-        if (resizable) throw new TypeError('WebGL numeric lists require a fixed-length backing store');
+        const buffer=webGl2Apply(webGl2TypedGetters.buffer,value,[]);
+        webGlFixedBuffer(buffer);
         if (webGlNumericDetached(buffer)) return {values:[],length:0,detached:true};
-        const offset=Reflect.apply(webGl2TypedGetters.byteOffset,value,[]);
-        const length=Reflect.apply(webGl2TypedGetters.length,value,[]);
+        const offset=webGl2Apply(webGl2TypedGetters.byteOffset,value,[]);
+        const length=webGl2Apply(webGl2TypedGetters.length,value,[]);
         if (length>limit) throw new RangeError('WebGL typed numeric list exceeds the snapshot budget');
         const source=new webGl2NumericConstructors[kind](buffer,offset,length);
         const values=new webGl2NumericConstructors[kind](length);
@@ -91,7 +107,7 @@
         // an independent snapshot before later offset/length getters can mutate
         // or detach the author buffer. Builtin set safely reads shared memory;
         // no shared byte span crosses into Rust or the separate GL owner thread.
-        Reflect.apply(webGl2ByteSet,values,[source]);
+        webGl2Apply(webGl2ByteSet,values,[source]);
         return {values,length,detached:false};
     };
     const webGl2NumericArgument = kind => value => {

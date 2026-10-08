@@ -30,9 +30,9 @@
     });
     // A separable box kernel bounds blur work to O(width * height), regardless of radius.
     const canvasBlurAlpha = (pixels, width, height, blur) => {
-        const radius = Math.min(Math.ceil(blur), Math.max(width, height));
-        const horizontal = new Float32Array(width * height);
-        const blurred = new Float32Array(width * height);
+        const radius = canvasPrivateMath.min(canvasPrivateMath.ceil(blur), canvasPrivateMath.max(width, height));
+        const horizontal = new canvasPrivateFloatArray(width * height);
+        const blurred = new canvasPrivateFloatArray(width * height);
         if (!radius) {
             for (let index = 0; index < width * height; index++)
                 blurred[index] = pixels[index * 4 + 3];
@@ -40,7 +40,7 @@
         }
         for (let y = 0; y < height; y++) {
             let sum = 0;
-            for (let x = 0; x < Math.min(width, radius + 1); x++)
+            for (let x = 0; x < canvasPrivateMath.min(width, radius + 1); x++)
                 sum += pixels[(y * width + x) * 4 + 3];
             for (let x = 0; x < width; x++) {
                 if (x - radius - 1 >= 0) sum -= pixels[(y * width + x - radius - 1) * 4 + 3];
@@ -51,7 +51,7 @@
         }
         for (let x = 0; x < width; x++) {
             let sum = 0;
-            for (let y = 0; y < Math.min(height, radius + 1); y++)
+            for (let y = 0; y < canvasPrivateMath.min(height, radius + 1); y++)
                 sum += horizontal[y * width + x];
             for (let y = 0; y < height; y++) {
                 if (y - radius - 1 >= 0) sum -= horizontal[(y - radius - 1) * width + x];
@@ -68,16 +68,16 @@
     const canvasShadowLayerFromState = (settings, source, width, height) => {
         const nativeLayer = canvasShadowHost('canvasShadowLayer', source, width, height,
             settings.shadowBlur, settings.shadowOffsetX, settings.shadowOffsetY,
-            new Uint8Array(settings.shadowColor.channels));
-        if (nativeLayer) return new Uint8ClampedArray(nativeLayer.buffer,
-            nativeLayer.byteOffset, nativeLayer.byteLength);
+            canvasPrivateColorBytes(settings.shadowColor.channels));
+        if (nativeLayer) return new canvasPrivatePixelArray(canvasPrivateBuffer(nativeLayer),
+            canvasPrivateOffset(nativeLayer), canvasPrivateByteLength(nativeLayer));
         const mask = canvasBlurAlpha(source, width, height, settings.shadowBlur);
-        const layer = new Uint8ClampedArray(source.length);
+        const layer = new canvasPrivatePixelArray(canvasPrivateCount(source));
         const channels = settings.shadowColor.channels;
         const offsetX = settings.shadowOffsetX, offsetY = settings.shadowOffsetY;
         for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
             const sourceX = x - offsetX, sourceY = y - offsetY;
-            const left = Math.floor(sourceX), top = Math.floor(sourceY);
+            const left = canvasPrivateMath.floor(sourceX), top = canvasPrivateMath.floor(sourceY);
             let alpha = 0;
             for (let dy = 0; dy <= 1; dy++) for (let dx = 0; dx <= 1; dx++) {
                 const px = left + dx, py = top + dy;

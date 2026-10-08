@@ -1,5 +1,5 @@
 //! Buffer-only attributes with checked byte ranges before any driver draw call.
-use super::{Command, Kind, MAX_DRAW_VERTICES, MAX_UPLOAD_BYTES, Result, WebGl, gl};
+use super::{Command, Kind, MAX_DRAW_VERTICES, Result, WebGl, gl};
 use serde_json::Value;
 
 pub(super) use super::vertex_attributes::Attribute;
@@ -59,33 +59,7 @@ impl WebGl {
                 }
             }
             "bufferData" => {
-                let target = c.u(0)?;
-                let id = self.bound_buffer(target)?;
-                self.validate_transform_buffer_use(target, id)?;
-                let size = c.u(1)? as usize;
-                let usage = c.u(2)?;
-                let core_usage = self.options.api == super::ApiVersion::Two
-                    && [0x88e1, 0x88e2, 0x88e5, 0x88e6, 0x88e9, 0x88ea].contains(&usage);
-                if ![gl::STATIC_DRAW, gl::DYNAMIC_DRAW, gl::STREAM_DRAW].contains(&usage)
-                    && !core_usage
-                {
-                    return Err(gl::INVALID_ENUM);
-                }
-                if size > MAX_UPLOAD_BYTES || bytes.is_some_and(|b| b.len() != size) {
-                    return Err(gl::INVALID_VALUE);
-                }
-                let previous = self.objects.get(id, Kind::Buffer)?.capacity;
-                self.charge(previous, size)?;
-                // Use initialized storage even for numeric bufferData allocations.
-                let data = bytes.map_or_else(|| vec![0; size], <[u8]>::to_vec);
-                unsafe {
-                    gl::BufferData(target, size as isize, data.as_ptr().cast(), usage);
-                }
-                self.driver_result()?;
-                let object = self.objects.get_mut(id, Kind::Buffer)?;
-                object.capacity = previous.max(size);
-                object.bytes = data;
-                object.buffer_mirror_valid = true;
+                return self.buffer_data(c, bytes.map(std::borrow::Cow::Borrowed));
             }
             "bufferSubData" => {
                 let target = c.u(0)?;
@@ -106,6 +80,7 @@ impl WebGl {
                     );
                 }
                 self.driver_result()?;
+                self.index_cache.remove(id);
                 let object = self.objects.get_mut(id, Kind::Buffer)?;
                 object.bytes[offset..end].copy_from_slice(data);
                 if offset == 0 && end == object.bytes.len() {
@@ -193,96 +168,6 @@ impl WebGl {
         };
         self.objects.get(id, Kind::Buffer)?;
         Ok(id)
-    }
-    pub(super) fn validate_attributes(&self, maximum: u32) -> Result<()> {
-        self.validate_instance_attributes(maximum, 1, false)
-    }
-    pub(super) fn validate_instance_attributes(
-        &self,
-        maximum: u32,
-        instances: u32,
-        instanced: bool,
-    ) -> Result<()> {
-        let program = self.objects.get(self.program, Kind::Program)?.native;
-        let mut count = 0;
-        unsafe {
-            gl::GetProgramiv(program, gl::ACTIVE_ATTRIBUTES, &mut count);
-        }
-        let mut active = vec![false; self.attributes.len()];
-        for index in 0..count.max(0) as u32 {
-            let mut name = vec![0u8; super::MAX_SHADER_BYTES + 1];
-            let (mut length, mut size, mut kind) = (0, 0, 0);
-            unsafe {
-                gl::GetActiveAttrib(
-                    program,
-                    index,
-                    name.len() as i32,
-                    &mut length,
-                    &mut size,
-                    &mut kind,
-                    name.as_mut_ptr().cast(),
-                );
-            }
-            if length < 0 || length as usize >= name.len() {
-                return Err(gl::INVALID_OPERATION);
-            }
-            let location = unsafe { gl::GetAttribLocation(program, name.as_ptr().cast()) };
-            let columns = match kind {
-                gl::FLOAT_MAT2 => 2,
-                gl::FLOAT_MAT3 => 3,
-                gl::FLOAT_MAT4 => 4,
-                0x8b65 | 0x8b66 => 2,
-                0x8b67 | 0x8b68 => 3,
-                0x8b69 | 0x8b6a => 4,
-                _ => 1,
-            };
-            for offset in 0..columns * size.max(1) {
-                if let Some(value) = usize::try_from(location + offset)
-                    .ok()
-                    .and_then(|index| active.get_mut(index))
-                {
-                    *value = true;
-                }
-            }
-        }
-        let mut per_vertex = false;
-        // WebGL requires a buffer for *every* enabled array, even when the current
-        // shader does not consume it. Active attributes alone govern byte ranges.
-        if self
-            .attributes
-            .iter()
-            .any(|attribute| attribute.enabled && attribute.buffer == 0)
-        {
-            return Err(gl::INVALID_OPERATION);
-        }
-        for (index, attribute) in self
-            .attributes
-            .iter()
-            .enumerate()
-            .filter(|(index, a)| a.enabled && active[*index])
-        {
-            let _ = index;
-            per_vertex |= attribute.divisor == 0;
-            let maximum = (instances - 1)
-                .checked_div(attribute.divisor)
-                .unwrap_or(maximum);
-            let buffer = self.objects.get(attribute.buffer, Kind::Buffer)?;
-            let stride = if attribute.stride == 0 {
-                attribute.size
-            } else {
-                attribute.stride
-            };
-            let end = u64::from(attribute.offset)
-                + u64::from(maximum) * u64::from(stride)
-                + u64::from(attribute.size);
-            if end > buffer.bytes.len() as u64 {
-                return Err(gl::INVALID_OPERATION);
-            }
-        }
-        if instanced && !per_vertex && self.options.api == super::ApiVersion::One {
-            return Err(gl::INVALID_OPERATION);
-        }
-        Ok(())
     }
     pub(super) fn validate_program(&self) -> Result<()> {
         self.validate_transform_draw()?;

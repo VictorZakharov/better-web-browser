@@ -140,6 +140,7 @@ mod tests {
             WorkerHandle {
                 commands,
                 cancelled: Arc::new(AtomicBool::new(false)),
+                execution: ScriptCancellation::default(),
             },
         );
         let mut fetches = WorkerFetches::default();
@@ -170,6 +171,7 @@ mod tests {
             WorkerHandle {
                 commands,
                 cancelled: Arc::new(AtomicBool::new(false)),
+                execution: ScriptCancellation::default(),
             },
         );
         let mut fetches = WorkerFetches::default();

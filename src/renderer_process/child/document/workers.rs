@@ -6,6 +6,8 @@ mod network;
 mod streaming;
 mod thread;
 mod websocket;
+use crate::engine::script::ScriptCancellation;
+use crate::engine::script::worker_runtime::WorkerExecutionPolicy;
 use thread::run_worker;
 
 use self::network::{
@@ -194,6 +196,7 @@ impl RendererWorkers {
                     }
                     let (commands, receiver) = mailbox::Mailbox::new(self.mailbox_bytes.clone());
                     let cancelled = Arc::new(AtomicBool::new(false));
+                    let execution = ScriptCancellation::default();
                     let config = WorkerConfig {
                         id,
                         url,
@@ -208,6 +211,7 @@ impl RendererWorkers {
                         events: self.event_sender.clone(),
                         commands: receiver,
                         cancelled: cancelled.clone(),
+                        execution: execution.clone(),
                         execution_diagnostics: self.execution_diagnostics,
                     };
                     std::thread::Builder::new()
@@ -219,6 +223,7 @@ impl RendererWorkers {
                         WorkerHandle {
                             commands,
                             cancelled,
+                            execution,
                         },
                     );
                 }
@@ -339,11 +344,13 @@ impl Drop for RendererWorkers {
 struct WorkerHandle {
     commands: mailbox::Mailbox,
     cancelled: Arc<AtomicBool>,
+    execution: ScriptCancellation,
 }
 
 impl WorkerHandle {
     fn terminate(self) {
         self.cancelled.store(true, Ordering::Release);
+        self.execution.cancel();
         // The flag is authoritative. A full queue must never block termination.
         let _ = self.commands.try_send(WorkerCommand::Terminate);
     }
@@ -386,5 +393,6 @@ struct WorkerConfig {
     events: mpsc::Sender<WorkerEvent>,
     commands: mpsc::Receiver<mailbox::QueuedCommand>,
     cancelled: Arc<AtomicBool>,
+    execution: ScriptCancellation,
     execution_diagnostics: bool,
 }

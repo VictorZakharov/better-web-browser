@@ -18,15 +18,15 @@ review can audit the complete policy without hunting through parsers and platfor
 | Fetch | 16 MiB/buffered response; 64 MiB/script stream; 64 KiB/preflight; 20 redirects | Abort streaming transport reads and reject excessive redirects. |
 | Script stream credit | 256 KiB/active response; 4 MiB/renderer in-flight delivery | Park unconsumed responses; consumption resumes them. EOF, abort, navigation, and renderer exit release credit. Application-retained bodies and clone branches remain subject to the response limit, not this queue limit. |
 | Page resources | 32 MiB aggregate | Stop admitting additional fetched resource bodies for the document. |
-| JavaScript | 16 MiB per source; 32 MiB per page realm; 32 dynamic scripts; 2 s per V8 entry | Reject excess code, stop dynamic-script admission, and terminate runaway V8 execution. The source and realm ceilings remain within the unchanged 32 MiB aggregate page-resource budget. Unit tests use a 500 ms execution deadline for fast regressions. |
-| Script tasks | 10,000 DOM tree/stylesheet mutations; 128 timer callbacks/slice | Reject further host calls that could grow or structurally rebuild a document, or yield the timer slice so one task cannot grow without bound. Attribute and character-data updates do not grow the tree; they remain bounded by the 2 s V8-entry deadline and 1 GiB renderer Job. Unit tests use a lower tree-mutation threshold for fast boundary regressions. A measured YouTube hydration batch reached 25,000 total writes but contained only 226 child-list changes, demonstrating why total attribute writes are not a useful document-growth boundary. |
+| JavaScript | 16 MiB per source; 32 MiB per page realm; 32 dynamic scripts; 10 s per author V8 entry | Reject excess code, stop dynamic-script admission, and terminate runaway V8 execution. Tests use the production execution deadline. The private regular-expression isolate retains a 2 s bound. |
+| Script tasks | 10,000 DOM tree/stylesheet mutations; 128 timer callbacks/slice | Reject further host calls that could grow or structurally rebuild a document, or yield the timer slice so one task cannot grow without bound. Attribute and character-data updates do not grow the tree; they remain bounded by the 10 s V8-entry deadline and 1 GiB renderer Job. Unit tests use a lower tree-mutation threshold for fast boundary regressions. A measured YouTube hydration batch reached 25,000 total writes but contained only 226 child-list changes, demonstrating why total attribute writes are not a useful document-growth boundary. |
 | Raster images | 16 MiB encoded; 32,768 px/axis; 32 Mi pixels; 128 MiB decoded; 197 decoded identities/document | Configure the `image` decoder's pre-allocation limits, verify the exact pixel product before copying pixels, and bound the aggregate HTML/CSS/SVG/media image map shared with presentation IPC. |
 | SVG | 4 MiB source; 32 Mi pixels | Reject source before the third-party parser and reject dimensions before allocating the render pixmap. |
 | Fonts | 32 MiB input/output; 256 WOFF tables | Validate container offsets, table counts, compressed sizes, and declared output size before allocation/decompression. |
 | IPC | 256 KiB control frames; 8 MiB image frames; 16 KiB diagnostics | Reject frame headers before allocating payload buffers and truncate diagnostics at UTF-8 boundaries. |
 | Native document input | 64 KiB text values; monotonic per-document event sequence | Drop stale documents or sequences before DOM dispatch; retain the latest unsent continuous state within each run, with clicks, keys, focus, and lifecycle inputs as ordering barriers. |
 | Renderer process | one child; 1 GiB process/job memory | A Windows Job Object prevents child creation and terminates the renderer when containment is lost or a budget is exceeded. |
-| Renderer liveness | 3 s without heartbeat plus 1 s kill grace after first paint | Keep pipe writes off the broker watchdog, terminate the renderer Job automatically, preserve the browser process, and attempt one bounded reload of a previously presented document. First presentation has a separate 25 s ceiling. |
+| Renderer liveness | 3 s without heartbeat plus 12 s kill grace after first paint | Keep pipe writes off the broker watchdog, terminate the renderer Job automatically, preserve the browser process, and attempt one bounded reload of a previously presented document. First presentation has a separate 25 s ceiling. |
 
 Network response limits apply to bytes delivered by the WinHTTP transport after its protocol
 processing. Image, SVG, and font consumers enforce their own tighter decoded-form budgets as a
@@ -50,8 +50,20 @@ that stopped the runtime, not whether every task succeeded. A value of `false` a
 execution-time-limit entry in `javascript_errors` is a failed invocation, not a clean run. Review
 those errors and the visible result together. The retained-runtime timeout regression covers partial
 mutations, an uncatchable interruption, and successful execution of a later independent timer.
-The production deadline remains two seconds per V8 entry; its implementation lives in
-`src/engine/script/engine/watchdog.rs`.
+The production author-task deadline is ten seconds per V8 entry; its implementation lives in
+`src/engine/script/engine/watchdog.rs`. Explicit agent cancellation is different: it permanently
+retires the agent and interrupts active JavaScript from another thread. Worker termination does
+not depend on admission to its bounded command mailbox. See [script execution policy](script-execution-policy.md)
+for ownership, recovery, and the independent renderer-process containment boundary.
+
+Native ANGLE compilation uses a renderer-wide four-worker delegate pool with a
+128-entry bounded mailbox. It does not create one unbounded compiler pool per
+context or load external browser libraries. ANGLE retains native task lifetimes;
+the single GPU owner quiesces workers before the pinned provider resets its
+process-wide platform methods during display initialization. JavaScript
+interruption is not cancellation of a native compiler call: independent renderer
+Job termination remains its hard backstop. See
+[compiler scheduling](webgl-compiler-scheduling.md) for the exact ABI and bounds.
 
 ## Fuzz targets
 

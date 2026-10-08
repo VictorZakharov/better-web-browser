@@ -31,8 +31,8 @@
         const repeatY = state.repetition === 'repeat' || state.repetition === 'repeat-y';
         if ((!repeatX && (x < 0 || x >= source.width)) ||
             (!repeatY && (y < 0 || y >= source.height))) return [0, 0, 0, 0];
-        const column = ((Math.floor(x) % source.width) + source.width) % source.width;
-        const row = ((Math.floor(y) % source.height) + source.height) % source.height;
+        const column = ((canvasPrivateMath.floor(x) % source.width) + source.width) % source.width;
+        const row = ((canvasPrivateMath.floor(y) % source.height) + source.height) % source.height;
         const offset = (row * source.width + column) * 4;
         return canvasPatternSlice(source.pixels,offset,offset + 4);
     };
@@ -44,7 +44,7 @@
         if(!canvasImageSourceSupported(image))throw new TypeError('Unsupported Canvas image source');
         repetition = repetition === null ? '' : `${repetition}`;
         if(!canvasImageSourceUsable(image))return null;
-        const source = imageSourceSnapshot(image);
+        const source = imageSourceSnapshot(image, false, true);
         if (!source.width || !source.height) return null;
         if(repetition==='')repetition='repeat';
         if (!['repeat', 'repeat-x', 'repeat-y', 'no-repeat'].includes(repetition))

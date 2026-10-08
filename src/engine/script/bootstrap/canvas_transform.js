@@ -7,9 +7,9 @@
             .map(([px, py]) => matrixPoint2D(matrix, px, py));
         if (points.some(point => !point.every(Number.isFinite))) return null;
         const xs = points.map(point => point[0]), ys = points.map(point => point[1]);
-        return [Math.max(0, Math.floor(Math.min(...xs))), Math.max(0, Math.floor(Math.min(...ys))),
-            Math.min(state.width, Math.ceil(Math.max(...xs))),
-            Math.min(state.height, Math.ceil(Math.max(...ys)))];
+        return [canvasPrivateMath.max(0, canvasPrivateMath.floor(canvasPrivateMath.min(...xs))), canvasPrivateMath.max(0, canvasPrivateMath.floor(canvasPrivateMath.min(...ys))),
+            canvasPrivateMath.min(state.width, canvasPrivateMath.ceil(canvasPrivateMath.max(...xs))),
+            canvasPrivateMath.min(state.height, canvasPrivateMath.ceil(canvasPrivateMath.max(...ys)))];
     };
     const transformCanvasPath = (path, matrix) => {
         if (canvasIsIdentity(matrix)) return path;
@@ -60,6 +60,6 @@
         if(arguments.length<1)throw new TypeError('rotate requires an argument');
         angle = +angle;
         if (!Number.isFinite(angle)) return;
-        const cosine = Math.cos(angle), sine = Math.sin(angle);
+        const cosine = canvasPrivateMath.cos(angle), sine = canvasPrivateMath.sin(angle);
         canvasDrawingState(this).transform=matrixMultiply2D(canvasDrawingState(this).transform,[cosine,sine,-sine,cosine,0,0]);
     };

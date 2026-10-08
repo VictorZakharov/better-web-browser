@@ -22,6 +22,9 @@ impl ScriptRuntime {
                 .diagnostics
                 .push(format!("could not sample the V8 heap: {error}")),
         }
+        outcome
+            .diagnostics
+            .extend(context.gpu_resource_diagnostics());
         self.last_heap_sample = Some(Instant::now());
     }
 }

@@ -67,14 +67,14 @@ pub(super) fn stroke_mask(args: &[JsValue]) -> JsValue {
         return JsValue::Null;
     };
     coverage_from_arguments(source, args.get(2))
-        .map(std::sync::Arc::unwrap_or_clone)
+        .map(|mask| std::sync::Arc::unwrap_or_clone(mask).into_vec())
         .map_or(JsValue::Null, JsValue::Bytes)
 }
 
 pub(super) fn coverage_from_arguments(
     source: &str,
     geometry: Option<&JsValue>,
-) -> Option<std::sync::Arc<Vec<u8>>> {
+) -> Option<std::sync::Arc<super::coverage_storage::Coverage>> {
     match geometry {
         None => coverage_from_source(source),
         Some(JsValue::Bytes(bytes)) if source.len() <= MAX_REQUEST_BYTES => {
@@ -98,10 +98,12 @@ pub(super) fn coverage_from_arguments(
 
 #[cfg(test)]
 pub(super) fn mask_from_source(source: &str) -> Option<Vec<u8>> {
-    coverage_from_source(source).map(std::sync::Arc::unwrap_or_clone)
+    coverage_from_source(source).map(|mask| std::sync::Arc::unwrap_or_clone(mask).into_vec())
 }
 
-pub(super) fn coverage_from_source(source: &str) -> Option<std::sync::Arc<Vec<u8>>> {
+pub(super) fn coverage_from_source(
+    source: &str,
+) -> Option<std::sync::Arc<super::coverage_storage::Coverage>> {
     if source.len() > MAX_REQUEST_BYTES {
         return None;
     }

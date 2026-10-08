@@ -52,7 +52,7 @@
             [x, y, radiusX, radiusY, rotation, startAngle, endAngle].map(Number);
         if (!canvasPoint([x, y, radiusX, radiusY, rotation, startAngle, endAngle])) return;
         if (radiusX < 0 || radiusY < 0) throw new DOMException('Ellipse radii must be non-negative', 'IndexSizeError');
-        const tau = 2 * Math.PI;
+        const tau = 2 * canvasPrivateMath.PI;
         let sweep = endAngle - startAngle;
         if (!counterclockwise && sweep >= tau) sweep = tau;
         else if (counterclockwise && -sweep >= tau) sweep = -tau;
@@ -77,11 +77,11 @@
             }
             return;
         }
-        const steps = Math.max(1, Math.min(256, Math.ceil(Math.abs(sweep) * Math.max(radiusX, radiusY) / 2)));
-        const cosine = Math.cos(rotation), sine = Math.sin(rotation);
+        const steps = canvasPrivateMath.max(1, canvasPrivateMath.min(256, canvasPrivateMath.ceil(canvasPrivateMath.abs(sweep) * canvasPrivateMath.max(radiusX, radiusY) / 2)));
+        const cosine = canvasPrivateMath.cos(rotation), sine = canvasPrivateMath.sin(rotation);
         for (let step = 0; step <= steps; step++) {
             const angle = startAngle + sweep * step / steps;
-            const localX = radiusX * Math.cos(angle), localY = radiusY * Math.sin(angle);
+            const localX = radiusX * canvasPrivateMath.cos(angle), localY = radiusY * canvasPrivateMath.sin(angle);
             const pointX = x + localX * cosine - localY * sine;
             const pointY = y + localX * sine + localY * cosine;
             const [paintX, paintY] = transform ? matrixPoint2D(transform, pointX, pointY) : [pointX, pointY];

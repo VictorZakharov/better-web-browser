@@ -9,17 +9,26 @@ mod clip_mask;
 mod composite;
 mod composite_layer;
 mod coverage;
+mod coverage_storage;
 mod curves;
 pub(in crate::engine::script) mod element_images;
 mod fill;
+mod filter_color;
+mod filter_gaussian;
+pub(in crate::engine::script) mod filter_parser;
 mod glyph_paint;
 mod gradient_mask;
 mod image_paint;
+mod image_resize;
 mod mask_cache;
+mod owned;
+mod owned_pixels;
 mod packed_geometry;
 mod path;
+mod path_shader;
 mod pattern_mask;
 mod raster_clip;
+mod rectangle;
 mod shader_mask;
 mod shadow;
 mod shadow_path;
@@ -35,13 +44,30 @@ pub(crate) mod webgl;
 use crate::limits::MAX_CANVAS_PIXELS;
 const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 
-/// A stateless paint consumes only the fresh native copy of its pixel input.
-/// HostBridge checks the document/worker lifetime before calling this function.
-pub(super) fn owned_solid_path(args: &mut [JsValue]) -> JsValue {
-    solid_path::paint_owned(args)
-}
+pub(super) use owned::painter as owned_painter;
 
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
+    if operation == "canvasResizeImage" {
+        return Ok(Some(image_resize::resize(args)));
+    }
+    if operation == "canvasFilterColor" {
+        return Ok(Some(filter_color::paint(args)));
+    }
+    if operation == "canvasFilterParse" {
+        return Ok(Some(filter_parser::worker(args)));
+    }
+    if operation == "canvasFilterGaussian" {
+        return Ok(Some(filter_gaussian::paint(args)));
+    }
+    if operation == "canvasPaintRectangle" {
+        return Ok(Some(rectangle::paint(args)));
+    }
+    if operation == "canvasPaintGradientPath" {
+        return Ok(Some(gradient_mask::paint_path(args)));
+    }
+    if operation == "canvasPaintPatternPath" {
+        return Ok(Some(pattern_mask::paint_path(args)));
+    }
     if operation == "canvasClipMask" {
         return Ok(Some(clip_mask::paint(args)));
     }

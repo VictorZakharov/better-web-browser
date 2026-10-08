@@ -23,6 +23,7 @@ impl NativeContext {
         api: super::ApiVersion,
         backend: super::backend_policy::Backend,
     ) -> Result<Self, String> {
+        super::compiler_workers::before_display_initialization();
         let attributes = backend.attributes();
         // SAFETY: terminated integer attribute array; no native window/display pointer.
         let display =
@@ -42,6 +43,7 @@ impl NativeContext {
             if egl::Initialize(display, &mut major, &mut minor) == 0 {
                 return Err(error("initialize ANGLE"));
             }
+            super::compiler_workers::install(display)?;
             if egl::BindAPI(egl::OPENGL_ES_API) == 0 {
                 return Err(error("bind OpenGL ES API"));
             }

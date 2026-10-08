@@ -9,8 +9,8 @@
             const painted = canvasCompositeLayerHost('canvasCompositeLayer',
                 destination, layer, operator, canvasDrawingState(context).clipBits || null,
                 canvasBitmapIsOpaque(destination));
-            if (painted && canvasPixelLength(painted) === destination.length) {
-                copyCanvasPixelRow(destination, 0, painted, 0, destination.length);
+            if (painted && canvasPixelLength(painted) === canvasPrivateCount(destination)) {
+                copyCanvasPixelRow(destination, 0, painted, 0, canvasPrivateCount(destination));
                 return;
             }
         }
@@ -35,13 +35,27 @@
         if (hasShadow && !hasFilter && state.width*state.height >= 256 &&
             canvasPaintShadowPath(context,draw,args,state)) return;
         const destination = state.pixels;
-        let source = new Uint8ClampedArray(destination.length);
+        const settings = canvasDrawingState(context);
+        const width = state.width, height = state.height;
+        const halo = hasFilter ? canvasFilterHalo(settings) : 0;
+        const sourceWidth = width + halo * 2, sourceHeight = height + halo * 2;
+        if (!Number.isSafeInteger(halo) || sourceWidth > 16384 || sourceHeight > 16384 ||
+            sourceWidth * sourceHeight > MAX_CANVAS_PIXELS)
+            throw new DOMException('Canvas filter source exceeds the bounded working set',
+                'NotSupportedError');
+        let source = new canvasPrivatePixelArray(sourceWidth * sourceHeight * 4);
         // Drawing a canvas into itself must read its original bitmap, not the temporary layer.
         if (draw === canvasOriginalDrawImage && args[0] === context.canvas) {
             args = [makeImageBitmap(state.width, state.height,
-                new Uint8ClampedArray(destination)), ...args.slice(1)];
+                new canvasPrivatePixelArray(destination), false, null, state.originClean !== false), ...args.slice(1)];
         }
         state.pixels = source;
+        state.width = sourceWidth; state.height = sourceHeight;
+        const savedTransform = settings.transform, savedPath = settings.path;
+        if (halo) {
+            settings.transform = matrixMultiply2D([1,0,0,1,halo,halo], savedTransform);
+            settings.path = transformCanvasPath(savedPath, [1,0,0,1,halo,halo]);
+        }
         const savedClip = canvasDrawingState(context).clipBits;
         // The source and shadow are generated before the drawing clip is applied.
         canvasDrawingState(context).clipBits = null;
@@ -53,19 +67,28 @@
         }
         finally {
             state.pixels = destination;
+            state.width = width; state.height = height;
+            settings.transform = savedTransform; settings.path = savedPath;
             canvasDrawingState(context).clipBits = savedClip;
             canvasDrawingState(context).compositeOperation = operator;
         }
         if (!painted) return;
-        if (hasFilter) source = applyCanvasFilters(source, state.width, state.height,
+        if (hasFilter) source = applyCanvasFilters(source, sourceWidth, sourceHeight,
             canvasDrawingState(context).filterOperations);
-        if (hasShadow && state.width * state.height >= 256) {
+        // Filter Effects flags currentColor-dependent primitives as tainted.
+        // This belongs to bitmap ownership, not the saved drawing-state stack.
+        if (hasFilter) for (let index = 0; index < settings.filterOperations.length; index++) {
+            const operation = settings.filterOperations[index];
+            if (operation.name === 'drop-shadow' && operation.value.originClean === false)
+                state.originClean = false;
+        }
+        if (!halo && hasShadow && state.width * state.height >= 256) {
             const painted = canvasCompositeLayerHost('canvasPaintSourceLayer', destination, source,
                 operator, savedClip || null, state.width, state.height, canvasDrawingState(context).shadowBlur,
                 canvasDrawingState(context).shadowOffsetX, canvasDrawingState(context).shadowOffsetY,
-                new Uint8Array(canvasDrawingState(context).shadowColor.channels), canvasBitmapIsOpaque(destination));
-            if (painted && canvasPixelLength(painted) === destination.length) {
-                copyCanvasPixelRow(destination, 0, painted, 0, destination.length);
+                canvasPrivateColorBytes(canvasDrawingState(context).shadowColor.channels), canvasBitmapIsOpaque(destination));
+            if (painted && canvasPixelLength(painted) === canvasPrivateCount(destination)) {
+                copyCanvasPixelRow(destination, 0, painted, 0, canvasPrivateCount(destination));
                 return;
             }
         }
@@ -73,9 +96,11 @@
         // the selected operator. Flattening them with source-over breaks source-in,
         // destination-in, copy and the other non-associative Porter-Duff modes.
         if (hasShadow) {
-            const shadow = canvasShadowLayer(context, source, state.width, state.height);
+            let shadow = canvasShadowLayer(context, source, sourceWidth, sourceHeight);
+            shadow = canvasFilterCrop(shadow, sourceWidth, sourceHeight, halo, width, height);
             canvasCompositeLayer(context, destination, shadow, state.width, state.height, operator);
         }
+        source = canvasFilterCrop(source, sourceWidth, sourceHeight, halo, width, height);
         canvasCompositeLayer(context, destination, source, state.width, state.height, operator);
     };
     const canvasOriginalFillRect = CanvasRenderingContext2D.prototype.fillRect;

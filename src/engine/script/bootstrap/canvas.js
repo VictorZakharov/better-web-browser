@@ -41,21 +41,22 @@
 
     const stateForCanvas = (canvas, forceReset = false) => {
         const [width, height] = canvasOwnedDimensions(canvas);
-        let state = canvasStates.get(canvas);
+        let state = canvasPrivateWeakGet(canvasStates, canvas);
         if (!state) {
             state = { width: -1, height: -1, inputWidth: -1, inputHeight: -1,
                 pixels: null, context: null, mode: 'none', placeholder: null };
-            canvasStates.set(canvas, state);
+            canvasPrivateWeakSet(canvasStates, canvas, state);
         }
         // bitmaprenderer owns its transferred bitmap's natural dimensions,
         // independently of the unchanged Canvas width/height content attributes.
         if (forceReset || state.inputWidth !== width || state.inputHeight !== height) {
             state.inputWidth = width;
             state.inputHeight = height;
+            state.originClean = true;
             state.width = width;
             state.height = height;
             state.pixels = state.mode !== 'webgl' && width * height <= MAX_CANVAS_PIXELS
-                ? new Uint8ClampedArray(width * height * 4)
+                ? new canvasPrivatePixelArray(width * height * 4)
                 : null;
             if (state.mode === 'bitmaprenderer') resetCanvasBitmapRenderer(state.context);
             else if (state.mode === 'webgl') resetWebGlCanvas(state);
@@ -82,7 +83,7 @@
             if (token !== canvas2dContextToken) throw new TypeError('Illegal constructor');
             Object.defineProperty(this, 'canvas', { enumerable: true, value: canvas });
             canvasDrawingWeakSet(canvasDrawingStates, this, canvasDrawingCreate(null));
-            canvas2dOwners.set(this, canvas);
+            canvasPrivateWeakSet(canvas2dOwners, this, canvas);
             resetCanvasDrawingState(this);
             canvasInitializeContextSettings(this, settings);
         }
@@ -122,6 +123,8 @@
         get fillStyle() { return canvasIsGradient(canvasDrawingState(this).fill) ||
             canvasIsPattern(canvasDrawingState(this).fill) ? canvasDrawingState(this).fill : canvasDrawingState(this).fill.serialized; }
         set fillStyle(value) {
+            if (canvasIsPattern(value) && canvasPatternGet(canvasPatternStates, value).source.originClean === false)
+                stateForCanvas(this.canvas).originClean = false;
             if (canvasIsGradient(value) || canvasIsPattern(value)) {
                 canvasDrawingState(this).fill = value; return;
             }
@@ -155,7 +158,7 @@
         }
         save() {
             if (canvasDrawingState(this).stack.length < 64)
-                canvasDrawingState(this).stack.push({ fill: canvasDrawingState(this).fill, globalAlpha: canvasDrawingState(this).globalAlpha,
+                canvasPrivatePush(canvasDrawingState(this).stack, { fill: canvasDrawingState(this).fill, globalAlpha: canvasDrawingState(this).globalAlpha,
                     compositeOperation: canvasDrawingState(this).compositeOperation, stroke: canvasDrawingState(this).stroke,
                     lineWidth: canvasDrawingState(this).lineWidth, lineCap: canvasDrawingState(this).lineCap,
                     lineJoin: canvasDrawingState(this).lineJoin, miterLimit: canvasDrawingState(this).miterLimit,
@@ -175,7 +178,7 @@
                         wordSpacing: canvasDrawingState(this).wordSpacing } });
         }
         restore() {
-            const state = canvasDrawingState(this).stack.pop();
+            const state = canvasPrivatePop(canvasDrawingState(this).stack);
             if (state) {
                 canvasDrawingState(this).fill = state.fill;
                 canvasDrawingState(this).globalAlpha = state.globalAlpha;
@@ -230,7 +233,7 @@
         getContextAttributes() { return canvasGetContextSettings(this); }
         reset() {
             const state = stateForCanvas(this.canvas);
-            if (state.pixels) canvasClearBitmapRange(state.pixels, 0, state.pixels.length);
+            if (state.pixels) canvasClearBitmapRange(state.pixels, 0, canvasPrivateCount(state.pixels));
             resetCanvasDrawingState(this);
         }
         isContextLost() { return false; }

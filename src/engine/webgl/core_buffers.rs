@@ -101,6 +101,7 @@ impl WebGl {
                 }
                 self.driver_result()?;
                 // Keep indexed-draw validation synchronized with native copies.
+                self.index_cache.remove(destination);
                 let copied = self.objects.get(source, Kind::Buffer)?.bytes
                     [source_offset..source_end]
                     .to_vec();
@@ -167,6 +168,7 @@ impl WebGl {
         }
         let object = self.objects.get_mut(id, Kind::Buffer)?;
         if offset == 0 && size == object.bytes.len() {
+            self.index_cache.remove(id);
             object.bytes.copy_from_slice(&bytes);
             object.buffer_mirror_valid = true;
         }

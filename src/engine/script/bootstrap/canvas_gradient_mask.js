@@ -6,7 +6,8 @@
         for (let index = 0; index < values.length; index++) copy[index] = values[index];
         return copy;
     };
-    const canvasPaintGradientMask = (context, state, mask, style, left, top, right, bottom) => {
+    const canvasPaintGradientMask = (context, state, mask, style, left, top, right, bottom,
+        pathKind, pathRequest, geometry) => {
         const gradient = canvasGradientGet(canvasGradientStates, style);
         if (!gradient || gradient.stops.length > 256) return false;
         const width = right - left, height = bottom - top, pixels = width * height;
@@ -26,6 +27,10 @@
         }
         snapshot.opacity = canvasDrawingState(context).globalAlpha;
         const request = canvasGradientMaskStringify(snapshot);
+        if (pathKind) return paintCanvasRegion(state, left, top, right, bottom,
+            region => canvasGradientMaskHost('canvasPaintGradientPath', request, region,
+                pathKind, pathRequest, canvasDrawingState(context).clipBits || null,
+                state.width, state.height, left, top, geometry || null));
         return paintCanvasRegion(state, left, top, right, bottom,
             region => canvasGradientMaskHost('canvasPaintGradientMask', request, region, mask,
                 canvasDrawingState(context).clipBits || null, state.width, state.height, left, top));

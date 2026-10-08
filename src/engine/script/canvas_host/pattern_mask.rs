@@ -2,6 +2,7 @@
 use super::*;
 use resvg::tiny_skia::{FilterQuality, Pattern, Pixmap, SpreadMode, Transform};
 use serde::Deserialize;
+use std::borrow::Cow;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,21 +18,44 @@ struct Request {
 }
 
 pub(super) fn paint(args: &[JsValue]) -> JsValue {
+    let Some(destination) = args.get(2).and_then(JsValue::as_bytes) else {
+        return JsValue::Null;
+    };
+    finish(args, Cow::Borrowed(destination), false)
+}
+
+pub(super) fn paint_owned(args: &mut [JsValue]) -> JsValue {
+    let Some(destination) = super::owned_pixels::take(args, 2) else {
+        return JsValue::Null;
+    };
+    finish(args, Cow::Owned(destination), false)
+}
+
+pub(super) fn paint_path(args: &[JsValue]) -> JsValue {
+    let Some(destination) = args.get(2).and_then(JsValue::as_bytes) else {
+        return JsValue::Null;
+    };
+    finish(args, Cow::Borrowed(destination), true)
+}
+
+pub(super) fn paint_path_owned(args: &mut [JsValue]) -> JsValue {
+    let Some(destination) = super::owned_pixels::take(args, 2) else {
+        return JsValue::Null;
+    };
+    finish(args, Cow::Owned(destination), true)
+}
+
+fn finish(args: &[JsValue], destination: Cow<'_, [u8]>, path: bool) -> JsValue {
     let Some(JsValue::String(encoded)) = args.get(1) else {
         return JsValue::Null;
     };
     if encoded.len() > 2048 {
         return JsValue::Null;
     }
-    let Some(destination) = args.get(2).and_then(JsValue::as_bytes) else {
-        return JsValue::Null;
-    };
-    let mask = match args.get(3) {
-        Some(JsValue::Null) => None,
-        Some(JsValue::Bytes(v)) => Some(v.as_slice()),
-        _ => return JsValue::Null,
-    };
-    let Some(source) = args.get(4).and_then(JsValue::as_bytes) else {
+    let Some(source) = args
+        .get(if path { 3 } else { 4 })
+        .and_then(JsValue::as_bytes)
+    else {
         return JsValue::Null;
     };
     serde_json::from_str::<Request>(encoded)
@@ -39,10 +63,21 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
         .and_then(|request| {
             let clip = super::raster_clip::Clip::from_args_at_region(
                 args,
-                5,
+                if path { 6 } else { 5 },
                 [request.width, request.height],
                 [request.left, request.top],
             )?;
+            let mask = if path {
+                super::path_shader::coverage(
+                    args,
+                    4,
+                    [request.width, request.height],
+                    [request.left, request.top],
+                    destination.len(),
+                )?
+            } else {
+                super::shader_mask::Samples::from_argument(args.get(3))?
+            };
             render_clipped(&request, destination, mask, source, clip.as_ref())
         })
         .map_or(JsValue::Null, JsValue::Bytes)
@@ -55,13 +90,17 @@ fn render(
     mask: Option<&[u8]>,
     source: &[u8],
 ) -> Option<Vec<u8>> {
-    render_clipped(request, destination, mask, source, None)
+    let mask = mask.map_or(
+        super::shader_mask::Samples::Full,
+        super::shader_mask::Samples::Bytes,
+    );
+    render_clipped(request, Cow::Borrowed(destination), mask, source, None)
 }
 
 fn render_clipped(
     request: &Request,
-    destination: &[u8],
-    mask: Option<&[u8]>,
+    destination: Cow<'_, [u8]>,
+    mask: super::shader_mask::Samples<'_>,
     source: &[u8],
     clip: Option<&super::raster_clip::Clip<'_>>,
 ) -> Option<Vec<u8>> {

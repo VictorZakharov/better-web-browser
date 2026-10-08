@@ -137,4 +137,6 @@ impl WorkerCommand {
 }
 
 #[cfg(test)]
+mod execution_tests;
+#[cfg(test)]
 mod tests;

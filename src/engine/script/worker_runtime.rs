@@ -7,6 +7,8 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 mod evaluation;
 mod profiling;
+mod startup;
+pub(crate) use startup::WorkerExecutionPolicy;
 
 #[derive(Debug, Default)]
 pub struct WorkerRuntimeOutcome {
@@ -39,101 +41,10 @@ pub struct WorkerRuntime {
 }
 
 impl WorkerRuntime {
-    pub fn start(
-        source_url: &str,
-        source: &str,
-        name: &str,
-        kind: ScriptKind,
-        source_loader: Arc<WorkerSourceLoader>,
-    ) -> (Option<Self>, WorkerRuntimeOutcome) {
-        Self::start_with_policy(
-            source_url,
-            source,
-            name,
-            kind,
-            source_loader,
-            Arc::new(crate::fetch::csp::PolicyContainer::default()),
-        )
-    }
-
-    pub fn start_with_policy(
-        source_url: &str,
-        source: &str,
-        name: &str,
-        kind: ScriptKind,
-        source_loader: Arc<WorkerSourceLoader>,
-        policy: Arc<crate::fetch::csp::PolicyContainer>,
-    ) -> (Option<Self>, WorkerRuntimeOutcome) {
-        Self::start_with_creator_context(
-            source_url,
-            source,
-            name,
-            kind,
-            source_loader,
-            policy,
-            true,
-        )
-    }
-
-    pub(crate) fn start_with_creator_context(
-        source_url: &str,
-        source: &str,
-        name: &str,
-        kind: ScriptKind,
-        source_loader: Arc<WorkerSourceLoader>,
-        policy: Arc<crate::fetch::csp::PolicyContainer>,
-        creator_secure_context: bool,
-    ) -> (Option<Self>, WorkerRuntimeOutcome) {
-        let module_loader = Rc::new(WebModuleLoader::new());
-        let host = Rc::new(RefCell::new(WorkerHostState::new(
-            source_url,
-            creator_secure_context,
-            name,
-            kind,
-            source_loader,
-            policy,
-        )));
-        let mut context = Box::new(
-            Context::new(HostBridge::Worker(Rc::downgrade(&host)))
-                .expect("the V8 Worker realm can be initialized"),
-        );
-        let mut outcome = WorkerRuntimeOutcome::default();
-        if let Err(error) = context.eval(Source::from_bytes(
-            super::worker_bootstrap::WORKER_BOOTSTRAP,
-        )) {
-            outcome
-                .errors
-                .push(format!("initialize Worker bindings: {error}"));
-            return (None, outcome);
-        }
-        // The trusted bootstrap is installed before author code; inherited CSP then governs
-        // string compilation and WebAssembly in this Worker realm just as in a Document realm.
-        context.refresh_code_generation_policy();
-
-        let mut runtime = Self {
-            context,
-            host,
-            module_loader,
-            total_script_bytes: source.len(),
-            pending_messages: VecDeque::new(),
-            execution_profiling: false,
-            remaining_diagnostic_samples: 0,
-            remaining_failed_diagnostic_sample: false,
-        };
-        if source.len() > MAX_SCRIPT_BYTES {
-            outcome.errors.push(format!(
-                "Worker script exceeds the {} MiB JavaScript limit",
-                MAX_SCRIPT_BYTES / 1024 / 1024
-            ));
-        } else if let Err(error) = runtime.evaluate_initial(source_url, source, kind) {
-            outcome.errors.push(error);
-        }
-        runtime.collect(&mut outcome);
-        if outcome.errors.is_empty() && !outcome.closed {
-            (Some(runtime), outcome)
-        } else {
-            (None, outcome)
-        }
+    /// Returns the agent's permanent, cross-thread retirement control.
+    /// Use `start_cancellable` when entry-script cancellation is required too.
+    pub fn cancellation(&self) -> ScriptCancellation {
+        self.context.cancellation()
     }
 
     pub fn dispatch_message(&mut self, serialized: &str) -> WorkerRuntimeOutcome {
@@ -309,6 +220,7 @@ impl WorkerRuntime {
     }
 
     pub fn cancel(&mut self) {
+        self.context.cancellation().cancel();
         let mut host = self.host.borrow_mut();
         host.closed = true;
         host.image_frames.cancel_all();

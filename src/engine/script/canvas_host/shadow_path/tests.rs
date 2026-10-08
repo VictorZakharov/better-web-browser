@@ -1,6 +1,6 @@
 use super::*;
 
-fn arguments(
+pub(super) fn arguments(
     kind: &str,
     mode: &str,
     opacity: f64,

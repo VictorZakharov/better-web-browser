@@ -1,10 +1,22 @@
 //! Owned whole-surface compositing, including transparent source pixels and clip.
 use super::{JsValue, MAX_CANVAS_PIXELS, composite::Operator};
+use std::borrow::Cow;
 
 pub(super) fn paint(args: &[JsValue]) -> JsValue {
     let Some(destination) = args.get(1).and_then(JsValue::as_bytes) else {
         return JsValue::Null;
     };
+    paint_destination(args, Cow::Borrowed(destination))
+}
+
+pub(super) fn paint_owned(args: &mut [JsValue]) -> JsValue {
+    let Some(destination) = super::owned_pixels::take(args, 1) else {
+        return JsValue::Null;
+    };
+    paint_destination(args, Cow::Owned(destination))
+}
+
+fn paint_destination(args: &[JsValue], destination: Cow<'_, [u8]>) -> JsValue {
     let Some(source) = args.get(2).and_then(JsValue::as_bytes) else {
         return JsValue::Null;
     };
@@ -27,10 +39,10 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
         Some(JsValue::Boolean(true)) => true,
         _ => return JsValue::Null,
     };
-    if validate(destination, source, clip).is_none() {
+    if validate(&destination, source, clip).is_none() {
         return JsValue::Null;
     }
-    let mut output = destination.to_vec();
+    let mut output = destination.into_owned();
     if composite_into_with_alpha(&mut output, source, mode, clip, opaque).is_none() {
         return JsValue::Null;
     }

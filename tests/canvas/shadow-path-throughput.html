@@ -4,7 +4,7 @@
 <canvas id="canvas" width="1024" height="1024"></canvas>
 <pre id="probe">Measuring repeated Gaussian shadows with live paint changes.</pre>
 <script>
-const context=canvas.getContext('2d'),times={},samples={};
+const context=canvas.getContext('2d',{willReadFrequently:true}),times={},samples={},checksums={};
 const ring=new Path2D();ring.arc(512,512,280,0,2*Math.PI);
 context.lineWidth=7.25;
 context.shadowBlur=11.377;
@@ -13,6 +13,9 @@ const measure=(name,draw)=>{
     const pixels=context.getImageData(0,0,1024,1024).data;
     times[name]=performance.now()-start;
     if(pixels.length!==1024*1024*4)throw Error('incomplete readback');
+    let checksum=2166136261;
+    for(const byte of pixels)checksum=Math.imul(checksum^byte,16777619)>>>0;
+    checksums[name]=checksum;
     samples[name]=[[512,232],[512,226],[800,512],[10,10]].map(([x,y])=>
         Array.from(pixels.slice((y*1024+x)*4,(y*1024+x)*4+4)));
 };
@@ -35,7 +38,9 @@ measure('changedKernel',()=>{
     context.stroke(ring);
 });
 probe.setAttribute('data-ms',JSON.stringify(times));
+probe.setAttribute('data-checksums',JSON.stringify(checksums));
 for(const [name,value]of Object.entries(samples))
     probe.setAttribute('data-'+name.toLowerCase(),JSON.stringify(value));
-probe.textContent=JSON.stringify({times,samples});
+probe.textContent=JSON.stringify({times,samples,checksums});
+probe.setAttribute('data-done','true');
 </script>

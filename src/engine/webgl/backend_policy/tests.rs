@@ -118,11 +118,11 @@ fn failure_diagnostics_keep_both_backend_errors() {
 fn egl_attributes_select_only_real_renderers_and_preserve_luid_bits() {
     assert_eq!(
         Backend::Software.attributes(),
-        vec![0x3203, 0x3208, 0x3209, 0x320b, 0x3038]
+        vec![0x3203, 0x3208, 0x3209, 0x320b, 0x3451, 0, 0x3038]
     );
     assert_eq!(
         Backend::Hardware(None).attributes(),
-        vec![0x3203, 0x3208, 0x3209, 0x320a, 0x3038]
+        vec![0x3203, 0x3208, 0x3209, 0x320a, 0x3451, 0, 0x3038]
     );
     assert_eq!(
         Backend::Hardware(Some(AdapterId {
@@ -135,6 +135,8 @@ fn egl_attributes_select_only_real_renderers_and_preserve_luid_bits() {
             0x3208,
             0x3209,
             0x320a,
+            0x3451,
+            0,
             0x34a0,
             i32::MIN,
             0x34a1,

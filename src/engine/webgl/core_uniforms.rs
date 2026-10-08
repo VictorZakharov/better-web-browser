@@ -58,7 +58,7 @@ impl WebGl {
         if id == 0 {
             return Ok(Value::Null);
         }
-        let uniform = self.objects.get(id, Kind::Uniform)?;
+        let uniform = self.objects.uniform_location(id)?;
         let program = self.objects.get(uniform.owner, Kind::Program)?;
         if self.program != uniform.owner || program.generation != uniform.generation {
             return Err(gl::INVALID_OPERATION);

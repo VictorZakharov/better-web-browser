@@ -124,7 +124,7 @@ fn webgl2_all_nonsquare_matrices_roundtrip_native_column_major_storage() {
             assert_eq!(values(&mut context, program, location), json!(expected));
             let kind = context
                 .objects
-                .get(location, Kind::Uniform)
+                .uniform_location(location)
                 .unwrap()
                 .uniform_type;
             assert_eq!(kind, core_uniforms::MATRIX_TYPES[index]);

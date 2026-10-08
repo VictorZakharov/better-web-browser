@@ -452,6 +452,10 @@ loops terminate; restoration requires fresh extension admission and objects.
 This does not move Breeze's own WebGL shader validation off-thread or claim that
 every compilation/linking call is stall-free. Native and public tests cover
 admission, successful/failed compilation, object ownership and restoration.
+The [bounded compiler scheduling policy](webgl-compiler-scheduling.md) uses
+ANGLE's worker-delegation interface instead of its incompatible `std::async`
+implementation; native background work is shared across contexts, while public
+extension admission remains independent.
 See the [KHR extension contract](https://registry.khronos.org/webgl/extensions/KHR_parallel_shader_compile/).
 The local `tests/webgl/parallel-compile.html` fixture matches hidden Chrome in
 both context versions: the extension is available, completion is boolean,

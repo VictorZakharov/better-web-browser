@@ -14,6 +14,38 @@ impl Contexts {
     pub(crate) fn complete_task(&mut self) {}
 }
 
+/// Accept only independent copies already made by the V8 value boundary.
+/// This does not transfer or detach an author's buffer, and still goes through
+/// the realm registry, command ordering, native admission and type validation.
+#[cfg(windows)]
+pub(in crate::engine::script) fn command_owned(
+    args: &mut [JsValue],
+    contexts: &mut Contexts,
+) -> JsResult<JsValue> {
+    let id = argument_id(args, 1);
+    let command = argument_string(args, 2)?;
+    let bytes = super::owned_pixels::take(args, 3);
+    Ok(JsValue::String(
+        contexts.execute_owned(id, &command, bytes).to_string(),
+    ))
+}
+
+#[cfg(windows)]
+pub(in crate::engine::script) fn read_pixels_owned(
+    args: &mut [JsValue],
+    contexts: &mut Contexts,
+) -> JsResult<JsValue> {
+    use crate::engine::webgl::PixelReply;
+    let id = argument_id(args, 1);
+    let command = argument_string(args, 2)?;
+    let bytes = super::owned_pixels::take(args, 3);
+    Ok(match contexts.read_pixels_owned(id, &command, bytes) {
+        PixelReply::Bytes(bytes) => JsValue::Bytes(bytes),
+        PixelReply::Error => JsValue::Null,
+        PixelReply::Lost => JsValue::String(r#"{"lost":true}"#.into()),
+    })
+}
+
 pub(crate) fn dispatch(
     operation: &str,
     args: &[JsValue],

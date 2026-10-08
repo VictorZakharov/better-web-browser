@@ -8,6 +8,7 @@ use resvg::tiny_skia::{
     Transform,
 };
 use serde::Deserialize;
+use std::borrow::Cow;
 
 const MAX_REQUEST_BYTES: usize = 64 * 1024;
 const MAX_STOPS: usize = 256;
@@ -44,29 +45,60 @@ struct Stop {
 }
 
 pub(super) fn paint(args: &[JsValue]) -> JsValue {
+    let Some(destination) = args.get(2).and_then(JsValue::as_bytes) else {
+        return JsValue::Null;
+    };
+    finish(args, Cow::Borrowed(destination), false)
+}
+
+pub(super) fn paint_owned(args: &mut [JsValue]) -> JsValue {
+    let Some(destination) = super::owned_pixels::take(args, 2) else {
+        return JsValue::Null;
+    };
+    finish(args, Cow::Owned(destination), false)
+}
+
+pub(super) fn paint_path(args: &[JsValue]) -> JsValue {
+    let Some(destination) = args.get(2).and_then(JsValue::as_bytes) else {
+        return JsValue::Null;
+    };
+    finish(args, Cow::Borrowed(destination), true)
+}
+
+pub(super) fn paint_path_owned(args: &mut [JsValue]) -> JsValue {
+    let Some(destination) = super::owned_pixels::take(args, 2) else {
+        return JsValue::Null;
+    };
+    finish(args, Cow::Owned(destination), true)
+}
+
+fn finish(args: &[JsValue], destination: Cow<'_, [u8]>, path: bool) -> JsValue {
     let Some(JsValue::String(source)) = args.get(1) else {
         return JsValue::Null;
     };
     if source.len() > MAX_REQUEST_BYTES {
         return JsValue::Null;
     }
-    let Some(destination) = args.get(2).and_then(JsValue::as_bytes) else {
-        return JsValue::Null;
-    };
-    let mask = match args.get(3) {
-        Some(JsValue::Null) => None,
-        Some(JsValue::Bytes(bytes)) => Some(bytes.as_slice()),
-        _ => return JsValue::Null,
-    };
     serde_json::from_str::<Request>(source)
         .ok()
         .and_then(|request| {
             let clip = super::raster_clip::Clip::from_args_at_region(
                 args,
-                4,
+                if path { 5 } else { 4 },
                 [request.width, request.height],
                 [request.left, request.top],
             )?;
+            let mask = if path {
+                super::path_shader::coverage(
+                    args,
+                    3,
+                    [request.width, request.height],
+                    [request.left, request.top],
+                    destination.len(),
+                )?
+            } else {
+                super::shader_mask::Samples::from_argument(args.get(3))?
+            };
             render_clipped(&request, destination, mask, clip.as_ref())
         })
         .map_or(JsValue::Null, JsValue::Bytes)
@@ -74,13 +106,17 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
 
 #[cfg(test)]
 fn render(request: &Request, destination: &[u8], mask: Option<&[u8]>) -> Option<Vec<u8>> {
-    render_clipped(request, destination, mask, None)
+    let mask = mask.map_or(
+        super::shader_mask::Samples::Full,
+        super::shader_mask::Samples::Bytes,
+    );
+    render_clipped(request, Cow::Borrowed(destination), mask, None)
 }
 
 fn render_clipped(
     request: &Request,
-    destination: &[u8],
-    mask: Option<&[u8]>,
+    destination: Cow<'_, [u8]>,
+    mask: super::shader_mask::Samples<'_>,
     clip: Option<&super::raster_clip::Clip<'_>>,
 ) -> Option<Vec<u8>> {
     let pixels = (request.width as usize).checked_mul(request.height as usize)?;
@@ -89,7 +125,6 @@ fn render_clipped(
         || request.width > 16384
         || request.height > 16384
         || destination.len() != pixels.checked_mul(4)?
-        || mask.is_some_and(|mask| mask.len() != pixels)
         || pixels.checked_mul(request.stops.len().checked_add(2)?)? > MAX_SHADER_WORK
         || request.left.unsigned_abs() > 16384
         || request.top.unsigned_abs() > 16384

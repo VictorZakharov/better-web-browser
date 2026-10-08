@@ -6,6 +6,7 @@ impl WebGl {
         if self.objects.poisoned {
             return Err(super::gl::OUT_OF_MEMORY);
         }
+        self.progress_program_links(1)?;
         if self.options.api == ApiVersion::Two {
             // No finish, blocking wait, or invented completion. Cache only native
             // results that are ready after returning from a task and its jobs.

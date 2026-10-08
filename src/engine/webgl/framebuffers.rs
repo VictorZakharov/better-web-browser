@@ -121,8 +121,11 @@ impl WebGl {
                 if !(0..=4096).contains(&width) || !(0..=4096).contains(&height) {
                     return Err(gl::INVALID_VALUE);
                 }
-                self.objects.get(self.renderbuffer, Kind::Renderbuffer)?;
-                self.charge(0, width as usize * height as usize * bytes)?;
+                let reservation = self.prepare_object_storage(
+                    self.renderbuffer,
+                    Kind::Renderbuffer,
+                    width as usize * height as usize * bytes,
+                )?;
                 unsafe {
                     gl::RenderbufferStorage(
                         gl::RENDERBUFFER,
@@ -136,6 +139,7 @@ impl WebGl {
                     );
                 }
                 self.driver_result()?;
+                self.commit_object_storage(reservation)?;
                 self.objects
                     .get_mut(self.renderbuffer, Kind::Renderbuffer)?
                     .renderbuffer_format = format;

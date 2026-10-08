@@ -61,7 +61,7 @@ pub(in crate::engine::css) fn time_expression(value: &str) -> Option<Arc<Express
 }
 
 pub(in crate::engine::css) fn radians(value: &str) -> Option<f32> {
-    match parse_value(value)? {
+    match parse_angle_value(value)? {
         Value::Angle(expression) => context_free(&expression),
         _ => None,
     }

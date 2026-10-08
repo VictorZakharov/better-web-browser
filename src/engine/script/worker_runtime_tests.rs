@@ -1,5 +1,7 @@
 use super::*;
 use crate::fetch::{Body, FetchResponse, FetchUrl, HeaderList, ResponseType};
+#[path = "worker_runtime_tests/cancellation.rs"]
+mod cancellation;
 
 #[path = "worker_runtime_tests/binary_clone.rs"]
 mod binary_clone;

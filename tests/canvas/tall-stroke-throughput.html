@@ -4,7 +4,7 @@
 <canvas id="canvas" width="256" height="640"></canvas>
 <pre id="probe">Measuring independent long diagonal strokes.</pre>
 <script>
-const context=canvas.getContext('2d'),times={},samples={};
+const context=canvas.getContext('2d',{willReadFrequently:true}),times={},samples={};
 const measure=(name,draw)=>{
     const start=performance.now();draw();
     const pixels=context.getImageData(0,0,256,640).data;
@@ -40,4 +40,5 @@ probe.setAttribute('data-ms',JSON.stringify(times));
 for(const [name,value]of Object.entries(samples))
     probe.setAttribute('data-'+name.toLowerCase(),JSON.stringify(value));
 probe.textContent=JSON.stringify({times,samples});
+probe.setAttribute('data-done','true');
 </script>

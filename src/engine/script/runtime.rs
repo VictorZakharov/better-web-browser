@@ -1,6 +1,7 @@
 //! Retained JavaScript realm ownership and guarded incremental execution.
 
 use super::dynamic_scripts::drain_one_dynamic_script;
+pub use super::engine::watchdog::ScriptCancellation;
 use super::execution::{execute_additional_inner, execute_inner};
 use super::runtime_guard::{
     finish_host, inactive_runtime_outcome, lifecycle_error, panic_detail, stopped_runtime_outcome,
@@ -52,6 +53,13 @@ pub struct ScriptRuntime {
 }
 
 impl ScriptRuntime {
+    /// Cross-thread control for this document's agent and its same-agent realms.
+    /// Cancellation interrupts active JavaScript and prevents future tasks;
+    /// call `cancel_document` on the owning thread afterward to release resources.
+    pub fn cancellation(&self) -> Option<ScriptCancellation> {
+        self.context.as_ref().map(|context| context.cancellation())
+    }
+
     /// Mirrors the owning document's sticky media activation before a trusted input is dispatched.
     pub(crate) fn set_audio_activation(&mut self, activated: bool) {
         self.host.borrow_mut().audio_activated = activated;

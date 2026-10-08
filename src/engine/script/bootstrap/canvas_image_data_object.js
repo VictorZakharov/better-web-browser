@@ -97,7 +97,7 @@
         }
         const width = canvasPixelInteger(args[0]), height = canvasPixelInteger(args[1]);
         const settings = imageDataOptions(args[2]);
-        return new ImageData(Math.abs(width), Math.abs(height), settings);
+        return new ImageData(canvasPrivateMath.abs(width), canvasPrivateMath.abs(height), settings);
     };
     globalThis.__cloneImageDataBindings = {
         has:value => imageDataWeakHas(imageDataStates,value),

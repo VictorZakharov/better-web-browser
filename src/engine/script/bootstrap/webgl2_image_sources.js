@@ -1,5 +1,5 @@
-    const webGl2IsImage = value => webGlIsVideoSource(value) || imageBitmapStates.has(value) || videoFrameStates.has(value) ||
-        imageDataStates.has(value) || offscreenCanvasBrands.has(value) ||
+    const webGl2IsImage = value => webGlIsVideoSource(value) || canvasPrivateWeakHas(imageBitmapStates, value) || canvasPrivateWeakHas(videoFrameStates, value) ||
+        canvasPrivateWeakHas(imageDataStates, value) || offscreenCanvasBrands.has(value) ||
         typeof nodeHandles !== 'undefined' && nodeHandles.has(value) &&
         (value instanceof HTMLCanvasElement ||
             typeof HTMLImageElement !== 'undefined' && value instanceof HTMLImageElement);
@@ -17,7 +17,7 @@
         if (webGlCall(context,'getParameter',[0x88ef])) { webGlError(context,0x0502); return null; }
         const snapshot=webGlSourceSnapshot(context,source), state=webGl2State(context);
         if (!snapshot) return null;
-        const bitmap=imageBitmapStates.get(source);
+        const bitmap=canvasPrivateWeakGet(imageBitmapStates, source);
         if (bitmap) { snapshot.pixels=bitmap.pixels; snapshot.pixels16=bitmap.pixels16; }
         const components=new Map([[0x1903,1],[0x1906,1],[0x1909,1],[0x190a,2],
             [0x8227,2],[0x1907,3],[0x1908,4],[0x8d94,1],[0x8228,2],[0x8d98,3],[0x8d99,4]]).get(format);
@@ -37,7 +37,7 @@
         const imageHeight=volume ? context.getParameter(0x806e)||height : height;
         const skipImages=volume ? context.getParameter(0x806d) : 0;
         if (width<0 || height<0 || depth<0) { webGlError(context,0x0501); return null; }
-        const lastRow=skipRows+skipImages*imageHeight+(Math.max(1,depth)-1)*imageHeight+height;
+        const lastRow=skipRows+skipImages*imageHeight+(canvasPrivateMath.max(1,depth)-1)*imageHeight+height;
         if (skipPixels+width>snapshot.width || lastRow>snapshot.height ||
             volume && imageHeight<height) { webGlError(context,0x0502); return null; }
         const count=width*height*depth*(packing?1:components);
@@ -58,8 +58,8 @@
                 // the decoded image pipeline. Preserve full precision for the
                 // direct FLOAT/HALF_FLOAT routes instead.
                 if (precise) return value/scale;
-                return packing ? Math.round(value) :
-                    type===0x1401 ? Math.round(value) : value/255;
+                return packing ? canvasPrivateMath.round(value) :
+                    type===0x1401 ? canvasPrivateMath.round(value) : value/255;
             };
             if (packing) { values[output]=packing.pack(channel); continue; }
             if (format===0x1906) values[output]=channel(3);

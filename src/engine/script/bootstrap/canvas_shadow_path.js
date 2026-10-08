@@ -9,7 +9,7 @@
         const inverse = matrixInverse2D(drawing.transform);
         if (!fill && !inverse) return false;
         const [a,b,c,d] = drawing.transform;
-        const scale = Math.max(Math.hypot(a,c),Math.hypot(b,d));
+        const scale = canvasPrivateMath.max(canvasPrivateMath.hypot(a,c),canvasPrivateMath.hypot(b,d));
         const inset = fill ? 0 : drawing.lineWidth/2*scale*
             (drawing.lineJoin === 'miter' ? drawing.miterLimit : 1)+1;
         const [left,top,right,bottom] = canvasPixelBounds(path,state,inset);
@@ -21,9 +21,9 @@
         const painted = canvasCompositeLayerHost('canvasPaintShadowPath',state.pixels,request,
             drawing.compositeOperation,drawing.clipBits || null,state.width,state.height,
             drawing.shadowBlur,drawing.shadowOffsetX,drawing.shadowOffsetY,
-            new Uint8Array(drawing.shadowColor.channels),canvasBitmapIsOpaque(state.pixels),
+            canvasPrivateColorBytes(drawing.shadowColor.channels),canvasBitmapIsOpaque(state.pixels),
             fill ? 'fill' : 'stroke',style.channels,drawing.globalAlpha);
-        if (!painted || canvasPixelLength(painted)!==state.pixels.length) return false;
-        copyCanvasPixelRow(state.pixels,0,painted,0,state.pixels.length);
+        if (!painted || canvasPixelLength(painted)!==canvasPrivateCount(state.pixels)) return false;
+        copyCanvasPixelRow(state.pixels,0,painted,0,canvasPrivateCount(state.pixels));
         return true;
     };

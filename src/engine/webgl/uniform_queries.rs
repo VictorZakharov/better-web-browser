@@ -1,49 +1,12 @@
 //! Uniform output shape comes from linked native reflection, not author IPC.
-use super::{Command, Kind, MAX_SHADER_BYTES, Result, WebGl, gl, json};
+use super::{Command, Kind, Result, WebGl, gl, json};
 use serde_json::Value;
 
 impl WebGl {
-    pub(super) fn uniform_type(&mut self, program: u32, name: &str) -> Result<u32> {
-        let mut count = 0;
-        unsafe {
-            gl::GetProgramiv(program, gl::ACTIVE_UNIFORMS, &mut count);
-        }
-        self.driver_result()?;
-        if !(0..=16_384).contains(&count) {
-            return Err(gl::OUT_OF_MEMORY);
-        }
-        let wanted = array_family(name);
-        let mut bytes = vec![0; MAX_SHADER_BYTES];
-        for index in 0..count as u32 {
-            let (mut written, mut size, mut kind) = (0, 0, 0);
-            unsafe {
-                gl::GetActiveUniform(
-                    program,
-                    index,
-                    bytes.len() as i32,
-                    &mut written,
-                    &mut size,
-                    &mut kind,
-                    bytes.as_mut_ptr().cast(),
-                );
-            }
-            self.driver_result()?;
-            let end = (written.max(0) as usize).min(bytes.len());
-            let reflected = String::from_utf8_lossy(&bytes[..end]);
-            // A location has already been resolved successfully by GLES. Matching
-            // its array family handles scalar arrays and array-of-struct fields
-            // without assuming consecutive or implementation-defined locations.
-            if array_family(&reflected) == wanted {
-                return Ok(kind);
-            }
-        }
-        Err(gl::INVALID_OPERATION)
-    }
-
     pub(super) fn get_uniform(&mut self, c: &Command) -> Result<Value> {
         let id = c.u(0)?;
         let program = self.objects.get(id, Kind::Program)?;
-        let uniform = self.objects.get(c.u(1)?, Kind::Uniform)?;
+        let uniform = self.objects.uniform_location(c.u(1)?)?;
         if uniform.owner != id || uniform.generation != program.generation {
             return Err(gl::INVALID_OPERATION);
         }
@@ -120,7 +83,7 @@ fn components(kind: u32) -> Result<usize> {
     }
 }
 
-fn array_family(name: &str) -> String {
+pub(super) fn array_family(name: &str) -> String {
     let mut result = String::new();
     let mut rest = name;
     while let Some(start) = rest.find('[') {

@@ -1,24 +1,24 @@
 use super::value::{JsError, JsErrorKind, JsResult};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, mpsc};
-use std::thread;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 // Use the production deadline in tests too. A shorter test-only wall-clock
 // deadline can interrupt bounded DOM work when the hosted runner is busy.
-const EXECUTION_TIMEOUT: Duration = Duration::from_secs(2);
-
-enum Command {
-    Arm(u64),
-    Stop,
-}
+// The author-task budget stays below the browser's independent 12-second hard
+// unresponsive-process backstop. Browser-owned cancellation can terminate the renderer
+// Job without waiting for this timer; extending the budget is not a UI fix.
+const EXECUTION_TIMEOUT: Duration = Duration::from_secs(10);
+const PATTERN_TIMEOUT: Duration = Duration::from_secs(2);
+mod cancellation;
+mod timer;
+use cancellation::Reason;
+pub use cancellation::ScriptCancellation;
 
 pub(super) struct ExecutionWatchdog {
-    sender: mpsc::Sender<Command>,
-    active: Arc<AtomicU64>,
-    timed_out: Arc<AtomicBool>,
+    timer: timer::Timer,
+    cancellation: ScriptCancellation,
+    timeout: Duration,
     next_generation: u64,
-    worker: Option<thread::JoinHandle<()>>,
 }
 
 /// Read-only task cancellation while the isolate is entered. A microtask
@@ -26,7 +26,7 @@ pub(super) struct ExecutionWatchdog {
 pub(super) struct TaskTermination<'a>(&'a AtomicBool);
 
 impl TaskTermination<'_> {
-    pub(super) fn timed_out(&self) -> bool {
+    pub(super) fn interrupted(&self) -> bool {
         self.0.load(Ordering::Acquire)
     }
 }
@@ -61,52 +61,35 @@ impl Drop for IsolateEntry {
 }
 
 impl ExecutionWatchdog {
-    pub(super) fn new(handle: v8::IsolateHandle) -> JsResult<Self> {
-        let (sender, receiver) = mpsc::channel();
-        let active = Arc::new(AtomicU64::new(0));
-        let timed_out = Arc::new(AtomicBool::new(false));
-        let worker_active = Arc::clone(&active);
-        let worker_timed_out = Arc::clone(&timed_out);
-        let worker = thread::Builder::new()
-            .name("breeze-v8-watchdog".into())
-            .spawn(move || {
-                while let Ok(command) = receiver.recv() {
-                    let Command::Arm(mut generation) = command else {
-                        return;
-                    };
-                    loop {
-                        match receiver.recv_timeout(EXECUTION_TIMEOUT) {
-                            Ok(Command::Arm(replacement)) => generation = replacement,
-                            Ok(Command::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => return,
-                            Err(mpsc::RecvTimeoutError::Timeout) => {
-                                if worker_active
-                                    .compare_exchange(
-                                        generation,
-                                        0,
-                                        Ordering::AcqRel,
-                                        Ordering::Acquire,
-                                    )
-                                    .is_ok()
-                                {
-                                    worker_timed_out.store(true, Ordering::Release);
-                                    handle.terminate_execution();
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-            })
-            .map_err(|error| JsError {
+    pub(super) fn cancellation(&self) -> ScriptCancellation {
+        self.cancellation.clone()
+    }
+
+    pub(super) fn with_cancellation(
+        handle: v8::IsolateHandle,
+        cancellation: ScriptCancellation,
+    ) -> JsResult<Self> {
+        Self::with_timeout(handle, cancellation, EXECUTION_TIMEOUT)
+    }
+
+    fn with_timeout(
+        handle: v8::IsolateHandle,
+        cancellation: ScriptCancellation,
+        timeout: Duration,
+    ) -> JsResult<Self> {
+        cancellation.attach(handle)?;
+        let timer = timer::Timer::start(cancellation.clone()).map_err(|error| {
+            cancellation.detach();
+            JsError {
                 kind: JsErrorKind::Error,
                 message: format!("could not start the V8 execution watchdog: {error}"),
-            })?;
+            }
+        })?;
         Ok(Self {
-            sender,
-            active,
-            timed_out,
+            timer,
+            cancellation,
+            timeout,
             next_generation: 1,
-            worker: Some(worker),
         })
     }
 
@@ -123,47 +106,55 @@ impl ExecutionWatchdog {
         isolate: &mut v8::OwnedIsolate,
         action: impl FnOnce(&mut v8::OwnedIsolate, TaskTermination<'_>) -> JsResult<T>,
     ) -> JsResult<T> {
-        self.timed_out.store(false, Ordering::Release);
         let generation = self.next_generation;
         self.next_generation = self.next_generation.checked_add(1).unwrap_or(1);
-        self.active.store(generation, Ordering::Release);
-        self.sender
-            .send(Command::Arm(generation))
-            .map_err(|_| JsError {
+        self.cancellation.begin(generation)?;
+        if !self.timer.arm(generation, Instant::now() + self.timeout) {
+            self.cancellation.finish();
+            return Err(JsError {
                 kind: JsErrorKind::Error,
                 message: "V8 execution watchdog is unavailable".into(),
-            })?;
+            });
+        }
 
         let entry = IsolateEntry::new(isolate);
-        let result = action(isolate, TaskTermination(&self.timed_out));
-        self.active.store(0, Ordering::Release);
-        let timed_out = self.timed_out.swap(false, Ordering::AcqRel);
+        // Retire the active generation even if a native binding panics. The
+        // runtime's outer guard owns panic reporting and resource teardown.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            action(isolate, TaskTermination(self.cancellation.interrupted()))
+        }));
+        let reason = self.cancellation.finish();
+        self.timer.disarm(generation);
+        if reason.is_some() {
+            isolate.cancel_terminate_execution();
+        }
         drop(entry);
-        if timed_out {
-            Err(JsError {
+        let result = match result {
+            Ok(result) => result,
+            Err(payload) => std::panic::resume_unwind(payload),
+        };
+        match reason {
+            Some(Reason::Timeout) => Err(JsError {
                 kind: JsErrorKind::Range,
                 message: format!(
                     "JavaScript execution time limit exceeded after {} ms",
-                    EXECUTION_TIMEOUT.as_millis()
+                    self.timeout.as_millis()
                 ),
-            })
-        } else {
-            result
+            }),
+            Some(Reason::Cancelled) => Err(cancellation::cancelled_error()),
+            None => result,
         }
     }
 }
 
 impl Drop for ExecutionWatchdog {
     fn drop(&mut self) {
-        self.active.store(0, Ordering::Release);
-        let _ = self.sender.send(Command::Stop);
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
+        self.cancellation.detach();
+        self.timer.shutdown(true);
     }
 }
 
-/// The same execution budget for the private, script-disabled pattern isolate.
+/// A tighter budget for the private, script-disabled regular-expression isolate.
 /// A string error keeps engine-private JS error types out of the DOM boundary.
 pub(crate) struct PatternWatchdog(ExecutionWatchdog);
 
@@ -172,15 +163,14 @@ impl Drop for PatternWatchdog {
         // This owner is thread-local. Windows runs TLS destructors under the
         // loader lock, so joining a terminating worker here deadlocks. The
         // handle is safe after isolate disposal; disarm and let it exit alone.
-        self.0.active.store(0, Ordering::Release);
-        let _ = self.0.sender.send(Command::Stop);
-        self.0.worker.take();
+        self.0.cancellation.detach();
+        self.0.timer.shutdown(false);
     }
 }
 
 impl PatternWatchdog {
     pub(crate) fn new(handle: v8::IsolateHandle) -> Result<Self, String> {
-        ExecutionWatchdog::new(handle)
+        ExecutionWatchdog::with_timeout(handle, ScriptCancellation::default(), PATTERN_TIMEOUT)
             .map(Self)
             .map_err(|error| error.to_string())
     }
