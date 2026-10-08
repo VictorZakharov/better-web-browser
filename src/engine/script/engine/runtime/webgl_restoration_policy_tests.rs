@@ -6,7 +6,7 @@ use super::webgl2_bindings_tests::{check, document};
 fn replay(code: &str) {
     let (mut context, _host) = document();
     let source = format!(
-        "(() => {{\n{}\n{}\n{}\n{}\n}})()",
+        "(() => {{\n{}\n{}\n{}\n{}\n{}\n}})()",
         r#"
         const tasks = [], requests = [], events = [], errors = [];
         const queueWebGlContextTask = callback => tasks.push(callback);
@@ -35,6 +35,7 @@ fn replay(code: &str) {
         });
         const assert = (value, message) => { if (!value) throw Error(message); };
         "#,
+        include_str!("../../bootstrap/webgl_private_wire.js"),
         include_str!("../../bootstrap/webgl_attributes.js"),
         include_str!("../../bootstrap/webgl_lifecycle.js"),
         code,

@@ -51,10 +51,10 @@ impl ComputedStyle {
             })
         };
         self.border_width = Edges {
-            top: snap(self.border_width.top),
-            right: snap(self.border_width.right),
-            bottom: snap(self.border_width.bottom),
-            left: snap(self.border_width.left),
+            top: snap(self.border_width.top.clone()),
+            right: snap(self.border_width.right.clone()),
+            bottom: snap(self.border_width.bottom.clone()),
+            left: snap(self.border_width.left.clone()),
         };
     }
 
@@ -122,21 +122,11 @@ impl ComputedStyle {
                     return;
                 }
             } else {
-                let parsed = match keyword.as_str() {
-                    "thin" => Some(Length::Px(1.0)),
-                    "medium" => Some(Length::Px(3.0)),
-                    "thick" => Some(Length::Px(5.0)),
-                    _ => parse_length(part),
-                };
+                let parsed = super::border_widths::parse(part);
                 let Some(parsed) = parsed else {
                     return;
                 };
-                if matches!(parsed, Length::Auto | Length::Percent(_))
-                    || parsed
-                        .resolve(0.0, self.font_size)
-                        .is_none_or(|v| !v.is_finite() || v < 0.0)
-                    || width.replace(parsed).is_some()
-                {
+                if width.replace(parsed).is_some() {
                     return;
                 }
             }

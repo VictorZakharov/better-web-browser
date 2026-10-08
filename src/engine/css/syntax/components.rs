@@ -1,6 +1,15 @@
 use super::super::*;
 
 pub(in crate::engine::css) fn components(value: &str) -> Option<Vec<String>> {
+    Some(
+        borrowed_components(value)?
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+    )
+}
+
+pub(in crate::engine::css) fn borrowed_components(value: &str) -> Option<Vec<&str>> {
     let mut source = ParserInput::new(value);
     let mut parser = Parser::new(&mut source);
     let mut parts = Vec::new();
@@ -10,7 +19,7 @@ pub(in crate::engine::css) fn components(value: &str) -> Option<Vec<String>> {
     Some(parts)
 }
 
-fn component(parser: &mut Parser<'_, '_>, depth: usize) -> Option<String> {
+fn component<'i>(parser: &mut Parser<'i, '_>, depth: usize) -> Option<&'i str> {
     if depth > 32 {
         return None;
     }
@@ -35,5 +44,5 @@ fn component(parser: &mut Parser<'_, '_>, depth: usize) -> Option<String> {
             });
         result.ok()?;
     }
-    Some(parser.slice_from(start).trim().to_owned())
+    Some(parser.slice_from(start).trim())
 }

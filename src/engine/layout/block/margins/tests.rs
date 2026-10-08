@@ -1,7 +1,7 @@
 use super::*;
 use crate::engine::layout::test_support::FixedMeasurer;
 
-fn box_for(page: &Page, output: &LayoutOutput, id: &str) -> RectF {
+pub(super) fn box_for(page: &Page, output: &LayoutOutput, id: &str) -> RectF {
     let node = Node::descendants(&page.dom.document)
         .find(|node| node.attr("id").as_deref() == Some(id))
         .unwrap();

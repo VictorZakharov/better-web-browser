@@ -28,6 +28,11 @@ not merely the presence of `CSSAnimation` or an accepted property name.
   on the target or an ancestor and disconnection cancel them; restoring the
   rendered tree creates new animations. Script pause is not undone by an
   unrelated DOM mutation.
+- API edits have per-member precedence over subsequent CSS changes, including
+  effect/keyframe replacement and calls through `Animation.prototype`. Pending
+  stylesheet changes are flushed before CSS-owned effect queries and updates.
+  The [typed math and ownership contracts](css-math-functions.md) describe the
+  implemented timing, easing and translation subset and explicit limits.
 - `animationstart`, `animationiteration`, `animationend`, and `animationcancel`
   bubble with `AnimationEvent` data and active elapsed time. Event delivery is
   queued rather than reentering script during native discovery.
@@ -90,6 +95,7 @@ repository's existing `cssparser` dependency; playback and interpolation reuse
 its Web Animations implementation. Compatibility decisions follow:
 
 - [CSS Animations Level 1](https://drafts.csswg.org/css-animations-1/)
+- [CSS Animations Level 2 API precedence](https://drafts.csswg.org/css-animations-2/#animations)
 - [CSS Scoping: names](https://drafts.csswg.org/css-scoping-1/#shadow-names)
 - [CSS Cascade: layers](https://drafts.csswg.org/css-cascade-5/#layering)
 - [CSSOM declaration operations](https://drafts.csswg.org/cssom/)

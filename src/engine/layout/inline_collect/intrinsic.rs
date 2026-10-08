@@ -30,13 +30,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return None;
         }
         let mut style = self.styles.get(&node).clone();
-        if !cyclic(style.width) && !cyclic(style.max_width) {
+        if !cyclic(&style.width) && !cyclic(&style.max_width) {
             return None;
         }
-        if cyclic(style.width) {
+        if cyclic(&style.width) {
             style.width = Length::Auto;
         }
-        if cyclic(style.max_width) {
+        if cyclic(&style.max_width) {
             style.max_width = Length::Auto;
         }
         let mut atoms = Vec::new();
@@ -58,7 +58,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     }
 }
 
-fn cyclic(length: Length) -> bool {
-    matches!(length, Length::Percent(_))
-        || matches!(length, Length::Calc { percent, .. } if percent != 0.0)
+fn cyclic(length: &Length) -> bool {
+    length.has_percentage()
 }

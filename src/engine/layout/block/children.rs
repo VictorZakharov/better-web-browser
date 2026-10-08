@@ -98,7 +98,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         + table::resolved_table_borders(child, child_style, width).horizontal();
                     let needed = if child_style.width == Length::Auto {
                         resolve_outer_size(
-                            child_style.min_width,
+                            child_style.min_width.clone(),
                             width,
                             child_style.font_size,
                             insets,

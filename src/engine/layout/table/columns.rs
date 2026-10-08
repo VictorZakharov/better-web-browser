@@ -78,8 +78,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             let specified = if matches!(length, Length::Percent(_)) {
                 0.0
             } else {
-                resolve_outer_size(length, basis, style.font_size, insets, style.box_sizing)
-                    .unwrap_or(0.0)
+                resolve_outer_size(
+                    length.clone(),
+                    basis,
+                    style.font_size,
+                    insets,
+                    style.box_sizing,
+                )
+                .unwrap_or(0.0)
             };
             let interior_gaps = spacing * (cell.columns - 1) as f32;
             let minimum = (lo + insets).max(specified).max(interior_gaps) - interior_gaps;

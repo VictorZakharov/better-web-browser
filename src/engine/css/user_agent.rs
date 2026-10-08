@@ -148,7 +148,7 @@ pub(super) fn apply_user_agent_defaults(
             style.box_sizing = BoxSizing::BorderBox;
             // HTML's suggested UA sheet uses 2px in the separated model.
             // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
-            style.border_spacing = [Length::Px(2.0); 2];
+            style.border_spacing = [const { Length::Px(2.0) }; 2];
         }
         "center" => style.text_align = TextAlign::Center,
         "th" => {

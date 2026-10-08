@@ -1,6 +1,8 @@
 //! Shared delimiter and balanced-block CSS syntax helpers.
 mod components;
-pub(super) use components::components;
+mod function;
+pub(super) use components::{borrowed_components, components};
+pub(super) use function::{function, ident};
 
 /// Match an at-keyword without confusing `@media` with `@media-custom`.
 pub(super) fn at_rule_prelude<'a>(input: &'a str, name: &str) -> Option<&'a str> {
@@ -10,8 +12,15 @@ pub(super) fn at_rule_prelude<'a>(input: &'a str, name: &str) -> Option<&'a str>
         return None;
     }
     let rest = &input[prefix_len..];
-    (rest.is_empty() || !rest.starts_with(|ch: char| ch.is_ascii_alphanumeric() || ch == '-'))
-        .then_some(rest.trim())
+    (rest.is_empty() || !rest.starts_with(|ch: char| ch.is_ascii_alphanumeric() || ch == '-')).then(
+        || {
+            let mut rest = rest.trim();
+            while let Some(comment) = rest.strip_prefix("/**/") {
+                rest = comment.trim_start();
+            }
+            rest
+        },
+    )
 }
 
 pub(super) fn skip_css_whitespace(input: &str, mut cursor: usize) -> usize {

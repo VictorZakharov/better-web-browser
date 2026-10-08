@@ -4,11 +4,12 @@ use super::*;
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) enum LineHeight {
     #[default]
     Normal,
     Number(f32),
+    Calculation(scalars::NumberValue),
     Length(Length),
 }
 
@@ -18,8 +19,11 @@ impl LineHeight {
         if value == "normal" {
             return Some(Self::Normal);
         }
-        if let Ok(number) = value.parse::<f32>() {
-            return (number.is_finite() && number >= 0.0).then_some(Self::Number(number));
+        if let Some(number) = scalars::NumberValue::nonnegative(&value) {
+            return Some(match number {
+                scalars::NumberValue::Fixed(number) => Self::Number(number),
+                calculation => Self::Calculation(calculation),
+            });
         }
         let length = parse_length(&value)?;
         // Negative literal lengths are invalid; calc() range checking takes place
@@ -34,7 +38,7 @@ impl LineHeight {
             | Length::Vh(v)
             | Length::Vmin(v)
             | Length::Vmax(v) => v.is_finite() && v >= 0.0,
-            Length::Calc { .. } => true,
+            Length::Calc { .. } | Length::Math(_) => true,
         };
         valid.then_some(Self::Length(length))
     }
@@ -49,6 +53,10 @@ impl LineHeight {
         match self {
             Self::Normal => (self, font_size * 1.2),
             Self::Number(number) => (self, (font_size * number).min(f32::MAX)),
+            Self::Calculation(value) => {
+                let number = value.resolve(font_size, root_size, width, height).max(0.0);
+                (Self::Number(number), (font_size * number).min(f32::MAX))
+            }
             Self::Length(length) => {
                 let pixels = length
                     .resolve_root_font_units(root_size)
@@ -64,8 +72,11 @@ impl LineHeight {
 
 impl ComputedStyle {
     pub(crate) fn resolve_line_height(&mut self, width: f32, height: f32) {
-        (self.line_height_value, self.line_height) =
-            self.line_height_value
-                .resolve(self.font_size, width, height, self.root_font_size);
+        (self.line_height_value, self.line_height) = self.line_height_value.clone().resolve(
+            self.font_size,
+            width,
+            height,
+            self.root_font_size,
+        );
     }
 }

@@ -5,6 +5,87 @@ fn declaration(value: &str) -> Declaration {
 }
 
 #[test]
+fn removing_comments_cannot_retokenize_adjacent_literal_components() {
+    for (value, expected) in [
+        ("25/**/%", "25/**/%"),
+        ("1/**/px", "1/**/px"),
+        ("bl/**/ock", "bl/**/ock"),
+        ("calc/**/(1)", "calc/**/(1)"),
+        ("calc(1/**/+/**/2)", "calc(1+/**/2)"),
+        ("rgb(1/**/2/**/3)", "rgb(1/**/2/**/3)"),
+        ("25%/**/", "25%"),
+    ] {
+        assert_eq!(
+            declaration(value).prepared_literal(),
+            Some(expected),
+            "{value}"
+        );
+    }
+}
+
+#[test]
+fn variable_replacement_keeps_its_tokens_separate_from_neighboring_components() {
+    let custom = HashMap::from([("--n".into(), "25".into())]);
+    for (value, expected) in [
+        ("var(--n)%", "25/**/%"),
+        ("var(--n)px", "25/**/px"),
+        ("var(--n)var(--n)", "25/**/25"),
+        ("var(--missing,25)%", "25/**/%"),
+        ("calc(var(--n) * 1px)", "calc(25 * 1px)"),
+    ] {
+        assert_eq!(
+            substitute_variables(value, &custom).as_deref(),
+            Some(expected),
+            "{value}"
+        );
+    }
+    let dom = dom::parse(
+        "<style>div{--n:25;opacity:.7;opacity:var(--n)%;
+        width:30px;width:var(--n)px}</style><div></div>",
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 800.0);
+    let node = dom.elements_named("div").next().unwrap();
+    // Invalid at computed-value time uses the unset/initial value, not the
+    // earlier declaration: substitution is not ordinary parse-time rejection.
+    assert_eq!(styles.get(&node).opacity, 1.0);
+    assert_eq!(styles.get(&node).width, Length::Auto);
+}
+
+#[test]
+fn missing_and_invalid_variables_use_unset_after_the_cascade() {
+    for value in ["var(--missing)", "var(--bad)", "var(--cycle)"] {
+        let dom = dom::parse(&format!(
+            "<style>main{{color:red}}div{{--bad:20px;--cycle:var(--cycle);
+             opacity:.7;opacity:{value};color:blue;color:{value}}}</style>
+             <main><div></div></main>"
+        ));
+        let styles = StyleSet::from_dom(&dom, &[], 800.0);
+        let parent = dom.elements_named("main").next().unwrap();
+        let child = dom.elements_named("div").next().unwrap();
+        assert_eq!(styles.get(&child).opacity, 1.0, "{value}");
+        assert_eq!(
+            styles.get(&child).color,
+            styles.get(&parent).color,
+            "{value}"
+        );
+    }
+}
+
+#[test]
+fn ordinary_functions_and_unused_fallbacks_share_a_bounded_nesting_contract() {
+    let deep = format!("{}1{}", "calc(".repeat(128), ")".repeat(128));
+    assert!(declaration(&deep).prepared_literal().is_none());
+    assert!(substitute_variables(&deep, &HashMap::new()).is_none());
+    assert!(!contains_valid_variable_reference(&format!(
+        "{}var(--n){}",
+        "calc(".repeat(128),
+        ")".repeat(128)
+    )));
+    let custom = HashMap::from([("--n".into(), "1px".into())]);
+    assert!(substitute_variables(&format!("var(--n,{deep})"), &custom).is_none());
+}
+
+#[test]
 fn literal_preparation_matches_uncached_token_serialization_and_reuses_storage() {
     for value in [
         "block",

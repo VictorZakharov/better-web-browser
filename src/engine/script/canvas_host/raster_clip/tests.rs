@@ -1,5 +1,19 @@
 use super::*;
 
+#[test]
+fn shader_region_and_clip_region_must_have_identical_bitmap_origins() {
+    let input = args(vec![255; 4], 7.0, 4.0, 2.0, 1.0);
+    assert!(Clip::from_args_at_region(&input, 0, [3, 2], [2, 1]).is_some());
+    for origin in [[1, 1], [2, 0], [-1, 1], [2, -1]] {
+        assert!(Clip::from_args_at_region(&input, 0, [3, 2], origin).is_none());
+    }
+    assert!(
+        Clip::from_args_at_region(&[JsValue::Null], 0, [3, 2], [-2, -1])
+            .unwrap()
+            .is_none()
+    );
+}
+
 fn args(bits: Vec<u8>, width: f64, height: f64, left: f64, top: f64) -> Vec<JsValue> {
     vec![
         JsValue::Bytes(bits),

@@ -2,6 +2,9 @@
 //! https://www.w3.org/TR/CSS22/box.html#collapsing-margins
 use super::super::*;
 #[cfg(test)]
+#[path = "margins/ratio_tests.rs"]
+mod ratio_tests;
+#[cfg(test)]
 mod tests;
 
 #[derive(Clone, Copy, Default)]
@@ -95,6 +98,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         ) - insets)
             .max(0.0);
         let minimum_zero = matches!(style.min_height, Length::Auto | Length::Px(0.0));
+        // CSS Sizing 4 §4.2.1: a ratio-dependent block axis is not treated as
+        // computed 'auto' for margin collapsing. Otherwise an empty ratio box
+        // paints at its transferred height but advances siblings by zero.
+        // Top-child collapse remains permitted; bottom-child/self collapse do not.
+        // https://www.w3.org/TR/css-sizing-4/#margin-collapsing
+        let ratio_dependent_height =
+            style.height == Length::Auto && style.aspect_ratio.preferred(None).is_some();
         let mut start_open = padding.top + border.top == 0.0;
         let mut empty = true;
         let mut tail = MarginStrut::default();
@@ -143,6 +153,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         profile.absorb_end = end_block
             && style.height == Length::Auto
+            && !ratio_dependent_height
             && padding.bottom + border.bottom == 0.0
             && (minimum_zero || !empty);
         if profile.absorb_end {
@@ -150,6 +161,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         profile.through = empty
             && minimum_zero
+            && !ratio_dependent_height
             && matches!(style.height, Length::Auto | Length::Px(0.0))
             && padding.vertical() + border.vertical() == 0.0;
         profile

@@ -2,6 +2,41 @@ use super::*;
 
 const SOURCE: [u8; 8] = [255, 0, 0, 255, 0, 0, 255, 255];
 
+#[test]
+fn host_pattern_clipping_rejects_conflicting_roi_without_mutating_source_or_destination() {
+    let encoded = r#"{"width":4,"height":2,"left":2,"top":1,"source_width":2,"source_height":1,"transform":[1,0,0,1,0,0],"opacity":1}"#;
+    let destination = [11, 22, 33, 255].repeat(8);
+    let mut arguments = vec![
+        JsValue::from("canvasPaintPatternMask".to_owned()),
+        JsValue::from(encoded.to_owned()),
+        JsValue::Bytes(destination.clone()),
+        JsValue::Null,
+        JsValue::Bytes(SOURCE.to_vec()),
+        JsValue::Bytes(vec![255; 4]),
+        JsValue::from(7.0),
+        JsValue::from(4.0),
+        JsValue::from(2.0),
+        JsValue::from(1.0),
+    ];
+    assert!(paint(&arguments).as_bytes().is_some());
+    for (index, invalid) in [
+        (5, JsValue::Bytes(vec![255; 3])),
+        (6, JsValue::from(3.0)),
+        (7, JsValue::from(1.0)),
+        (8, JsValue::from(3.0)),
+        (9, JsValue::from(2.0)),
+    ] {
+        let valid = std::mem::replace(&mut arguments[index], invalid);
+        assert!(
+            matches!(paint(&arguments), JsValue::Null),
+            "argument {index}"
+        );
+        arguments[index] = valid;
+        assert_eq!(arguments[2].as_bytes().unwrap(), destination);
+        assert_eq!(arguments[4].as_bytes().unwrap(), SOURCE);
+    }
+}
+
 fn request() -> Request {
     Request {
         width: 4,

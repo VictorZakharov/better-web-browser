@@ -16,6 +16,7 @@ mod glyph_paint;
 mod gradient_mask;
 mod image_paint;
 mod mask_cache;
+mod packed_geometry;
 mod path;
 mod pattern_mask;
 mod raster_clip;
@@ -33,6 +34,12 @@ pub(crate) mod webgl;
 
 use crate::limits::MAX_CANVAS_PIXELS;
 const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
+
+/// A stateless paint consumes only the fresh native copy of its pixel input.
+/// HostBridge checks the document/worker lifetime before calling this function.
+pub(super) fn owned_solid_path(args: &mut [JsValue]) -> JsValue {
+    solid_path::paint_owned(args)
+}
 
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
     if operation == "canvasClipMask" {

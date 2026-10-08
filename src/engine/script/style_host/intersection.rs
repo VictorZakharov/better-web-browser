@@ -111,10 +111,11 @@ pub(in crate::engine::script) fn calculate(
                 }
                 let shape = styles.computed_style_for_node(&ancestor).and_then(|style| {
                     let border = bounds(state, &ancestor)?;
-                    let inset =
-                        style
-                            .clip_path
-                            .inset(border.width, border.height, style.font_size)?;
+                    let inset = style.clip_path.clone().inset(
+                        border.width,
+                        border.height,
+                        style.font_size,
+                    )?;
                     Some(border.inset(inset))
                 });
                 if let Some(shape) = shape {

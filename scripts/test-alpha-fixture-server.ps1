@@ -28,4 +28,37 @@ try {
 if ($null -eq $failure -or "$failure" -notmatch 'startup exceeded') { throw "Missing startup timeout: $failure" }
 $serverId = [int](Get-Content -LiteralPath (Join-Path $timeoutRoot 'fixture-server.txt.pid'))
 if (Get-Process -Id $serverId -ErrorAction SilentlyContinue) { throw 'Timed-out fixture server leaked.' }
-Write-Output 'Fixture launcher success, spaced paths, startup failure and timeout cleanup passed.'
+
+# A browser can close while a large resource response is already being sent.
+# Force TCP resets after receiving response bytes, then prove the same server
+# still handles later requests. No browser or visible console is launched here.
+$disconnectRoot = Join-Path $testRoot 'client disconnect'
+[IO.Directory]::CreateDirectory($disconnectRoot) | Out-Null
+$resourceBytes = 8 * 1024 * 1024
+[IO.File]::WriteAllBytes((Join-Path $disconnectRoot 'large.bin'), [byte[]]::new($resourceBytes))
+$server = Start-AlphaFixtureServer -OutputDirectory (Join-Path $testRoot 'disconnect server') -Root $disconnectRoot
+$serverId = $server.Process.Id
+try {
+    $address = [Uri]$server.Url
+    for ($iteration = 0; $iteration -lt 3; $iteration++) {
+        $client = [Net.Sockets.TcpClient]::new()
+        try {
+            $client.ReceiveBufferSize = 1024
+            $client.ReceiveTimeout = 5000
+            $client.LingerState = [Net.Sockets.LingerOption]::new($true, 0)
+            $client.Connect($address.Host, $address.Port)
+            $stream = $client.GetStream()
+            $request = [Text.Encoding]::ASCII.GetBytes("GET /large.bin HTTP/1.1`r`nHost: $($address.Host):$($address.Port)`r`nConnection: close`r`n`r`n")
+            $stream.Write($request, 0, $request.Length)
+            $prefix = [byte[]]::new(512)
+            if ($stream.Read($prefix, 0, $prefix.Length) -le 0) { throw 'No response before forced client reset.' }
+        } finally { $client.Dispose() }
+        $response = Invoke-WebRequest ($server.Url + 'large.bin') -Method Head -TimeoutSec 5
+        if ($response.StatusCode -ne 200 -or [long]$response.Headers['Content-Length'][0] -ne $resourceBytes) {
+            throw 'Fixture server stopped serving after an abandoned response.'
+        }
+        if ($server.Process.HasExited) { throw 'Client disconnect terminated the fixture server.' }
+    }
+} finally { Stop-AlphaFixtureServer $server }
+if (Get-Process -Id $serverId -ErrorAction SilentlyContinue) { throw 'Disconnect-test fixture server leaked.' }
+Write-Output 'Fixture lifecycle, startup failures, timeout cleanup and abandoned responses passed.'

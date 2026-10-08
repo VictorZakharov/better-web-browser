@@ -1,10 +1,11 @@
 use super::Length;
 
 impl Length {
-    pub fn resolve(self, basis: f32, font_size: f32) -> Option<f32> {
+    pub fn resolve(&self, basis: f32, font_size: f32) -> Option<f32> {
         match self {
             Self::Auto => None,
-            Self::Px(value) => Some(value),
+            Self::Math(value) => value.resolve(Some(basis), font_size),
+            Self::Px(value) => Some(*value),
             Self::Percent(value) => Some(basis * value / 100.0),
             Self::Em(value) => Some(font_size * value),
             // CSS Values 4 section 6.1.1 uses the initial root size outside an element context.
@@ -23,7 +24,7 @@ impl Length {
                 vmin,
                 vmax,
             } => Some(
-                px + basis * percent / 100.0
+                *px + basis * percent / 100.0
                     + font_size * em
                     + 16.0 * rem
                     + basis * vw / 100.0
@@ -34,8 +35,20 @@ impl Length {
         }
     }
 
+    pub(crate) fn has_percentage(&self) -> bool {
+        match self {
+            Self::Percent(_) => true,
+            Self::Calc { percent, .. } => *percent != 0.0,
+            Self::Math(value) => value.has_percentage(),
+            _ => false,
+        }
+    }
+
     pub(in crate::engine::css) fn resolve_root_font_units(self, root_font_size: f32) -> Self {
         match self {
+            Self::Math(value) => value
+                .map_lengths(&|length| length.clone().resolve_root_font_units(root_font_size))
+                .into_length(),
             Self::Rem(value) => Self::Px(root_font_size * value),
             Self::Calc {
                 px,
@@ -70,12 +83,15 @@ impl Length {
         }
     }
 
-    pub(in crate::engine::css) fn resolve_viewport_units(self, width: f32, height: f32) -> Self {
+    pub(crate) fn resolve_viewport_units(self, width: f32, height: f32) -> Self {
         let width = width.max(1.0);
         let height = height.max(1.0);
         let minimum = width.min(height);
         let maximum = width.max(height);
         match self {
+            Self::Math(value) => value
+                .map_lengths(&|length| length.clone().resolve_viewport_units(width, height))
+                .into_length(),
             Self::Vw(value) => Self::Px(width * value / 100.0),
             Self::Vh(value) => Self::Px(height * value / 100.0),
             Self::Vmin(value) => Self::Px(minimum * value / 100.0),

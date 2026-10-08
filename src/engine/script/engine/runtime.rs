@@ -5,7 +5,8 @@ use super::value::{JsError, JsErrorKind, JsResult, JsValue, Source};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::{Once, OnceLock};
+mod initialization;
+pub(crate) use initialization::initialize_v8;
 mod diagnostics;
 mod dynamic_imports;
 mod frames;
@@ -52,9 +53,6 @@ mod webgl_restoration_policy_tests;
 #[cfg(all(test, windows))]
 mod webgl_video_source_tests;
 
-static INITIALIZE_V8: Once = Once::new();
-static V8_PLATFORM: OnceLock<v8::SharedRef<v8::Platform>> = OnceLock::new();
-
 pub(in crate::engine::script) struct Context {
     // Persistent handles must be released before their isolate.
     context: v8::Global<v8::Context>,
@@ -76,6 +74,7 @@ pub(in crate::engine::script) enum ModuleEvaluation {
 
 impl Context {
     pub(in crate::engine::script) fn new(bridge: HostBridge) -> JsResult<Self> {
+        let is_window = matches!(bridge, HostBridge::Document(_));
         initialize_v8();
         let mut isolate = v8::Isolate::new(v8::CreateParams::default());
         isolate.set_microtasks_policy(v8::MicrotasksPolicy::Explicit);
@@ -90,7 +89,7 @@ impl Context {
         );
         let context = {
             v8::scope!(let scope, &mut isolate);
-            let global_template = super::v8_api::window_template(scope);
+            let global_template = initialization::global_template(scope, is_window);
             let context = v8::Context::new(
                 scope,
                 v8::ContextOptions {
@@ -295,17 +294,6 @@ impl Context {
         )))?;
         Ok(())
     }
-}
-
-pub(crate) fn initialize_v8() {
-    INITIALIZE_V8.call_once(|| {
-        let platform = v8::new_default_platform(0, false).make_shared();
-        v8::V8::initialize_platform(platform.clone());
-        v8::V8::initialize();
-        V8_PLATFORM
-            .set(platform)
-            .unwrap_or_else(|_| unreachable!("V8 platform initialized once"));
-    });
 }
 
 fn caught_error(

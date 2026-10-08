@@ -123,7 +123,7 @@ impl DocumentRuntime {
             active_script_fetches: HashMap::new(),
             pending_worker_actions: Vec::new(),
             deferred_network_load: PageLoadReport::default(),
-            workers: RendererWorkers::new(),
+            workers: RendererWorkers::new(!start.diagnostic_selectors.is_empty()),
             parser_scripts,
             navigation,
             parser: parser_active.then_some(parsing::DocumentParser {

@@ -8,7 +8,7 @@ impl Edges {
         left: Length::Px(0.0),
     };
 
-    pub fn resolve(self, width: f32, font_size: f32) -> ResolvedEdges {
+    pub fn resolve(&self, width: f32, font_size: f32) -> ResolvedEdges {
         ResolvedEdges {
             top: self.top.resolve(width, font_size).unwrap_or(0.0),
             right: self.right.resolve(width, font_size).unwrap_or(0.0),

@@ -36,19 +36,20 @@
         return cursor === text.length && functions.length ? functions : null;
     };
     const interpolateAnimationTransform = (from, to, progress) => {
+        const nativeFallback = () => host('interpolateCssTransform', from, to, progress);
         let first = parseAnimationTransform(from), last = parseAnimationTransform(to);
-        if (first === null || last === null) return null;
+        if (first === null || last === null) return nativeFallback();
         if (!first.length && last.length) first = last.map(function_ => ({
             name: function_.name, x: {...function_.x, value: 0}, y: {...function_.y, value: 0}
         }));
         if (!last.length && first.length) last = first.map(function_ => ({
             name: function_.name, x: {...function_.x, value: 0}, y: {...function_.y, value: 0}
         }));
-        if (first.length !== last.length) return null;
+        if (first.length !== last.length) return nativeFallback();
         const result = [];
         for (let index = 0; index < first.length; index++) {
             const a = first[index], b = last[index];
-            if (a.name !== b.name || a.x.unit !== b.x.unit || a.y.unit !== b.y.unit) return null;
+            if (a.name !== b.name || a.x.unit !== b.x.unit || a.y.unit !== b.y.unit) return nativeFallback();
             const x = a.x.value + (b.x.value - a.x.value) * progress;
             const y = a.y.value + (b.y.value - a.y.value) * progress;
             const value = number => String(Math.round(number * 10000) / 10000);

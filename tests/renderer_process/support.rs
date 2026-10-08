@@ -83,6 +83,59 @@ pub(super) fn load_html_document_with_selectors(
     }
 }
 
+/// Input-listener fixtures need an executed script, not merely the parser's
+/// first paint. Keep early-paint tests on load_html_document instead. The
+/// returned presentation has already been acknowledged for parser progress.
+pub(super) fn load_scripted_html_document(
+    session: &RendererSession,
+    value: u64,
+    html: &str,
+) -> RendererPresentation {
+    let mut presentation = load_html_document(session, value, html);
+    let document = presentation.document;
+    acknowledge(session, &presentation);
+    assert!(
+        presentation.runtime.errors.is_empty(),
+        "{:?}",
+        presentation.runtime.errors
+    );
+    if presentation.runtime.scripts_executed > 0 {
+        return presentation;
+    }
+    pump_ready_task(session, document, presentation.next_timer_micros);
+    for _ in 0..40 {
+        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            RendererEvent::RuntimeUpdate(update) if update.document == document => {
+                assert!(
+                    update.runtime.errors.is_empty(),
+                    "{:?}",
+                    update.runtime.errors
+                );
+                if update.runtime.scripts_executed > 0 {
+                    return presentation;
+                }
+                pump_ready_task(session, document, update.next_timer_micros);
+            }
+            RendererEvent::Presentation(next) if next.document == document => {
+                presentation = *next;
+                assert!(
+                    presentation.runtime.errors.is_empty(),
+                    "{:?}",
+                    presentation.runtime.errors
+                );
+                acknowledge(session, &presentation);
+                if presentation.runtime.scripts_executed > 0 {
+                    return presentation;
+                }
+                pump_ready_task(session, document, presentation.next_timer_micros);
+            }
+            RendererEvent::Diagnostic { .. } | RendererEvent::TextSelectionUpdate(_) => {}
+            event => panic!("unexpected event while awaiting script readiness: {event:?}"),
+        }
+    }
+    panic!("fixture script never executed");
+}
+
 pub(super) fn document_start(document: DocumentId, body_length: usize) -> DocumentStart {
     DocumentStart {
         document,

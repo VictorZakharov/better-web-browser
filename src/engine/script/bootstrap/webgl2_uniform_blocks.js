@@ -5,11 +5,11 @@
     },-1);
     webGl2Method('getUniformIndices',2,'-S',[[0,'WebGLProgram',false]],function(program,names) {
         const id = webGl2Handle(this,program,'WebGLProgram');
-        return id < 0 ? null : webGlCall(this,'getUniformIndices',[id],[],JSON.stringify(names));
+        return id < 0 ? null : webGlCall(this,'getUniformIndices',[id],[],webGlWireList(names));
     },null);
     webGl2Method('getActiveUniforms',3,'-Uu',[[0,'WebGLProgram',false]],function(program,indices,pname) {
         const id = webGl2Handle(this,program,'WebGLProgram');
-        return id < 0 ? null : webGlCall(this,'getActiveUniforms',[id,pname],[],JSON.stringify(indices));
+        return id < 0 ? null : webGlCall(this,'getActiveUniforms',[id,pname],[],webGlWireList(indices));
     },null);
     webGl2Method('getUniformBlockIndex',2,'-s',[[0,'WebGLProgram',false]],function(program,name) {
         const id = webGl2Handle(this,program,'WebGLProgram');

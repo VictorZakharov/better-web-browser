@@ -19,12 +19,12 @@ function testSolidPathPainting() {
                 for(let index=0;index<seed.data.length;index+=4)
                     seed.data.set([31,71,113,(index/4)%256],index);
                 c.putImageData(seed,0,0);
-                // The constant gradient plus clip selects the scalar fallback;
-                // clipping alone also uses native solid painting now.
+                // A 257-stop constant gradient exceeds native shader admission,
+                // preserving an independent scalar oracle for solid arithmetic.
                 if(c===scalar){c.beginPath();c.rect(0,0,40,40);c.clip();}
                 c.setTransform(...transform);c.beginPath();shape(c);
                 let paint=color;
-                if(c===scalar){const g=c.createLinearGradient(0,0,40,0);g.addColorStop(0,color);g.addColorStop(1,color);paint=g;}
+                if(c===scalar){const g=c.createLinearGradient(0,0,40,0);for(let i=0;i<=256;i++)g.addColorStop(i/256,color);paint=g;}
                 c.globalAlpha=.75;c.fillStyle=paint;c.strokeStyle=paint;
                 c.lineWidth=2.25;c.lineCap='round';c.lineJoin='bevel';c.setLineDash([3,2]);
                 c.lineDashOffset=.5;

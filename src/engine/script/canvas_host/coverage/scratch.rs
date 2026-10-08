@@ -1,31 +1,71 @@
 //! One bounded per-renderer scratch allocation. This is not a result cache:
-//! every checkout clears all samples before tiny-skia paints a new path.
+//! every checkout clears the prior paint's conservative support before reuse.
 use resvg::tiny_skia::Mask;
 use std::cell::RefCell;
 
 const MAX_RETAINED_BYTES: usize = 8 * 1024 * 1024;
 
 thread_local! {
-    static SCRATCH: RefCell<Option<Mask>> = const { RefCell::new(None) };
+    static SCRATCH: RefCell<Option<Surface>> = const { RefCell::new(None) };
+}
+
+struct Surface {
+    mask: Mask,
+    dirty: [u32; 4],
 }
 
 pub(super) fn take(width: u32, height: u32) -> Option<Mask> {
     // Release the cell borrow before rendering. Nested use can allocate its own
     // surface without borrowing or overwriting the active rasterizer's mask.
     let reusable = SCRATCH.with(|slot| slot.borrow_mut().take());
-    if let Some(mut mask) = reusable
+    if let Some(Surface { mut mask, dirty }) = reusable
         && mask.width() == width
         && mask.height() == height
     {
-        mask.data_mut().fill(0);
+        let [left, top, columns, rows] = dirty;
+        for row in top..top + rows {
+            let start = row as usize * width as usize + left as usize;
+            mask.data_mut()[start..start + columns as usize].fill(0);
+        }
         return Some(mask);
     }
     Mask::new(width, height)
 }
 
+#[cfg(test)]
 pub(super) fn retain(mask: Mask) {
+    let dirty = [0, 0, mask.width(), mask.height()];
+    retain_region(mask, dirty);
+}
+
+/// `dirty` encloses every sample written by fill_path, not just nonzero reduced
+/// pixels. Region::rasterize supplies control-point bounds plus a bitmap-pixel
+/// AA margin, in the original full surface's scaled coordinate space.
+pub(super) fn retain_region(mask: Mask, dirty: [u32; 4]) {
     if mask.data().len() <= MAX_RETAINED_BYTES {
-        SCRATCH.with(|slot| *slot.borrow_mut() = Some(mask));
+        let [left, top, columns, rows] = dirty;
+        let valid = left.checked_add(columns).is_some_and(|v| v <= mask.width())
+            && top.checked_add(rows).is_some_and(|v| v <= mask.height());
+        // A malformed internal bound must never leak old coverage on reuse.
+        let dirty = if valid {
+            dirty
+        } else {
+            [0, 0, mask.width(), mask.height()]
+        };
+        #[cfg(debug_assertions)]
+        for (index, sample) in mask.data().iter().enumerate() {
+            let x = index as u32 % mask.width();
+            let y = index as u32 / mask.width();
+            debug_assert!(
+                *sample == 0
+                    || (x >= dirty[0]
+                        && x - dirty[0] < dirty[2]
+                        && y >= dirty[1]
+                        && y - dirty[1] < dirty[3]),
+                "scratch bounds missed a painted sample"
+            );
+        }
+        SCRATCH.with(|slot| *slot.borrow_mut() = Some(Surface { mask, dirty }));
     }
 }
 
@@ -88,3 +128,7 @@ mod tests {
         assert!(SCRATCH.with(|slot| slot.borrow().is_none()));
     }
 }
+
+#[cfg(test)]
+#[path = "scratch/region_tests.rs"]
+mod region_tests;

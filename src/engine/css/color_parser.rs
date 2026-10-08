@@ -3,6 +3,9 @@
 //! Parsing is deliberately fail-closed: unsupported color spaces and malformed
 //! syntax leave the declaration invalid instead of painting an invented color.
 
+mod components;
+#[cfg(test)]
+mod math_tests;
 mod mix;
 mod perceptual;
 mod spaces;
@@ -12,6 +15,8 @@ mod tests;
 mod tests_rgb_hsl;
 
 use super::Color;
+use super::syntax::function;
+use components::{components, legacy, number_or_percent, percentage_kind};
 use cssparser::color::{parse_hash_color, parse_named_color};
 
 #[derive(Clone, Copy)]
@@ -75,71 +80,9 @@ fn parse_color_depth(value: &str, depth: usize) -> Option<ResolvedColor> {
     }
 }
 
-fn function(value: &str) -> Option<(String, &str)> {
-    let open = value.find('(')?;
-    let name = value[..open].trim();
-    if name.is_empty()
-        || !name
-            .bytes()
-            .all(|byte| byte.is_ascii_alphabetic() || byte == b'-')
-        || !value.ends_with(')')
-    {
-        return None;
-    }
-    Some((name.to_ascii_lowercase(), &value[open + 1..value.len() - 1]))
-}
-
-/// Return exactly three component tokens and an optional alpha token. The
-/// legacy comma grammar cannot be mixed with the modern slash grammar.
-fn components(body: &str, allow_legacy: bool) -> Option<([String; 3], Option<String>)> {
-    if body.contains(',') {
-        if !allow_legacy || body.contains('/') {
-            return None;
-        }
-        let parts = body.split(',').map(str::trim).collect::<Vec<_>>();
-        if !(3..=4).contains(&parts.len()) || parts.iter().any(|part| part.is_empty()) {
-            return None;
-        }
-        return Some((
-            [
-                parts[0].to_owned(),
-                parts[1].to_owned(),
-                parts[2].to_owned(),
-            ],
-            parts.get(3).map(|part| (*part).to_owned()),
-        ));
-    }
-    let normalized = body.replace('/', " / ");
-    let parts = normalized.split_ascii_whitespace().collect::<Vec<_>>();
-    let alpha = match parts.as_slice() {
-        [_, _, _] => None,
-        [_, _, _, "/", alpha] => Some((*alpha).to_owned()),
-        _ => return None,
-    };
-    Some((
-        [
-            parts[0].to_owned(),
-            parts[1].to_owned(),
-            parts[2].to_owned(),
-        ],
-        alpha,
-    ))
-}
-
 fn finite(value: &str) -> Option<f64> {
     let number = value.parse::<f64>().ok()?;
     number.is_finite().then_some(number)
-}
-
-fn number_or_percent(value: &str, percent_scale: f64) -> Option<f64> {
-    if value.eq_ignore_ascii_case("none") {
-        return Some(0.0);
-    }
-    if let Some(percent) = value.strip_suffix('%') {
-        Some(finite(percent)? * percent_scale / 100.0)
-    } else {
-        finite(value)
-    }
 }
 
 fn alpha(value: Option<&str>) -> Option<f64> {
@@ -150,42 +93,32 @@ fn hue(value: &str) -> Option<f64> {
     if value.eq_ignore_ascii_case("none") {
         return Some(0.0);
     }
-    let lower = value.to_ascii_lowercase();
-    let degrees = if let Some(number) = lower.strip_suffix("grad") {
-        finite(number)? * 0.9
-    } else if let Some(number) = lower.strip_suffix("turn") {
-        finite(number)? * 360.0
-    } else if let Some(number) = lower.strip_suffix("rad") {
-        finite(number)?.to_degrees()
-    } else {
-        finite(lower.strip_suffix("deg").unwrap_or(&lower))?
-    };
-    Some(degrees.rem_euclid(360.0))
+    if let Some(radians) = super::value_parser::math_radians(value) {
+        return Some(f64::from(radians).to_degrees().rem_euclid(360.0));
+    }
+    if let Some(number) = super::value_parser::math_number(value) {
+        return Some(f64::from(number).rem_euclid(360.0));
+    }
+    components::hue_literal(value)
 }
 
 fn percentage(value: &str) -> Option<f64> {
-    if value.eq_ignore_ascii_case("none") {
-        return Some(0.0);
-    }
-    Some(finite(value.strip_suffix('%').unwrap_or(value))? / 100.0)
+    Some(number_or_percent(value, 100.0)? / 100.0)
 }
 
 fn parse_rgb(body: &str) -> Option<ResolvedColor> {
     let (channels, opacity) = components(body, true)?;
     let percent_count = channels
         .iter()
-        .filter(|channel| channel.ends_with('%'))
+        .filter(|channel| percentage_kind(channel))
         .count();
-    if percent_count != 0 && percent_count != 3 {
+    // CSS Color 4 §5.1: only the legacy comma grammar requires homogeneous types.
+    if legacy(body)? && percent_count != 0 && percent_count != 3 {
         return None;
     }
     let mut rgb = [0.0; 3];
     for (index, channel) in channels.iter().enumerate() {
-        rgb[index] = if percent_count == 3 {
-            percentage(channel)?
-        } else {
-            number_or_percent(channel, 255.0)? / 255.0
-        };
+        rgb[index] = number_or_percent(channel, 255.0)? / 255.0;
     }
     Some(ResolvedColor {
         rgb,
@@ -195,6 +128,9 @@ fn parse_rgb(body: &str) -> Option<ResolvedColor> {
 
 fn parse_hsl(body: &str) -> Option<ResolvedColor> {
     let (channels, opacity) = components(body, true)?;
+    if legacy(body)? && (!percentage_kind(&channels[1]) || !percentage_kind(&channels[2])) {
+        return None;
+    }
     let hue = hue(&channels[0])?;
     let saturation = percentage(&channels[1])?.max(0.0);
     let lightness = percentage(&channels[2])?;

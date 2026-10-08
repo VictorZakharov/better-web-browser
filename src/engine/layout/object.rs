@@ -43,7 +43,7 @@ pub(super) fn image_paint_geometry(
             }
         }
     };
-    let (offset_x, offset_y) = style.object_position.resolve(
+    let (offset_x, offset_y) = style.object_position.clone().resolve(
         content_box.width,
         content_box.height,
         width,

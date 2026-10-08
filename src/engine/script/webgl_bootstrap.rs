@@ -2,6 +2,7 @@
 macro_rules! webgl_bootstrap {
     () => {
         concat!(
+    include_str!("bootstrap/webgl_private_wire.js"),
     include_str!("bootstrap/webgl_attributes.js"),
     include_str!("bootstrap/webgl_private_brands.js"),
     include_str!("bootstrap/webgl_context.js"),

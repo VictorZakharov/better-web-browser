@@ -72,7 +72,15 @@ impl Region {
             4 => downsample_crop::<4>(mask.data(), self.width as usize, &crop),
             _ => unreachable!("bounded power-of-two raster scale"),
         };
-        scratch::retain(mask);
+        scratch::retain_region(
+            mask,
+            [
+                crop.x * scale,
+                crop.y * scale,
+                crop.width * scale,
+                crop.height * scale,
+            ],
+        );
         if crop.x == 0 && crop.y == 0 && crop.width == self.width && crop.height == self.height {
             return Some(samples);
         }

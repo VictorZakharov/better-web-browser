@@ -5,8 +5,7 @@ use super::*;
 
 pub(crate) mod declarations;
 pub(super) mod lengths;
-#[cfg(test)]
-use lengths::serialize_length;
+pub(super) use lengths::serialize_length;
 
 const MAX_DIAGNOSTIC_CUSTOM_PROPERTIES: usize = 64;
 
@@ -77,11 +76,11 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
                 .collect::<Vec<_>>()
                 .join(" ")
         }
-        "border-bottom-width" => serialize_length(style.border_width.bottom),
-        "border-left-width" => serialize_length(style.border_width.left),
-        "border-right-width" => serialize_length(style.border_width.right),
-        "border-top-width" => serialize_length(style.border_width.top),
-        "border-radius" => serialize_length(style.border_radius),
+        "border-bottom-width" => serialize_length(style.border_width.bottom.clone()),
+        "border-left-width" => serialize_length(style.border_width.left.clone()),
+        "border-right-width" => serialize_length(style.border_width.right.clone()),
+        "border-top-width" => serialize_length(style.border_width.top.clone()),
+        "border-radius" => serialize_length(style.border_radius.clone()),
         "border-collapse" => if style.border_collapse {
             "collapse"
         } else {
@@ -119,18 +118,20 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         }
         .to_string(),
         "font-size" => serialize_px(style.font_size),
-        "width" => serialize_length(style.width),
-        "height" => serialize_length(style.height),
+        "width" => serialize_length(style.width.clone()),
+        "height" => serialize_length(style.height.clone()),
         "font-weight" => style.font_weight.to_string(),
         "font-feature-settings" => style.font_features.css_text(),
         "font-kerning" => style.font_kerning.css_text().into(),
         "font-variant-ligatures" => style.font_ligatures.css_text(),
         "font-variant-numeric" => style.font_numeric.css_text(),
         "font-variant" => FontVariants::css_text(style.font_ligatures, style.font_numeric),
-        "top" => serialize_length(style.top),
-        "right" => serialize_length(style.right),
-        "bottom" => serialize_length(style.bottom),
-        "left" => serialize_length(style.left),
+        "top" => serialize_length(style.top.clone()),
+        "right" => serialize_length(style.right.clone()),
+        "bottom" => serialize_length(style.bottom.clone()),
+        "left" => serialize_length(style.left.clone()),
+        // CSS Text 3 preserves the legacy resolved-value spelling for zero.
+        "letter-spacing" if style.letter_spacing == 0.0 => "normal".into(),
         "letter-spacing" => serialize_px(style.letter_spacing),
         "text-transform" => style.text_transform.css_text().to_string(),
         "word-spacing" => serialize_px(style.word_spacing),
@@ -142,12 +143,12 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
             }
         }
         "opacity" => serialize_number(style.opacity),
-        "margin-bottom" => serialize_length(style.margin.bottom),
-        "margin-left" => serialize_length(style.margin.left),
-        "margin-right" => serialize_length(style.margin.right),
-        "margin-top" => serialize_length(style.margin.top),
+        "margin-bottom" => serialize_length(style.margin.bottom.clone()),
+        "margin-left" => serialize_length(style.margin.left.clone()),
+        "margin-right" => serialize_length(style.margin.right.clone()),
+        "margin-top" => serialize_length(style.margin.top.clone()),
         "object-fit" => style.object_fit.css_text().to_string(),
-        "object-position" => style.object_position.css_text(style.font_size),
+        "object-position" => style.object_position.clone().css_text(style.font_size),
         "aspect-ratio" => style.aspect_ratio.css_text(),
         "visibility" => if style.visibility {
             "visible"
@@ -164,29 +165,35 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "text-overflow" => style.text_overflow.css_keyword().to_string(),
         "-webkit-line-clamp" => style.line_clamp.css_text(),
         "-webkit-box-orient" => style.box_orient.css_keyword().to_string(),
-        "padding-bottom" => serialize_length(style.padding.bottom),
-        "padding-left" => serialize_length(style.padding.left),
-        "padding-right" => serialize_length(style.padding.right),
-        "padding-top" => serialize_length(style.padding.top),
-        "scroll-margin-top" => serialize_scroll_spacing(style.scroll_margin.top, style.font_size),
-        "scroll-margin" => serialize_scroll_edges(style.scroll_margin, style.font_size),
+        "padding-bottom" => serialize_length(style.padding.bottom.clone()),
+        "padding-left" => serialize_length(style.padding.left.clone()),
+        "padding-right" => serialize_length(style.padding.right.clone()),
+        "padding-top" => serialize_length(style.padding.top.clone()),
+        "scroll-margin-top" => {
+            serialize_scroll_spacing(style.scroll_margin.top.clone(), style.font_size)
+        }
+        "scroll-margin" => serialize_scroll_edges(style.scroll_margin.clone(), style.font_size),
         "scroll-margin-right" => {
-            serialize_scroll_spacing(style.scroll_margin.right, style.font_size)
+            serialize_scroll_spacing(style.scroll_margin.right.clone(), style.font_size)
         }
         "scroll-margin-bottom" => {
-            serialize_scroll_spacing(style.scroll_margin.bottom, style.font_size)
+            serialize_scroll_spacing(style.scroll_margin.bottom.clone(), style.font_size)
         }
-        "scroll-margin-left" => serialize_scroll_spacing(style.scroll_margin.left, style.font_size),
-        "scroll-padding-top" => serialize_scroll_spacing(style.scroll_padding.top, style.font_size),
-        "scroll-padding" => serialize_scroll_edges(style.scroll_padding, style.font_size),
+        "scroll-margin-left" => {
+            serialize_scroll_spacing(style.scroll_margin.left.clone(), style.font_size)
+        }
+        "scroll-padding-top" => {
+            serialize_scroll_spacing(style.scroll_padding.top.clone(), style.font_size)
+        }
+        "scroll-padding" => serialize_scroll_edges(style.scroll_padding.clone(), style.font_size),
         "scroll-padding-right" => {
-            serialize_scroll_spacing(style.scroll_padding.right, style.font_size)
+            serialize_scroll_spacing(style.scroll_padding.right.clone(), style.font_size)
         }
         "scroll-padding-bottom" => {
-            serialize_scroll_spacing(style.scroll_padding.bottom, style.font_size)
+            serialize_scroll_spacing(style.scroll_padding.bottom.clone(), style.font_size)
         }
         "scroll-padding-left" => {
-            serialize_scroll_spacing(style.scroll_padding.left, style.font_size)
+            serialize_scroll_spacing(style.scroll_padding.left.clone(), style.font_size)
         }
         "overflow" | "overflow-x" | "overflow-y" => style.serialize_overflow(property),
         "position" => match style.position {
@@ -199,7 +206,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         .to_string(),
         "transform" => super::transform::serialize_transform(&style.transform),
         "pointer-events" => if style.pointer_events { "auto" } else { "none" }.to_string(),
-        "clip-path" => style.clip_path.serialize(style.font_size),
+        "clip-path" => style.clip_path.clone().serialize(style.font_size),
         "transform-style" => if style.transform_style_preserve_3d {
             "preserve-3d"
         } else {

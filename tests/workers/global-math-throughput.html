@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Worker global numeric and binary throughput</title>
+<pre id="probe">Waiting for a worker numeric task and readback fence.</pre>
+<script>
+// A local worker workload without external network dependencies. Measurements are informational, not
+// CI timing assertions; every transferred result is checked before acceptance.
+const worker = new Worker('global-math-throughput.worker.js');
+const measurements = [], checksums = [];
+let sequence = 0;
+const fail = message => {
+    probe.dataset.error = String(message);
+    probe.textContent = String(message);
+    worker.terminate();
+};
+worker.onerror = event => { event.preventDefault(); fail(event.message || 'worker task failed'); };
+worker.onmessage = event => {
+    const result = event.data;
+    try {
+        if (result.sequence !== sequence || result.width !== 256 || result.height !== 256)
+            throw Error('incorrect worker sequence or dimensions');
+        if (!(result.pixels instanceof Uint8ClampedArray) || result.pixels.length !== 256 * 256 * 4)
+            throw Error('incomplete typed-array transfer');
+        let checksum = 0;
+        for (let index = 0; index < result.pixels.length; index += 4) {
+            if (result.pixels[index + 3] !== 255) throw Error('incomplete output alpha');
+            checksum = (checksum + result.pixels[index] + result.pixels[index + 1] + result.pixels[index + 2]) >>> 0;
+        }
+        if (checksum !== result.checksum) throw Error('corrupt output bytes');
+        if (sequence > 0 && checksum !== checksums[0]) throw Error('repeated task changed output');
+        checksums.push(checksum);
+        measurements.push(result.elapsed);
+        if (++sequence === 4) {
+            probe.dataset.measurements = JSON.stringify(measurements);
+            probe.dataset.checksums = JSON.stringify(checksums);
+            probe.dataset.done = 'true';
+            probe.textContent = JSON.stringify({measurements, checksums});
+            worker.terminate();
+        } else {
+            worker.postMessage({width:256,height:256,sequence});
+        }
+    } catch (error) { fail(error); }
+};
+worker.postMessage({width:256,height:256,sequence});
+</script>

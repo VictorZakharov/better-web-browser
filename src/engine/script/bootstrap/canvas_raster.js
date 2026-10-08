@@ -93,12 +93,12 @@
         return canvasStrokeJoins(path).some(([previous, point, next]) =>
             canvasJoinCovers(previous, point, next, x, y, width / 2, join, miterLimit));
     };
-    const canvasNativeStrokeRequest = (context, path, width, height, left, top) => canvasRasterStringify({
+    const canvasNativeStrokeRequest = (context, path, width, height, left, top, packed = false) => canvasRasterStringify({
         width, height, left, top, line_width: canvasDrawingState(context).lineWidth, miter_limit: canvasDrawingState(context).miterLimit,
         cap: canvasDrawingState(context).lineCap, join: canvasDrawingState(context).lineJoin, transform: canvasDrawingState(context).transform,
         dash: canvasDrawingState(context).lineDash, dash_offset: canvasDrawingState(context).dashOffset,
         antialias: true,
-        parts: path.subpaths.map(part => ({ points: part.points, closed: !!part.closed }))
+        parts: packed ? [] : path.subpaths.map(part => ({ points: part.points, closed: !!part.closed }))
     });
     const paintCanvasPath = (context, path, fill, rule) => {
         const state = stateForCanvas(context.canvas);
@@ -114,12 +114,14 @@
         const style = fill ? canvasDrawingState(context).fill : canvasDrawingState(context).stroke;
         if (!paintInverse && (canvasIsGradient(style) || canvasIsPattern(style))) return;
         if (fill) {
+            const geometry = canvasPackGeometry(path);
             const request = canvasRasterStringify({
                 width: right - left, height: bottom - top, left, top, rule,
-                parts: path.subpaths.map(part => ({points: part.points, closed: !!part.closed}))
+                parts: geometry ? [] : path.subpaths.map(part => ({points: part.points, closed: !!part.closed}))
             });
-            if (canvasPaintSolidPath(context,state,'fill',request,style,left,top,right,bottom)) return;
-            const nativeFill = canvasRasterHost('canvasFillMask', request);
+            if (canvasPaintSolidPath(context,state,'fill',request,style,left,top,right,bottom,geometry)) return;
+            const nativeFill = geometry ? canvasRasterHost('canvasFillMask', request, geometry) :
+                canvasRasterHost('canvasFillMask', request);
             if (nativeFill) {
                 if (canvasPaintSolidMask(context, state, nativeFill, style, left, top, right, bottom)) return;
                 for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
@@ -159,9 +161,11 @@
         // The default path already contains construction-time transformed points.
         // Undo only the painting CTM, stroke with its pen, then transform back.
         const strokePath = transformCanvasPath(path, paintInverse);
-        const request = canvasNativeStrokeRequest(context, strokePath, maskWidth, bottom-top, left, top);
-        if (canvasPaintSolidPath(context,state,'stroke',request,style,left,top,right,bottom)) return;
-        const nativeCoverage = canvasRasterHost('canvasStrokeMask', request);
+        const geometry = canvasPackGeometry(strokePath);
+        const request = canvasNativeStrokeRequest(context, strokePath, maskWidth, bottom-top, left, top, !!geometry);
+        if (canvasPaintSolidPath(context,state,'stroke',request,style,left,top,right,bottom,geometry)) return;
+        const nativeCoverage = geometry ? canvasRasterHost('canvasStrokeMask', request, geometry) :
+            canvasRasterHost('canvasStrokeMask', request);
         const coverage = nativeCoverage || new Uint8Array(maskWidth * (bottom - top));
         if (nativeCoverage && canvasPaintSolidMask(context, state, nativeCoverage, style,
             left, top, right, bottom)) return;

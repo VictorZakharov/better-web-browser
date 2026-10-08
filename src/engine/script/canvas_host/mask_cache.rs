@@ -25,12 +25,13 @@ pub(super) enum Kind {
 struct Entry {
     kind: Kind,
     request: String,
+    geometry: Option<Vec<u8>>,
     mask: Arc<Vec<u8>>,
 }
 
 impl Entry {
     fn bytes(&self) -> usize {
-        self.request.len() + self.mask.len()
+        self.request.len() + self.geometry.as_ref().map_or(0, Vec::len) + self.mask.len()
     }
 }
 
@@ -42,10 +43,18 @@ struct Cache {
 
 impl Cache {
     fn get_shared(&mut self, kind: Kind, request: &str) -> Option<Arc<Vec<u8>>> {
-        let index = self
-            .entries
-            .iter()
-            .position(|entry| entry.kind == kind && entry.request == request)?;
+        self.get_payload(kind, request, None)
+    }
+
+    fn get_payload(
+        &mut self,
+        kind: Kind,
+        request: &str,
+        geometry: Option<&[u8]>,
+    ) -> Option<Arc<Vec<u8>>> {
+        let index = self.entries.iter().position(|entry| {
+            entry.kind == kind && entry.request == request && entry.geometry.as_deref() == geometry
+        })?;
         let entry = self.entries.remove(index)?;
         // Native fused painters only read coverage. Sharing the immutable
         // allocation avoids a second full-mask copy on hits and insertions.
@@ -55,18 +64,29 @@ impl Cache {
     }
 
     fn insert_shared(&mut self, kind: Kind, request: &str, mask: Arc<Vec<u8>>) {
-        if request.len() > MAX_KEY_BYTES || mask.len() > MAX_MASK_BYTES {
+        self.insert_payload(kind, request, None, mask);
+    }
+
+    fn insert_payload(
+        &mut self,
+        kind: Kind,
+        request: &str,
+        geometry: Option<&[u8]>,
+        mask: Arc<Vec<u8>>,
+    ) {
+        let key_bytes = request
+            .len()
+            .saturating_add(geometry.map_or(0, <[u8]>::len));
+        if key_bytes > MAX_KEY_BYTES || mask.len() > MAX_MASK_BYTES {
             return;
         }
-        if let Some(index) = self
-            .entries
-            .iter()
-            .position(|entry| entry.kind == kind && entry.request == request)
-        {
+        if let Some(index) = self.entries.iter().position(|entry| {
+            entry.kind == kind && entry.request == request && entry.geometry.as_deref() == geometry
+        }) {
             let previous = self.entries.remove(index).expect("located entry");
             self.bytes -= previous.bytes();
         }
-        let needed = request.len() + mask.len();
+        let needed = key_bytes + mask.len();
         while self.entries.len() >= MAX_ENTRIES || self.bytes + needed > MAX_BYTES {
             let Some(oldest) = self.entries.pop_front() else {
                 return;
@@ -76,6 +96,7 @@ impl Cache {
         self.entries.push_back(Entry {
             kind,
             request: request.to_owned(),
+            geometry: geometry.map(<[u8]>::to_vec),
             mask,
         });
         self.bytes += needed;
@@ -123,9 +144,83 @@ pub(super) fn rasterize_shared(
     Some(mask)
 }
 
+pub(super) fn rasterize_packed(
+    kind: Kind,
+    request: &str,
+    geometry: &[u8],
+    render: impl FnOnce() -> Option<Vec<u8>>,
+) -> Option<Arc<Vec<u8>>> {
+    if geometry.len() > super::packed_geometry::MAX_BYTES {
+        return None;
+    }
+    let key_bytes = request.len().saturating_add(geometry.len());
+    if key_bytes <= MAX_KEY_BYTES
+        && let Some(mask) = MASKS.with(|cache| {
+            cache
+                .borrow_mut()
+                .get_payload(kind, request, Some(geometry))
+        })
+    {
+        return Some(mask);
+    }
+    // Exact independent metadata/byte equality: no hash collision or alias can
+    // substitute another path. The existing cache budget counts both fields.
+    let mask = Arc::new(render()?);
+    MASKS.with(|cache| {
+        cache
+            .borrow_mut()
+            .insert_payload(kind, request, Some(geometry), Arc::clone(&mask))
+    });
+    Some(mask)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn packed_key_storage_is_owned_and_counted_in_the_same_budget() {
+        let mut cache = Cache::default();
+        let mut geometry = vec![17; 1024];
+        cache.insert_payload(
+            Kind::Fill,
+            "metadata",
+            Some(&geometry),
+            Arc::new(vec![128; 16]),
+        );
+        assert_eq!(cache.bytes, 8 + 1024 + 16);
+        geometry.fill(99);
+        assert!(
+            cache
+                .get_payload(Kind::Fill, "metadata", Some(&geometry))
+                .is_none()
+        );
+        assert!(
+            cache
+                .get_payload(Kind::Fill, "metadata", Some(&vec![17; 1024]))
+                .is_some()
+        );
+        cache.insert_payload(
+            Kind::Fill,
+            "too big",
+            Some(&vec![0; MAX_KEY_BYTES]),
+            Arc::new(vec![1]),
+        );
+        assert_eq!(cache.entries.len(), 1);
+        for index in 0..MAX_ENTRIES {
+            cache.insert_payload(
+                Kind::Stroke,
+                &index.to_string(),
+                Some(&geometry),
+                Arc::new(vec![128; MAX_MASK_BYTES]),
+            );
+            assert!(cache.bytes <= MAX_BYTES);
+            assert_eq!(
+                cache.bytes,
+                cache.entries.iter().map(Entry::bytes).sum::<usize>()
+            );
+        }
+    }
 
     #[test]
     fn native_consumers_share_storage_without_aliasing_owned_js_results() {

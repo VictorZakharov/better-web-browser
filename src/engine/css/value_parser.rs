@@ -1,21 +1,39 @@
 //! Length, calc(), and color parsing.
 
+pub(crate) use super::values::transitions::normalize_easing;
 use super::*;
+pub(in crate::engine::css) mod math;
+pub(in crate::engine::css) mod numbers;
+pub(in crate::engine::css) mod time;
 
 pub(crate) fn parse_length(value: &str) -> Option<Length> {
     let value = value.trim();
-    if value
-        .get(..5)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("calc("))
-        && value.ends_with(')')
-    {
-        return parse_calc_length(value);
+    // Bound source storage; recursive complexity is checked by the typed parser.
+    if value.len() > 16_384 {
+        return None;
     }
     // CSS dimensions are a single token: whitespace cannot separate the number and unit.
     // CSS Values 4 §5.4: https://www.w3.org/TR/css-values-4/#dimensions
     let mut input = ParserInput::new(value);
     let mut parser = Parser::new(&mut input);
     let token = parser.next().ok()?.clone();
+    if let Token::Function(ref name) = token {
+        return if name.eq_ignore_ascii_case("calc") {
+            // Admission before the historical affine parser bounds its recursion
+            // too. Tokenization, not raw parentheses, handles CSS comments/escapes.
+            let admitted = math::parse(value)?;
+            let affine = parse_calc_length(value);
+            // A canceled or zero percentage is still a percentage-typed value.
+            // Discarding that type accepts invalid <length>-only declarations
+            // and incorrectly resolves percentages with an indefinite basis.
+            Some(match affine {
+                Some(value) if !admitted.has_percentage() || value.has_percentage() => value,
+                _ => admitted,
+            })
+        } else {
+            math::parse(value)
+        };
+    }
     parser.expect_exhausted().ok()?;
     match token {
         Token::Ident(name) if name.eq_ignore_ascii_case("auto") => Some(Length::Auto),
@@ -31,10 +49,10 @@ pub(crate) fn parse_length(value: &str) -> Option<Length> {
                 }
                 "em" => Some(Length::Em(value)),
                 "rem" => Some(Length::Rem(value)),
-                "vw" => Some(Length::Vw(value)),
-                "vh" => Some(Length::Vh(value)),
-                "vmin" => Some(Length::Vmin(value)),
-                "vmax" => Some(Length::Vmax(value)),
+                "vw" | "svw" | "lvw" | "dvw" => Some(Length::Vw(value)),
+                "vh" | "svh" | "lvh" | "dvh" => Some(Length::Vh(value)),
+                "vmin" | "svmin" | "lvmin" | "dvmin" => Some(Length::Vmin(value)),
+                "vmax" | "svmax" | "lvmax" | "dvmax" => Some(Length::Vmax(value)),
                 _ => None,
             }
         }
@@ -56,13 +74,21 @@ fn absolute_length_scale(unit: &str) -> Option<f32> {
 }
 
 pub(crate) fn parse_opacity(value: &str) -> Option<f32> {
-    let value = value.trim();
-    let opacity = if let Some(percentage) = value.strip_suffix('%') {
-        percentage.trim().parse::<f32>().ok()? / 100.0
-    } else {
-        value.parse::<f32>().ok()?
-    };
+    let opacity = numbers::number(value)
+        .or_else(|| numbers::percentage(value).map(|points| points / 100.0))?;
     opacity.is_finite().then(|| opacity.clamp(0.0, 1.0))
+}
+
+pub(in crate::engine::css) fn math_number(value: &str) -> Option<f32> {
+    math::number(value)
+}
+
+pub(in crate::engine::css) fn math_percentage(value: &str) -> Option<f32> {
+    math::percentage(value)
+}
+
+pub(in crate::engine::css) fn math_radians(value: &str) -> Option<f32> {
+    math::radians(value)
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]

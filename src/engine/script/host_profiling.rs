@@ -4,6 +4,7 @@ use super::*;
 
 const MAX_DIAGNOSTICS: usize = 16;
 const MAX_ATTRIBUTE_NAMES: usize = 64;
+const MAX_OPERATION_NAMES: usize = 256;
 const MIN_REPORTED_TIME: Duration = Duration::from_micros(100);
 
 #[derive(Default)]
@@ -51,10 +52,54 @@ impl HostCallProfile {
         if !self.enabled || elapsed.is_zero() {
             return;
         }
+        // __hostCall is reachable by author code. Diagnostics must not retain
+        // an unbounded set of arbitrary operation strings between checkpoints.
+        if operation.len() > 128
+            || (!self.operations.contains_key(operation)
+                && self.operations.len() >= MAX_OPERATION_NAMES)
+        {
+            return;
+        }
         let stats = self.operations.entry(operation.to_owned()).or_default();
         stats.calls += 1;
         stats.total += elapsed;
         stats.maximum = stats.maximum.max(elapsed);
+    }
+
+    pub(super) fn record_webgl_command(&mut self, args: &[JsValue], started: Option<Instant>) {
+        if !self.enabled {
+            return;
+        }
+        let Some(JsValue::String(command)) = args.get(2) else {
+            return;
+        };
+        let Some(tail) = command.strip_prefix("{\"op\":\"") else {
+            return;
+        };
+        let Some((name, suffix)) = tail.split_once('"') else {
+            return;
+        };
+        if !suffix.starts_with([',', '}']) {
+            return;
+        }
+        // Fixed labels only, never command bodies, shader text, or user data.
+        let category = match name {
+            "compileShader" => "webgl::compileShader",
+            "linkProgram" => "webgl::linkProgram",
+            "getShaderParameter" => "webgl::getShaderParameter",
+            "getProgramParameter" => "webgl::getProgramParameter",
+            "texImage2D" => "webgl::texImage2D",
+            "texSubImage2D" => "webgl::texSubImage2D",
+            "texImage3D" => "webgl::texImage3D",
+            "generateMipmap" => "webgl::generateMipmap",
+            "bufferData" => "webgl::bufferData",
+            "shaderSource" => "webgl::shaderSource",
+            "getParameter" => "webgl::getParameter",
+            _ => "webgl::other",
+        };
+        // Includes draining earlier queued void commands. This is the author's
+        // synchronous bridge latency, not exclusively a single driver call.
+        self.record(category, started);
     }
 
     pub(super) fn record_attribute_write(&mut self, name: &str) {
@@ -151,5 +196,44 @@ mod tests {
             vec!["host call layoutFlush::style: 2 calls, 5.000 ms total, 3.000 ms max"]
         );
         assert!(profile.take_diagnostics().is_empty());
+    }
+
+    #[test]
+    fn operation_labels_cannot_grow_without_bound() {
+        let mut profile = HostCallProfile::default();
+        profile.set_enabled(true);
+        for index in 0..MAX_OPERATION_NAMES + 50 {
+            profile.record_elapsed(&format!("author-{index}"), Duration::from_millis(1));
+        }
+        profile.record_elapsed(&"x".repeat(129), Duration::from_millis(1));
+        assert_eq!(profile.operations.len(), MAX_OPERATION_NAMES);
+        profile.record_elapsed("author-0", Duration::from_millis(2));
+        assert_eq!(profile.operations["author-0"].calls, 2);
+        profile.take_diagnostics();
+        assert!(profile.operations.is_empty());
+    }
+
+    #[test]
+    fn webgl_breakdown_keeps_only_fixed_names_and_no_command_contents() {
+        let mut profile = HostCallProfile::default();
+        let command = |op: &str| {
+            vec![
+                JsValue::String("webglCommand".into()),
+                JsValue::from(1),
+                JsValue::String(format!(r#"{{"op":"{op}","text":"private shader source"}}"#)),
+            ]
+        };
+        let started = Some(Instant::now() - Duration::from_millis(2));
+        profile.record_webgl_command(&command("compileShader"), started);
+        assert!(profile.operations.is_empty());
+        profile.set_enabled(true);
+        profile.record_webgl_command(&command("compileShader"), started);
+        profile.record_webgl_command(&command("unknown-author-operation"), started);
+        assert_eq!(profile.operations.len(), 2);
+        let text = profile.take_diagnostics().join("\n");
+        assert!(text.contains("webgl::compileShader"));
+        assert!(text.contains("webgl::other"));
+        assert!(!text.contains("private"));
+        assert!(!text.contains("unknown-author"));
     }
 }

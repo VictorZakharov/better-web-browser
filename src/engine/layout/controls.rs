@@ -43,7 +43,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let content_width = resolve_replaced_length(
             node,
             "width",
-            style.width,
+            style.width.clone(),
             Some(containing_block.width),
             style.font_size,
         )
@@ -51,7 +51,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let content_height = resolve_replaced_length(
             node,
             "height",
-            style.height,
+            style.height.clone(),
             containing_block.height,
             style.font_size,
         )
@@ -107,7 +107,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 border_colors: style.painted_border_colors(self.effective_background_color(node)),
                 border_width: [border.top, border.right, border.bottom, border.left],
                 border_radius: resolve_border_radius(
-                    style.border_radius,
+                    style.border_radius.clone(),
                     RectF {
                         x: 0.0,
                         y: 0.0,

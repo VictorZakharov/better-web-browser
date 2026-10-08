@@ -70,7 +70,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         .painted_border_colors(self.effective_background_color(node)),
                     border_width: [borders.top, borders.right, borders.bottom, borders.left],
                     border_radius: resolve_border_radius(
-                        style.border_radius,
+                        style.border_radius.clone(),
                         rect,
                         style.font_size,
                     ),

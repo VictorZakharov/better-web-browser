@@ -35,23 +35,6 @@ pub(super) fn parse_flex_direction(value: &str) -> Option<FlexDirection> {
 }
 
 pub(in crate::engine::css) fn parse_text_spacing(value: &str, font_size: f32) -> Option<f32> {
-    parse_text_spacing_for_viewport(value, font_size, font_size, font_size, font_size)
-}
-
-pub(in crate::engine::css) fn parse_text_spacing_for_viewport(
-    value: &str,
-    font_size: f32,
-    viewport_width: f32,
-    viewport_height: f32,
-    root_font_size: f32,
-) -> Option<f32> {
-    if value.eq_ignore_ascii_case("normal") {
-        return Some(0.0);
-    }
-    parse_length(value).and_then(|length| {
-        length
-            .resolve_root_font_units(root_font_size)
-            .resolve_viewport_units(viewport_width, viewport_height)
-            .resolve(font_size, font_size)
-    })
+    values::text_spacing::SpacingValue::parse(value)
+        .map(|value| value.resolve(font_size, font_size, font_size, font_size))
 }

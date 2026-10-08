@@ -6,6 +6,7 @@ use super::*;
 use std::collections::VecDeque;
 use std::sync::Arc;
 mod evaluation;
+mod profiling;
 
 #[derive(Debug, Default)]
 pub struct WorkerRuntimeOutcome {
@@ -16,6 +17,7 @@ pub struct WorkerRuntimeOutcome {
     pub websocket_actions: Vec<super::network::ScriptWebSocketAction>,
     pub console: Vec<String>,
     pub errors: Vec<String>,
+    pub diagnostics: Vec<String>,
     pub closed: bool,
 }
 
@@ -31,6 +33,9 @@ pub struct WorkerRuntime {
     module_loader: Rc<WebModuleLoader>,
     total_script_bytes: usize,
     pending_messages: VecDeque<String>,
+    execution_profiling: bool,
+    remaining_diagnostic_samples: usize,
+    remaining_failed_diagnostic_sample: bool,
 }
 
 impl WorkerRuntime {
@@ -111,6 +116,9 @@ impl WorkerRuntime {
             module_loader,
             total_script_bytes: source.len(),
             pending_messages: VecDeque::new(),
+            execution_profiling: false,
+            remaining_diagnostic_samples: 0,
+            remaining_failed_diagnostic_sample: false,
         };
         if source.len() > MAX_SCRIPT_BYTES {
             outcome.errors.push(format!(
@@ -135,6 +143,7 @@ impl WorkerRuntime {
             self.collect(&mut outcome);
             return outcome;
         }
+        let sample = self.start_task_sample();
         if let Err(error) = self.dispatch_message_now(serialized) {
             outcome
                 .errors
@@ -142,6 +151,7 @@ impl WorkerRuntime {
         }
         self.settle_module_evaluation(&mut outcome);
         self.collect(&mut outcome);
+        self.finish_task_sample(sample, &mut outcome);
         outcome
     }
 

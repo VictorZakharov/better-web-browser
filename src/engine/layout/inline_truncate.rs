@@ -222,7 +222,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 );
             }
         }
-        let radius = resolve_border_radius(style.border_radius, border_rect, style.font_size);
+        let radius =
+            resolve_border_radius(style.border_radius.clone(), border_rect, style.font_size);
         if self.emit_paint
             && style.visibility
             && style.background_color.alpha > 0

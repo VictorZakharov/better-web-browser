@@ -15,7 +15,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return;
         }
         let effect_context =
-            style.opacity < 1.0 || !style.transform.is_none() || !style.clip_path.is_none();
+            style.opacity < 1.0 || !style.transform.is_none() || !style.clip_path.clone().is_none();
         let positioned = style.position != Position::Static;
         let root = matches!(node.tag_name(), Some("body" | "html"));
         let isolates = root

@@ -28,7 +28,7 @@ fn legacy_and_modern_rgb_syntax_are_not_mixed() {
         "rgb(1, 2 3)",
         "rgb(1, 2, 3 / .5)",
         "rgba(1, 2, 3, .5, 4)",
-        "rgb(20% 30 40)",
+        "rgb(20%, 30, 40)",
         "rgb(1 2)",
         "rgb(1 2 3 4)",
         "rgb(1 2 3 /)",

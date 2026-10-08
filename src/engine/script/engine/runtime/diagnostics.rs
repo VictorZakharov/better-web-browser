@@ -2,6 +2,25 @@
 use super::*;
 
 impl Context {
+    pub(in crate::engine::script) fn take_cpu_task_diagnostics(&mut self) -> Vec<String> {
+        self.agent.borrow_mut().take_cpu_diagnostics()
+    }
+    pub(in crate::engine::script) fn set_document_task_profiling(&mut self, enabled: bool) {
+        self.agent.borrow_mut().set_task_profiling(enabled);
+    }
+
+    pub(in crate::engine::script) fn take_document_task_diagnostics(&mut self) -> Vec<String> {
+        self.agent.borrow_mut().take_task_diagnostics()
+    }
+
+    pub(in crate::engine::script) fn set_execution_profiling(&mut self, enabled: bool) {
+        self.agent.borrow_mut().set_gc_profiling(enabled);
+    }
+
+    pub(in crate::engine::script) fn gc_sample(&self) -> (u64, std::time::Duration) {
+        self.agent.borrow().gc_sample()
+    }
+
     pub(in crate::engine::script) fn heap_diagnostic(&mut self) -> JsResult<String> {
         self.agent.borrow_mut().run(|isolate| {
             let stats = isolate.get_heap_statistics();

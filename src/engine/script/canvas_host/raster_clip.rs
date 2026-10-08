@@ -11,6 +11,24 @@ pub(super) struct Clip<'a> {
 }
 
 impl<'a> Clip<'a> {
+    /// Clip lookup and source-shader sampling must agree on the same bitmap ROI.
+    /// An absent clip retains legacy off-bitmap shader sampling admission.
+    pub(super) fn from_args_at_region(
+        args: &'a [JsValue],
+        first: usize,
+        dimensions: [u32; 2],
+        [left, top]: [i32; 2],
+    ) -> Option<Option<Self>> {
+        let clip = Self::from_args(args, first, dimensions)?;
+        if let Some(clip) = &clip
+            && (i32::try_from(clip.left).ok() != Some(left)
+                || i32::try_from(clip.top).ok() != Some(top))
+        {
+            return None;
+        }
+        Some(clip)
+    }
+
     pub(super) fn from_args(
         args: &'a [JsValue],
         first: usize,

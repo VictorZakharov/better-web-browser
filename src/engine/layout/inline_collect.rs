@@ -249,14 +249,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let specified_width = resolve_replaced_length(
             node,
             "width",
-            style.width,
+            style.width.clone(),
             Some(containing_block.width),
             style.font_size,
         );
         let specified_height = resolve_replaced_length(
             node,
             "height",
-            style.height,
+            style.height.clone(),
             containing_block.height,
             style.font_size,
         );

@@ -1,8 +1,12 @@
 //! Parse one animation shorthand item without treating quoted names as keywords.
+use super::super::calculated_times::TimeValue;
 use super::*;
 
 pub(super) fn parse(value: &str) -> Option<AnimationSettings> {
     let mut result = AnimationSettings {
+        calculated_times: CalculatedTimes::default(),
+        calculated_easings: Vec::new(),
+        calculated_iterations: Vec::new(),
         name_scope: None,
         names: Vec::new(),
         durations: Vec::new(),
@@ -25,21 +29,18 @@ pub(super) fn parse(value: &str) -> Option<AnimationSettings> {
         let (mut repeats, mut direction, mut fill, mut state) = (None, None, None, None);
         for token in tokens {
             let lower = token.to_ascii_lowercase();
-            if let Some(seconds) = time(&lower, true) {
+            if let Some(seconds) = TimeValue::parse(&lower, true) {
                 if duration.is_none() {
-                    if seconds < 0.0 {
-                        return None;
-                    }
-                    duration = Some(seconds);
+                    duration = Some(TimeValue::parse(&lower, false)?);
                 } else if delay.is_none() {
                     delay = Some(seconds);
                 } else {
                     return None;
                 }
-            } else if timing.is_none() && easing(&lower).is_some() {
-                timing = Some(lower);
-            } else if repeats.is_none() && iteration(&lower).is_some() {
-                repeats = iteration(&lower);
+            } else if timing.is_none() && EasingValue::parse(&lower).is_some() {
+                timing = EasingValue::parse(&lower);
+            } else if repeats.is_none() && IterationValue::parse(&lower).is_some() {
+                repeats = IterationValue::parse(&lower);
             } else if direction.is_none()
                 && matches!(
                     lower.as_str(),
@@ -60,10 +61,19 @@ pub(super) fn parse(value: &str) -> Option<AnimationSettings> {
             }
         }
         result.names.push(name.unwrap_or(AnimationName::None));
-        result.durations.push(duration.unwrap_or(0.0));
-        result.delays.push(delay.unwrap_or(0.0));
-        result.easings.push(timing.unwrap_or_else(|| "ease".into()));
-        result.iterations.push(repeats.unwrap_or(1.0));
+        duration.unwrap_or(TimeValue::Fixed(0.0)).append(
+            &mut result.durations,
+            &mut result.calculated_times.durations,
+        );
+        delay
+            .unwrap_or(TimeValue::Fixed(0.0))
+            .append(&mut result.delays, &mut result.calculated_times.delays);
+        timing
+            .unwrap_or_else(|| EasingValue::Fixed("ease".into()))
+            .append(&mut result.easings, &mut result.calculated_easings);
+        repeats
+            .unwrap_or(IterationValue::Number(NumberValue::Fixed(1.0)))
+            .append(&mut result.iterations, &mut result.calculated_iterations);
         result
             .directions
             .push(direction.unwrap_or_else(|| "normal".into()));
@@ -72,6 +82,9 @@ pub(super) fn parse(value: &str) -> Option<AnimationSettings> {
             .states
             .push(state.unwrap_or_else(|| "running".into()));
     }
+    result.calculated_times.compact();
+    calculated_easing::compact(&mut result.calculated_easings);
+    iterations::compact(&mut result.calculated_iterations);
     (!result.names.is_empty()).then_some(result)
 }
 

@@ -116,3 +116,29 @@ fn budgets_reject_oversized_values_and_bound_result_properties() {
             .is_empty()
     );
 }
+
+#[test]
+fn scalar_keyframes_resolve_final_font_and_inherited_multiplier() {
+    for declarations in [
+        vec![
+            ("line-height", "calc(1em / 10px)"),
+            ("opacity", "calc(1em / 100px)"),
+            ("font-size", "30px"),
+        ],
+        vec![
+            ("font-size", "30px"),
+            ("line-height", "calc(1em / 10px)"),
+            ("opacity", "calc(1em / 100px)"),
+        ],
+    ] {
+        let values = resolved("#target{font-size:10px}", &declarations);
+        assert!(
+            values.contains(&("line-height".into(), "90px".into())),
+            "{values:?}"
+        );
+        assert!(
+            values.contains(&("opacity".into(), "0.3".into())),
+            "{values:?}"
+        );
+    }
+}

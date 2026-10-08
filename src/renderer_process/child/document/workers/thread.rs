@@ -83,6 +83,7 @@ pub(super) fn run_worker(config: WorkerConfig) {
         emit(&config, initial);
         return;
     };
+    runtime.set_execution_diagnostics(config.execution_diagnostics);
     if drive_worker_outcome(&config, initial) {
         return;
     }
@@ -189,6 +190,7 @@ fn emit(config: &WorkerConfig, mut outcome: WorkerRuntimeOutcome) {
         console: outcome.console,
         closed: outcome.closed || !outcome.errors.is_empty(),
         errors: outcome.errors,
+        diagnostics: outcome.diagnostics,
     });
 }
 
@@ -205,6 +207,7 @@ fn emit_error(config: &WorkerConfig, error: String) {
         port_events: Vec::new(),
         console: Vec::new(),
         errors: vec![error],
+        diagnostics: Vec::new(),
         closed: true,
     });
 }

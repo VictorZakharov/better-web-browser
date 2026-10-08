@@ -156,7 +156,11 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
             value.as_str(),
             "static" | "relative" | "absolute" | "fixed" | "sticky"
         ),
-        "z-index" => value == "auto" || value.parse::<i32>().is_ok(),
+        "z-index" => {
+            value == "auto"
+                || super::value_parser::numbers::integer(&value).is_some()
+                || super::value_parser::math::number_expression(&value).is_some()
+        }
         "float" => matches!(value.as_str(), "none" | "left" | "right"),
         "clear" => super::Clear::parse(&value).is_some(),
         "box-sizing" | "-webkit-box-sizing" => {
@@ -180,37 +184,19 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
         "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
             values::borders::color_values(&value).is_some_and(|colors| colors.len() == 1)
         }
-        "width"
-        | "height"
-        | "min-width"
-        | "min-height"
-        | "max-width"
-        | "max-height"
-        | "top"
-        | "right"
-        | "bottom"
-        | "left"
-        | "inset"
-        | "margin-top"
-        | "margin-right"
-        | "margin-bottom"
-        | "margin-left"
-        | "padding-top"
-        | "padding-right"
-        | "padding-bottom"
-        | "padding-left"
-        | "border-top-width"
-        | "border-right-width"
-        | "border-bottom-width"
-        | "border-left-width"
-        | "column-gap"
-        | "grid-column-gap"
-        | "row-gap"
-        | "grid-row-gap"
-        | "flex-basis"
-        | "-webkit-flex-basis"
-        | "-moz-flex-basis" => supported_length(&value),
-        "opacity" => single_component_or_calc(&value) && parse_opacity(&value).is_some(),
+        "width" | "height" | "min-width" | "min-height" | "max-width" | "max-height" | "top"
+        | "right" | "bottom" | "left" | "inset" | "margin-top" | "margin-right"
+        | "margin-bottom" | "margin-left" | "padding-top" | "padding-right" | "padding-bottom"
+        | "padding-left" | "column-gap" | "grid-column-gap" | "row-gap" | "grid-row-gap" => {
+            supported_length(&value)
+        }
+        "flex-basis" | "-webkit-flex-basis" | "-moz-flex-basis" => {
+            super::shorthands::flex::basis(&value).is_some()
+        }
+        "opacity" => {
+            single_component_or_calc(&value)
+                && values::scalars::NumberValue::opacity(&value).is_some()
+        }
         "transform" => super::transform::parse_transform(&value).is_some(),
         "clip-path" => super::clip_path::ClipPath::parse(&value).is_some(),
         "background-image" | "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
@@ -223,7 +209,12 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
         "object-fit" => ObjectFit::parse(&value).is_some(),
         "object-position" => ObjectPosition::parse(&value).is_some(),
         "text-transform" => TextTransform::parse(&value).is_some(),
-        "aspect-ratio" => AspectRatio::parse(&value).is_some(),
+        "aspect-ratio" => values::scalars::RatioValue::parse(&value).is_some(),
+        "grid-template-columns" | "grid-template-rows" | "-ms-grid-columns" | "-ms-grid-rows" => {
+            // Named-line placement and fit-content clamping remain unsupported.
+            // Admission does not claim those unfinished layout contracts.
+            !value.contains('[') && parse_grid_track_list(&value).is_some()
+        }
         "background-repeat" => {
             let repeats = value.split_ascii_whitespace().collect::<Vec<_>>();
             (1..=2).contains(&repeats.len())
@@ -261,7 +252,11 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
             matches!(value.as_str(), "none" | "underline")
         }
         "list-style" | "list-style-type" => matches!(value.as_str(), "none" | "disc"),
-        "margin" | "padding" | "border-width" => edge_lengths_supported(&value),
+        "margin" | "padding" => edge_lengths_supported(&value),
+        "border-width" => values::border_widths::edges(&value).is_some(),
+        "border-top-width" | "border-right-width" | "border-bottom-width" | "border-left-width" => {
+            values::border_widths::parse(&value).is_some()
+        }
         "scroll-margin"
         | "scroll-margin-top"
         | "scroll-margin-right"
@@ -305,15 +300,14 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
             matches!(value.as_str(), "nowrap" | "wrap")
         }
         "flex-flow" | "-webkit-flex-flow" | "-moz-flex-flow" => flex_flow_supported(&value),
+        "flex" | "-webkit-flex" | "-moz-flex" => super::shorthands::flex::parse(&value).is_some(),
         "flex-grow"
         | "-webkit-flex-grow"
         | "-moz-flex-grow"
         | "-webkit-box-flex"
         | "flex-shrink"
         | "-webkit-flex-shrink"
-        | "-moz-flex-shrink" => value
-            .parse::<f32>()
-            .is_ok_and(|number| number.is_finite() && number >= 0.0),
+        | "-moz-flex-shrink" => values::scalars::NumberValue::nonnegative(&value).is_some(),
         _ => {
             preserve_unclassified
                 && super::css_wide::supports_css_wide_keyword(&property, "initial")
@@ -337,16 +331,15 @@ fn flex_flow_supported(value: &str) -> bool {
 }
 
 fn supported_length(value: &str) -> bool {
-    single_component_or_calc(value) && parse_length(value).is_some()
+    parse_length(value).is_some()
 }
 
 /// Verify a simple value's CSS token boundary before handing it to property-specific parsing.
 /// `25 %` is two tokens, not a percentage token, even if a string-oriented parser accepts it.
 /// `calc()` is validated by its own expression parser instead of this single-token check.
 fn single_component_or_calc(value: &str) -> bool {
-    if value
-        .get(..5)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("calc("))
+    if parse_length(value).is_some()
+        || super::value_parser::math::number_expression(value).is_some()
     {
         return true;
     }
@@ -356,6 +349,8 @@ fn single_component_or_calc(value: &str) -> bool {
 }
 
 fn edge_lengths_supported(value: &str) -> bool {
-    let lengths = value.split_ascii_whitespace().collect::<Vec<_>>();
+    let Some(lengths) = super::scroll_spacing::split_components(value) else {
+        return false;
+    };
     (1..=4).contains(&lengths.len()) && lengths.iter().all(|length| parse_length(length).is_some())
 }

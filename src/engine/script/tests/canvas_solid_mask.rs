@@ -22,7 +22,8 @@ fn batched_solid_fill_and_stroke_match_scalar_clipped_arithmetic() {
         for(const c of contexts){
             c.globalAlpha=1;c.fillStyle='rgba(0,0,255,.5)';c.fillRect(0,0,64,64);
             let paint=color;
-            if(c===scalar){const g=c.createLinearGradient(0,0,64,0);g.addColorStop(0,color);g.addColorStop(1,color);paint=g;}
+            // More than 256 stops forces the independent scalar shader path.
+            if(c===scalar){const g=c.createLinearGradient(0,0,64,0);for(let i=0;i<=256;i++)g.addColorStop(i/256,color);paint=g;}
             c.globalAlpha=opacity;c.fillStyle=paint;c.strokeStyle=paint;
             c.lineWidth=3.5;c.lineCap='round';c.lineJoin='bevel';c.setLineDash([5,2,1,2]);
             c.fill(p);c.stroke(p);

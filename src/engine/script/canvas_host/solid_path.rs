@@ -3,6 +3,7 @@
 
 use super::*;
 use serde::Deserialize;
+use std::borrow::Cow;
 
 #[derive(Deserialize)]
 struct RegionAdmission {
@@ -11,6 +12,28 @@ struct RegionAdmission {
 }
 
 pub(super) fn paint(args: &[JsValue]) -> JsValue {
+    let Some(destination) = args.get(3).and_then(JsValue::as_bytes) else {
+        return JsValue::Null;
+    };
+    finish(args, Cow::Borrowed(destination))
+}
+
+pub(super) fn paint_owned(args: &mut [JsValue]) -> JsValue {
+    let Some(destination) = args.get_mut(3) else {
+        return JsValue::Null;
+    };
+    if !matches!(destination, JsValue::Bytes(_)) {
+        return JsValue::Null;
+    }
+    let JsValue::Bytes(destination) = std::mem::replace(destination, JsValue::Null) else {
+        unreachable!("byte argument checked before taking ownership");
+    };
+    // value_from_v8 made this independent of the author's ArrayBuffer. Taking
+    // that allocation is safe even when the author aliases input and clip.
+    finish(args, Cow::Owned(destination))
+}
+
+fn finish(args: &[JsValue], destination: Cow<'_, [u8]>) -> JsValue {
     let Some(JsValue::String(kind)) = args.get(1) else {
         return JsValue::Null;
     };
@@ -23,9 +46,6 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
     if source.len() > 1024 * 1024 {
         return JsValue::Null;
     }
-    let Some(destination) = args.get(3).and_then(JsValue::as_bytes) else {
-        return JsValue::Null;
-    };
     let Some(JsValue::Array(channels)) = args.get(4) else {
         return JsValue::Null;
     };
@@ -62,21 +82,29 @@ pub(super) fn paint(args: &[JsValue]) -> JsValue {
         return JsValue::Null;
     };
     let mask = match kind.as_str() {
-        "fill" => super::fill::coverage_from_source(source),
-        "stroke" => super::path::coverage_from_source(source),
+        "fill" => super::fill::coverage_from_arguments(source, args.get(11)),
+        "stroke" => super::path::coverage_from_arguments(source, args.get(11)),
         _ => unreachable!(),
     };
     mask.and_then(|mask| {
-        super::solid_mask::composite_clipped_region(
+        let mut destination = destination.into_owned();
+        super::solid_mask::composite_in_place(
             Some(mask.as_slice()),
-            destination,
+            &mut destination,
             color,
             opacity,
             clip.as_ref(),
         )
+        .map(|()| destination)
     })
     .map_or(JsValue::Null, JsValue::Bytes)
 }
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod owned_tests;
+
+#[cfg(test)]
+mod packed_tests;

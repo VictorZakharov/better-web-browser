@@ -19,7 +19,7 @@ fn object_fit_and_position_cascade_and_serialize() {
     let good = styles.get(&image("good"));
     assert_eq!(good.object_fit, ObjectFit::Cover);
     assert_eq!(
-        good.object_position.css_text(good.font_size),
+        good.object_position.clone().css_text(good.font_size),
         "right 10px bottom 20%"
     );
     assert_eq!(
@@ -32,14 +32,17 @@ fn object_fit_and_position_cascade_and_serialize() {
     );
     let bad = styles.get(&image("bad"));
     assert_eq!(bad.object_fit, ObjectFit::Contain);
-    assert_eq!(bad.object_position.css_text(bad.font_size), "0% 50%");
+    assert_eq!(
+        bad.object_position.clone().css_text(bad.font_size),
+        "0% 50%"
+    );
     let reset = styles.get(&image("reset"));
     assert_eq!(reset.object_fit, ObjectFit::Fill);
     assert_eq!(reset.object_position, ObjectPosition::default());
     let inherit = styles.get(&image("inherit"));
     assert_eq!(inherit.object_fit, ObjectFit::None);
     assert_eq!(
-        inherit.object_position.css_text(inherit.font_size),
+        inherit.object_position.clone().css_text(inherit.font_size),
         "50% 0%"
     );
 }

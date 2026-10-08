@@ -41,6 +41,7 @@ mod canvas;
 mod canvas_affine_stroke;
 mod canvas_bitmap;
 mod canvas_blend;
+mod canvas_clipped_shaders;
 mod canvas_clipped_solid;
 mod canvas_composite_layers;
 mod canvas_context_settings;
@@ -58,17 +59,21 @@ mod canvas_image_data;
 mod canvas_image_data_bindings;
 mod canvas_image_draw_bindings;
 mod canvas_image_paint;
+mod canvas_image_rectangles;
 mod canvas_image_usability;
 mod canvas_line_state;
 mod canvas_mask_reuse;
 mod canvas_native_stroke;
 mod canvas_offscreen_bindings;
+mod canvas_packed_geometry;
 mod canvas_path_bindings;
 mod canvas_patterns;
 mod canvas_presentation;
 mod canvas_private_state;
+mod canvas_private_wire;
 mod canvas_rect_coverage;
 mod canvas_rectangle_bindings;
+mod canvas_region;
 mod canvas_shadow;
 mod canvas_shadow_path;
 mod canvas_solid_mask;
@@ -99,6 +104,12 @@ mod connected_images;
 mod crypto;
 mod csp_events;
 mod css_animations;
+mod css_math_components;
+mod css_math_grid;
+mod css_math_scalars;
+mod css_math_spacing;
+mod css_math_times;
+mod css_token_boundaries;
 mod css_transitions;
 mod cssom;
 mod cssom_layers;
@@ -305,10 +316,13 @@ mod webgl_numeric_arguments;
 #[cfg(windows)]
 mod webgl_numeric_lists;
 #[cfg(windows)]
+mod webgl_numeric_unions;
+#[cfg(windows)]
 mod webgl_offscreen_presentation;
 mod webgl_parallel_compile;
 #[cfg(windows)]
 mod webgl_presentation;
+mod webgl_private_wire;
 #[cfg(windows)]
 mod webgl_shader_extensions;
 #[cfg(windows)]

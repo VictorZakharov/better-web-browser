@@ -202,7 +202,7 @@ pub(super) fn caption_outer_width(
                 .resolve(percentage_basis, style.font_size);
             let padding = style.padding.resolve(percentage_basis, style.font_size);
             resolve_outer_size(
-                style.width,
+                style.width.clone(),
                 percentage_basis,
                 style.font_size,
                 borders.horizontal() + padding.horizontal(),

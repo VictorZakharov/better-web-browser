@@ -16,6 +16,8 @@ pub use broker::{
 pub use launcher::{RendererLaunchOptions, StartupFault};
 
 const RENDERER_ENVIRONMENT_ALLOWLIST: &[&str] = &[
+    // Explicit local stack sampling only; ordinary diagnostics do not enable it.
+    "BREEZE_DIAGNOSTIC_CPU_SAMPLING",
     "ALLUSERSPROFILE",
     "APPDATA",
     "CommonProgramFiles",

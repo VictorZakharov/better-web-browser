@@ -92,6 +92,12 @@ fn is_supported_property(property: &str) -> bool {
 }
 
 fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &str) -> bool {
+    if style.transition.copy_property(&source.transition, property) {
+        return true;
+    }
+    style
+        .scalar_calculations
+        .copy_property(&source.scalar_calculations, property);
     if property == "animation" {
         style.animation = Arc::clone(&source.animation);
         return true;
@@ -110,23 +116,6 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.direction = direction;
             style.custom_properties = custom_properties;
         }
-        "transition" => style.transition.clone_from(&source.transition),
-        "transition-property" => style
-            .transition
-            .properties
-            .clone_from(&source.transition.properties),
-        "transition-duration" => style
-            .transition
-            .durations
-            .clone_from(&source.transition.durations),
-        "transition-delay" => style
-            .transition
-            .delays
-            .clone_from(&source.transition.delays),
-        "transition-timing-function" => style
-            .transition
-            .easings
-            .clone_from(&source.transition.easings),
         "content" => style
             .generated_content
             .clone_from(&source.generated_content),
@@ -144,9 +133,9 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.background_image.clone_from(&source.background_image);
             style.background_repeat_x = source.background_repeat_x;
             style.background_repeat_y = source.background_repeat_y;
-            style.background_position_x = source.background_position_x;
-            style.background_position_y = source.background_position_y;
-            style.background_size = source.background_size;
+            style.background_position_x = source.background_position_x.clone();
+            style.background_position_y = source.background_position_y.clone();
+            style.background_size = source.background_size.clone();
         }
         "background-color" => style.background_color = source.background_color,
         "background-image" => style.background_image.clone_from(&source.background_image),
@@ -159,14 +148,18 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.background_repeat_y = source.background_repeat_y;
         }
         "background-position" => {
-            style.background_position_x = source.background_position_x;
-            style.background_position_y = source.background_position_y;
+            style.background_position_x = source.background_position_x.clone();
+            style.background_position_y = source.background_position_y.clone();
         }
-        "background-position-x" => style.background_position_x = source.background_position_x,
-        "background-position-y" => style.background_position_y = source.background_position_y,
-        "background-size" => style.background_size = source.background_size,
+        "background-position-x" => {
+            style.background_position_x = source.background_position_x.clone()
+        }
+        "background-position-y" => {
+            style.background_position_y = source.background_position_y.clone()
+        }
+        "background-size" => style.background_size = source.background_size.clone(),
         "object-fit" => style.object_fit = source.object_fit,
-        "object-position" => style.object_position = source.object_position,
+        "object-position" => style.object_position = source.object_position.clone(),
         "aspect-ratio" => style.aspect_ratio = source.aspect_ratio,
         "font" => {
             style.font_size = source.font_size;
@@ -178,7 +171,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.font_ligatures = source.font_ligatures;
             style.font_numeric = source.font_numeric;
             style.line_height = source.line_height;
-            style.line_height_value = source.line_height_value;
+            style.line_height_value = source.line_height_value.clone();
         }
         "font-size" => style.font_size = source.font_size,
         "font-weight" => style.font_weight = source.font_weight,
@@ -192,11 +185,10 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         }
         "font-style" => style.italic = source.italic,
         "font-family" => style.font_family.clone_from(&source.font_family),
-        "letter-spacing" => style.letter_spacing = source.letter_spacing,
-        "word-spacing" => style.word_spacing = source.word_spacing,
+        "letter-spacing" | "word-spacing" => style.copy_spacing(source, property),
         "line-height" => {
             style.line_height = source.line_height;
-            style.line_height_value = source.line_height_value;
+            style.line_height_value = source.line_height_value.clone();
         }
         "text-align" => style.text_align = source.text_align,
         "direction" => style.direction = source.direction,
@@ -208,75 +200,77 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "text-decoration" | "text-decoration-line" => {
             style.text_decoration_underline = source.text_decoration_underline
         }
-        "width" => style.width = source.width,
-        "height" => style.height = source.height,
-        "min-width" => style.min_width = source.min_width,
-        "min-height" => style.min_height = source.min_height,
-        "max-width" => style.max_width = source.max_width,
-        "max-height" => style.max_height = source.max_height,
-        "top" => style.top = source.top,
-        "right" => style.right = source.right,
-        "bottom" => style.bottom = source.bottom,
-        "left" => style.left = source.left,
+        "width" => style.width = source.width.clone(),
+        "height" => style.height = source.height.clone(),
+        "min-width" => style.min_width = source.min_width.clone(),
+        "min-height" => style.min_height = source.min_height.clone(),
+        "max-width" => style.max_width = source.max_width.clone(),
+        "max-height" => style.max_height = source.max_height.clone(),
+        "top" => style.top = source.top.clone(),
+        "right" => style.right = source.right.clone(),
+        "bottom" => style.bottom = source.bottom.clone(),
+        "left" => style.left = source.left.clone(),
         "inset" => {
-            style.top = source.top;
-            style.right = source.right;
-            style.bottom = source.bottom;
-            style.left = source.left;
+            style.top = source.top.clone();
+            style.right = source.right.clone();
+            style.bottom = source.bottom.clone();
+            style.left = source.left.clone();
         }
-        "margin" => style.margin = source.margin,
-        "margin-top" => style.margin.top = source.margin.top,
-        "margin-right" => style.margin.right = source.margin.right,
-        "margin-bottom" => style.margin.bottom = source.margin.bottom,
-        "margin-left" => style.margin.left = source.margin.left,
-        "padding" => style.padding = source.padding,
-        "padding-top" => style.padding.top = source.padding.top,
-        "padding-right" => style.padding.right = source.padding.right,
-        "padding-bottom" => style.padding.bottom = source.padding.bottom,
-        "padding-left" => style.padding.left = source.padding.left,
-        "scroll-margin" => style.scroll_margin = source.scroll_margin,
-        "scroll-margin-top" => style.scroll_margin.top = source.scroll_margin.top,
-        "scroll-margin-right" => style.scroll_margin.right = source.scroll_margin.right,
-        "scroll-margin-bottom" => style.scroll_margin.bottom = source.scroll_margin.bottom,
-        "scroll-margin-left" => style.scroll_margin.left = source.scroll_margin.left,
-        "scroll-padding" => style.scroll_padding = source.scroll_padding,
-        "scroll-padding-top" => style.scroll_padding.top = source.scroll_padding.top,
-        "scroll-padding-right" => style.scroll_padding.right = source.scroll_padding.right,
-        "scroll-padding-bottom" => style.scroll_padding.bottom = source.scroll_padding.bottom,
-        "scroll-padding-left" => style.scroll_padding.left = source.scroll_padding.left,
-        "border-width" => style.border_width = source.border_width,
-        "border-top-width" => style.border_width.top = source.border_width.top,
-        "border-right-width" => style.border_width.right = source.border_width.right,
-        "border-bottom-width" => style.border_width.bottom = source.border_width.bottom,
-        "border-left-width" => style.border_width.left = source.border_width.left,
+        "margin" => style.margin = source.margin.clone(),
+        "margin-top" => style.margin.top = source.margin.top.clone(),
+        "margin-right" => style.margin.right = source.margin.right.clone(),
+        "margin-bottom" => style.margin.bottom = source.margin.bottom.clone(),
+        "margin-left" => style.margin.left = source.margin.left.clone(),
+        "padding" => style.padding = source.padding.clone(),
+        "padding-top" => style.padding.top = source.padding.top.clone(),
+        "padding-right" => style.padding.right = source.padding.right.clone(),
+        "padding-bottom" => style.padding.bottom = source.padding.bottom.clone(),
+        "padding-left" => style.padding.left = source.padding.left.clone(),
+        "scroll-margin" => style.scroll_margin = source.scroll_margin.clone(),
+        "scroll-margin-top" => style.scroll_margin.top = source.scroll_margin.top.clone(),
+        "scroll-margin-right" => style.scroll_margin.right = source.scroll_margin.right.clone(),
+        "scroll-margin-bottom" => style.scroll_margin.bottom = source.scroll_margin.bottom.clone(),
+        "scroll-margin-left" => style.scroll_margin.left = source.scroll_margin.left.clone(),
+        "scroll-padding" => style.scroll_padding = source.scroll_padding.clone(),
+        "scroll-padding-top" => style.scroll_padding.top = source.scroll_padding.top.clone(),
+        "scroll-padding-right" => style.scroll_padding.right = source.scroll_padding.right.clone(),
+        "scroll-padding-bottom" => {
+            style.scroll_padding.bottom = source.scroll_padding.bottom.clone()
+        }
+        "scroll-padding-left" => style.scroll_padding.left = source.scroll_padding.left.clone(),
+        "border-width" => style.border_width = source.border_width.clone(),
+        "border-top-width" => style.border_width.top = source.border_width.top.clone(),
+        "border-right-width" => style.border_width.right = source.border_width.right.clone(),
+        "border-bottom-width" => style.border_width.bottom = source.border_width.bottom.clone(),
+        "border-left-width" => style.border_width.left = source.border_width.left.clone(),
         "border-color" => style.border_colors = source.border_colors,
         "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
             let side = values::borders::color_side(property).unwrap();
             style.border_colors[side] = source.border_colors[side];
         }
         "border" => {
-            style.border_width = source.border_width;
+            style.border_width = source.border_width.clone();
             style.border_colors = source.border_colors;
         }
         "border-top" => {
-            style.border_width.top = source.border_width.top;
+            style.border_width.top = source.border_width.top.clone();
             style.border_colors[0] = source.border_colors[0];
         }
         "border-right" => {
-            style.border_width.right = source.border_width.right;
+            style.border_width.right = source.border_width.right.clone();
             style.border_colors[1] = source.border_colors[1];
         }
         "border-bottom" => {
-            style.border_width.bottom = source.border_width.bottom;
+            style.border_width.bottom = source.border_width.bottom.clone();
             style.border_colors[2] = source.border_colors[2];
         }
         "border-left" => {
-            style.border_width.left = source.border_width.left;
+            style.border_width.left = source.border_width.left.clone();
             style.border_colors[3] = source.border_colors[3];
         }
-        "border-radius" => style.border_radius = source.border_radius,
+        "border-radius" => style.border_radius = source.border_radius.clone(),
         "border-collapse" => style.border_collapse = source.border_collapse,
-        "border-spacing" => style.border_spacing = source.border_spacing,
+        "border-spacing" => style.border_spacing = source.border_spacing.clone(),
         "caption-side" => style.caption_side_bottom = source.caption_side_bottom,
         "vertical-align" => style.vertical_align = source.vertical_align,
         "visibility" => style.visibility = source.visibility,
@@ -315,12 +309,12 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.flex_shrink = source.flex_shrink
         }
         "flex-basis" | "-webkit-flex-basis" | "-moz-flex-basis" => {
-            style.flex_basis = source.flex_basis
+            style.flex_basis = source.flex_basis.clone()
         }
         "flex" | "-webkit-flex" | "-moz-flex" => {
             style.flex_grow = source.flex_grow;
             style.flex_shrink = source.flex_shrink;
-            style.flex_basis = source.flex_basis;
+            style.flex_basis = source.flex_basis.clone();
         }
         "box-sizing" | "-webkit-box-sizing" => style.box_sizing = source.box_sizing,
         "list-style" | "list-style-type" => style.list_style_type = source.list_style_type,
@@ -344,11 +338,11 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
                 .grid_template_areas
                 .clone_from(&source.grid_template_areas);
         }
-        "column-gap" | "grid-column-gap" => style.grid_column_gap = source.grid_column_gap,
-        "row-gap" | "grid-row-gap" => style.grid_row_gap = source.grid_row_gap,
+        "column-gap" | "grid-column-gap" => style.grid_column_gap = source.grid_column_gap.clone(),
+        "row-gap" | "grid-row-gap" => style.grid_row_gap = source.grid_row_gap.clone(),
         "gap" | "grid-gap" => {
-            style.grid_column_gap = source.grid_column_gap;
-            style.grid_row_gap = source.grid_row_gap;
+            style.grid_column_gap = source.grid_column_gap.clone();
+            style.grid_row_gap = source.grid_row_gap.clone();
         }
         "grid-column-start" | "-ms-grid-column" => {
             style.grid_column_start = source.grid_column_start

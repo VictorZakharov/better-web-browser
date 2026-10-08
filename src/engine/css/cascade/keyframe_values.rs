@@ -48,6 +48,7 @@ impl StyleSet {
             self.viewport_height,
             style.root_font_size,
         );
+        style.resolve_line_height(self.viewport_width, self.viewport_height);
         properties
             .into_iter()
             .filter_map(|name| {

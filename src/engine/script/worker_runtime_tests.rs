@@ -4,6 +4,11 @@ use crate::fetch::{Body, FetchResponse, FetchUrl, HeaderList, ResponseType};
 #[path = "worker_runtime_tests/binary_clone.rs"]
 mod binary_clone;
 
+#[path = "worker_runtime_tests/numeric_globals.rs"]
+mod numeric_globals;
+#[path = "worker_runtime_tests/profiling.rs"]
+mod profiling;
+
 #[path = "worker_runtime_tests/canvas_composite_layers.rs"]
 mod canvas_composite_layers;
 #[path = "worker_runtime_tests/canvas_image_paint.rs"]
@@ -45,6 +50,9 @@ mod webgl_indexed_blend;
 #[cfg(windows)]
 #[path = "worker_runtime_tests/webgl_multi_draw.rs"]
 mod webgl_multi_draw;
+#[cfg(windows)]
+#[path = "worker_runtime_tests/webgl_numeric_unions.rs"]
+mod webgl_numeric_unions;
 #[cfg(windows)]
 #[path = "worker_runtime_tests/webgl_textures.rs"]
 mod webgl_textures;

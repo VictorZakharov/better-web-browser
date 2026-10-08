@@ -322,16 +322,6 @@ pub(super) struct InlineBoxMetrics {
     pub(super) children_width: f32,
 }
 
-#[derive(Debug, Clone)]
-pub(super) enum GridTrack {
-    Auto,
-    MinContent,
-    MaxContent,
-    Fixed(Length),
-    Fraction(f32),
-    MinMax(Box<GridTrack>, Box<GridTrack>),
-}
-
 pub(super) struct GridItemPlacement {
     pub(super) node: NodeRef,
     pub(super) column: usize,

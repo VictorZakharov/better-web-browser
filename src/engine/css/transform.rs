@@ -1,11 +1,15 @@
 //! Parsing and resolution for the implemented 2D translation transform subset.
 
 use super::*;
+mod interpolation;
+mod parser;
+pub(crate) use interpolation::interpolate;
+pub(super) use parser::parse_transform;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct TransformList(Vec<TranslateOperation>);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct TranslateOperation {
     x: Length,
     y: Length,
@@ -14,8 +18,8 @@ struct TranslateOperation {
 impl TransformList {
     pub(super) fn resolve_root_font_units(&mut self, root_font_size: f32) {
         for operation in &mut self.0 {
-            operation.x = operation.x.resolve_root_font_units(root_font_size);
-            operation.y = operation.y.resolve_root_font_units(root_font_size);
+            operation.x = operation.x.clone().resolve_root_font_units(root_font_size);
+            operation.y = operation.y.clone().resolve_root_font_units(root_font_size);
         }
     }
 
@@ -33,68 +37,6 @@ impl TransformList {
     }
 }
 
-pub(super) fn parse_transform(value: &str) -> Option<TransformList> {
-    let value = value.trim();
-    if value.eq_ignore_ascii_case("none") {
-        return Some(TransformList::default());
-    }
-    let mut rest = value;
-    let mut operations = Vec::new();
-    while !rest.trim_start().is_empty() {
-        rest = rest.trim_start();
-        let open = rest.find('(')?;
-        let name = rest[..open].trim().to_ascii_lowercase();
-        if name.is_empty() || name.chars().any(char::is_whitespace) {
-            return None;
-        }
-        let close = matching_parenthesis(rest, open)?;
-        let arguments = split_arguments(&rest[open + 1..close]);
-        let operation = match name.as_str() {
-            "translate" if (1..=2).contains(&arguments.len()) => TranslateOperation {
-                x: parse_length(arguments[0])?,
-                y: arguments
-                    .get(1)
-                    .and_then(|value| parse_length(value))
-                    .unwrap_or(Length::Px(0.0)),
-            },
-            "translatex" if arguments.len() == 1 => TranslateOperation {
-                x: parse_length(arguments[0])?,
-                y: Length::Px(0.0),
-            },
-            "translatey" if arguments.len() == 1 => TranslateOperation {
-                x: Length::Px(0.0),
-                y: parse_length(arguments[0])?,
-            },
-            "matrix" if arguments.len() == 6 => {
-                let values = arguments
-                    .iter()
-                    .map(|argument| {
-                        argument
-                            .parse::<f32>()
-                            .ok()
-                            .filter(|value| value.is_finite())
-                    })
-                    .collect::<Option<Vec<_>>>()?;
-                if (values[0] - 1.0).abs() > f32::EPSILON
-                    || values[1].abs() > f32::EPSILON
-                    || values[2].abs() > f32::EPSILON
-                    || (values[3] - 1.0).abs() > f32::EPSILON
-                {
-                    return None;
-                }
-                TranslateOperation {
-                    x: Length::Px(values[4]),
-                    y: Length::Px(values[5]),
-                }
-            }
-            _ => return None,
-        };
-        operations.push(operation);
-        rest = &rest[close + 1..];
-    }
-    (!operations.is_empty()).then_some(TransformList(operations))
-}
-
 pub(super) fn serialize_transform(transform: &TransformList) -> String {
     if transform.is_none() {
         return "none".into();
@@ -105,68 +47,17 @@ pub(super) fn serialize_transform(transform: &TransformList) -> String {
         .map(|operation| {
             format!(
                 "translate({}, {})",
-                serialize_length(operation.x),
-                serialize_length(operation.y)
+                serialize_length(operation.x.clone()),
+                serialize_length(operation.y.clone())
             )
         })
         .collect::<Vec<_>>()
         .join(" ")
 }
 
-fn matching_parenthesis(value: &str, open: usize) -> Option<usize> {
-    let mut depth = 0_u32;
-    for (offset, character) in value[open..].char_indices() {
-        match character {
-            '(' => depth += 1,
-            ')' => {
-                depth = depth.checked_sub(1)?;
-                if depth == 0 {
-                    return Some(open + offset);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-fn split_arguments(value: &str) -> Vec<&str> {
-    let comma_separated = split_css_top_level(value, ',').collect::<Vec<_>>();
-    if comma_separated.len() > 1 {
-        return comma_separated
-            .into_iter()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .collect();
-    }
-    let mut depth = 0_i32;
-    let mut start = None;
-    let mut arguments = Vec::new();
-    for (index, character) in value.char_indices() {
-        match character {
-            '(' => {
-                depth += 1;
-                start.get_or_insert(index);
-            }
-            ')' => depth = (depth - 1).max(0),
-            character if character.is_whitespace() && depth == 0 => {
-                if let Some(argument_start) = start.take() {
-                    arguments.push(value[argument_start..index].trim());
-                }
-            }
-            _ => {
-                start.get_or_insert(index);
-            }
-        }
-    }
-    if let Some(argument_start) = start {
-        arguments.push(value[argument_start..].trim());
-    }
-    arguments
-}
-
 fn serialize_length(length: Length) -> String {
     match length {
+        Length::Math(value) => value.css_text(),
         Length::Px(value) => format!("{value}px"),
         Length::Percent(value) => format!("{value}%"),
         Length::Em(value) => format!("{value}em"),

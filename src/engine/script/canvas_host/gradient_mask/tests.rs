@@ -1,5 +1,41 @@
 use super::*;
 
+#[test]
+fn host_gradient_clipping_rejects_ambiguous_origin_and_invalid_bitmap_metadata() {
+    let encoded = r#"{"width":4,"height":2,"left":2,"top":1,"transform":[1,0,0,1,0,0],"kind":"linear","geometry":[0.5,0,2.5,0],"stops":[{"offset":0,"channels":[255,0,0,255]},{"offset":1,"channels":[0,0,255,255]}],"opacity":0.5}"#;
+    let destination = [11, 22, 33, 255].repeat(8);
+    let mut arguments = vec![
+        JsValue::from("canvasPaintGradientMask".to_owned()),
+        JsValue::from(encoded.to_owned()),
+        JsValue::Bytes(destination.clone()),
+        JsValue::Null,
+        JsValue::Bytes(vec![255; 4]),
+        JsValue::from(7.0),
+        JsValue::from(4.0),
+        JsValue::from(2.0),
+        JsValue::from(1.0),
+    ];
+    assert!(paint(&arguments).as_bytes().is_some());
+    for (index, invalid) in [
+        (4, JsValue::Bytes(vec![255; 3])),
+        (4, JsValue::from(255.0)),
+        (5, JsValue::from(0.0)),
+        (6, JsValue::from(1.0)),
+        (7, JsValue::from(3.0)),
+        (8, JsValue::from(2.0)),
+        (7, JsValue::from(-1.0)),
+        (8, JsValue::from(f64::NAN)),
+    ] {
+        let valid = std::mem::replace(&mut arguments[index], invalid);
+        assert!(
+            matches!(paint(&arguments), JsValue::Null),
+            "argument {index}"
+        );
+        arguments[index] = valid;
+        assert_eq!(arguments[2].as_bytes().unwrap(), destination);
+    }
+}
+
 fn request() -> Request {
     Request {
         width: 4,

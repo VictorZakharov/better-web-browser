@@ -1,18 +1,25 @@
 //! Computed CSS value types and inherited/initial style state.
 
 pub(crate) mod animations;
+pub(super) mod border_widths;
 pub(super) mod borders;
+pub(crate) mod calculated_easing;
+pub(crate) mod calculated_times;
 mod content_alignment;
 mod edges;
 pub use content_alignment::ContentAlignment;
 mod length;
 mod line_height;
+pub(crate) mod math;
+pub(crate) mod scalars;
+pub(crate) mod text_spacing;
 pub(crate) use line_height::LineHeight;
 mod overflow;
 pub use overflow::Overflow;
 mod object;
 pub use object::{ObjectFit, ObjectPosition};
 pub(crate) mod font_features;
+pub(crate) mod grid_tracks;
 mod text_direction;
 pub use font_features::{FontFeatures, FontKerning};
 mod font_variants;
@@ -29,7 +36,7 @@ use super::*;
 mod color;
 pub use color::Color;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Length {
     Auto,
     Px(f32),
@@ -50,9 +57,10 @@ pub enum Length {
         vmin: f32,
         vmax: f32,
     },
+    Math(std::sync::Arc<math::Expression>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Edges {
     pub top: Length,
     pub right: Length,
@@ -172,7 +180,7 @@ pub enum ListStyleType {
     Disc,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BackgroundSize {
     Auto,
     Contain,
@@ -182,6 +190,7 @@ pub enum BackgroundSize {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComputedStyle {
+    pub(crate) scalar_calculations: scalars::ScalarCalculations,
     pub(crate) transition: transitions::TransitionSettings,
     pub(crate) animation: Arc<animations::AnimationSettings>,
     pub generated_content: GeneratedContent,
@@ -212,6 +221,8 @@ pub struct ComputedStyle {
     pub font_ligatures: FontLigatures,
     pub font_numeric: FontNumeric,
     pub letter_spacing: f32,
+    pub(crate) letter_spacing_normal: bool,
+    pub(crate) pending_spacing: text_spacing::PendingSpacing,
     pub word_spacing: f32,
     pub line_height: f32,
     pub(crate) line_height_value: LineHeight,
