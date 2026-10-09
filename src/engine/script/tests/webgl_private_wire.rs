@@ -12,7 +12,7 @@ fn check(source: &str) {
         ScriptKind::Classic,
         std::sync::Arc::new(|url, _| Err(format!("unexpected {url}"))),
     );
-    assert!(runtime.is_some());
+    assert!(runtime.is_some(), "{:?}", outcome.errors);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(outcome.messages, ["\"passed\""]);
 }
@@ -84,8 +84,31 @@ fn unexpected_nested_objects_cannot_run_tojson_in_the_primitive_wire() {
 }
 
 #[test]
+fn numeric_candidate_keeps_budgets_payloads_and_closed_intrinsics_separate() {
+    check(
+        r#"
+        const has=Set.prototype.has,integer=Number.isSafeInteger;
+        let observed=0;
+        const fail=()=>{observed++;throw Error('author candidate hook')};
+        Set.prototype.has=Number.isSafeInteger=fail;
+        try {
+            if(!webGlWireNumericCandidate('uniformMatrix4fv',[1,0],new Array(16).fill(1),'',undefined))throw Error('matrix candidate');
+            if(!webGlWireNumericCandidate('uniform4f',[1],[-0,NaN,Infinity,-Infinity],'',undefined))throw Error('unrestricted floats');
+            for(const args of [
+                ['getError',[],[],'',undefined],['clear',[],[],'text',undefined],
+                ['clear',[],[],'',new Uint8Array(1)],['clear',[],new Array(65).fill(0),'',undefined],
+                ['clear',[1.5],[],'',undefined],['clear',[],[null],'',undefined]
+            ])if(webGlWireNumericCandidate(...args))throw Error('invalid candidate selected');
+        } finally {Set.prototype.has=has;Number.isSafeInteger=integer;}
+        if(observed)throw Error('candidate consulted author replacements');
+    "#,
+    );
+}
+
+#[test]
 fn real_window_and_worker_webgl_continue_with_poisoned_json_hooks() {
     let source = r#"
+        if(typeof __hostCall!=='undefined')throw Error('native host binding leaked');
         const gl=make(8,4).getContext('webgl2');if(!gl)throw Error('context missing');
         const stringify=JSON.stringify,parse=JSON.parse;
         let calls=0,pixels=new Uint8Array(4);
@@ -115,7 +138,7 @@ fn real_window_and_worker_webgl_continue_with_poisoned_json_hooks() {
         ScriptKind::Classic,
         std::sync::Arc::new(|url, _| Err(format!("unexpected {url}"))),
     );
-    assert!(runtime.is_some());
+    assert!(runtime.is_some(), "{:?}", outcome.errors);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(outcome.messages, ["\"passed\""]);
 }

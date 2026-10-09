@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 #[cfg(windows)]
-pub(in crate::engine::script) fn sample() -> Option<Duration> {
+pub(in crate::engine) fn sample() -> Option<Duration> {
     use windows_sys::Win32::Foundation::FILETIME;
     use windows_sys::Win32::System::Threading::{GetCurrentThread, GetThreadTimes};
     let mut created = FILETIME::default();
@@ -36,7 +36,7 @@ pub(in crate::engine::script) fn sample() -> Option<Duration> {
 }
 
 #[cfg(not(windows))]
-pub(in crate::engine::script) fn sample() -> Option<Duration> {
+pub(in crate::engine) fn sample() -> Option<Duration> {
     None
 }
 

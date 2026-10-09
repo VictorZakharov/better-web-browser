@@ -26,6 +26,39 @@ const SUBSETS: &str = r#"
 "#;
 
 #[test]
+fn font_usage_does_not_hydrate_a_sparse_display_none_subtree() {
+    let mut page = Page::parse(
+        "<body><section style='display:none'><p>ABC</p></section><p>xyz</p></body>",
+        "https://example.test/",
+    );
+    let sources = [crate::engine::css::StylesheetSource::injected(
+        "https://example.test/css/fonts.css",
+        SUBSETS.into(),
+    )];
+    let mut styles = StyleSet::from_sources_for_layout(
+        &page.dom,
+        "https://example.test/",
+        &sources,
+        MediaEnvironment::new(800., 600., 1., false),
+    );
+    let hidden = page.dom.elements_named("p").next().unwrap();
+    let count = styles.styles.len();
+    assert!(!styles.styles.contains_key(&hidden.id()));
+    page.request_visible_fonts(&mut styles);
+    assert_eq!(styles.styles.len(), count);
+    assert!(!styles.styles.contains_key(&hidden.id()));
+    let fonts = page
+        .resources
+        .iter()
+        .filter_map(|resource| match resource {
+            PageResource::Font { url, .. } => Some(url.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(fonts, ["https://example.test/css/lower.woff"]);
+}
+
+#[test]
 fn only_intersecting_equal_style_subsets_are_requested() {
     let fonts = requested("<body><p>ABxy</p></body>", SUBSETS);
     assert_eq!(fonts.len(), 2);

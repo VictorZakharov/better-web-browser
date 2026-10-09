@@ -15,3 +15,11 @@ extern "C" bool breeze_v8_capture_incumbent(v8::Object* result) {
 extern "C" void breeze_v8_detach_global(v8::Context* context) {
   context->DetachGlobal();
 }
+
+extern "C" bool breeze_v8_set_stack_limit(uintptr_t limit) {
+  auto* isolate = v8::Isolate::GetCurrent();
+  if (!isolate || !limit) return false;
+  // Public API updates the active thread's guard, preserving pending interrupts.
+  isolate->SetStackLimit(limit);
+  return true;
+}

@@ -51,10 +51,27 @@
         const state = webGlState(context);
         if (state.lost) {
             if (error === 0x0502) state.lossError = error;
-        } else host('webglCommand', state.id, webGlWireCommand('bridgeError', [error]));
+        } else {
+            flushWebGlCommands();
+            if (!state.lost) host('webglCommand', state.id, webGlWireCommand('bridgeError', [error]));
+        }
     };
     const webGlCall = (context, op, i = [], f = [], text = '', bytes = undefined) => {
         const state = webGlState(context);
+        if (state.lost) return null;
+        if (queueWebGlNumericPacket(context,state,op,i,f,text,bytes)) return null;
+        if (webGlWireNumericCandidate(op, i, f, text, bytes)) {
+            flushWebGlCommands();
+            if (state.lost) return null;
+            // Lists have completed IDL conversion. A small fixed Float32 view
+            // may retain its source only when no later author conversion can
+            // run. Native admission copies synchronously before queueing; a
+            // second JS copy/prototype transition adds no ownership guarantee.
+            const live = host('webglCommandValues', state.id, op, i, f);
+            if (!live) loseWebGlContext(context, false);
+            return null;
+        }
+        flushWebGlCommands();
         if (state.lost) return null;
         const command = webGlWireCommand(op, i, f, text);
         if (command === null) {
@@ -132,6 +149,7 @@
     Object.defineProperty(globalThis, 'WebGLRenderingContext', {configurable:true, writable:true, value:WebGLRenderingContext});
     const createWebGlContext = (canvas, requested = {}, api = 'webgl1') => {
         const attributes = webGlContextAttributes(requested, api);
+        flushWebGlCommands();
         const creationFailed = message => {
             canvas.dispatchEvent(markTrusted(new WebGLContextEvent('webglcontextcreationerror',
                 {statusMessage:message, cancelable:true})));
@@ -151,16 +169,13 @@
     synchronizeWebGlCanvas = state => {
         const native = webGlContexts.get(state.context);
         if (!native || native.lost || !native.dirty) return;
+        flushWebGlCommands();
+        if (native.lost) return;
         const snapshot = host('webglSnapshot', native.id);
         if (!snapshot || snapshot[2].length !== snapshot[0] * snapshot[1] * 4) return;
         const pixels = new Uint8ClampedArray(snapshot[2]);
-        if (native.attributes.alpha && native.attributes.premultipliedAlpha) {
-            for (let offset = 0; offset < pixels.length; offset += 4) {
-                const alpha = pixels[offset + 3];
-                for (let channel = 0; channel < 3; channel++)
-                    pixels[offset + channel] = alpha ? Math.min(255, Math.round(pixels[offset + channel] * 255 / alpha)) : 0;
-            }
-        }
+        // The native owner returns straight RGBA for bitmap consumers. Raw GL
+        // readPixels still sees the original drawing buffer representation.
         // Native allocation can be smaller than the unchanged canvas content
         // attributes. Every bitmap consumer must use the snapshot's extent.
         state.width = snapshot[0];

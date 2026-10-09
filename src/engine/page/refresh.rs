@@ -1,7 +1,11 @@
 use super::*;
+pub(super) mod profile;
+mod resources;
+mod unchanged;
 use crate::engine::css::Display;
 use crate::engine::dom::Node;
 use crate::engine::invalidation::RenderInvalidation;
+use profile::Phase;
 use std::collections::HashSet;
 
 pub(super) fn parse_immediate_refresh_target(content: &str) -> Option<&str> {
@@ -113,11 +117,15 @@ impl Page {
         viewport_height: f32,
         invalidation: &RenderInvalidation,
     ) -> StyleRefreshStats {
+        self.resource_profile.reset();
+        let started = self.resource_profile.start();
         self.base_url = document_base_url(&self.dom, &self.source_url);
         self.media_environment = self
             .media_environment
             .with_viewport(viewport_width, viewport_height);
-        let (resources, _) = discover_resources(
+        // Script preparation belongs to the parser/runtime, not a rendering
+        // checkpoint. Do not clone inline source only to discard it below.
+        let resources = super::resources::discover_non_script_resources(
             &self.dom,
             &self.source_url,
             &self.base_url,
@@ -132,52 +140,18 @@ impl Page {
                 self.resources.push(resource);
             }
         }
+        self.resource_profile.finish(Phase::Discovery, started);
+        let started = self.resource_profile.start();
         self.refresh_media_sources();
+        self.resource_profile.finish(Phase::Media, started);
+        let started = self.resource_profile.start();
         self.discover_stylesheet_dependencies();
-        let (mut styles, style_stats) =
+        self.resource_profile.finish(Phase::Stylesheets, started);
+        let started = self.resource_profile.start();
+        let (styles, style_stats) =
             self.refresh_style_cache(viewport_width, viewport_height, invalidation, false);
-        let viewport_width = viewport_width.max(1.0);
-        let viewport_height = viewport_height.max(1.0);
-        let mut known_images = self
-            .resources
-            .iter()
-            .filter_map(|resource| match resource {
-                PageResource::Image { url } => Some(url.clone()),
-                _ => None,
-            })
-            .collect::<HashSet<_>>();
-        let mut discovered_style_images = 0_usize;
-        for node in Node::shadow_including_descendants(&self.dom.document) {
-            // Dynamic DOM work can connect a previously detached subtree at a rendering
-            // checkpoint. Hydrate any missing ancestor chain defensively instead of letting a
-            // stale incremental root turn untrusted page input into a browser-process panic.
-            let Some(style) = styles.computed_style_for_node(&node) else {
-                continue;
-            };
-            if style.display == Display::None || !style.visibility {
-                continue;
-            }
-            if discovered_style_images < MAX_STYLE_IMAGES
-                && let Some(url) = style.background_image.as_ref()
-                && known_images.insert(url.clone())
-            {
-                self.resources
-                    .push(PageResource::Image { url: url.clone() });
-                discovered_style_images += 1;
-            }
-            if discovered_style_images < MAX_STYLE_IMAGES
-                && let Some(url) = style.mask_image.as_ref()
-                && known_images.insert(url.clone())
-            {
-                self.resources
-                    .push(PageResource::Image { url: url.clone() });
-                discovered_style_images += 1;
-            }
-        }
-        self.install_embedded_images();
-        self.request_visible_fonts(&mut styles);
-        self.cached_styles = Some((viewport_width, viewport_height, styles));
-        self.refresh_inline_svgs();
+        self.resource_profile.finish(Phase::Cascade, started);
+        self.finish_refreshed_resources(styles, viewport_width, viewport_height);
         style_stats
     }
 
@@ -231,10 +205,11 @@ impl Page {
                     && (cached_height - viewport_height).abs() < 0.5 =>
             {
                 let stats = if invalidation.impact.affects_style() {
-                    styles.refresh_subtrees(
+                    styles.refresh_subtrees_after_invalidation(
                         &self.dom.document,
                         &invalidation_roots,
                         &invalidation.removed_nodes,
+                        invalidation.impact,
                     )
                 } else {
                     StyleRefreshStats {

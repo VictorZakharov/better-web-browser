@@ -2,6 +2,7 @@
     'use strict';
     const host = (...args) => __hostCall(...args);
     const markTrusted = globalThis.__markTrustedEvent;
+    const decodeMessage = globalThis.__deserializeWorkerPacketWithPorts;
     const target = new EventTarget();
     self.addEventListener = target.addEventListener.bind(target);
     self.removeEventListener = target.removeEventListener.bind(target);
@@ -14,7 +15,7 @@
     });
     self.postMessage = (message, transfer = undefined) => {
         const transfers = __cloneTransferList(transfer);
-        host('workerPost', __serializeClone(message, transfers));
+        host('workerPostValue', message, transfers);
     };
     self.close = () => host('workerClose');
     self.importScripts = (...urls) => {
@@ -23,7 +24,7 @@
     };
     self.__dispatchWorkerMessage = serialized => {
         try {
-            const {data, ports} = __deserializeCloneWithPorts(String(serialized));
+            const {data, ports} = decodeMessage(String(serialized));
             const event = markTrusted(new MessageEvent('message', {data, ports}));
             target.dispatchEvent(event); messageHandler?.call(self, event);
         } catch (_) {

@@ -9,6 +9,8 @@ internal static class BrowserScripts
           const media = document.querySelector('video, audio');
           return ({
           url: location.href,
+          documentTitle: document.title.slice(0, 513),
+          documentTitleSourceTruncated: document.title.length > 513,
           bodyTextLength: (document.body?.innerText || '').trim().length,
           elementCount: document.querySelectorAll('*').length,
           browserErrorSurface: location.protocol === 'chrome-error:' ||

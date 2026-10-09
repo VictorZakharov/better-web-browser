@@ -17,6 +17,7 @@ impl WorkerRuntime {
             return;
         }
         self.execution_profiling = enabled;
+        self.host.borrow_mut().webgl.set_profiling(enabled);
         self.remaining_diagnostic_samples = if enabled { 8 } else { 0 };
         self.remaining_failed_diagnostic_sample = enabled;
         self.context.set_execution_profiling(enabled);
@@ -41,6 +42,9 @@ impl WorkerRuntime {
         outcome
             .diagnostics
             .extend(self.context.take_cpu_task_diagnostics());
+        // Drain every task, but export pressure rows only within this worker's
+        // existing sample budget. Repeated pressure must not grow logs forever.
+        let pressure = self.context.take_pressure_diagnostics();
         // Reserve one failure sample independently of successful work. A
         // failing streaming worker must not grow its diagnostic log forever.
         if outcome.errors.is_empty() {
@@ -54,6 +58,7 @@ impl WorkerRuntime {
             }
             self.remaining_failed_diagnostic_sample = false;
         }
+        outcome.diagnostics.extend(pressure);
         let elapsed = sample.started.elapsed();
         let gc = self.context.gc_sample();
         let cpu = sample.cpu.zip(cpu::sample()).map_or_else(

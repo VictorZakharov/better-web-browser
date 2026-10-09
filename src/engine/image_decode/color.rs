@@ -84,13 +84,5 @@ pub(super) fn apply_profile(image: &mut RasterImage, profile: &ColorProfile) -> 
 }
 
 pub(super) fn unpremultiply(image: &mut RasterImage) {
-    for pixel in image.rgba.chunks_exact_mut(4) {
-        let alpha = u32::from(pixel[3]);
-        for channel in &mut pixel[..3] {
-            *channel = (u32::from(*channel) * 255 + alpha / 2)
-                .checked_div(alpha)
-                .unwrap_or(0)
-                .min(255) as u8;
-        }
-    }
+    super::unpremultiply_rgba(&mut image.rgba);
 }

@@ -52,37 +52,28 @@ fn terminating_workers_retires_uncommitted_browser_sessions() {
         };
         </script>"#
         .to_string();
-    // The internal host bridge pins an otherwise public readwrite transaction
-    // after Step, before the JS transaction's automatic Commit. This is a test
-    // probe, not a page-facing IndexedDB alternative or production hook.
-    let worker = r#"const total = 32;
-        const inFlight = new Set();
-        let next = 1;
-        let completed = 0;
-        const receive = globalThis.__receiveDatabaseEvent;
-        globalThis.__receiveDatabaseEvent = (incoming, payload) => {
-            if (!inFlight.delete(Number(incoming))) return receive(incoming, payload);
-            const result = JSON.parse(payload);
-            if (result.kind !== 'transaction')
-                return postMessage('Step failed: ' + result.name);
-            completed++;
-            if (completed === total) postMessage('staged');
-            else issue();
-        };
-        function issue() {
-            while (next <= total && inFlight.size < 4) {
-                const command = {
-                    kind: 'transaction', phase: 'step', transactionId: next++,
-                    name: 'worker-retirement', version: 1, mode: 'readwrite',
-                    operations: [{ kind: 'put', store: 'items',
-                        key: { type: 'String', value: 'uncommitted' },
-                        value: '"staged"', overwrite: true }]
-                };
-                inFlight.add(Number(__hostCall('databaseRequest', JSON.stringify(command))));
-            }
-        }
-        issue();"#
-        .to_string();
+    // Success handlers may enqueue another request in the same transaction.
+    // Keep one request pending until termination, using only the public API.
+    // Native retirement tests separately cover freeing all 64 session slots.
+    let worker = r#"if (typeof __hostCall !== 'undefined') throw Error('private bridge exposed');
+        const opened = indexedDB.open('worker-retirement', 1);
+        opened.onerror = () => postMessage(opened.error?.name || 'open');
+        opened.onsuccess = () => {
+            const transaction = opened.result.transaction('items', 'readwrite');
+            const store = transaction.objectStore('items');
+            transaction.onerror = () => postMessage(transaction.error?.name || 'transaction');
+            transaction.oncomplete = () => postMessage('unexpected commit');
+            let steps = 0;
+            const keepActive = () => {
+                if (++steps > 1024) return postMessage('termination did not arrive');
+                store.get('uncommitted').onsuccess = keepActive;
+            };
+            store.put('staged', 'uncommitted').onsuccess = () => {
+                keepActive();
+                postMessage('staged');
+            };
+        };"#
+    .to_string();
     let server = thread::spawn(move || {
         serve_parallel_fixtures(listener, 3, move |request| {
             if request.contains("GET /retire-worker.js?") {
@@ -96,10 +87,14 @@ fn terminating_workers_retires_uncommitted_browser_sessions() {
     let url = format!("http://{address}/page");
     let mut child = hidden_benchmark_with_fresh_profile_args(&url, &artifacts, 8000, &[]);
     let status = wait_for_child(&mut child, Duration::from_secs(30));
-    server.join().unwrap().unwrap();
-    assert!(status.success(), "hidden Breeze run failed: {status}");
-    let report = fs::read_to_string(&artifacts.json).unwrap();
+    let report = fs::read_to_string(&artifacts.json).unwrap_or_default();
+    let served = server.join().unwrap();
+    assert!(
+        status.success(),
+        "hidden Breeze run failed: {status}\n{report}"
+    );
     assert!(report.contains("\"javascript_errors\": []"), "{report}");
     assert!(report.contains("worker retirement complete"), "{report}");
+    served.expect("page and both Worker scripts must be requested");
     assert_green_capture(&artifacts, "Worker retirement did not repaint the page");
 }

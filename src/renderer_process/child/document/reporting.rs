@@ -14,7 +14,7 @@ pub(super) fn merge_outcome(
     mut source: ScriptOutcome,
     document_root: crate::engine::dom::NodeId,
 ) {
-    if source.render_requested && source.invalidation.is_empty() {
+    if source.render_requested && source.invalidation.is_empty() && !source.is_surface_repaint() {
         source.invalidation = RenderInvalidation::full(document_root);
     }
     target
@@ -116,7 +116,7 @@ pub(super) fn merge_outcome(
         .append(&mut source.graph_audio_actions);
     target.font_actions.append(&mut source.font_actions);
     target.runtime_stopped |= source.runtime_stopped;
-    target.render_requested |= source.render_requested;
+    target.merge_render_request(source.render_requested, source.render_scope);
 }
 
 pub(super) fn runtime_report(

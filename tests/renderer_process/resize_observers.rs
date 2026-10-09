@@ -1,4 +1,5 @@
-//! ResizeObserver settles in the isolated renderer before paint; IO remains a queued task.
+//! ResizeObserver settles before a scripted paint; an earlier parser-prefix
+//! paint may precede registration. IO remains a queued task.
 use super::*;
 use better_web_browser::renderer_protocol::{DocumentId, PresentationAcknowledgement};
 
@@ -31,7 +32,7 @@ fn next_console(session: &RendererSession, document: DocumentId) -> Vec<String> 
 fn resize_observer_mutations_are_visible_in_first_presentation() {
     let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let mut session = RendererSession::launch(options()).unwrap();
-    let initial = load_html_document(
+    let initial = load_scripted_html_document(
         &session,
         901,
         r#"<!doctype html>
@@ -76,7 +77,7 @@ fn resize_observer_mutations_are_visible_in_first_presentation() {
 fn resize_observer_loop_errors_defer_self_resize_to_another_frame() {
     let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let mut session = RendererSession::launch(options()).unwrap();
-    let initial = load_html_document(
+    let initial = load_scripted_html_document(
         &session,
         902,
         r#"<!doctype html>
@@ -119,7 +120,7 @@ fn resize_observer_loop_errors_defer_self_resize_to_another_frame() {
 fn resize_observer_registration_without_mutation_wakes_renderer() {
     let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let mut session = RendererSession::launch(options()).unwrap();
-    let initial = load_html_document(
+    let initial = load_scripted_html_document(
         &session,
         903,
         r#"<!doctype html>
@@ -146,7 +147,7 @@ fn resize_observer_registration_without_mutation_wakes_renderer() {
 fn resize_observer_sees_animation_frame_mutations_before_its_paint() {
     let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let mut session = RendererSession::launch(options()).unwrap();
-    let initial = load_html_document(
+    let initial = load_scripted_html_document(
         &session,
         904,
         r#"<!doctype html>

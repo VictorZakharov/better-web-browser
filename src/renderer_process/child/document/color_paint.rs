@@ -61,7 +61,7 @@ impl PendingColorPaint {
         outcome
             .invalidation
             .merge_conservatively(std::mem::take(&mut self.invalidation), root);
-        outcome.render_requested = true;
+        outcome.request_full_render();
         self.deadline = None;
     }
 

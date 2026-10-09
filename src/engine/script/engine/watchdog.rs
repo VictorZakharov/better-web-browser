@@ -19,6 +19,7 @@ pub(super) struct ExecutionWatchdog {
     cancellation: ScriptCancellation,
     timeout: Duration,
     next_generation: u64,
+    stack_boundary: super::stack_boundary::Boundary,
 }
 
 /// Read-only task cancellation while the isolate is entered. A microtask
@@ -77,6 +78,7 @@ impl ExecutionWatchdog {
         cancellation: ScriptCancellation,
         timeout: Duration,
     ) -> JsResult<Self> {
+        let stack_boundary = super::stack_boundary::Boundary::new()?;
         cancellation.attach(handle)?;
         let timer = timer::Timer::start(cancellation.clone()).map_err(|error| {
             cancellation.detach();
@@ -90,6 +92,7 @@ impl ExecutionWatchdog {
             cancellation,
             timeout,
             next_generation: 1,
+            stack_boundary,
         })
     }
 
@@ -121,6 +124,8 @@ impl ExecutionWatchdog {
         // Retire the active generation even if a native binding panics. The
         // runtime's outer guard owns panic reporting and resource teardown.
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // Setup failure follows the same disarm/exit path as author failure.
+            self.stack_boundary.install_for_entered_isolate()?;
             action(isolate, TaskTermination(self.cancellation.interrupted()))
         }));
         let reason = self.cancellation.finish();

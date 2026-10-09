@@ -33,10 +33,11 @@
     const webGlMethod = (name, implementation) => {
         const arity = webGlArities[name];
         if (arity === undefined) throw new Error('Missing WebGL IDL signature: ' + name);
+        const argumentPlan = webGlArgumentPlan(name, arity);
         const method = function(...args) {
             webGlState(this);
             if (args.length < arity) throw new TypeError(name + ' requires at least ' + arity + ' arguments');
-            const valid=webGlConvertArguments(name, args);
+            const valid=webGlConvertArguments(argumentPlan, args);
             if (webGlState(this).lost) {
                 // KHR_parallel_shader_compile requires true after loss so a
                 // retained extension's polling loop cannot wait forever.

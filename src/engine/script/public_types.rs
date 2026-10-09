@@ -10,3 +10,4 @@ pub use super::types::{
     ScriptSensorAction, ScriptSpeechAction, UserInputEvent, UserInputModifiers, UserInputResult,
 };
 pub use super::wake_lock_host::ScriptWakeLockAction;
+pub use super::workers::ScriptWorkerAction;

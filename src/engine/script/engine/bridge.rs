@@ -4,10 +4,17 @@ use crate::engine::script::worker_host::WorkerHostState;
 use std::cell::RefCell;
 use std::rc::Weak;
 use std::time::Instant;
+mod errors;
+use errors::{allocation_error, throw_error};
 #[cfg(windows)]
 mod gpu;
+#[cfg(windows)]
+mod gpu_numeric;
+#[cfg(windows)]
+mod gpu_packet;
 mod paint;
 mod values;
+mod worker;
 pub(super) use values::{value_from_v8, value_to_v8};
 
 pub(in crate::engine::script) enum HostBridge {
@@ -188,6 +195,30 @@ fn host_call_callback(
     mut return_value: v8::ReturnValue,
 ) {
     let operation = arguments.get(0).to_rust_string_lossy(scope);
+    #[cfg(windows)]
+    if operation == "webglCommandPacket" {
+        gpu_packet::dispatch(scope, arguments, return_value);
+        return;
+    }
+    #[cfg(windows)]
+    if operation == "webglCommandValues" {
+        gpu_numeric::dispatch(scope, arguments, return_value);
+        return;
+    }
+    if matches!(
+        operation.as_str(),
+        "workerPostMessageValue" | "workerPostValue"
+    ) {
+        worker::dispatch(scope, &operation, arguments, return_value);
+        return;
+    }
+    if matches!(
+        operation.as_str(),
+        "clonePacketBinaryEncode" | "clonePacketBufferEncode" | "clonePacketBinaryDecode"
+    ) {
+        super::worker_packets::dispatch(scope, &operation, arguments, return_value);
+        return;
+    }
     if matches!(
         operation.as_str(),
         "navigate"
@@ -338,32 +369,6 @@ fn host_call_callback(
     match result {
         Ok(value) => return_value.set(value),
         Err(error) => throw_error(scope, error),
-    }
-}
-
-fn throw_error(scope: &mut v8::PinScope, error: JsError) {
-    if error.kind == JsErrorKind::Security {
-        // History URL rewriting throws a DOMException, not a renamed Error. Use the
-        // realm's captured constructor so author code cannot replace it before the throw.
-        super::messaging::throw_named(scope, "SecurityError", &error.message);
-        return;
-    }
-    let Some(message) = v8::String::new(scope, &error.message) else {
-        return;
-    };
-    let exception = match error.kind {
-        JsErrorKind::Error => v8::Exception::error(scope, message),
-        JsErrorKind::Type => v8::Exception::type_error(scope, message),
-        JsErrorKind::Range => v8::Exception::range_error(scope, message),
-        JsErrorKind::Security => unreachable!("handled by realm DOMException constructor"),
-    };
-    scope.throw_exception(exception);
-}
-
-fn allocation_error(value: &str) -> JsError {
-    JsError {
-        kind: JsErrorKind::Range,
-        message: format!("V8 could not allocate {value}"),
     }
 }
 

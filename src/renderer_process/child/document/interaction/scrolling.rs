@@ -147,7 +147,7 @@ impl DocumentRuntime {
         let mut result = self
             .dispatch_user_input(UserInputEvent::ElementScroll { target: node })?
             .outcome;
-        result.render_requested = true;
+        result.request_full_render();
         self.geometry_observers_pending = true;
         Ok(result)
     }
@@ -200,7 +200,7 @@ impl DocumentRuntime {
                 // https://drafts.csswg.org/cssom-view/#scrolling-events
                 let moved = node.scroll_offset.get() != previous_offset;
                 merge_outcome(&mut outcome, event.outcome, self.page.dom.document.id());
-                outcome.render_requested = true;
+                outcome.request_full_render();
                 self.geometry_observers_pending = true;
                 return Ok((
                     outcome,

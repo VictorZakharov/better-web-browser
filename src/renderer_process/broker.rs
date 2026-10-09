@@ -5,6 +5,12 @@ mod capture_stream;
 mod clock;
 mod control;
 mod diagnostics;
+mod memory_evidence;
+mod public_events;
+mod snapshot;
+pub use memory_evidence::RendererMemoryEvidence;
+pub use public_events::RendererEvent;
+pub use snapshot::{RendererSnapshot, RendererState};
 mod events;
 mod flow;
 mod navigation;
@@ -33,14 +39,6 @@ pub use diagnostics::{
 };
 pub type RendererTaskTimeout = diagnostics::RendererTaskTimeout;
 
-impl RendererExitReason {
-    pub fn task_timeout(&self) -> Option<&RendererTaskTimeout> {
-        match self {
-            Self::TaskBudgetExceeded(timeout) => Some(timeout),
-            _ => None,
-        }
-    }
-}
 pub use capture_stream::MediaCaptureSink;
 pub use navigation::NavigationBody;
 use queue_depth::QueueDepth;
@@ -52,87 +50,6 @@ pub use stream::{
     GeolocationUpdateSink, MediaDeviceUpdateSink, NotificationUpdateSink, PermissionUpdateSink,
     SensorUpdateSink, SpeechUpdateSink, WebSocketEventSink,
 };
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RendererState {
-    Running,
-    Unresponsive,
-    Exited,
-}
-
-#[derive(Clone, Debug)]
-pub struct RendererSnapshot {
-    pub process_id: u32,
-    pub session_id: u64,
-    pub context_id: u64,
-    pub state: RendererState,
-    pub working_set: usize,
-    pub private_memory: usize,
-    pub peak_working_set: usize,
-    pub cpu_ticks: u64,
-    pub handle_count: u32,
-    pub uptime: Duration,
-    pub last_pong_age: Duration,
-    pub active_task: Option<String>,
-    pub active_task_elapsed: Option<Duration>,
-    pub queues: RendererQueueDepths,
-    pub pending_state_updates: usize,
-    pub submitted_state_updates: u64,
-    pub coalesced_state_updates: u64,
-    pub exit_reason: Option<RendererExitReason>,
-    pub exit: Option<RendererExit>,
-}
-
-#[derive(Clone, Debug)]
-pub enum RendererEvent {
-    Diagnostic {
-        code: u16,
-        text: String,
-    },
-    FetchBatch {
-        document: DocumentId,
-        requests: Vec<RendererFetchRequest>,
-    },
-    FetchAbort {
-        document: DocumentId,
-        request_id: u64,
-    },
-    Presentation(Box<RendererPresentation>),
-    VideoFrame(Box<crate::renderer_protocol::VideoFrameUpdate>),
-    RuntimeUpdate(Box<RendererRuntimeUpdate>),
-    DocumentFailed {
-        document: DocumentId,
-        detail: String,
-    },
-    NavigationRequested {
-        document: DocumentId,
-        url: String,
-        disposition: NavigationDisposition,
-        cause: NavigationCause,
-    },
-    PointerCursor(PointerCursorResult),
-    TextSelectionUpdate(crate::renderer_protocol::TextSelectionUpdate),
-    FullscreenRequested(crate::renderer_protocol::FullscreenRequest),
-    PointerLockRequested(crate::renderer_protocol::PointerLockRequest),
-    WakeLockRequested(crate::renderer_protocol::WakeLockRequest),
-    CookieMutation(CookieMutation),
-    PolicyMutation(PolicyMutation),
-    StorageMutation(StorageMutationRequest),
-    BroadcastCommand(crate::renderer_protocol::BroadcastCommand),
-    WebSocketCommand(crate::renderer_protocol::WebSocketCommand),
-    DatabaseCommand(crate::renderer_protocol::DatabaseCommand),
-    SpeechRequest(crate::renderer_protocol::SpeechRequest),
-    NotificationRequest(crate::renderer_protocol::NotificationRequest),
-    ProtocolHandlerRequest(crate::renderer_protocol::ProtocolHandlerRequest),
-    PermissionRequest(crate::renderer_protocol::PermissionRequest),
-    GeolocationRequest(crate::renderer_protocol::GeolocationRequest),
-    MediaDeviceRequest(crate::renderer_protocol::MediaDeviceRequest),
-    MediaCaptureRequest(crate::renderer_protocol::MediaCaptureRequest),
-    SensorRequest(crate::renderer_protocol::SensorRequest),
-    ClipboardRequest(crate::renderer_protocol::ClipboardRequest),
-    FilePickerRequest(crate::renderer_protocol::FilePickerRequest),
-    Unresponsive,
-    Exited(RendererExit),
-}
 
 pub struct RendererSession {
     commands: mpsc::SyncSender<worker::BrokerCommand>,
@@ -244,6 +161,7 @@ impl RendererSession {
             context,
             state: RendererState::Running,
             sample,
+            memory_evidence: RendererMemoryEvidence::from_sample(sample),
             started: now,
             last_pong: now,
             active_task: None,

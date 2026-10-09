@@ -6,8 +6,6 @@
     const viewConstructors = new Map(['DataView','Uint8Array','Uint8ClampedArray','Int8Array',
         'Uint16Array','Int16Array','Uint32Array','Int32Array','Float16Array','Float32Array',
         'Float64Array','BigInt64Array','BigUint64Array'].map(name => [name, globalThis[name]]));
-    const bytesToBase64 = bytes => binaryHost('cloneBinaryEncode', bytes);
-    const base64ToBytes = value => binaryHost('cloneBinaryDecode', value);
     const fail = () => { throw new DOMException('The value could not be cloned', 'DataCloneError'); };
     const blobSnapshot = globalThis.__blobStructuredCloneSnapshot;
     delete globalThis.__blobStructuredCloneSnapshot;
@@ -50,7 +48,9 @@
         }
         return result;
     };
-    globalThis.__serializeClone = (input, transfers = [], forStorage = false) => {
+    const serializeGraph = (input, transfers = [], forStorage = false, packet = false) => {
+        const bytesToBase64 = bytes => binaryHost(packet ? 'clonePacketBinaryEncode' : 'cloneBinaryEncode', bytes);
+        const encodeBuffer = value => binaryHost(packet ? 'clonePacketBufferEncode' : 'cloneBufferEncode', value);
         transfers = transferList(transfers);
         const seen = new Map(); let nextId = 1;
         const transferredRecords = new Map(transfers.map(value => [value, {}]));
@@ -136,7 +136,7 @@
             if (value instanceof Set) return { t: 'set', id, v: [...value].map(encode) };
             if (value instanceof cloneBuffer) {
                 let bytes;
-                try { bytes = binaryHost('cloneBufferEncode', value); } catch { return fail(); }
+                try { bytes = encodeBuffer(value); } catch { return fail(); }
                 return { t: 'buffer', id, v: bytes };
             }
             if (cloneIsView(value)) {
@@ -165,7 +165,7 @@
             const target = transferredRecords.get(value);
             if (value instanceof cloneBuffer) {
                 target.t = 'buffer';
-                try { target.v = binaryHost('cloneBufferEncode', value); } catch { return fail(); }
+                try { target.v = encodeBuffer(value); } catch { return fail(); }
                 binaryHost('arrayBufferDetach', value);
             } else if (frames?.has(value)) {
                 const record = frames.snapshot(value);
@@ -193,7 +193,8 @@
         // after an earlier one was detached; do not promise rollback here.
         return wireStringify(ports.length ? { __breezeClonePorts: true, payload, ports } : payload);
     };
-    globalThis.__deserializeCloneWithPorts = (serialized, context) => {
+    const deserializeGraph = (serialized, context, packet = false) => {
+        const base64ToBytes = value => binaryHost(packet ? 'clonePacketBinaryDecode' : 'cloneBinaryDecode', value);
         const envelope = cloneParse(String(serialized));
         const transfers = envelope?.__breezeClonePorts === true ? envelope.ports : [];
         const payload = envelope?.__breezeClonePorts === true ? envelope.payload : envelope;
@@ -274,7 +275,14 @@
         const data = decode(payload);
         return { data, ports: transfers.map(receive) };
     };
-    globalThis.__deserializeClone = serialized => __deserializeCloneWithPorts(serialized).data;
+    globalThis.__serializeClone = (input, transfers = [], forStorage = false) => serializeGraph(input, transfers, forStorage);
+    globalThis.__deserializeCloneWithPorts = (serialized, context) => deserializeGraph(serialized, context);
+    globalThis.__deserializeClone = serialized => deserializeGraph(serialized).data;
+    // Worker callbacks capture the decoder; native code captures the serializer and
+    // removes both temporary exports before any author code runs. Persistent storage
+    // and reentrant structuredClone calls must never produce ephemeral packet tokens.
+    globalThis.__serializeWorkerPacket = (input, transfers) => serializeGraph(input, transfers, false, true);
+    globalThis.__deserializeWorkerPacketWithPorts = (serialized, context) => deserializeGraph(serialized, context, true);
     globalThis.__cloneTransferList = transferList;
     globalThis.structuredClone = (value, options = {}) =>
         __deserializeClone(__serializeClone(value, transferList(options)));

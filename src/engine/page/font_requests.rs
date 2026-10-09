@@ -22,12 +22,16 @@ impl Page {
         let mut requests = Vec::new();
         let mut hidden = HashSet::new();
         for node in Node::composed_descendants(&self.dom.document) {
+            if Node::composed_parent(&node).is_some_and(|parent| hidden.contains(&parent.id())) {
+                // Do not hydrate or clone a style solely to discard it below.
+                // A subtree below display:none cannot override that suppression.
+                hidden.insert(node.id());
+                continue;
+            }
             let Some(style) = styles.computed_style_for_node(&node).cloned() else {
                 continue;
             };
-            if style.display == Display::None
-                || Node::composed_parent(&node).is_some_and(|parent| hidden.contains(&parent.id()))
-            {
+            if style.display == Display::None {
                 hidden.insert(node.id());
                 continue;
             }

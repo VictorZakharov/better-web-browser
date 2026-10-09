@@ -5,6 +5,9 @@
         constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
     }
     const webGl2Prototype = WebGL2RenderingContext.prototype;
+    const webGl2PrivateApply = Reflect.apply;
+    const webGl2PrivateFind = Function.call.bind(Array.prototype.find);
+    const webGl2PrivatePush = Function.call.bind(Array.prototype.push);
     for (const key of Reflect.ownKeys(WebGLRenderingContext.prototype)) {
         if (key === 'constructor' || key === Symbol.toStringTag) continue;
         Object.defineProperty(webGl2Prototype, key,
@@ -40,38 +43,56 @@
     const webGl2Sequence = (value, kind) => {
         const method = value === null || value === undefined ? undefined : value[Symbol.iterator];
         if (typeof method !== 'function') throw new TypeError('Expected an iterable WebGL list');
-        const iterator = Reflect.apply(method, value, []), result = [];
+        const iterator = webGl2PrivateApply(method, value, []), result = [];
         for (const entry of {[Symbol.iterator]:() => iterator}) {
             if (result.length >= 8192) throw new RangeError('WebGL list exceeds the command budget');
-            result.push(webGlScalar(kind, entry));
+            webGl2PrivatePush(result,webGlScalar(kind, entry));
         }
         return result;
     };
     const webGl2UnsignedLongLong = value => {
         const number = webGlNumber(value);
-        return Number.isFinite(number) ? Number(BigInt.asUintN(64,BigInt(Math.trunc(number)))) : 0;
+        return webGlIdlFinite(number) ? webGlIdlNumber(webGlIdlUintN(64,webGlIdlBigInt(webGlIdlTrunc(number)))) : 0;
+    };
+    const webGl2PureNumericTail = (args, signature, index) => {
+        for (let slot=index+1;slot<signature.length;slot++) {
+            if (signature[slot] !== 'a' && signature[slot] !== 'u') return false;
+            if (args[slot] !== undefined && typeof args[slot] !== 'number') return false;
+        }
+        return true;
     };
     const webGl2Method = (name, arity, signature, interfaces, implementation, lostResult) => {
+        // Most IDL declarations have a fixed interface slot plan. Compile it
+        // once rather than searching with a new callback for every argument of
+        // every uniform/state call. A null prototype excludes author getters.
+        const fixedInterfaces = typeof interfaces === 'function' ? null : webGlWireCreate(null);
+        if (fixedInterfaces) for (let i = 0; i < interfaces.length; i++)
+            fixedInterfaces[interfaces[i][0]] = interfaces[i];
         const method = function(...args) {
+            // Missing optional IDL arguments are undefined, not inherited
+            // Array.prototype getters/setters on this private rest vector.
+            webGlWirePrototype(args,null);
             const state = webGl2State(this);
             if (args.length < arity) throw new TypeError(name + ' requires at least ' + arity + ' arguments');
             const selectedSignature = typeof signature === 'function' ? signature(args.length) : signature;
             const selectedInterfaces = typeof interfaces === 'function' ? interfaces(args.length) : interfaces;
             // Conversion order is observable even when the context is lost.
             for (let index = 0; index < selectedSignature.length; index++) {
-                const entry = selectedInterfaces.find(entry => entry[0] === index);
+                const entry = fixedInterfaces ? fixedInterfaces[index] :
+                    webGl2PrivateFind(selectedInterfaces,entry => entry[0] === index);
                 if (entry) {
-                    if (typeof entry[1] === 'function') args[index] = entry[1](args[index]);
+                    if (typeof entry[1] === 'function') args[index] = entry[1](args[index],
+                        entry[3] === true && webGl2PureNumericTail(args,selectedSignature,index));
                     else webGlConvertInterface(args, ...entry);
                 }
                 const kind = selectedSignature[index];
-                if ('UIS'.includes(kind)) args[index] = webGl2Sequence(args[index], {U:'u', I:'i', S:'s'}[kind]);
+                if (webGlWireIncludes('UIS',kind)) args[index] = webGl2Sequence(args[index], {U:'u', I:'i', S:'s'}[kind]);
                 else if (kind === 'a') {
                     args[index] = webGl2UnsignedLongLong(args[index]);
                 } else if (kind !== '-') args[index] = webGlScalar(kind, args[index]);
             }
             if (state.lost) return lostResult;
-            return Reflect.apply(implementation, this, args);
+            return webGl2PrivateApply(implementation, this, args);
         };
         Object.defineProperties(method, {name:{value:name}, length:{value:arity}});
         Object.defineProperty(webGl2Prototype, name, {enumerable:true, configurable:true, writable:true, value:method});

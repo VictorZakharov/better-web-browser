@@ -21,7 +21,7 @@ fn connected_image_load_handlers_observe_native_pixels_and_final_origin_policy()
         ),
     ] {
         let mut driver = Driver::new(
-            r#"<!doctype html><img id=photo src=/a.png><p id=status>pending</p><script>
+            r#"<!doctype html><img id=photo src=/a.png><p id=status></p><script>
             photo.onload=async()=>{
                 await photo.decode();photo.crossOrigin='anonymous';
                 const output=document.getElementById('status');
@@ -30,6 +30,9 @@ fn connected_image_load_handlers_observe_native_pixels_and_final_origin_policy()
                 try {ctx.drawImage(photo,0,0);output.textContent='ready:'+ctx.getImageData(0,0,1,1).data.join();}
                 catch(error){output.textContent='blocked:'+error.name+':'+ctx.getImageData(0,0,1,1).data.join();}
             };
+            // Network completion is controlled by the test. Do not release it
+            // on a parser-prefix paint before the load handler is installed.
+            document.getElementById('status').textContent='pending';
         </script>"#,
         );
         driver.until_text("pending");
@@ -55,7 +58,7 @@ fn connected_image_load_handlers_observe_native_pixels_and_final_origin_policy()
 fn connected_image_retargeting_waits_for_the_new_decoder_without_ghost_pixels() {
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
     let mut driver = Driver::new(
-        r#"<!doctype html><img id=photo src=/a.png><p id=result>pending</p><script>
+        r#"<!doctype html><img id=photo src=/a.png><p id=result></p><script>
         const canvas=document.createElement('canvas');canvas.width=2;canvas.height=1;
         const ctx=canvas.getContext('2d');let loads=0;
         photo.onload=()=>{
@@ -65,6 +68,7 @@ fn connected_image_retargeting_waits_for_the_new_decoder_without_ghost_pixels() 
                 result.textContent='waiting:'+ctx.getImageData(0,0,1,1).data.join();
             }else{ctx.drawImage(photo,0,0);result.textContent='replaced:'+ctx.getImageData(0,0,1,1).data.join();}
         };
+        result.textContent='pending';
     </script>"#,
     );
     driver.until_text("pending");
@@ -82,8 +86,9 @@ fn connected_image_retargeting_waits_for_the_new_decoder_without_ghost_pixels() 
 fn child_image_load_uses_child_owned_pixels_before_callback_dispatch() {
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
     let mut driver = Driver::new(
-        r#"<!doctype html><body><p id=result>pending</p><script>
+        r#"<!doctype html><body><p id=result></p><script>
         setTimeout(()=>{const frame=document.createElement('iframe');frame.src='/child.html';document.body.append(frame);},1);
+        result.textContent='pending';
         </script>"#,
     );
     driver.until_text("pending");
@@ -95,7 +100,9 @@ fn child_image_load_uses_child_owned_pixels_before_callback_dispatch() {
             const ctx=canvas.getContext('2d');ctx.drawImage(photo,0,0);
             parent.document.getElementById('result').textContent='child:'+ctx.getImageData(0,0,1,1).data.join();
         };
+        parent.document.getElementById('result').textContent='child handler ready';
     </script>"#, "text/html", 200);
+    driver.until_text("child handler ready");
     driver.until_request("child.png");
     driver.respond_bytes("child.png", &png([30, 60, 90, 255]), "image/png", 200);
     driver.until_text("child:30,60,90,255");

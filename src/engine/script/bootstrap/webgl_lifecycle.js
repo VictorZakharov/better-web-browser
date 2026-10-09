@@ -7,6 +7,8 @@
     const loseWebGlContext = (context, simulated) => {
         const state = webGlState(context);
         if (state.lost) { webGlError(context, 0x0502); return; }
+        flushWebGlCommands();
+        if (state.lost) return;
         const id = state.id;
         state.id = 0;
         state.lost = true;
@@ -46,6 +48,7 @@
             if (!state.lost || state.epoch !== epoch) return;
             state.restoreQueued = false;
             const attributes = state.attributes;
+            flushWebGlCommands();
             const id = host('webglCreate', Math.max(1, state.canvas.width), Math.max(1, state.canvas.height),
                 webGlNativeOptions(attributes, state.api));
             // Native admission failure cannot expose a half-restored context.

@@ -43,17 +43,30 @@ struct CandidateIndex {
 
 impl RuleIndex {
     pub(super) fn new(rules: &[Rule]) -> Self {
+        Self::from_rules(rules.iter().enumerate())
+    }
+
+    /// Keep original rule identities while indexing a responsibility-specific subset.
+    pub(super) fn for_indices(rules: &[Rule], indices: &[usize]) -> Self {
+        Self::from_rules(
+            indices
+                .iter()
+                .filter_map(|&index| rules.get(index).map(|rule| (index, rule))),
+        )
+    }
+
+    fn from_rules<'a>(rules: impl Iterator<Item = (usize, &'a Rule)> + Clone) -> Self {
         let mut frequency = HashMap::<Key<'_>, usize>::new();
         for target in rules
-            .iter()
-            .filter_map(|rule| rule.selector.compounds.last())
+            .clone()
+            .filter_map(|(_, rule)| rule.selector.compounds.last())
         {
             for key in keys(target) {
                 *frequency.entry(key).or_default() += 1;
             }
         }
         let mut index = Self::default();
-        for (rule_index, rule) in rules.iter().enumerate() {
+        for (rule_index, rule) in rules {
             let bucket = &mut index.targets[target_index(rule.pseudo)];
             let Some(target) = rule.selector.compounds.last() else {
                 continue;

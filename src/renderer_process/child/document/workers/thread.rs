@@ -129,7 +129,7 @@ pub(super) fn run_worker(config: WorkerConfig) {
                 }
             }
             Ok(WorkerCommand::Message(serialized)) => {
-                let message = runtime.dispatch_message(&serialized);
+                let message = runtime.dispatch_packet(serialized);
                 if drive_worker_outcome(&config, message) {
                     break;
                 }

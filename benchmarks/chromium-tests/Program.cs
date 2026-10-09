@@ -11,6 +11,9 @@ internal static class Program
         NativeWheelTests.Run();
         if (arguments.SequenceEqual(new[] { "--wheel-timing-only" })) return 0;
         ProcessTreeTests.Run();
+        ProcessMemoryTests.Run();
+        BenchmarkTitleTests.Run();
+        await ChromeCleanupTests.RunAsync();
         ChromiumProfileTests.Run();
         if (arguments.SequenceEqual(new[] { "--process-tree-only" })) return 0;
         var chrome = Options.FindChrome();
@@ -23,7 +26,7 @@ internal static class Program
             await NativeWheelIntegrationTests.RunAsync(chrome, root);
             if (nativeWheelOnly) return 0;
             var light = await CaptureAsync(chrome, root, "light", """
-                <!doctype html><html><head><style>
+                <!doctype html><html><head><title>Reference title "quoted" ☃</title><style>
                   /* Keep producing compositor frames through the CI filmstrip window. */
                   main { animation: slide 4s linear infinite alternate; }
                   @keyframes slide { from { transform: translateX(0); } to { transform: translateX(12px); } }
@@ -33,6 +36,19 @@ internal static class Program
                 """);
             Assert(light.Error is null, $"light DOM control failed: {light.Error}");
             Assert(light.BodyTextLength >= 20, "light DOM control did not expose light-DOM text");
+            Assert(light.Titles is { DocumentTitle: "Reference title \"quoted\" ☃", DocumentTitleTruncated: false },
+                "live document-title probe did not preserve the bounded source title");
+            var processMemory = light.ProcessMemory ??
+                throw new InvalidOperationException("live process-memory sample was missing");
+            Assert(processMemory.AttributionError is null,
+                "owned browser-target CDP memory attribution failed");
+            Assert(light.MemoryScope == "owned_browser_process_tree" &&
+                processMemory.Roles.Sum(role => role.PrivateBytes) == light.PrivateBytes &&
+                processMemory.Roles.Sum(role => role.ProcessCount) == light.ProcessCount,
+                "process role memory no longer partitions the owned tree aggregate");
+            Assert(processMemory.Roles.Any(role => role.Role == "browser") &&
+                processMemory.Roles.Any(role => role.Role == "renderer"),
+                "live memory attribution did not identify browser and renderer roles");
             using (var filmstrip = JsonDocument.Parse(await File.ReadAllTextAsync(
                 Path.Combine(root, "light-film", "manifest.json"))))
             {

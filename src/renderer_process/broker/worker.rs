@@ -224,7 +224,10 @@ impl Broker {
             return;
         }
         self.last_sample = Instant::now();
-        self.shared().sample = process_sample(&self.resources().process);
+        let sample = process_sample(&self.resources().process);
+        let mut shared = self.shared();
+        shared.memory_evidence.observe(sample);
+        shared.sample = sample;
     }
 
     fn protocol_failure(&mut self, error: String) {
@@ -267,6 +270,7 @@ impl Broker {
             let mut shared = resources.shared.lock().unwrap();
             shared.state = RendererState::Exited;
             shared.sample = process_sample(&resources.process);
+            shared.memory_evidence.unavailable();
             shared.exit_reason = Some(exit.reason.clone());
             shared.exit = Some(exit.clone());
         }

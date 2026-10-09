@@ -9,6 +9,12 @@
 
 - On this machine, keep generated build outputs, benchmark profiles/captures, and task scratch files on the G: drive. Before running Cargo or benchmark scripts from a C: worktree, set `CARGO_TARGET_DIR`, `TEMP`, and `TMP` to task-specific directories on G:. Do not create a `target` directory in a C: worktree.
 
+## Shared-machine resources and performance work
+
+- This workstation also runs other agents. Default local Cargo builds to four jobs, and run heavy builds and full suites sequentially unless the user requests otherwise. Keep native GPU and automated browser suites to one local worker. Do not terminate another agent's processes or the user's browsers to obtain cleaner measurements.
+- Optimize measured slow commands with small reproducible workloads, not a live application's end-to-end loading clock. Validate actual results/pixels and preserve ordering, ownership and error behavior. Keep the unchanged application as a separate functionality check.
+- Run timing comparisons without this agent's builds or heavy suites overlapping; rotate sequential candidate/reference order and retain individual samples and ranges. Other agents still affect scheduling, so do not silently discard busy-machine outliers or present elapsed time as isolated CPU cost.
+
 ## Open-source quality
 
 - Treat this project as intended for eventual public release. Prefer maintainable, standards-based implementations over site-specific workarounds or benchmark-only behavior.

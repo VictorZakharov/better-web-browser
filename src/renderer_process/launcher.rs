@@ -40,6 +40,7 @@ pub enum StartupFault {
 pub struct RendererLaunchOptions {
     pub executable: PathBuf,
     pub user_agent_mode: UserAgentMode,
+    pub memory_budget: crate::renderer_budget::RendererBudget,
     pub browsing_context: BrowsingContextId,
     pub startup_timeout: Duration,
     pub shutdown_timeout: Duration,
@@ -58,6 +59,7 @@ impl RendererLaunchOptions {
         Self {
             executable: executable.into(),
             user_agent_mode: UserAgentMode::Breeze,
+            memory_budget: Default::default(),
             browsing_context: BrowsingContextId::new(1).expect("default browsing context"),
             startup_timeout: RENDERER_STARTUP_TIMEOUT,
             shutdown_timeout: RENDERER_SHUTDOWN_TIMEOUT,
@@ -115,7 +117,7 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
     for handle in &media_handles {
         set_handle_inheritance(*handle, true)?;
     }
-    let job = create_renderer_job()?;
+    let job = create_renderer_job(options.memory_budget)?;
     let sid = AppContainerSid::create_renderer()?;
     let mut inherited_handles = media_handles.clone();
     inherited_handles.push(raw(&diagnostics.child_output));
@@ -223,11 +225,12 @@ fn command_line(
     media: Option<&LaunchedMediaWorker>,
 ) -> String {
     let mut command = format!(
-        "\"{}\" --renderer-process --renderer-nonce {} --renderer-session {} --renderer-user-agent {}",
+        "\"{}\" --renderer-process --renderer-nonce {} --renderer-session {} --renderer-user-agent {} --renderer-memory-budget {}",
         options.executable.display(),
         nonce.to_hex(),
         session.get(),
-        options.user_agent_mode.setting()
+        options.user_agent_mode.setting(),
+        options.memory_budget.setting()
     );
     if options.test_mode {
         command.push_str(" --renderer-test-mode");

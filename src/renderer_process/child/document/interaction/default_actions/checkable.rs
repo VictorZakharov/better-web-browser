@@ -18,7 +18,7 @@ pub(super) fn activate(target: &NodeRef, document: &NodeRef, outcome: &mut Scrip
         control.set_indeterminate(false);
     }
     if document.document_mutation_version() != version {
-        outcome.render_requested = true;
+        outcome.request_full_render();
         // Targeted roots (control, radio peers, form/fieldset aggregates)
         // instead of the whole document; see `request_state_render`.
         let mut roots = ScriptOutcome::default();

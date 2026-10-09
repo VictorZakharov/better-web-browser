@@ -33,6 +33,7 @@ impl PendingInvalidation {
             MutationKind::Attribute(_)
             | MutationKind::CharacterData
             | MutationKind::State
+            | MutationKind::StyleOverlay
             | MutationKind::PointerDesignation => target
                 .shadow_including_parent()
                 .unwrap_or_else(|| target.clone()),

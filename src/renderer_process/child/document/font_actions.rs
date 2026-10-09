@@ -42,7 +42,7 @@ impl DocumentRuntime {
             let mut text = self.text.borrow_mut();
             text.invalidate_web_fonts();
             text.register_web_fonts(&self.page.fonts);
-            outcome.render_requested = true;
+            outcome.request_full_render();
             outcome.invalidation =
                 crate::engine::invalidation::RenderInvalidation::full(self.page.dom.document.id());
         }

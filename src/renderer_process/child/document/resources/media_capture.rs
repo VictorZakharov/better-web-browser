@@ -160,7 +160,9 @@ impl DocumentRuntime {
                     .push(format!("capture frame presentation: {error}")),
             }
         }
-        outcome.render_requested |= needs_layout;
+        if needs_layout {
+            outcome.request_full_render();
+        }
         let result = self.complete_network_script_outcome(
             outcome,
             false,

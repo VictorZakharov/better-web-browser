@@ -12,6 +12,7 @@ pub(crate) struct Contexts;
 impl Contexts {
     pub(crate) fn clear(&mut self) {}
     pub(crate) fn complete_task(&mut self) {}
+    pub(crate) fn set_profiling(&mut self, _: bool) {}
 }
 
 /// Accept only independent copies already made by the V8 value boundary.
@@ -93,7 +94,7 @@ pub(crate) fn dispatch(
             }
             "webglSnapshot" => {
                 contexts
-                    .snapshot(id)
+                    .canvas_snapshot(id)
                     .map_or(JsValue::Null, |(width, height, pixels)| {
                         JsValue::Array(vec![
                             JsValue::from(width),

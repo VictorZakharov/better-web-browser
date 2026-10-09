@@ -34,8 +34,8 @@ impl BackendContexts {
         let Some(context) = self.contexts.get_mut(&id) else {
             return PixelReply::Lost;
         };
-        context.resource_limit = super::MAX_RESOURCE_BYTES
-            .min(super::MAX_PROCESS_RESOURCE_BYTES.saturating_sub(other_bytes));
+        context.resource_limit = super::resource_ceiling()
+            .min(super::owner_resource_ceiling().saturating_sub(other_bytes));
         if command.len() > 1024
             || input
                 .as_ref()
@@ -56,7 +56,13 @@ impl BackendContexts {
             context.error(gl::INVALID_OPERATION);
             return PixelReply::Error;
         }
+        let sample = context.execution_profile.start();
         if context.native.make_current().is_err() {
+            context.execution_profile.finish(
+                super::execution_profile::Category::Readback,
+                sample,
+                context.resource_bytes,
+            );
             return PixelReply::Lost;
         }
         let result = if command.op == "getBufferSubData" {
@@ -64,6 +70,11 @@ impl BackendContexts {
         } else {
             context.read_pixels_data(&command, input)
         };
+        context.execution_profile.finish(
+            super::execution_profile::Category::Readback,
+            sample,
+            context.resource_bytes,
+        );
         match result {
             Ok(bytes) => PixelReply::Bytes(bytes),
             Err(error) => {

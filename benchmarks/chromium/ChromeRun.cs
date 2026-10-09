@@ -124,6 +124,9 @@ internal static class ChromeRun
 
             var probe = await EvaluateAsync(cdp, nextId++, BrowserScripts.DocumentProbe, timeout);
             result.FinalUrl = probe.GetProperty("url").GetString() ?? options.Url;
+            result.Titles = BenchmarkTitles.From(
+                probe.GetProperty("documentTitle").GetString() ?? string.Empty,
+                probe.GetProperty("documentTitleSourceTruncated").GetBoolean());
             result.BodyTextLength = probe.GetProperty("bodyTextLength").GetInt32();
             result.ElementCount = probe.GetProperty("elementCount").GetInt32();
             result.BrowserErrorSurface = probe.GetProperty("browserErrorSurface").GetBoolean();
@@ -210,6 +213,7 @@ internal static class ChromeRun
             result.PeakWorkingSetBytes = finalSample.PeakWorkingSetBytes;
             result.CpuTimeMs = finalSample.CpuTimeMs;
             result.ProcessCount = finalSample.ProcessCount;
+            result.ProcessMemory = await ChromeProcessMemory.CollectAsync(port, finalSample, timeout);
             return result;
         }
         catch (Exception exception)
@@ -221,18 +225,20 @@ internal static class ChromeRun
         {
             if (chrome is not null)
             {
-                if (!chrome.HasExited)
+                try { await ChromeCleanup.StopAsync(chrome); }
+                catch (Exception error) when (error is TimeoutException or InvalidOperationException or
+                    System.ComponentModel.Win32Exception or AggregateException)
                 {
-                    chrome.Kill(entireProcessTree: true);
-                    await chrome.WaitForExitAsync();
+                    result.CleanupError = $"Owned Chromium process shutdown: {error.Message}";
                 }
                 chrome.Dispose();
             }
-            try { if (persistentProfile is null) DeleteFreshProfile(profile); }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            try { if (persistentProfile is null) await ChromeCleanup.DeleteFreshProfileAsync(profile); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
             {
                 // Preserve collected evidence, but keep cleanup failure visible and fail the run.
-                result.CleanupError = $"Temporary profile {profile}: {error.Message}";
+                result.CleanupError = string.Join("; ", new[] { result.CleanupError,
+                    $"Temporary profile {profile}: {error.Message}" }.Where(value => value is not null));
             }
         }
     }
@@ -362,28 +368,6 @@ internal static class ChromeRun
     {
         var cpuMs = Math.Max(0, after.CpuTimeMs - before.CpuTimeMs);
         return cpuMs / Math.Max(elapsedMs, 1) / Math.Max(Environment.ProcessorCount, 1) * 100;
-    }
-
-    private static void DeleteFreshProfile(string profile)
-    {
-        var full = Path.GetFullPath(profile);
-        var expectedPrefix = Path.Combine(Path.GetTempPath(), "breeze-chromium-");
-        if (!full.StartsWith(expectedPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("Refusing to remove an unexpected Chromium profile path.");
-        }
-        for (var attempt = 0; attempt < 5; attempt++)
-        {
-            try
-            {
-                if (Directory.Exists(full)) Directory.Delete(full, recursive: true);
-                return;
-            }
-            catch (Exception error) when (attempt < 4 && error is IOException or UnauthorizedAccessException)
-            {
-                Thread.Sleep(100);
-            }
-        }
     }
 
 }

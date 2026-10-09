@@ -47,6 +47,8 @@ pub(super) struct BrowserApplication {
     pub(super) profile: PathBuf,
     pub(super) active_user_agent_mode: UserAgentMode,
     pub(super) selected_user_agent_mode: Cell<UserAgentMode>,
+    pub(super) active_memory_budget: better_web_browser::renderer_budget::RendererBudget,
+    pub(super) selected_memory_budget: Cell<better_web_browser::renderer_budget::RendererBudget>,
     pub(super) metrics: Arc<BrowserMetrics>,
     pub(super) http_client: Arc<winhttp::HttpClient>,
     pub(super) storage_coordinator: better_web_browser::storage::StorageCoordinator,
@@ -83,6 +85,7 @@ impl BrowserApplication {
         let profile = super::profile::directory()?;
         let profile_lock = super::profile::acquire_exclusive_lock(&profile)?;
         let user_agent_mode = super::user_agent_preferences::load(&profile)?;
+        let memory_budget = super::memory_preferences::load(&profile)?;
         let local_storage = Arc::new(
             better_web_browser::storage::LocalStorage::open(profile.join("local-storage.json"))
                 .map_err(|error| error.to_string())?,
@@ -115,6 +118,8 @@ impl BrowserApplication {
             profile: profile.clone(),
             active_user_agent_mode: user_agent_mode,
             selected_user_agent_mode: Cell::new(user_agent_mode),
+            active_memory_budget: memory_budget,
+            selected_memory_budget: Cell::new(memory_budget),
             metrics,
             http_client: Arc::new(winhttp::HttpClient::with_profile_user_agent(
                 &profile,

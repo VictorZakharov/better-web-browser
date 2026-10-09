@@ -22,6 +22,10 @@ fn input_after_an_undrained_exit_reports_the_original_crash_or_watchdog_reason()
         };
         let session = RendererSession::launch(launch_options).expect("hidden renderer");
         let presentation = load_inline_document(&session, 125);
+        let before = session.snapshot().memory_evidence;
+        assert!(before.current_sample_available, "OS memory sample missing");
+        assert!(before.successful_samples > 0);
+        assert!(before.last_private_bytes.is_some_and(|bytes| bytes > 0));
         session.send_test_command(command).unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
         // Deliberately do not drain events: native input may arrive before the exit event.
@@ -43,6 +47,12 @@ fn input_after_an_undrained_exit_reports_the_original_crash_or_watchdog_reason()
             std::thread::sleep(Duration::from_millis(10));
         };
         let snapshot = session.snapshot();
+        let retained = snapshot.memory_evidence;
+        assert!(!retained.current_sample_available);
+        assert!(retained.successful_samples >= before.successful_samples);
+        assert!(retained.last_private_bytes.is_some_and(|bytes| bytes > 0));
+        assert!(retained.observed_peak_private_bytes >= before.observed_peak_private_bytes);
+        assert!(retained.retained_peak_working_set_bytes >= before.retained_peak_working_set_bytes);
         let exit = snapshot.exit.unwrap();
         assert!(error.contains(expected), "original reason lost: {error}");
         assert!(

@@ -21,6 +21,17 @@ summaries, separately from the first failed task per enabled epoch. Fast success
 and exhausted-budget profiles are discarded without traversing their trees.
 Draining diagnostics does not replenish either budget. Disable/re-enable starts
 a fresh epoch, and repeated enable is idempotent.
+Sampling covers script/module evaluation, dynamic-import evaluation, Promise
+checkpoints, message delivery and callback dispatch. Engine setup, heap queries,
+binding capture and three captured state/presentation hooks (current script, history
+metrics and Canvas presentation extraction) retain their ordinary watchdog and
+elapsed/CPU diagnostics without creating a CPU profiler. An uncaptured global
+with one of those names remains sampled. These are profiling exclusions, not a
+security assertion: author-modified properties/getters may still execute in a
+captured hook and remain bounded by the same watchdog.
+Starting a profiler enumerates existing compiled code; doing it for every small
+internal call can dominate layout diagnostics. These exclusions do not change
+ordinary execution and the source summaries are not exhaustive native profiles.
 Terminated microtask checkpoints are failures even though V8's checkpoint API
 does not return a JavaScript error value and can clear its termination bit. The
 sampler reads the watchdog's read-only cancellation state before leaving the
@@ -44,7 +55,7 @@ not separately identify compiler work or prove which operation caused a
 watchdog failure. The summary is not a substitute for native-host timing.
 
 The profiler itself changes runtime overhead and scheduling, and its setup and
-teardown occur inside the unchanged two-second task boundary. Do not compare
+teardown occur inside the ordinary task boundary. Do not compare
 its captures to unprofiled runs as a speed or memory benchmark. In particular,
 a sampled failure does not prove that exactly the same work fails without
 sampling. Use an unprofiled acceptance capture after implementing a change.

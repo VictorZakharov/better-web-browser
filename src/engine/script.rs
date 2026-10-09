@@ -61,6 +61,7 @@ mod viewport_host;
 mod wake_lock_host;
 mod worker_bootstrap;
 mod worker_host;
+pub mod worker_message;
 mod worker_module;
 pub(crate) mod worker_runtime;
 mod worker_websocket_host;
@@ -75,6 +76,5 @@ pub use public_types::*;
 pub use runtime::{ScriptCancellation, ScriptRuntime};
 pub use worker_host::WorkerSourceLoader;
 pub use worker_runtime::{WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome};
-pub use workers::ScriptWorkerAction;
 #[cfg(test)]
 mod tests;

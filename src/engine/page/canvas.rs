@@ -50,6 +50,29 @@ impl Page {
         key.starts_with(KEY_PREFIX)
     }
 
+    /// Only an existing bitmap with identical attribute and natural extents
+    /// can replace pixels without changing replaced-element/object-fit geometry.
+    pub(crate) fn canvas_repaint_key(
+        &self,
+        node_id: NodeId,
+        width: u32,
+        height: u32,
+        content_size: (u32, u32),
+        pixels_present: bool,
+    ) -> Option<String> {
+        let node = self.dom.find_node(node_id)?;
+        if !pixels_present
+            || node.tag_name() != Some("canvas")
+            || Node::shadow_including_root(&node).id() != self.dom.document.id()
+            || intrinsic_size(&node) != content_size
+        {
+            return None;
+        }
+        let key = image_url(self, &node)?;
+        let image = self.images.get(&key)?;
+        (image.width == width && image.height == height).then_some(key)
+    }
+
     pub(crate) fn install_canvas_bitmap(
         &mut self,
         node_id: NodeId,
@@ -136,6 +159,58 @@ impl Page {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pixel_repaint_proof_requires_existing_connected_same_size_bitmap() {
+        let mut page = Page::parse_scripted("<canvas width=9 height=8></canvas>", "about:blank");
+        let node = page.dom.elements_named("canvas").next().unwrap();
+        let id = node.id();
+        assert_eq!(page.canvas_repaint_key(id, 3, 2, (9, 8), true), None);
+        page.install_canvas_bitmap(id, 3, 2, (9, 8), Some([255, 0, 0, 255].repeat(6)))
+            .unwrap();
+        let key = image_url(&page, &node).unwrap();
+        assert_eq!(
+            page.canvas_repaint_key(id, 3, 2, (9, 8), true),
+            Some(key.clone())
+        );
+        for (width, height, content_size, present) in [
+            (4, 2, (9, 8), true),
+            (3, 4, (9, 8), true),
+            (3, 2, (10, 8), true),
+            (3, 2, (9, 9), true),
+            (3, 2, (9, 8), false),
+        ] {
+            assert_eq!(
+                page.canvas_repaint_key(id, width, height, content_size, present),
+                None
+            );
+        }
+        node.set_attr("width", "10");
+        assert_eq!(page.canvas_repaint_key(id, 3, 2, (9, 8), true), None);
+        node.set_attr("width", "9");
+        Node::remove_from_parent(&node);
+        assert_eq!(page.canvas_repaint_key(id, 3, 2, (9, 8), true), None);
+    }
+
+    #[test]
+    fn replacing_canvas_pixels_keeps_image_identity_and_republishes_the_delta() {
+        let mut page = Page::parse_scripted("<canvas width=2 height=1></canvas>", "about:blank");
+        let node = page.dom.elements_named("canvas").next().unwrap();
+        let id = node.id();
+        page.install_canvas_bitmap(id, 2, 1, (2, 1), Some([255, 0, 0, 255].repeat(2)))
+            .unwrap();
+        let key = image_url(&page, &node).unwrap();
+        page.take_image_updates();
+        assert_eq!(
+            page.canvas_repaint_key(id, 2, 1, (2, 1), true),
+            Some(key.clone())
+        );
+        page.install_canvas_bitmap(id, 2, 1, (2, 1), Some([0, 255, 0, 255].repeat(2)))
+            .unwrap();
+        assert_eq!(image_url(&page, &node), Some(key.clone()));
+        assert_eq!(&*page.images[&key].bgra, &[0, 255, 0, 255, 0, 255, 0, 255]);
+        assert_eq!(page.take_image_updates(), HashSet::from([key]));
+    }
 
     #[test]
     fn canvas_pixels_are_presented_in_premultiplied_bgra_and_reset_on_resize() {

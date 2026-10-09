@@ -57,7 +57,7 @@ impl DocumentRuntime {
                             },
                         );
                     }
-                    outcome.render_requested = true;
+                    outcome.request_full_render();
                 }
                 self.reader.source_url.clone_from(&url);
                 self.page.source_url = url;
@@ -93,7 +93,7 @@ impl DocumentRuntime {
                     &form_node,
                     &self.page.dom.document,
                 );
-                outcome.render_requested = true;
+                outcome.request_full_render();
             }
             return Ok(None);
         }

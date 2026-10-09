@@ -196,7 +196,7 @@ impl ScriptRuntime {
             page.synchronize_script_images(child);
             frames.images.entry(document).or_default().origins = page.image_origin_policy().clone();
             frames.images.entry(document).or_default().decoded = page.images;
-            outcome.render_requested = true;
+            outcome.request_full_render();
         } else if let Err(error) = &result {
             child
                 .host

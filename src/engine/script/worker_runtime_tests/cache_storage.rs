@@ -136,22 +136,35 @@ fn worker_caches_is_secure_context_only_and_same_object() {
 
 #[test]
 fn insecure_worker_cannot_select_an_origin_through_the_storage_host_call() {
-    // The renderer's private host call is still callable by author JavaScript.
-    // Exposure is not an authority boundary: the browser-owned model must reject
-    // the worker client's insecure origin even if a command is forged directly.
-    let (_, outcome) = start_worker(
+    // The author cannot forge native storage commands, independently of the
+    // browser-owned model's origin checks.
+    let (_, outcome) = WorkerRuntime::start(
         "http://example.test/worker.js",
         r#"__hostCall('databaseRequest', JSON.stringify({
                kind:'cache', command:{op:'open', name:'forged'}
            }));"#,
+        "",
+        ScriptKind::Classic,
+        loader(),
     );
-    assert_eq!(outcome.database_actions.len(), 1);
-    let request: Value = serde_json::from_str(&outcome.database_actions[0].payload).unwrap();
-    assert_eq!(request["kind"], "cache");
-    assert!(request.get("origin").is_none());
-    let command: CacheCommand = serde_json::from_value(request["command"].clone()).unwrap();
+    assert!(outcome.database_actions.is_empty());
+    assert!(
+        outcome
+            .errors
+            .iter()
+            .any(|error| error.contains("__hostCall"))
+    );
     let model = CacheStorage::in_memory();
-    assert!(model.execute("http://example.test", command).is_err());
+    assert!(
+        model
+            .execute(
+                "http://example.test",
+                CacheCommand::Open {
+                    name: "forged".into()
+                }
+            )
+            .is_err()
+    );
     assert_eq!(
         model.execute(ORIGIN, CacheCommand::Names).unwrap(),
         json!([])

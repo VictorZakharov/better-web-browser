@@ -5,10 +5,15 @@ fn removing_hidden_slot_rebuilds_for_content_redistributed_to_a_visible_slot() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let mut driver = Driver::new(
         r#"<!doctype html><head><script async src=/move.js></script></head>
-        <body><div id=host><p>slotted visible</p></div><p>ready</p><script>
+        <body><div id=host><p>slotted visible</p></div><p id=status></p><script>
         const shadow = document.querySelector('#host').attachShadow({mode:'open'});
         shadow.innerHTML = '<section style="display:none"><slot id="hidden"></slot></section><slot></slot>';
         window.hiddenSlot = shadow.querySelector('#hidden');
+        // A parser-prefix paint can precede this script. Publish readiness only
+        // after slot assignment, not from markup before the shadow root exists.
+        if (hiddenSlot.assignedNodes()[0] !== document.querySelector('#host').firstElementChild)
+            throw new Error('the hidden slot did not own the initial content');
+        document.querySelector('#status').textContent = 'ready';
         </script>"#,
     );
     let before = driver.until_text("ready");

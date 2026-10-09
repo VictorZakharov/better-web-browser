@@ -14,13 +14,14 @@ static OWNER: OnceLock<Option<mpsc::SyncSender<Request>>> = OnceLock::new();
 static RETIRED: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 type Bitmap = (u32, u32, Vec<u8>);
 enum Operation {
-    Create(u32, u32, String, Weak<()>),
+    Create(u32, u32, String, Weak<()>, bool),
     Command(u32, String, Option<Vec<u8>>),
-    Batch(Vec<(u32, String)>),
+    Batch(Vec<(u32, super::command_batch::Entry)>),
     Pixels(u32, String, Option<Vec<u8>>),
-    Snapshot(u32),
+    Snapshot(u32, bool),
     TaskBoundary(Vec<u32>),
     ResourceDiagnostics(Vec<u32>),
+    Profiling(Vec<u32>, bool),
     #[cfg(test)]
     NativeTest(fn()),
 }
@@ -32,6 +33,7 @@ enum Reply {
     Snapshot(Option<Bitmap>),
     TaskBoundary(Vec<u32>),
     ResourceDiagnostics(Vec<String>),
+    Profiling,
     #[cfg(test)]
     NativeTest(Option<String>),
 }
@@ -44,9 +46,15 @@ struct Request {
 mod ownership_tests;
 mod realm;
 pub(crate) use realm::Contexts;
+mod submission;
+use submission::{Submitted, submit};
 
 fn request(operation: Operation) -> Option<Reply> {
-    let owner = OWNER
+    submit(operation)?.wait()
+}
+
+fn owner() -> Option<&'static mpsc::SyncSender<Request>> {
+    OWNER
         .get_or_init(|| {
             // Only one pending large upload is admitted. This thread owns display creation,
             // GLSL compiler TLS, drawing and final destruction for every realm in the renderer.
@@ -58,26 +66,7 @@ fn request(operation: Operation) -> Option<Reply> {
                 .ok()
                 .map(|_| sender)
         })
-        .as_ref()?;
-    let (reply, incoming) = mpsc::sync_channel(1);
-    let mut pending = Request { operation, reply };
-    let deadline = std::time::Instant::now() + RESPONSE_TIMEOUT;
-    loop {
-        match owner.try_send(pending) {
-            Ok(()) => break,
-            Err(mpsc::TrySendError::Disconnected(_)) => return None,
-            Err(mpsc::TrySendError::Full(value)) => {
-                if std::time::Instant::now() >= deadline {
-                    return None;
-                }
-                pending = value;
-                std::thread::sleep(Duration::from_millis(1));
-            }
-        }
-    }
-    incoming
-        .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
-        .ok()
+        .as_ref()
 }
 
 fn run(incoming: mpsc::Receiver<Request>) {
@@ -115,7 +104,7 @@ fn run(incoming: mpsc::Receiver<Request>) {
             _ => HashSet::new(),
         };
         let (response, orphan) = match operation {
-            Operation::Create(width, height, options, lease) => {
+            Operation::Create(width, height, options, lease, profiling) => {
                 let id = if lease.strong_count() == 0 {
                     None
                 } else {
@@ -123,6 +112,7 @@ fn run(incoming: mpsc::Receiver<Request>) {
                 };
                 if let Some(id) = id {
                     leases.insert(id, lease);
+                    backend.set_profiling(&[id], profiling);
                 }
                 (Reply::Created(id), id)
             }
@@ -130,18 +120,15 @@ fn run(incoming: mpsc::Receiver<Request>) {
                 Reply::Command(backend.execute_owned(id, &command, bytes)),
                 Some(id),
             ),
-            Operation::Batch(commands) => {
-                let mut lost = HashSet::new();
-                for (id, command) in commands {
-                    if !lost.contains(&id)
-                        && backend.execute(id, &command, None).get("lost") == Some(&json!(true))
-                    {
-                        lost.insert(id);
-                    }
-                }
-                (Reply::Batch(lost.into_iter().collect()), None)
-            }
-            Operation::Snapshot(id) => (Reply::Snapshot(backend.snapshot(id)), Some(id)),
+            Operation::Batch(commands) => (Reply::Batch(backend.execute_batch(commands)), None),
+            Operation::Snapshot(id, straight_alpha) => (
+                Reply::Snapshot(if straight_alpha {
+                    backend.canvas_snapshot(id)
+                } else {
+                    backend.snapshot(id)
+                }),
+                Some(id),
+            ),
             Operation::TaskBoundary(ids) => {
                 let lost = backend.complete_task(&ids);
                 for id in &lost {
@@ -153,6 +140,10 @@ fn run(incoming: mpsc::Receiver<Request>) {
                 Reply::ResourceDiagnostics(backend.resource_diagnostics(&ids)),
                 None,
             ),
+            Operation::Profiling(ids, enabled) => {
+                backend.set_profiling(&ids, enabled);
+                (Reply::Profiling, None)
+            }
             Operation::Pixels(id, command, bytes) => (
                 Reply::Pixels(backend.read_pixels_owned(id, &command, bytes)),
                 Some(id),

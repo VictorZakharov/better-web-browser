@@ -11,7 +11,7 @@ const SLICE: Duration = Duration::from_millis(2);
 
 impl super::Context {
     pub(in crate::engine::script) fn run_jobs(&mut self) -> super::JsResult<()> {
-        self.agent.borrow_mut().run(|isolate| {
+        self.agent.borrow_mut().run_sampled(|isolate| {
             isolate.perform_microtask_checkpoint();
             checkpoint(isolate);
             isolate.perform_microtask_checkpoint();

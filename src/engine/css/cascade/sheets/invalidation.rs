@@ -29,8 +29,12 @@ impl StyleSet {
                 .filter_map(|id| dom.find_node(*id))
                 .collect::<Vec<_>>();
             let (removed_styles, removed_generated) = self.prune_uncomposed_styles(dom);
-            let mut stats =
-                self.refresh_subtrees(&dom.document, &roots, &invalidation.removed_nodes);
+            let mut stats = self.refresh_subtrees_after_invalidation(
+                &dom.document,
+                &roots,
+                &invalidation.removed_nodes,
+                invalidation.impact,
+            );
             stats.removed_styles += removed_styles;
             stats.layout_changed |= removed_styles != 0 || removed_generated;
             stats.non_deferable_paint_changes |= removed_styles != 0 || removed_generated;

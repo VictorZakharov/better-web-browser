@@ -25,9 +25,11 @@ fn compile(
     let (rules, parsed) = assemble_with_limit(&mut inputs, environment, previous, limit);
     CompiledRules {
         index: RuleIndex::new(&rules),
+        nonlocal_dependencies: super::super::dependencies::NonlocalDependencies::for_rules(&rules),
+        cross_tree_or_scoped: super::super::dependencies::cross_tree_or_scoped(&rules),
         rules,
         transition_rule_indices: Vec::new(),
-        animation_rule_indices: Vec::new(),
+        animation_index: RuleIndex::default(),
         keyframes: Vec::new(),
         font_faces: Vec::new(),
         scope_parents: Default::default(),

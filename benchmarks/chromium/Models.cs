@@ -19,6 +19,7 @@ internal sealed class BenchmarkResult
     public string ChromeVersion { get; set; } = string.Empty;
     public string RequestedUrl { get; init; } = string.Empty;
     public string FinalUrl { get; set; } = string.Empty;
+    public BenchmarkTitles? Titles { get; set; }
     public string? Error { get; set; }
     public string? CleanupError { get; set; }
     public int HttpStatus { get; set; }
@@ -49,6 +50,9 @@ internal sealed class BenchmarkResult
     public double CpuTimeMs { get; set; }
     public double AverageCpuPercent { get; set; }
     public int ProcessCount { get; set; }
+    // Existing memory totals are the whole owned tree, not a renderer-only sample.
+    public string MemoryScope { get; init; } = "owned_browser_process_tree";
+    public ProcessMemoryBreakdown? ProcessMemory { get; set; }
     public int BodyTextLength { get; set; }
     public int ElementCount { get; set; }
     public int ComposedTextLength { get; set; }

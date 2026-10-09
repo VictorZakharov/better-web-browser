@@ -104,7 +104,7 @@ impl Context {
 
     pub(in crate::engine::script) fn deliver_message(&mut self) -> JsResult<()> {
         let context = self.context.clone();
-        self.agent.borrow_mut().run(|isolate| {
+        self.agent.borrow_mut().run_sampled(|isolate| {
             v8::scope!(let scope, isolate);
             let local = v8::Local::new(scope, context);
             let scope = &mut v8::ContextScope::new(scope, local);
@@ -152,6 +152,9 @@ impl Context {
                     .map(|bridge| Rc::downgrade(&bridge))
                     .unwrap_or_default();
                 let context = Box::new(Self {
+                    worker_packets: local
+                        .get_slot::<super::super::worker_packets::State>()
+                        .ok_or_else(|| allocation_error("child Worker clone state"))?,
                     context,
                     private_hooks,
                     imports,

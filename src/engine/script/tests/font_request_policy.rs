@@ -44,7 +44,7 @@ fn allowed_worker_font_is_not_blocked_by_connect_src_and_keeps_redirect_policy()
             .check_request(RequestDestination::Font, "https://foreign.test/font.ttf", 1)
             .is_err()
     );
-    assert!(outcome.messages.contains(&"\"ordinary-denied\"".to_owned()));
+    assert!(outcome.messages.contains(&"\"ordinary-denied\"".into()));
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn disallowed_worker_font_does_not_escape_through_allowed_connect_src() {
         messages.extend(turn.messages);
     }
     assert!(
-        messages.contains(&"\"font:NetworkError:error\"".to_owned()),
+        messages.contains(&"\"font:NetworkError:error\"".into()),
         "{messages:?}"
     );
 }

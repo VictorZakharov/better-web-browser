@@ -14,6 +14,22 @@ fn check(source: &str) {
     assert_eq!(result.messages, ["true"]);
 }
 
+// Test the codec boundary before bootstrap, not through an author-visible
+// bridge. Public Worker tests above and below use the normal private bindings.
+fn native_check(source: &str) {
+    let host = Rc::new(RefCell::new(WorkerHostState::new(
+        "https://example.test/worker.js",
+        true,
+        "",
+        ScriptKind::Classic,
+        Arc::new(|url, _| Err(format!("unexpected {url}"))),
+        Arc::new(crate::fetch::csp::PolicyContainer::default()),
+    )));
+    let mut context = Context::new(HostBridge::Worker(Rc::downgrade(&host))).unwrap();
+    let result = context.eval(Source::from_bytes(source)).unwrap();
+    assert_eq!(result.string_value(), "true");
+}
+
 #[test]
 fn binary_clone_does_not_call_author_base64_functions() {
     check(
@@ -47,7 +63,7 @@ fn binary_clone_handles_large_texture_maps_under_the_normal_watchdog() {
 
 #[test]
 fn native_clone_bytes_preserve_view_offsets_and_reject_invalid_inputs() {
-    check(
+    native_check(
         r#"
         const bytes = new Uint8Array([99,0,1,254,255,88]);
         const encoded = __hostCall('cloneBinaryEncode', bytes.subarray(1,5));
@@ -63,7 +79,7 @@ fn native_clone_bytes_preserve_view_offsets_and_reject_invalid_inputs() {
         try { __hostCall('cloneBinaryEncode', new Uint8Array(16*1024*1024+1)); }
         catch (error) { caught = error instanceof TypeError; }
         if (!caught) throw Error('unbounded allocation');
-        postMessage(true);
+        true;
     "#,
     );
 }

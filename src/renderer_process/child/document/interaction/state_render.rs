@@ -32,7 +32,7 @@ pub(super) fn request_state_render(control: &NodeRef, outcome: &mut ScriptOutcom
     }
     roots.sort_unstable();
     roots.dedup();
-    outcome.render_requested = true;
+    outcome.request_full_render();
     outcome.invalidation = crate::engine::invalidation::RenderInvalidation {
         roots,
         impact: crate::engine::invalidation::MutationKind::State.impact(),

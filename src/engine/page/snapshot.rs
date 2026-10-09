@@ -49,6 +49,7 @@ impl Page {
             diagnostics: Vec::new(),
             media_environment: self.media_environment,
             layout_viewport: self.layout_viewport,
+            resource_profile: Default::default(),
         }
     }
 

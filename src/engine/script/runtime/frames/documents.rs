@@ -60,7 +60,9 @@ impl FrameDocument {
         let mut outcome = runtime.parser_dom_changed(mutations);
         // The parent owns the frame paint list. Parser mutations bypass normal JS
         // mutation recording, so explicitly recompose it as a child stream advances.
-        outcome.render_requested |= changed;
+        if changed {
+            outcome.request_full_render();
+        }
         runtime.set_quirks_mode(
             parser.dom().quirks_mode.get() != html5ever::tree_builder::QuirksMode::NoQuirks,
         );
@@ -219,7 +221,9 @@ pub(in crate::engine::script::runtime) fn append(
     outcome.worker_actions.append(&mut other.worker_actions);
     // A child document's nodes are not parent invalidation roots, but its paint
     // still has to be recomposed when a streamed resource completes.
-    outcome.render_requested |= other.render_requested;
+    if other.render_requested {
+        outcome.request_full_render();
+    }
     if other.navigation_url.is_some() {
         outcome.navigation_url = other.navigation_url;
         outcome.navigation_options = other.navigation_options;

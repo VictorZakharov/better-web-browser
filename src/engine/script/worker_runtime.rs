@@ -12,7 +12,7 @@ pub(crate) use startup::WorkerExecutionPolicy;
 
 #[derive(Debug, Default)]
 pub struct WorkerRuntimeOutcome {
-    pub messages: Vec<String>,
+    pub messages: Vec<super::worker_message::WorkerMessage>,
     pub port_events: Vec<WorkerPortEvent>,
     pub fetch_actions: Vec<ScriptFetchAction>,
     pub database_actions: Vec<super::network::ScriptDatabaseAction>,
@@ -34,7 +34,7 @@ pub struct WorkerRuntime {
     host: Rc<RefCell<WorkerHostState>>,
     module_loader: Rc<WebModuleLoader>,
     total_script_bytes: usize,
-    pending_messages: VecDeque<String>,
+    pending_messages: VecDeque<super::worker_message::WorkerMessage>,
     execution_profiling: bool,
     remaining_diagnostic_samples: usize,
     remaining_failed_diagnostic_sample: bool,
@@ -47,15 +47,25 @@ impl WorkerRuntime {
         self.context.cancellation()
     }
 
-    pub fn dispatch_message(&mut self, serialized: &str) -> WorkerRuntimeOutcome {
+    pub fn dispatch_message(
+        &mut self,
+        serialized: impl Into<super::worker_message::WorkerMessage>,
+    ) -> WorkerRuntimeOutcome {
+        self.dispatch_packet(serialized.into())
+    }
+
+    pub fn dispatch_packet(
+        &mut self,
+        serialized: super::worker_message::WorkerMessage,
+    ) -> WorkerRuntimeOutcome {
         let mut outcome = WorkerRuntimeOutcome::default();
         if self.host.borrow().module_evaluation_pending {
-            self.pending_messages.push_back(serialized.to_string());
+            self.pending_messages.push_back(serialized);
             self.collect(&mut outcome);
             return outcome;
         }
         let sample = self.start_task_sample();
-        if let Err(error) = self.dispatch_message_now(serialized) {
+        if let Err(error) = self.dispatch_message_now(&serialized) {
             outcome
                 .errors
                 .push(format!("dispatch Worker message: {error}"));
@@ -196,7 +206,7 @@ impl WorkerRuntime {
                     .errors
                     .push(format!("Worker timer {timer_id} promise job: {error}"));
             }
-            if let Err(error) = self.context.complete_gpu_task() {
+            if let Err(error) = self.context.complete_task() {
                 outcome.errors.push(format!(
                     "Worker timer {timer_id} GPU task boundary: {error}"
                 ));

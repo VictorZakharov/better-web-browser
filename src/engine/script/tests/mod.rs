@@ -9,9 +9,10 @@ mod url_pattern;
 mod url_resolution;
 mod video_codecs;
 mod wake_lock;
+mod worker_packet_delivery;
 mod xhr_document;
 
-fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {
+pub(super) fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {
     let dom = dom::parse_with_scripting(html, true);
     let scripts = dom
         .elements_named("script")
