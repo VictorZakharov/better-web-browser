@@ -2,7 +2,7 @@
 // class is private here: workers expose OffscreenCanvas, never HTMLElement.
 (() => {
     'use strict';
-    const host = (...args) => __hostCall(...args);
+    const host = __hostCall;
     const queueWebGlContextTask = globalThis.__webGlContextTask;
     delete globalThis.__webGlContextTask;
     const markTrusted = globalThis.__markTrustedEvent;

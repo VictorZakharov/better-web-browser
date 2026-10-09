@@ -75,6 +75,7 @@ impl DocumentRuntime {
             start.prefers_dark_color_scheme,
         ));
         page.set_layout_viewport(start.viewport.width, start.viewport.height);
+        page.set_resource_profiling(!start.diagnostic_selectors.is_empty());
         let html_parse_time = html_parse_started.elapsed();
         if let Some(url) = page.immediate_refresh_url() {
             if let Some(pending) = pending_first_paint {

@@ -1,6 +1,10 @@
 //! Realm registry, leases and ordered submission; native objects remain on the owner.
 use super::*;
 use crate::engine::webgl::{ApiVersion, Options, command_batch, sync_reply_cache};
+mod submission;
+use submission::Flight;
+#[cfg(test)]
+mod pipeline_tests;
 
 #[derive(Default)]
 pub(crate) struct Contexts {
@@ -9,8 +13,28 @@ pub(crate) struct Contexts {
     asynchronous: HashSet<u32>,
     sync_replies: sync_reply_cache::Cache,
     pending: command_batch::Pending,
+    inflight: Option<Flight>,
+    profiling: bool,
 }
 impl Contexts {
+    pub(crate) fn set_profiling(&mut self, enabled: bool) {
+        if self.profiling == enabled {
+            return;
+        }
+        self.flush_pending();
+        self.profiling = enabled;
+        let ids: Vec<_> = self.live.iter().copied().collect();
+        if !ids.is_empty()
+            && !matches!(
+                request(Operation::Profiling(ids.clone(), enabled)),
+                Some(Reply::Profiling)
+            )
+        {
+            for id in ids {
+                self.remove(id);
+            }
+        }
+    }
     pub(crate) fn resource_diagnostics(&mut self) -> Vec<String> {
         if self.live.is_empty() {
             return Vec::new();
@@ -36,6 +60,7 @@ impl Contexts {
             height,
             options.into(),
             Arc::downgrade(&lease),
+            self.profiling,
         ))?
         else {
             return None;
@@ -58,6 +83,7 @@ impl Contexts {
     }
     pub(crate) fn clear(&mut self) {
         self.pending.clear();
+        self.inflight = None;
         self.sync_replies.clear();
         if self.live.is_empty() {
             return;
@@ -95,12 +121,31 @@ impl Contexts {
     ) -> Value {
         self.execute_data(id, command, bytes.map(std::borrow::Cow::Owned))
     }
+    /// Same bounded queue and observation barriers, without JSON encode/decode.
+    /// A false reply means context loss, not a deferred ordinary GL error.
+    pub(crate) fn execute_numeric(
+        &mut self,
+        id: u32,
+        command: super::super::NumericCommand,
+    ) -> bool {
+        self.reap_pending(false);
+        if !self.live.contains(&id) {
+            return false;
+        }
+        self.sync_replies.remove(id);
+        self.pending.push_numeric(id, command);
+        if self.pending.full() {
+            self.submit_pending();
+        }
+        self.live.contains(&id)
+    }
     fn execute_data(
         &mut self,
         id: u32,
         command: &str,
         bytes: Option<std::borrow::Cow<'_, [u8]>>,
     ) -> Value {
+        self.reap_pending(false);
         if !self.live.contains(&id) {
             return json!({"lost":true});
         }
@@ -108,7 +153,7 @@ impl Contexts {
             self.sync_replies.remove(id);
             self.pending.push(id, command);
             if self.pending.full() {
-                self.flush_pending();
+                self.submit_pending();
             }
             return if self.live.contains(&id) {
                 Value::Null
@@ -194,29 +239,21 @@ impl Contexts {
             }
         }
     }
+    #[cfg(test)]
     pub(crate) fn snapshot(&mut self, id: u32) -> Option<Bitmap> {
+        self.snapshot_pixels(id, false)
+    }
+    pub(crate) fn canvas_snapshot(&mut self, id: u32) -> Option<Bitmap> {
+        self.snapshot_pixels(id, true)
+    }
+    fn snapshot_pixels(&mut self, id: u32, straight_alpha: bool) -> Option<Bitmap> {
         self.flush_pending();
         if !self.live.contains(&id) {
             return None;
         }
-        match request(Operation::Snapshot(id)) {
+        match request(Operation::Snapshot(id, straight_alpha)) {
             Some(Reply::Snapshot(bitmap)) => bitmap,
             _ => None,
-        }
-    }
-
-    fn flush_pending(&mut self) {
-        let commands = self.pending.take();
-        if commands.is_empty() {
-            return;
-        }
-        let ids: HashSet<_> = commands.iter().map(|(id, _)| *id).collect();
-        let lost = match request(Operation::Batch(commands)) {
-            Some(Reply::Batch(lost)) => lost,
-            _ => ids.into_iter().collect(),
-        };
-        for id in lost {
-            self.remove(id);
         }
     }
 }

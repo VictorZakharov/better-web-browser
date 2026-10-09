@@ -51,6 +51,10 @@ fn html_canvas_bitmap_is_snapshotted_only_after_real_paint_and_resize() {
     let timer = runtime.advance_time(std::time::Duration::from_secs(11), 1);
     assert!(timer.errors.is_empty(), "{:?}", timer.errors);
     assert!(timer.render_requested);
+    assert!(
+        timer.is_surface_repaint(),
+        "pixel-only Canvas tasks must retain their narrow scope: {timer:?}"
+    );
     assert_eq!(runtime.take_canvas_presentation().unwrap().len(), 1);
 
     let outcome = runtime.execute_additional_with_loader(
@@ -59,6 +63,10 @@ fn html_canvas_bitmap_is_snapshotted_only_after_real_paint_and_resize() {
     );
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     let mut snapshots = runtime.take_canvas_presentation().unwrap();
+    assert!(
+        !outcome.is_surface_repaint(),
+        "attribute resize must invalidate geometry"
+    );
     let snapshot = snapshots.pop().unwrap();
     assert_eq!((snapshot.width, snapshot.height), (1, 1));
     assert_eq!(snapshot.pixels.unwrap(), [0, 0, 0, 0]);

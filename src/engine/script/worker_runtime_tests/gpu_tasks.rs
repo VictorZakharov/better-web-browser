@@ -100,13 +100,17 @@ fn webgl2_worker_message_task_publishes_after_its_jobs_before_next_delivery() {
     evaluate(
         &mut runtime,
         r#"
-        function __dispatchWorkerMessage(message) {
+        globalThis.__dispatchWorkerMessage = function(message) {
             if (message === 'first') makeFence();
             observations.push(status());
             Promise.resolve().then(() => observations.push(status()));
-        }
+        };
     "#,
     );
+    runtime
+        .context
+        .capture_hook("__dispatchWorkerMessage")
+        .unwrap();
     assert!(runtime.dispatch_message("first").errors.is_empty());
     assert!(runtime.dispatch_message("second").errors.is_empty());
     assert_eq!(

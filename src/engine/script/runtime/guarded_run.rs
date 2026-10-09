@@ -20,9 +20,7 @@ impl ScriptRuntime {
         self.synchronize_font_environment(&mut outcome);
         if !outcome.runtime_stopped
             && let Some(context) = self.context.as_deref_mut()
-            && let Err(error) = context
-                .run_jobs()
-                .and_then(|()| context.complete_gpu_task())
+            && let Err(error) = context.run_jobs().and_then(|()| context.complete_task())
         {
             outcome
                 .errors

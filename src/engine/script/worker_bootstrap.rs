@@ -1,4 +1,7 @@
 pub(super) const WORKER_BOOTSTRAP: &str = concat!(
+    // Capture the bridge lexically, just as in Window. Author code may not
+    // invoke native operations or replace the bridge used by public bindings.
+    "(function (__hostCall) {\n'use strict';\n",
     include_str!("bootstrap/dom_exception.js"),
     include_str!("bootstrap/web_url.js"),
     include_str!("bootstrap/worker_base.js"),
@@ -131,4 +134,10 @@ pub(super) const WORKER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/performance_observer.js"),
     include_str!("bootstrap/worker_scope.js"),
     include_str!("bootstrap/url_cleanup.js"),
+    include_str!("bootstrap/module_promise.js"),
+    r#"
+    if (!delete globalThis.__hostCall)
+        throw new Error('Could not remove the native browser bridge from Worker');
+})(globalThis.__hostCall);
+"#,
 );

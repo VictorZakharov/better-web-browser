@@ -3,6 +3,15 @@ unsafe extern "C" {
     fn breeze_v8_capture_incumbent(result: *const v8::Object) -> bool;
     fn breeze_v8_detach_global(context: *const v8::Context);
     fn breeze_v8_window_template(template: *const v8::ObjectTemplate);
+    #[cfg(windows)]
+    fn breeze_v8_set_stack_limit(limit: usize) -> bool;
+}
+
+#[cfg(windows)]
+pub(super) fn set_stack_limit(limit: usize) -> bool {
+    // The caller has entered the owning isolate and checked the OS address range.
+    // This public V8 API does not execute author code or clear termination state.
+    unsafe { breeze_v8_set_stack_limit(limit) }
 }
 
 pub(super) fn window_template<'s>(

@@ -22,6 +22,7 @@ pub(super) struct WebGl {
     pub(super) resource_bytes: usize,
     pub(super) resource_limit: usize,
     pub(super) resource_diagnostics: resource_diagnostics::Ledger,
+    pub(super) execution_profile: execution_profile::Profile,
     pub(super) array_buffer: u32,
     pub(super) element_buffer: u32,
     pub(super) program: u32,

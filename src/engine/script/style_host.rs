@@ -147,7 +147,7 @@ pub(super) fn style_host_call(
             }
         {
             let revision = state.css_animation_revision;
-            state.record_mutation(Some(&node), MutationKind::State);
+            state.record_mutation(Some(&node), MutationKind::StyleOverlay);
             // Presentation samples do not change the authored animation list.
             state.css_animation_revision = revision;
         }

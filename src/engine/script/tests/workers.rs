@@ -130,6 +130,6 @@ fn worker_post_message_serializes_before_detaching_transfer_buffers() {
     assert!(matches!(
         &outcome.worker_actions[1],
         ScriptWorkerAction::PostMessage { serialized, .. }
-            if serialized.contains("AQID") && serialized.contains("buffer")
+            if serialized.binary_count()==1 && serialized.capacity()>3 && serialized.contains("buffer")
     ));
 }

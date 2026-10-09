@@ -1,12 +1,46 @@
 //! Bounded, ordered void commands; observations always drain the native owner.
 //! WebGL setters return no value. Their GL errors remain observable in command
 //! order through getError, rather than needing a thread round trip per setter.
-const MAX_COMMANDS: usize = 32;
+// Setters retain bounded ownership while amortizing native-thread handoffs.
+// Observations and task boundaries drain earlier commands regardless of size.
+const MAX_COMMANDS: usize = 128;
 const MAX_COMMAND_BYTES: usize = 1024;
+pub(crate) const MAX_NUMERIC_VALUES: usize = 64;
+
+/// Converted numeric setters only: no names, source strings, bytes or replies.
+/// The ordinary native dispatcher still validates every operation's GL shape.
+pub(crate) struct NumericCommand(super::Command);
+
+impl NumericCommand {
+    pub(crate) fn new(op: String, i: Vec<i64>, f: Vec<f64>) -> Option<Self> {
+        if !Pending::operation(&op)
+            || i.len().checked_add(f.len())? > MAX_NUMERIC_VALUES
+            || i.iter()
+                .any(|value| value.unsigned_abs() > 9_007_199_254_740_991)
+        {
+            return None;
+        }
+        Some(Self(super::Command {
+            op,
+            i,
+            f,
+            text: String::new(),
+        }))
+    }
+
+    pub(super) fn into_command(self) -> super::Command {
+        self.0
+    }
+}
+
+pub(super) enum Entry {
+    Json(String),
+    Numeric(NumericCommand),
+}
 
 #[derive(Default)]
 pub(super) struct Pending {
-    commands: Vec<(u32, String)>,
+    commands: Vec<(u32, Entry)>,
 }
 
 impl Pending {
@@ -26,6 +60,10 @@ impl Pending {
         if !suffix.starts_with([',', '}']) {
             return false;
         }
+        Self::operation(name)
+    }
+
+    pub(super) fn operation(name: &str) -> bool {
         matches!(
             name,
             "bindBuffer"
@@ -87,6 +125,31 @@ impl Pending {
                 | "uniform2i"
                 | "uniform3i"
                 | "uniform4i"
+                | "uniform1fv"
+                | "uniform2fv"
+                | "uniform3fv"
+                | "uniform4fv"
+                | "uniform1iv"
+                | "uniform2iv"
+                | "uniform3iv"
+                | "uniform4iv"
+                | "uniformMatrix2fv"
+                | "uniformMatrix3fv"
+                | "uniformMatrix4fv"
+                | "uniform1ui"
+                | "uniform2ui"
+                | "uniform3ui"
+                | "uniform4ui"
+                | "uniform1uiv"
+                | "uniform2uiv"
+                | "uniform3uiv"
+                | "uniform4uiv"
+                | "uniformMatrix2x3fv"
+                | "uniformMatrix2x4fv"
+                | "uniformMatrix3x2fv"
+                | "uniformMatrix3x4fv"
+                | "uniformMatrix4x2fv"
+                | "uniformMatrix4x3fv"
                 | "drawArrays"
                 | "drawElements"
                 | "drawArraysInstanced"
@@ -119,14 +182,19 @@ impl Pending {
     pub(super) fn push(&mut self, id: u32, source: &str) {
         debug_assert!(Self::candidate(source));
         debug_assert!(!self.full());
-        self.commands.push((id, source.into()));
+        self.commands.push((id, Entry::Json(source.into())));
+    }
+
+    pub(super) fn push_numeric(&mut self, id: u32, command: NumericCommand) {
+        debug_assert!(!self.full());
+        self.commands.push((id, Entry::Numeric(command)));
     }
 
     pub(super) fn full(&self) -> bool {
         self.commands.len() == MAX_COMMANDS
     }
 
-    pub(super) fn take(&mut self) -> Vec<(u32, String)> {
+    pub(super) fn take(&mut self) -> Vec<(u32, Entry)> {
         std::mem::take(&mut self.commands)
     }
 
@@ -151,6 +219,9 @@ mod tests {
             "clear",
             "uniform4f",
             "bridgeError",
+            "uniformMatrix4fv",
+            "uniformMatrix2x3fv",
+            "uniform4uiv",
         ] {
             assert!(Pending::candidate(&format!(
                 r#"{{"op":"{op}","i":[],"f":[],"text":""}}"#
@@ -197,6 +268,9 @@ mod tests {
         assert_eq!(taken.len(), MAX_COMMANDS / 2);
         for (index, (id, command)) in taken.iter().enumerate() {
             assert_eq!(*id, 2);
+            let Entry::Json(command) = command else {
+                panic!("JSON entry")
+            };
             assert_eq!(
                 *command,
                 format!(r#"{{"op":"clear","i":[{}]}}"#, index * 2 + 1)

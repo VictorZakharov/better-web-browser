@@ -41,7 +41,7 @@ pub(super) fn settle(
 }
 
 fn complete(context: &mut Context, outcome: &mut ScriptOutcome) {
-    if let Err(error) = context.complete_gpu_task() {
+    if let Err(error) = context.complete_task() {
         outcome
             .errors
             .push(format!("startup GPU task boundary: {error}"));

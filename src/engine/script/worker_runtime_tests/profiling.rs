@@ -1,5 +1,22 @@
 use super::*;
 
+fn assert_sample(outcome: &WorkerRuntimeOutcome, expected: usize) {
+    // Parallel native GPU tests may change real process pressure. Its single
+    // aggregate is distinct from the unchanged task/heap sample contract.
+    let pressure = outcome
+        .diagnostics
+        .iter()
+        .filter(|row| row.starts_with("V8 process-pressure hints:"))
+        .count();
+    assert!(pressure <= usize::from(expected > 0));
+    assert_eq!(
+        outcome.diagnostics.len() - pressure,
+        expected,
+        "{:?}",
+        outcome.diagnostics
+    );
+}
+
 fn worker() -> WorkerRuntime {
     let (runtime, outcome) = WorkerRuntime::start(
         "https://example.test/worker.js",
@@ -25,9 +42,19 @@ fn worker_execution_attribution_is_opt_in_bounded_and_contains_no_message_payloa
         assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
         assert_eq!(outcome.messages, ["\"private author payload\""]);
         if index < 8 {
-            assert_eq!(outcome.diagnostics.len(), 2);
-            assert!(outcome.diagnostics[0].contains("GC callback span"));
-            assert!(outcome.diagnostics[1].contains("V8 heap:"));
+            assert_sample(&outcome, 2);
+            assert!(
+                outcome
+                    .diagnostics
+                    .iter()
+                    .any(|row| row.contains("GC callback span"))
+            );
+            assert!(
+                outcome
+                    .diagnostics
+                    .iter()
+                    .any(|row| row.contains("V8 heap:"))
+            );
             assert!(
                 !outcome
                     .diagnostics
@@ -41,7 +68,7 @@ fn worker_execution_attribution_is_opt_in_bounded_and_contains_no_message_payloa
     runtime.set_execution_diagnostics(false);
     assert!(runtime.dispatch_message("456").diagnostics.is_empty());
     runtime.set_execution_diagnostics(true);
-    assert_eq!(runtime.dispatch_message("789").diagnostics.len(), 2);
+    assert_sample(&runtime.dispatch_message("789"), 2);
 }
 
 #[test]
@@ -57,7 +84,7 @@ fn repeated_failed_tasks_have_one_reserved_sample_after_success_budget_is_used()
     let mut runtime = runtime.unwrap();
     runtime.set_execution_diagnostics(true);
     for _ in 0..8 {
-        assert_eq!(runtime.dispatch_message("123").diagnostics.len(), 2);
+        assert_sample(&runtime.dispatch_message("123"), 2);
     }
     // Use a real watchdog failure: ordinary listener exceptions are reported
     // by event dispatch rather than returned as failed V8 execution tasks.
@@ -65,7 +92,7 @@ fn repeated_failed_tasks_have_one_reserved_sample_after_success_budget_is_used()
         runtime.set_execution_diagnostics(true);
         let outcome = runtime.dispatch_message("\"private author payload\"");
         assert!(!outcome.errors.is_empty());
-        assert_eq!(outcome.diagnostics.len(), if index == 0 { 2 } else { 0 });
+        assert_sample(&outcome, if index == 0 { 2 } else { 0 });
         assert!(
             !outcome
                 .diagnostics
@@ -82,12 +109,6 @@ fn repeated_failed_tasks_have_one_reserved_sample_after_success_budget_is_used()
             .is_empty()
     );
     runtime.set_execution_diagnostics(true);
-    assert_eq!(
-        runtime
-            .dispatch_message("\"private author payload\"")
-            .diagnostics
-            .len(),
-        2
-    );
-    assert_eq!(runtime.dispatch_message("789").diagnostics.len(), 2);
+    assert_sample(&runtime.dispatch_message("\"private author payload\""), 2);
+    assert_sample(&runtime.dispatch_message("789"), 2);
 }

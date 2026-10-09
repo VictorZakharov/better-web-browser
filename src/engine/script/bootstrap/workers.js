@@ -3,6 +3,7 @@
     const host = (...args) => __hostCall(...args);
     const urlApi = globalThis.__urlInternals;
     const markTrusted = globalThis.__markTrustedEvent;
+    const decodeMessage = globalThis.__deserializeWorkerPacketWithPorts;
     const workers = new Map();
     const defineHandler = (prototype, type) => Object.defineProperty(prototype, 'on' + type, {
         configurable: true, enumerable: true,
@@ -43,8 +44,7 @@
                     globalThis.__clonePortBindings.describe(port).worker !== this.__id)
                     throw new DOMException('Ports belong to a different Worker', 'DataCloneError');
             }
-            const serialized = __serializeClone(message, transfers);
-            host('workerPostMessage', this.__id, serialized);
+            host('workerPostMessageValue', this.__id, message, transfers);
         }
         terminate() {
             if (this.__terminated) return;
@@ -63,7 +63,7 @@
         if (!worker || worker.__terminated) return;
         if (kind === 'message') {
             try {
-                const {data, ports} = __deserializeCloneWithPorts(String(payload), Number(id));
+                const {data, ports} = decodeMessage(String(payload), Number(id));
                 worker.dispatchEvent(markTrusted(new MessageEvent('message', {data, ports})));
             }
             catch (_) { worker.dispatchEvent(markTrusted(new MessageEvent('messageerror'))); }

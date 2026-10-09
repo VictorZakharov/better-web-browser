@@ -14,7 +14,7 @@ pub(super) fn dispatch(
         .node(argument_id(args, 1))
         .is_some_and(|node| node.tag_name() == Some("canvas") && state.is_connected(&node));
     if connected {
-        state.timers.request_render();
+        state.timers.request_surface_repaint();
     }
     Some(JsValue::Boolean(connected))
 }

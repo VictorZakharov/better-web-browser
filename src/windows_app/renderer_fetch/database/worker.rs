@@ -237,33 +237,36 @@ mod tests {
         let tab = TabId::first();
         let document = DocumentId::new(1).unwrap();
         let client = (1_u64 << 63) | 1;
-        let mut session = database
-            .begin_session(origin, "worker-retirement", 1, TransactionMode::ReadWrite)
-            .unwrap();
-        session
-            .step(&[DbOperation::Put {
-                store: "items".into(),
-                key: Some(Key::String("uncommitted".into())),
-                value: "staged".into(),
-                overwrite: true,
-            }])
-            .unwrap();
-        let key = SessionKey {
-            tab_id: tab,
-            document,
-            client_id: client,
-            transaction_id: 3,
-            url: origin.into(),
-            name: "worker-retirement".into(),
-            version: 1,
-        };
-        let mut sessions = HashMap::from([(
-            key,
-            SessionValue {
-                session,
-                last_activity: Instant::now(),
-            },
-        )]);
+        let mut sessions = HashMap::new();
+        for transaction_id in 1..=SESSION_CAPACITY as u64 {
+            let mut session = database
+                .begin_session(origin, "worker-retirement", 1, TransactionMode::ReadWrite)
+                .unwrap();
+            session
+                .step(&[DbOperation::Put {
+                    store: "items".into(),
+                    key: Some(Key::String("uncommitted".into())),
+                    value: "staged".into(),
+                    overwrite: true,
+                }])
+                .unwrap();
+            sessions.insert(
+                SessionKey {
+                    tab_id: tab,
+                    document,
+                    client_id: client,
+                    transaction_id,
+                    url: origin.into(),
+                    name: "worker-retirement".into(),
+                    version: 1,
+                },
+                SessionValue {
+                    session,
+                    last_activity: Instant::now(),
+                },
+            );
+        }
+        assert_eq!(sessions.len(), SESSION_CAPACITY);
         let mut retired_clients = HashSet::new();
         let mut failed_documents = HashSet::new();
         retire(

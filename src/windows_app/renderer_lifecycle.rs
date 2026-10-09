@@ -145,12 +145,14 @@ impl BrowserState {
         let tab_router = self.app.tab_router.clone();
         let silent_audio = self.benchmark.is_some();
         let user_agent_mode = self.app.active_user_agent_mode;
+        let memory_budget = self.app.active_memory_budget;
         let (sender, receiver) = mpsc::channel();
         let spawn = std::thread::Builder::new()
             .name(format!("breeze-renderer-launch-{}", id.get()))
             .spawn(move || {
                 let result = RendererLaunchOptions::current_executable().and_then(|mut options| {
                     options.user_agent_mode = user_agent_mode;
+                    options.memory_budget = memory_budget;
                     options.enable_media = true;
                     options.silent_audio = silent_audio;
                     options.browsing_context = BrowsingContextId::new(id.get())

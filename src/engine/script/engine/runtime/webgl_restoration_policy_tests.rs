@@ -15,6 +15,7 @@ fn replay(code: &str) {
         const webGlToken = Symbol();
         const webGlExtensionFactories = new Map();
         const webGlCall = () => null;
+        const flushWebGlCommands = () => {};
         const webGlError = (_, error) => errors.push(error);
         let active, admitted = 0;
         const context = {};

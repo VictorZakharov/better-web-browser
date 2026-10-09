@@ -297,13 +297,8 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/native_ports.js"),
     include_str!("bootstrap/workers.js"),
     include_str!("bootstrap/url_cleanup.js"),
+    include_str!("bootstrap/module_promise.js"),
     r#"
-    globalThis.__trackModulePromise = (promise, operation, completionId) => {
-        promise.then(
-            () => __hostCall(operation, completionId, true, ''),
-            reason => __hostCall(operation, completionId, false, String(reason))
-        );
-    };
     if (!delete globalThis.__hostCall)
         throw new Error('Could not remove the native browser bridge from Window');
 })(globalThis.__hostCall);

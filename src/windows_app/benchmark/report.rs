@@ -113,6 +113,14 @@ impl BrowserState {
                 .join(", ")
         );
         let renderer_diagnostics = renderer_diagnostics::to_json(&renderer_snapshots);
+        // Include retained exited sessions too: zero current live-process totals
+        // after a crash must not discard their last known memory evidence.
+        let memory_snapshots: Vec<_> = renderer_registry
+            .renderers
+            .iter()
+            .filter_map(|renderer| renderer.snapshot.as_ref())
+            .collect();
+        let renderer_memory_observations = renderer_diagnostics::memory_to_json(&memory_snapshots);
         let renderer_exits: Vec<_> = renderer_registry
             .renderers
             .iter()
@@ -187,6 +195,7 @@ impl BrowserState {
                 "{{\n",
                 "  \"browser\": {},\n",
                 "  \"headless\": true,\n",
+                "  \"renderer_memory_budget\": {},\n",
                 "  \"device_scale_factor\": {:.3},\n",
                 "  \"requested_url\": {},\n",
                 "  \"final_url\": {},\n",
@@ -254,6 +263,7 @@ impl BrowserState {
                 "  \"full_paint_repaints\": {},\n",
                 "  \"renderer_launch_errors\": {},\n",
                 "  \"renderer_diagnostics\": {},\n",
+                "  \"renderer_memory_observations\": {},\n",
                 "  \"renderer_exits\": {},\n",
                 "  \"javascript_errors\": {},\n",
                 "  \"javascript_console\": {},\n",
@@ -267,6 +277,7 @@ impl BrowserState {
                 "}}\n"
             ),
             json_string(BENCHMARK_ID),
+            json_string(self.app.active_memory_budget.setting()),
             self.page_scale(),
             json_string(&benchmark.requested_url),
             json_string(&benchmark.final_url),
@@ -343,6 +354,7 @@ impl BrowserState {
             benchmark.full_paint_repaints,
             renderer_launch_errors,
             renderer_diagnostics,
+            renderer_memory_observations,
             renderer_exit_diagnostics,
             script_errors,
             script_console,

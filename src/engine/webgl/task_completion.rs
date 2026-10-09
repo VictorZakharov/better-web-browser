@@ -29,7 +29,15 @@ impl BackendContexts {
             if context.options.api != ApiVersion::Two {
                 continue;
             }
-            if context.native.make_current().is_err() || context.complete_gpu_task().is_err() {
+            let sample = context.execution_profile.start();
+            let failed =
+                context.native.make_current().is_err() || context.complete_gpu_task().is_err();
+            context.execution_profile.finish(
+                super::execution_profile::Category::Query,
+                sample,
+                context.resource_bytes,
+            );
+            if failed {
                 lost.push(id);
             }
         }

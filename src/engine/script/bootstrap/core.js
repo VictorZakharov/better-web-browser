@@ -2,7 +2,7 @@
     'use strict';
     // __hostCall is the outer bootstrap closure's private native binding. The
     // page-global property is removed when initialization ends.
-    const host = function () { return __hostCall.apply(null, arguments); };
+    const host = __hostCall;
     if (typeof String.prototype.substr !== 'function') {
         Object.defineProperty(String.prototype, 'substr', {
             configurable: true,

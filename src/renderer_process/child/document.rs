@@ -1,6 +1,7 @@
 //! Renderer-owned document, DOM, JavaScript realm, decoded resources, and layout state.
 
 mod accessibility;
+mod canvas_paint;
 mod color_paint;
 mod diagnostics;
 mod document_streams;

@@ -154,9 +154,15 @@ impl super::BackendContexts {
                 context.objects.poisoned = true;
                 continue;
             }
+            let sample = context.execution_profile.start();
             if let Err(error) = context.progress_program_links(1) {
                 context.error(error);
             }
+            context.execution_profile.finish(
+                super::execution_profile::Category::Query,
+                sample,
+                context.resource_bytes,
+            );
         }
     }
 }

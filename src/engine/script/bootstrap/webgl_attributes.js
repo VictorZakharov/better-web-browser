@@ -29,6 +29,7 @@
     // the author's dictionary or silently relax hardware-only admission.
     const webGlNativeOptions = (attributes, api) => webGlWireOptions({
         api, alpha:attributes.alpha, depth:attributes.depth,
+        premultiplied_alpha:attributes.premultipliedAlpha,
         stencil:attributes.stencil, antialias:attributes.antialias,
         preserve:attributes.preserveDrawingBuffer,
         fail_if_major_performance_caveat:attributes.failIfMajorPerformanceCaveat,

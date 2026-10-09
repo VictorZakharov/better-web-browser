@@ -8,6 +8,10 @@ pub(crate) const MAX_INVALIDATION_ROOTS: usize = 256;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct InvalidationImpact(u8);
 
+// Evidence, not an impact: only inline/animation-style writes may take an exact
+// post-cascade equality proof. Mixing any other kind clears that evidence.
+const STYLE_ONLY: u8 = 1 << 4;
+
 impl InvalidationImpact {
     pub const STYLE: Self = Self(1 << 0);
     pub const LAYOUT: Self = Self(1 << 1);
@@ -15,7 +19,14 @@ impl InvalidationImpact {
     pub const PAINT: Self = Self(1 << 3);
 
     pub const fn union(self, other: Self) -> Self {
-        Self(self.0 | other.0)
+        let only_style = (self.is_style_only() || other.is_style_only())
+            && (self.0 == 0 || self.is_style_only())
+            && (other.0 == 0 || other.is_style_only());
+        Self(((self.0 | other.0) & !STYLE_ONLY) | if only_style { STYLE_ONLY } else { 0 })
+    }
+
+    pub(crate) const fn is_style_only(self) -> bool {
+        self.0 & STYLE_ONLY != 0
     }
 
     pub const fn affects_style(self) -> bool {
@@ -67,17 +78,27 @@ pub enum MutationKind<'a> {
     State,
     /// Pointer designation can change selectors, but does not itself change content or controls.
     PointerDesignation,
+    /// Native CSS animation/transition declarations, not DOM or control state.
+    StyleOverlay,
 }
 
 impl MutationKind<'_> {
     pub fn impact(self) -> InvalidationImpact {
         match self {
             Self::PointerDesignation => InvalidationImpact::STYLE,
+            Self::StyleOverlay => InvalidationImpact(
+                InvalidationImpact::STYLE.0
+                    | InvalidationImpact::LAYOUT.0
+                    | InvalidationImpact::PAINT.0
+                    | STYLE_ONLY,
+            ),
             Self::Attribute(name) => {
                 let base = InvalidationImpact::STYLE
                     .union(InvalidationImpact::LAYOUT)
                     .union(InvalidationImpact::PAINT);
-                if matches!(
+                if name.eq_ignore_ascii_case("style") {
+                    InvalidationImpact(base.0 | STYLE_ONLY)
+                } else if matches!(
                     name.to_ascii_lowercase().as_str(),
                     "src" | "srcset" | "sizes" | "width" | "height" | "value"
                 ) {
@@ -227,6 +248,7 @@ pub(crate) fn is_validation_attribute(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod style_only;
     use crate::engine::dom::parse;
 
     #[test]

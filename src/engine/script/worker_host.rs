@@ -26,7 +26,7 @@ pub(super) struct WorkerHostState {
     pub(super) database_actions: Vec<super::network::ScriptDatabaseAction>,
     pub(super) next_websocket_id: u32,
     pub(super) websocket_actions: Vec<super::network::ScriptWebSocketAction>,
-    pub(super) messages: Vec<String>,
+    pub(super) messages: Vec<super::worker_message::WorkerMessage>,
     pub(super) port_events: Vec<WorkerPortEvent>,
     pub(super) console: Vec<String>,
     pub(super) compression_streams: super::host_call::compression_host::CompressionStreams,
@@ -290,7 +290,7 @@ pub(super) fn dispatch_worker_host_call(
             Ok(JsValue::from(id))
         }
         "workerPost" => {
-            state.messages.push(argument_string(args, 1)?);
+            state.messages.push(argument_string(args, 1)?.into());
             Ok(JsValue::undefined())
         }
         "workerPortPost" => {

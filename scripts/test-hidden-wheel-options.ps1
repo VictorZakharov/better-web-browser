@@ -37,4 +37,26 @@ foreach ($delay in @(-1, 60001)) {
     }
     if (-not $rejected) { throw "Invalid initial action delay was accepted: $delay" }
 }
+foreach ($budget in @('standard', 'graphics')) {
+    foreach ($profile in @($null, 'G:\existing-profile-must-not-change')) {
+        $options = @{
+            Url = 'about:blank'; Output = 'G:\invalid-budget-unused.json'
+            Browser = 'G:\nonexistent-hidden-browser.exe'; RendererMemoryBudget = $budget
+        }
+        if ($null -ne $profile) { $options.ProfileDirectory = $profile }
+        $rejected = $false
+        try { & $runner @options }
+        catch { $rejected = $_.Exception.Message -match 'requires -FreshProfile' }
+        if (-not $rejected) { throw "Memory budget could mutate a non-fresh profile: $budget" }
+    }
+}
+foreach ($budget in @('', '2g', 'unlimited', 'GRAPHICS --benchmark')) {
+    $rejected = $false
+    try {
+        & $runner -Url 'about:blank' -Output 'G:\invalid-budget-unused.json' -FreshProfile -RendererMemoryBudget $budget
+    } catch [System.Management.Automation.ParameterBindingException] {
+        $rejected = $true
+    }
+    if (-not $rejected) { throw "Unknown memory budget accepted: $budget" }
+}
 Write-Host 'Hidden wheel option validation passed without browser execution.'

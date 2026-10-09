@@ -22,6 +22,13 @@ struct HostCallStats {
 }
 
 impl HostCallProfile {
+    #[cfg(test)]
+    pub(super) fn calls_for_test(&self, operation: &str) -> usize {
+        self.operations
+            .get(operation)
+            .map_or(0, |entry| entry.calls)
+    }
+
     pub(super) fn is_enabled(&self) -> bool {
         self.enabled
     }

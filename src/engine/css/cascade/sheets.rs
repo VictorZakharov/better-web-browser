@@ -6,6 +6,7 @@ use crate::engine::css::rule_index::RuleIndex;
 use std::rc::Rc;
 
 mod animations;
+mod dependencies;
 mod fonts;
 mod invalidation;
 mod owners;
@@ -30,11 +31,13 @@ struct SheetInput {
 pub(super) struct CompiledRules {
     pub(super) rules: Vec<Rule>,
     transition_rule_indices: Vec<usize>,
-    animation_rule_indices: Vec<usize>,
+    animation_index: RuleIndex,
     keyframes: Vec<crate::engine::css::stylesheet::keyframes::KeyframeDefinition>,
     font_faces: Vec<crate::engine::font::WebFontFace>,
     scope_parents: std::collections::HashMap<NodeId, Option<NodeId>>,
     pub(super) index: RuleIndex,
+    pub(super) nonlocal_dependencies: dependencies::NonlocalDependencies,
+    pub(super) cross_tree_or_scoped: bool,
     inputs: Vec<Rc<SheetInput>>,
     parsed: Vec<Rc<parsed::ParsedSheet>>,
     environment: Option<MediaEnvironment>,
@@ -182,13 +185,17 @@ pub(super) fn collect(
     let animation_rule_indices = animations::rule_indices(&rules);
     let keyframes = animations::collect(&inputs, environment);
     let font_faces = fonts::collect(&inputs, environment);
+    let nonlocal_dependencies = dependencies::NonlocalDependencies::for_rules(&rules);
+    let cross_tree_or_scoped = dependencies::cross_tree_or_scoped(&rules);
     let compiled = Rc::new(CompiledRules {
         index: RuleIndex::new(&rules),
+        animation_index: RuleIndex::for_indices(&rules, &animation_rule_indices),
         rules,
         transition_rule_indices,
-        animation_rule_indices,
         keyframes,
         font_faces,
+        nonlocal_dependencies,
+        cross_tree_or_scoped,
         scope_parents,
         inputs,
         parsed,

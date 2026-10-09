@@ -41,7 +41,12 @@ fn verify_outcome(outcome: &WorkerRuntimeOutcome) {
     assert!(outcome.websocket_actions.is_empty());
 }
 
-fn run(source: &str) -> (WorkerRuntime, Vec<String>) {
+fn run(
+    source: &str,
+) -> (
+    WorkerRuntime,
+    Vec<super::super::worker_message::WorkerMessage>,
+) {
     let fixtures = serde_json::from_str::<serde_json::Value>(include_str!(
         "../../../../tests/image-frame-fixtures/frames.json"
     ))

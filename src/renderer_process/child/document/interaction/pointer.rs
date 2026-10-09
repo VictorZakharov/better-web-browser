@@ -99,7 +99,7 @@ impl DocumentRuntime {
                 target.as_ref().map(|target| target.node.clone()),
             );
             if !boundary.entering.is_empty() || !boundary.leaving.is_empty() {
-                outcome.render_requested = true;
+                outcome.request_full_render();
                 outcome.invalidation = crate::engine::invalidation::RenderInvalidation {
                     roots: vec![self.page.dom.document.id()],
                     impact: crate::engine::invalidation::MutationKind::PointerDesignation.impact(),

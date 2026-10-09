@@ -11,8 +11,28 @@ const RETAIN_SOURCE_BYTES: usize = 128 * 1024;
 
 struct Entry {
     environment: Environment,
-    validator: ShaderValidator,
+    validator: Option<ShaderValidator>,
     uses: usize,
+}
+
+impl Drop for Entry {
+    fn drop(&mut self) {
+        let Some(validator) = self.validator.take() else {
+            return;
+        };
+        // The pinned native Compiler refcount does not include explicit
+        // validators. A peer's last lazy GLES compiler can finalize pool TLS
+        // while this validator still owns its tree/allocator. Initialize is
+        // idempotent and must precede both reuse and destruction.
+        if shaders::initialize().is_ok() {
+            drop(validator);
+        } else {
+            // A failed OS TLS allocation cannot make its native destructor
+            // safe. Keep this already-bounded handle until process exit;
+            // prepare/compile will reject further use on the same failure.
+            std::mem::forget(validator);
+        }
+    }
 }
 
 #[derive(Default)]
@@ -61,7 +81,7 @@ impl Validators {
         .ok_or_else(|| "Could not construct the WebGL shader validator".to_owned())?;
         self.stages[index] = Some(Entry {
             environment,
-            validator,
+            validator: Some(validator),
             uses: 0,
         });
         #[cfg(test)]
@@ -77,15 +97,20 @@ impl Validators {
             .as_mut()
             .filter(|entry| entry.environment == environment)
             .ok_or_else(|| "WebGL validator environment was not prepared".to_owned())?;
+        shaders::initialize().map_err(str::to_owned)?;
+        let validator = entry
+            .validator
+            .as_ref()
+            .expect("live entry owns its validator");
         // Each real compile clears preceding diagnostics, symbols, extension
         // directives, and reflection in pinned TCompiler::compileTreeImpl.
         // Its public Compile contract supports repeated use of one handle.
         let mut options = shaders::CompileOptions::mozangle();
         options.set_emulateGLDrawID(u64::from(environment.multi_draw));
-        let result = match entry.validator.compile(&[source], options) {
-            Ok(()) => Ok(entry.validator.object_code()),
+        let result = match validator.compile(&[source], options) {
+            Ok(()) => Ok(validator.object_code()),
             Err(reason) => {
-                let mut log = entry.validator.info_log();
+                let mut log = validator.info_log();
                 if log.is_empty() {
                     log = reason.into();
                 }
@@ -110,5 +135,7 @@ impl Validators {
     }
 }
 
+#[cfg(test)]
+mod lifetime_tests;
 #[cfg(test)]
 mod tests;

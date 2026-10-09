@@ -15,6 +15,9 @@ use std::time::Duration;
 const MINIMUM_REPEAT_INTERVAL: Duration = Duration::from_nanos(1);
 mod source;
 pub use source::TaskSource;
+mod render;
+use render::RenderRequests;
+pub use render::RenderScope;
 
 /// An opaque identifier used to cancel pending tasks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -89,7 +92,7 @@ pub struct EventLoopScheduler<T> {
     next_handle: u64,
     next_sequence: u64,
     performing_microtask_checkpoint: bool,
-    render_requested: bool,
+    rendering: RenderRequests,
 }
 
 impl<T> Default for EventLoopScheduler<T> {
@@ -108,7 +111,7 @@ impl<T> EventLoopScheduler<T> {
             next_handle: 1,
             next_sequence: 0,
             performing_microtask_checkpoint: false,
-            render_requested: false,
+            rendering: RenderRequests::default(),
         }
     }
 
@@ -156,24 +159,6 @@ impl<T> EventLoopScheduler<T> {
         self.microtasks.push_back(payload);
     }
 
-    /// Requests a future rendering checkpoint, returning true only for the first request.
-    pub fn request_render(&mut self) -> bool {
-        if self.render_requested {
-            return false;
-        }
-        self.render_requested = true;
-        true
-    }
-
-    pub fn render_requested(&self) -> bool {
-        self.render_requested
-    }
-
-    /// Consumes the coalesced rendering request.
-    pub fn take_render_request(&mut self) -> bool {
-        std::mem::take(&mut self.render_requested)
-    }
-
     pub fn pending_task_count(&self) -> usize {
         self.active_tasks.len()
     }
@@ -187,7 +172,7 @@ impl<T> EventLoopScheduler<T> {
         self.tasks.clear();
         self.active_tasks.clear();
         self.microtasks.clear();
-        self.render_requested = false;
+        self.rendering = RenderRequests::default();
     }
 
     /// Returns the earliest active task deadline, discarding cancelled queue entries as needed.

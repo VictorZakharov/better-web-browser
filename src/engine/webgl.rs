@@ -21,8 +21,16 @@ mod buffer_retirement_tests;
 mod buffer_upload;
 mod buffers;
 mod command_batch;
+pub(crate) mod numeric_packet;
+pub(crate) use command_batch::{MAX_NUMERIC_VALUES, NumericCommand};
+#[cfg(test)]
+mod canvas_snapshot_tests;
 #[cfg(test)]
 mod command_batch_tests;
+#[cfg(test)]
+mod command_batch_uniform_tests;
+#[cfg(test)]
+mod command_numeric_tests;
 mod commands;
 mod compiler_events;
 mod compiler_policy;
@@ -105,6 +113,7 @@ mod drawing_buffer_extent;
 #[cfg(test)]
 mod drawing_buffer_extent_tests;
 mod error_state;
+mod execution_profile;
 mod extension_commands;
 mod extension_draw_dispatch;
 mod extensions;
@@ -178,6 +187,7 @@ mod pixel_transport;
 mod presentation;
 #[cfg(test)]
 mod presentation_state_tests;
+mod process_headroom;
 mod queries;
 #[cfg(test)]
 mod query_object_tests;
@@ -312,8 +322,18 @@ pub(crate) const MAX_CONTEXTS: usize = 8;
 // loading; storage remains independently subject to the per-context/process
 // byte ledgers. This is an admission limit, not an advertised GL capability.
 const MAX_OBJECTS: usize = 8192;
-const MAX_RESOURCE_BYTES: usize = 64 * 1024 * 1024;
-const MAX_PROCESS_RESOURCE_BYTES: usize = 128 * 1024 * 1024;
+// Finite HDR/MSAA capacity, additionally gated by measured process headroom.
+// Object storage still reserves two copies; the selected Job cap stays finite.
+#[cfg(test)]
+const MAX_RESOURCE_BYTES: usize = 256 * 1024 * 1024;
+
+fn resource_ceiling() -> usize {
+    crate::renderer_budget::current().gpu_context_bytes()
+}
+
+fn owner_resource_ceiling() -> usize {
+    crate::renderer_budget::current().gpu_owner_bytes()
+}
 const MAX_NATIVE_CONTEXTS: usize = 16;
 const MAX_UPLOAD_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SHADER_BYTES: usize = 32 * 1024;

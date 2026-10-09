@@ -357,7 +357,7 @@ impl WorkerHandle {
 }
 
 enum WorkerCommand {
-    Message(String),
+    Message(crate::engine::script::worker_message::WorkerMessage),
     PortMessage { endpoint: u32, serialized: String },
     PortClose(u32),
     Fetch { id: u32, event: ScriptFetchEvent },
@@ -371,7 +371,7 @@ struct WorkerEvent {
     fetch_actions: Vec<ScriptFetchAction>,
     database_actions: Vec<ScriptDatabaseAction>,
     websocket_actions: Vec<ScriptWebSocketAction>,
-    messages: Vec<Result<String, String>>,
+    messages: Vec<Result<crate::engine::script::worker_message::WorkerMessage, String>>,
     port_events: Vec<WorkerPortEvent>,
     console: Vec<String>,
     errors: Vec<String>,

@@ -10,7 +10,7 @@ pub(crate) use metrics::{
     wait_for_process,
 };
 
-use crate::limits::{MEDIA_PROCESS_MEMORY_LIMIT_BYTES, RENDERER_MEMORY_LIMIT_BYTES};
+use crate::limits::MEDIA_PROCESS_MEMORY_LIMIT_BYTES;
 use crate::renderer_protocol::Nonce;
 use std::io;
 use std::mem::size_of;
@@ -141,8 +141,10 @@ pub(crate) fn set_handle_inheritance(handle: HANDLE, inheritable: bool) -> Resul
     }
 }
 
-pub(super) fn create_renderer_job() -> Result<OwnedHandle, String> {
-    create_contained_job(RENDERER_MEMORY_LIMIT_BYTES, "renderer")
+pub(super) fn create_renderer_job(
+    budget: crate::renderer_budget::RendererBudget,
+) -> Result<OwnedHandle, String> {
+    create_contained_job(budget.bytes(), "renderer")
 }
 
 pub(crate) fn create_media_job() -> Result<OwnedHandle, String> {

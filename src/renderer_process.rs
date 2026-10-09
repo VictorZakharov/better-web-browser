@@ -10,8 +10,9 @@ pub use broker::stream::{SensorDeliveryGate, SensorSinkError};
 pub use broker::{
     ClipboardUpdateSink, DatabaseEventSink, FetchResponseSink, FilePickerUpdateSink,
     MediaCaptureSink, NavigationBody, NotificationUpdateSink, PermissionUpdateSink,
-    RendererCrashSurface, RendererEvent, RendererExit, RendererExitReason, RendererSession,
-    RendererSnapshot, RendererState, SensorUpdateSink, SpeechUpdateSink, WebSocketEventSink,
+    RendererCrashSurface, RendererEvent, RendererExit, RendererExitReason, RendererMemoryEvidence,
+    RendererSession, RendererSnapshot, RendererState, SensorUpdateSink, SpeechUpdateSink,
+    WebSocketEventSink,
 };
 pub use launcher::{RendererLaunchOptions, StartupFault};
 

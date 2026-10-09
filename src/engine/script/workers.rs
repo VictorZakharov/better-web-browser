@@ -20,7 +20,7 @@ pub enum ScriptWorkerAction {
     },
     PostMessage {
         id: u32,
-        serialized: String,
+        serialized: super::worker_message::WorkerMessage,
     },
     PortPostMessage {
         id: u32,
@@ -143,7 +143,7 @@ pub(super) fn worker_host_call(
                 .pending_worker_actions
                 .push(ScriptWorkerAction::PostMessage {
                     id,
-                    serialized: argument_string(args, 2)?,
+                    serialized: argument_string(args, 2)?.into(),
                 });
             Ok(Some(JsValue::undefined()))
         }
@@ -190,19 +190,20 @@ pub(super) fn worker_host_call(
 pub(super) fn deliver_worker_event(
     context: &mut Context,
     id: u32,
-    event: Result<String, String>,
+    event: Result<super::worker_message::WorkerMessage, String>,
 ) -> JsResult<()> {
-    let (kind, payload) = match event {
-        Ok(message) => ("message", message),
-        Err(error) => ("error", error),
+    let (kind, payload, packet) = match event {
+        Ok(message) => ("message", message.as_str().to_owned(), message),
+        Err(error) => ("error", error, "null".into()),
     };
-    context.call_global(
+    context.call_worker_hook(
         "__completeWorkerEvent",
         &[
             JsValue::from(id),
             js_string(kind.to_string()),
             js_string(payload),
         ],
+        packet,
     )?;
     context.run_jobs()
 }

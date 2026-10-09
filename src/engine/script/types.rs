@@ -10,6 +10,8 @@ use crate::engine::invalidation::RenderInvalidation;
 use crate::fetch::{CredentialsMode, ReferrerPolicy, RequestMode};
 use crate::storage::StorageWrite;
 use std::time::Duration;
+mod outcome;
+pub use outcome::ScriptOutcome;
 
 // Lifecycle dispatch no longer runs timers reentrantly. Six 250 ms slices retain the former
 // effective 1.5 second virtual startup horizon while making the bound explicit.
@@ -102,50 +104,6 @@ pub struct ScriptInput {
     pub kind: ScriptKind,
     pub fetch_options: ScriptFetchOptions,
     pub finish_lifecycle: bool,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct ScriptOutcome {
-    pub executed: usize,
-    pub mutation_count: usize,
-    pub errors: Vec<String>,
-    pub console: Vec<String>,
-    pub diagnostics: Vec<String>,
-    pub navigation_url: Option<String>,
-    pub navigation_options: crate::navigation::request::NavigationOptions,
-    /// Latest script-requested vertical viewport offset, in CSS pixels.
-    pub viewport_scroll_y: Option<f32>,
-    /// Unconsumed wheel default, applied relative to the browser's current animation target.
-    pub viewport_wheel_delta_y: f32,
-    pub history_actions: Vec<ScriptHistoryAction>,
-    pub cookie_updates: Vec<String>,
-    pub storage_updates: Vec<StorageWrite>,
-    pub policy_updates: Vec<ScriptPolicyUpdate>,
-    pub storage_event_receipts: Vec<(crate::storage::StorageAreaKind, u64)>,
-    pub fetch_actions: Vec<ScriptFetchAction>,
-    pub websocket_actions: Vec<ScriptWebSocketAction>,
-    pub database_actions: Vec<ScriptDatabaseAction>,
-    pub speech_actions: Vec<ScriptSpeechAction>,
-    pub notification_actions: Vec<ScriptNotificationAction>,
-    pub protocol_handler_actions: Vec<ScriptProtocolHandlerAction>,
-    pub clipboard_actions: Vec<ScriptClipboardAction>,
-    pub file_picker_actions: Vec<ScriptFilePickerAction>,
-    pub selection_actions: Vec<ScriptSelectionAction>,
-    pub permission_actions: Vec<crate::renderer_protocol::PermissionRequest>,
-    pub geolocation_actions: Vec<ScriptGeolocationAction>,
-    pub media_device_actions: Vec<ScriptMediaDeviceAction>,
-    pub sensor_actions: Vec<ScriptSensorAction>,
-    pub broadcast_actions: Vec<ScriptBroadcastAction>,
-    pub worker_actions: Vec<ScriptWorkerAction>,
-    pub fullscreen_actions: Vec<ScriptFullscreenAction>,
-    pub wake_lock_actions: Vec<ScriptWakeLockAction>,
-    pub pointer_lock_actions: Vec<ScriptPointerLockAction>,
-    pub media_actions: Vec<ScriptMediaAction>,
-    pub graph_audio_actions: Vec<ScriptGraphAudioAction>,
-    pub font_actions: Vec<ScriptFontAction>,
-    pub runtime_stopped: bool,
-    pub render_requested: bool,
-    pub invalidation: RenderInvalidation,
 }
 
 #[derive(Debug, Clone)]

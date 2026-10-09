@@ -2,6 +2,8 @@
 use super::*;
 use crate::engine::css::layers::{LayerRegistry, occurrence_path};
 use crate::engine::css::stylesheet::keyframes::{KeyframeDefinition, MAX_KEYFRAME_DEFINITIONS};
+#[cfg(test)]
+mod tests;
 
 pub(super) fn collect(
     inputs: &[Rc<SheetInput>],
@@ -94,6 +96,9 @@ impl StyleSet {
     }
 
     pub(crate) fn may_have_css_animation(&self, node: &NodeRef) -> bool {
+        if node.element().is_none() {
+            return false;
+        }
         // A cheap filter prevents computing every element's style on static pages.
         if node.attr("style").is_some_and(|style| {
             let style = style.to_ascii_lowercase();
@@ -101,28 +106,20 @@ impl StyleSet {
         }) {
             return true;
         }
-        self.compiled.animation_rule_indices.iter().any(|&index| {
-            let rule = &self.compiled.rules[index];
-            if rule.pseudo.is_some() {
-                return false;
-            }
-            let Some(compound) = rule.selector.compounds.last() else {
-                return true;
-            };
-            compound
-                .tag
-                .as_deref()
-                .is_none_or(|tag| node.tag_name() == Some(tag))
-                && compound
-                    .id
-                    .as_deref()
-                    .is_none_or(|id| node.attr("id").as_deref() == Some(id))
-                && compound.classes.iter().all(|class| {
-                    node.attr("class").is_some_and(|value| {
-                        value.split_ascii_whitespace().any(|part| part == class)
-                    })
-                })
-        })
+        // A descendant universal such as `.dialog *` is not a document-wide candidate.
+        // Reuse cascade matching, including @scope, :has(), shadow hosts and slot/part
+        // exposure. No match cache survives a DOM version change; pending style changes
+        // must be reflected before getAnimations() (CSS Animations 2 §6.2).
+        let tree_root = Node::tree_root(node);
+        let ancestors = std::cell::OnceCell::new();
+        self.compiled
+            .animation_index
+            .candidates(node, None)
+            .into_iter()
+            .any(|index| {
+                let rule = &self.compiled.rules[index];
+                self.rule_matches(rule, node, None, &tree_root, &ancestors)
+            })
     }
 }
 

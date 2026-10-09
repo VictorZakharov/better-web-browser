@@ -40,7 +40,9 @@ fn byte_budget_counts_payloads_and_drops_release_every_reservation() {
         MAX_WORKER_PENDING_BYTES - COMMAND_OVERHEAD_BYTES
     ])
     .unwrap();
-    mailbox.try_send(WorkerCommand::Message(payload)).unwrap();
+    mailbox
+        .try_send(WorkerCommand::Message(payload.into()))
+        .unwrap();
     assert_eq!(
         mailbox.try_send(WorkerCommand::PortClose(1)),
         Err(AdmissionError::Saturated)

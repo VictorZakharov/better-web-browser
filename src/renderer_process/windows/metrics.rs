@@ -1,15 +1,12 @@
 use super::raw;
-use std::mem::size_of;
 use std::os::windows::io::OwnedHandle;
-use windows_sys::Win32::System::ProcessStatus::{
-    K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
-};
 use windows_sys::Win32::System::Threading::{
     GetExitCodeProcess, GetProcessHandleCount, GetProcessTimes, WaitForSingleObject,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct ProcessSample {
+    pub(crate) memory_available: bool,
     pub(crate) working_set: usize,
     pub(crate) private_memory: usize,
     pub(crate) peak_working_set: usize,
@@ -18,17 +15,7 @@ pub(crate) struct ProcessSample {
 }
 
 pub(crate) fn process_sample(process: &OwnedHandle) -> ProcessSample {
-    let mut memory = PROCESS_MEMORY_COUNTERS_EX {
-        cb: size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
-        ..Default::default()
-    };
-    let memory_ok = unsafe {
-        K32GetProcessMemoryInfo(
-            raw(process),
-            (&mut memory as *mut PROCESS_MEMORY_COUNTERS_EX).cast::<PROCESS_MEMORY_COUNTERS>(),
-            memory.cb,
-        )
-    } != 0;
+    let memory = crate::process_memory::for_process(process);
     let mut creation = Default::default();
     let mut exit = Default::default();
     let mut kernel = Default::default();
@@ -45,13 +32,10 @@ pub(crate) fn process_sample(process: &OwnedHandle) -> ProcessSample {
     let mut handles = 0_u32;
     unsafe { GetProcessHandleCount(raw(process), &mut handles) };
     ProcessSample {
-        working_set: if memory_ok { memory.WorkingSetSize } else { 0 },
-        private_memory: if memory_ok { memory.PrivateUsage } else { 0 },
-        peak_working_set: if memory_ok {
-            observed_peak(memory.PeakWorkingSetSize, memory.WorkingSetSize)
-        } else {
-            0
-        },
+        memory_available: memory.is_some(),
+        working_set: memory.map_or(0, |sample| sample.working_set),
+        private_memory: memory.map_or(0, |sample| sample.private),
+        peak_working_set: memory.map_or(0, |sample| sample.peak_working_set),
         cpu_ticks: if times_ok {
             file_time(kernel) + file_time(user)
         } else {
@@ -59,12 +43,6 @@ pub(crate) fn process_sample(process: &OwnedHandle) -> ProcessSample {
         },
         handle_count: handles,
     }
-}
-
-fn observed_peak(reported_peak: usize, current: usize) -> usize {
-    // Include the working set actually observed in this sample. Windows can
-    // return a briefly lagging high-water counter while the process grows.
-    reported_peak.max(current)
 }
 
 pub(crate) fn process_exited(process: &OwnedHandle) -> bool {
@@ -99,17 +77,4 @@ pub(crate) fn terminate_job_checked(job: &OwnedHandle, code: u32) -> std::io::Re
 
 fn file_time(time: windows_sys::Win32::Foundation::FILETIME) -> u64 {
     (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::observed_peak;
-
-    #[test]
-    fn observed_peak_never_understates_measured_working_set_or_native_peak() {
-        assert_eq!(observed_peak(8192, 4096), 8192);
-        assert_eq!(observed_peak(4096, 8192), 8192);
-        assert_eq!(observed_peak(0, 0), 0);
-        assert_eq!(observed_peak(usize::MAX, 0), usize::MAX);
-    }
 }

@@ -3,7 +3,9 @@
 //! Codecs produce straight-alpha sRGB RGBA. Page presentation alone converts that
 //! representation to premultiplied BGRA; Canvas must not premultiply it a second time.
 
+mod alpha;
 mod avif;
+pub(crate) use alpha::unpremultiply_rgba;
 pub(crate) use avif::decoder::VideoAv1Decoder;
 mod color;
 #[cfg(test)]

@@ -22,7 +22,7 @@ impl WebGl {
             id,
             kind,
             previous_counter: self.resource_bytes,
-            counter: self.storage_counter(previous, bytes)?,
+            counter: self.storage_counter(kind, previous, bytes)?,
             capacity: previous.max(bytes),
         })
     }
@@ -37,14 +37,14 @@ impl WebGl {
         Ok(())
     }
 
-    fn storage_counter(&self, previous: usize, next: usize) -> Result<usize> {
+    fn storage_counter(&self, kind: Kind, previous: usize, next: usize) -> Result<usize> {
         // Two copies conservatively cover GPU storage and indexed-buffer CPU
         // mirrors. Live object capacities do not shrink on redefinition.
         let growth = next
             .saturating_sub(previous)
             .checked_mul(2)
             .ok_or(gl::OUT_OF_MEMORY)?;
-        self.admit_storage_growth(growth)
+        self.admit_storage_growth_for(Some(kind), growth)
     }
 
     pub(super) fn reclaim_retired_storage(&mut self) -> Result<()> {

@@ -115,6 +115,7 @@ pub(super) fn create<'s>(
         _host: Rc::clone(&host),
     }));
     context.set_slot(Rc::new(super::super::dynamic_imports::Imports::default()));
+    context.set_slot(Rc::new(super::super::worker_packets::State::default()));
     register(context, tree);
     tree.documents
         .borrow_mut()
@@ -137,6 +138,7 @@ pub(super) fn create<'s>(
             .set(scope, element_key.into(), element)?;
         let source = v8::String::new(scope, bootstrap::BROWSER_BOOTSTRAP)?;
         v8::Script::compile(scope, source, None)?.run(scope)?;
+        super::super::worker_packets::install(scope)?;
         super::super::messaging::install(scope)?;
         let parent_key = v8::String::new(scope, "parent")?;
         context
@@ -159,7 +161,7 @@ pub(super) fn create<'s>(
         // able to pass guessed node IDs into a child realm's wrapper cache.
         let mut private_hooks = HashMap::new();
         for name in [
-            "__trackModulePromise",
+            "__moduleCompletionHandlers",
             "__parserDomChanged",
             "__fontEnvironmentChanged",
             "__constructParserElement",
@@ -171,6 +173,7 @@ pub(super) fn create<'s>(
             "__receiveMediaCaptureUpdate",
             "__receiveMediaCaptureFrame",
             "__receiveMediaCaptureAudioFrame",
+            "__completeWorkerEvent",
         ] {
             let key = v8::String::new(scope, name)?;
             let function = context.global(scope).get(scope, key.into())?;

@@ -214,6 +214,7 @@ impl HostState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod discovery;
 
     #[test]
     fn snapshot_limits_are_atomic_and_saturating() {
@@ -280,6 +281,13 @@ mod tests {
         }
         assert!(target.attr("style").is_none());
         assert!(!state.pending_invalidation.snapshot(0).is_empty());
+        assert!(
+            state
+                .pending_invalidation
+                .snapshot(0)
+                .impact
+                .is_style_only()
+        );
     }
 
     #[test]

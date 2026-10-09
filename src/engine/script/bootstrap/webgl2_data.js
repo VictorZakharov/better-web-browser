@@ -75,19 +75,21 @@
         // WebGL's [AllowShared] arguments do not have [AllowResizable]. Reuse
         // the same intrinsic admission for numeric lists, uploads and replies.
         // https://webidl.spec.whatwg.org/#AllowResizable
-        let resizable;
+        let resizable, shared=false;
         try { resizable=webGl2Apply(webGlNumericResizable,buffer,[]); }
         catch (error) {
             if (!webGlNumericGrowable) throw error;
+            shared=true;
             resizable=webGl2Apply(webGlNumericGrowable,buffer,[]);
         }
         if (resizable) throw new TypeError('WebGL requires a fixed-length backing store');
+        return shared;
     };
     const webGlNumericDetached = buffer => {
         try { new webGl2ByteArray(buffer,0,0); return false; }
         catch (error) { if (error instanceof TypeError) return true; throw error; }
     };
-    const webGlNumericTypedArgument = (kind,value,limit=1048576) => {
+    const webGlNumericTypedArgument = (kind,value,limit=1048576,direct=false) => {
         if (!webGl2IsView(value) || webGl2Apply(webGl2TypedName,value,[]) !== webGl2NumericNames[kind])
             return null;
         // Float32List/Int32List/Uint32List select genuine buffer-view brands
@@ -96,11 +98,18 @@
         // a WebGL INVALID_VALUE, not an IDL exception or a sequence fallback.
         // https://registry.khronos.org/webgl/specs/latest/1.0/#TYPES
         const buffer=webGl2Apply(webGl2TypedGetters.buffer,value,[]);
-        webGlFixedBuffer(buffer);
+        const shared=webGlFixedBuffer(buffer);
         if (webGlNumericDetached(buffer)) return {values:[],length:0,detached:true};
         const offset=webGl2Apply(webGl2TypedGetters.byteOffset,value,[]);
         const length=webGl2Apply(webGl2TypedGetters.length,value,[]);
         if (length>limit) throw new RangeError('WebGL typed numeric list exceeds the snapshot budget');
+        if (direct && kind==='f' && !shared && length<=62) {
+            // Only an installed uniform slot with a number/undefined tail can
+            // reach this branch. No later author coercion can run before native
+            // CopyContents takes the owned snapshot. Shared/large sources and
+            // any observable tail retain the early independent IDL snapshot.
+            return {values:value,length,detached:false,float32:true,sourceOffset:offset};
+        }
         const source=new webGl2NumericConstructors[kind](buffer,offset,length);
         const values=new webGl2NumericConstructors[kind](length);
         // Match the existing multi-draw contract and Chrome: conversion takes
@@ -108,10 +117,10 @@
         // or detach the author buffer. Builtin set safely reads shared memory;
         // no shared byte span crosses into Rust or the separate GL owner thread.
         webGl2Apply(webGl2ByteSet,values,[source]);
-        return {values,length,detached:false};
+        return {values,length,detached:false,float32:kind==='f'};
     };
-    const webGl2NumericArgument = kind => value => {
-        const typed=webGlNumericTypedArgument(kind,value);
+    const webGl2NumericArgument = kind => (value,direct=false) => {
+        const typed=webGlNumericTypedArgument(kind,value,1048576,direct);
         if (typed) return typed;
         const values = webGl2Sequence(value,kind);
         return {values,length:values.length};
@@ -124,11 +133,18 @@
     };
     const webGl2NumericSlice = (context,source,offset,length) => {
         const count = length === 0 ? source.length-offset : length;
-        if (!Number.isSafeInteger(offset) || offset > source.length || count < 0 ||
+        if (!webGlWireInteger(offset) || offset > source.length || count < 0 ||
             count > source.length-offset || count > 8192) {
             webGlError(context,count > 8192 ? 0x0505 : 0x0501); return null;
         }
+        if (source.float32 && count <= 62) {
+            // Preserve the admitted small range for one owned native copy
+            // instead of boxing each component a second time.
+            // Construct directly: subarray() consults author-controlled species.
+            const buffer=webGl2Apply(webGl2TypedGetters.buffer,source.values,[]);
+            return new webGl2NumericConstructors.f(buffer,(source.sourceOffset ?? 0)+offset*4,count);
+        }
         const values = [];
-        for (let i = 0; i < count; i++) values.push(source.values[offset+i]);
+        for (let i = 0; i < count; i++) webGl2PrivatePush(values,source.values[offset+i]);
         return values;
     };

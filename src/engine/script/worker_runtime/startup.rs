@@ -134,8 +134,18 @@ impl WorkerRuntime {
                 .push(format!("initialize Worker bindings: {error}"));
             return (None, outcome);
         }
-        // The trusted bootstrap is installed before author code; inherited CSP then governs
-        // string compilation and WebAssembly in this Worker realm just as in a Document realm.
+        if let Err(error) = context
+            .install_worker_packets()
+            .and_then(|()| context.capture_hook("__dispatchWorkerMessage"))
+            .and_then(|()| context.capture_hook("__moduleCompletionHandlers"))
+        {
+            outcome
+                .errors
+                .push(format!("initialize Worker clone bindings: {error}"));
+            return (None, outcome);
+        }
+        // Trusted bindings are captured before author code; inherited CSP then governs
+        // string compilation and WebAssembly just as in a Document realm.
         context.refresh_code_generation_policy();
 
         let mut runtime = Self {

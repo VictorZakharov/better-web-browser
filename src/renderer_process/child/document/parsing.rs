@@ -92,7 +92,7 @@ impl DocumentRuntime {
                     outcome.navigation_url = Some(url);
                     break;
                 }
-                outcome.render_requested = true;
+                outcome.request_full_render();
                 outcome.invalidation = crate::engine::invalidation::RenderInvalidation::full(
                     self.page.dom.document.id(),
                 );

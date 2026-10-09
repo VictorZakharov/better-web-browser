@@ -2,11 +2,14 @@
 
 use super::*;
 use better_web_browser::branding::UserAgentMode;
+use better_web_browser::renderer_budget::RendererBudget;
 
 pub(super) const ID_OPTIONS: usize = 1008;
 const ID_UA_BREEZE: usize = 1501;
 const ID_UA_CHROME: usize = 1502;
 const ID_UA_FIREFOX: usize = 1503;
+const ID_MEMORY_STANDARD: usize = 1511;
+const ID_MEMORY_GRAPHICS: usize = 1512;
 const MF_STRING: u32 = 0;
 const MF_CHECKED: u32 = 0x0008;
 const TPM_RIGHTBUTTON: u32 = 0x0002;
@@ -17,6 +20,17 @@ const CHOICES: [(usize, UserAgentMode); 3] = [
     (ID_UA_CHROME, UserAgentMode::Chrome),
     (ID_UA_FIREFOX, UserAgentMode::Firefox),
 ];
+
+const MEMORY_CHOICES: [(usize, RendererBudget); 2] = [
+    (ID_MEMORY_STANDARD, RendererBudget::Standard),
+    (ID_MEMORY_GRAPHICS, RendererBudget::Graphics),
+];
+
+fn budget_for_command(command: usize) -> Option<RendererBudget> {
+    MEMORY_CHOICES
+        .iter()
+        .find_map(|(id, budget)| (*id == command).then_some(*budget))
+}
 
 fn mode_for_command(command: usize) -> Option<UserAgentMode> {
     CHOICES
@@ -42,6 +56,22 @@ impl BrowserState {
             }
         }
 
+        let selected_budget = self.app.selected_memory_budget.get();
+        for (id, budget) in MEMORY_CHOICES {
+            let label = wide(budget.label());
+            let flags = MF_STRING
+                | if budget == selected_budget {
+                    MF_CHECKED
+                } else {
+                    0
+                };
+            if AppendMenuW(menu, flags, id, label.as_ptr()) == 0 {
+                self.set_status(&last_error("add renderer budget option"));
+                DestroyMenu(menu);
+                return;
+            }
+        }
+
         let mut bounds: Rect = std::mem::zeroed();
         if GetWindowRect(self.controls.options, &mut bounds) == 0 {
             self.set_status(&last_error("locate Options button"));
@@ -59,6 +89,23 @@ impl BrowserState {
             null(),
         ) as usize;
         DestroyMenu(menu);
+        if let Some(budget) = budget_for_command(command) {
+            if budget == selected_budget {
+                return;
+            }
+            if let Err(error) = super::memory_preferences::save(&self.app.profile, budget) {
+                self.set_status(&format!("Could not save renderer memory budget: {error}"));
+                return;
+            }
+            self.app.selected_memory_budget.set(budget);
+            let message = wide(&format!(
+                "Saved {}. Restart Breeze to apply the budget. This is a per-renderer limit; multiple tabs can use more memory in total.",
+                budget.label()
+            ));
+            let title = wide("Breeze Options");
+            MessageBoxW(self.window, message.as_ptr(), title.as_ptr(), 0);
+            return;
+        }
         let Some(mode) = mode_for_command(command) else {
             return;
         };
@@ -92,5 +139,15 @@ mod tests {
             Some(UserAgentMode::Firefox)
         );
         assert_eq!(mode_for_command(ID_GO), None);
+        assert_eq!(mode_for_command(ID_MEMORY_GRAPHICS), None);
+        assert_eq!(
+            budget_for_command(ID_MEMORY_STANDARD),
+            Some(RendererBudget::Standard)
+        );
+        assert_eq!(
+            budget_for_command(ID_MEMORY_GRAPHICS),
+            Some(RendererBudget::Graphics)
+        );
+        assert_eq!(budget_for_command(ID_UA_CHROME), None);
     }
 }

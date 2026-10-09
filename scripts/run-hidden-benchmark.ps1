@@ -27,6 +27,8 @@ param(
     [ValidatePattern('^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$')]
     [string] $Locale = 'en-US',
     [switch] $FreshProfile,
+    [ValidateSet('standard', 'graphics')]
+    [string] $RendererMemoryBudget,
     [string] $ProfileDirectory,
     [string[]] $DiagnosticSelector = @(),
     [string[]] $NavigationTarget = @(),
@@ -53,6 +55,9 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 . (Join-Path $PSScriptRoot 'hidden-benchmark-actions.ps1')
 # Validate before touching artifacts/profiles or resolving/launching the executable.
 $orderedActionArguments = @(Get-HiddenBenchmarkActionArguments -ActionSequence $ActionSequence)
+if ($PSBoundParameters.ContainsKey('RendererMemoryBudget') -and -not $FreshProfile) {
+    throw '-RendererMemoryBudget requires -FreshProfile; existing profile settings are never changed.'
+}
 if ([string]::IsNullOrWhiteSpace($Browser)) {
     $Browser = Join-Path $repoRoot 'target\release\better-web-browser.exe'
 }
@@ -70,6 +75,9 @@ if ($FreshProfile -and -not [string]::IsNullOrWhiteSpace($ProfileDirectory)) {
 if ($FreshProfile) {
     $profilePath = Join-Path ([IO.Path]::GetTempPath()) ("breeze-benchmark-" + [Guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($profilePath) | Out-Null
+    if ($PSBoundParameters.ContainsKey('RendererMemoryBudget')) {
+        [IO.File]::WriteAllText((Join-Path $profilePath 'renderer-memory-budget.txt'), $RendererMemoryBudget)
+    }
 } elseif (-not [string]::IsNullOrWhiteSpace($ProfileDirectory)) {
     $profilePath = [IO.Path]::GetFullPath($ProfileDirectory)
     if (-not [IO.Path]::IsPathFullyQualified($profilePath)) {

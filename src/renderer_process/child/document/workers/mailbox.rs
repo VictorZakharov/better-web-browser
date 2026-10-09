@@ -99,9 +99,8 @@ fn reserve(counter: &AtomicUsize, limit: usize, bytes: usize) -> bool {
 impl WorkerCommand {
     fn payload_bytes(&self) -> usize {
         match self {
-            Self::Message(serialized) | Self::PortMessage { serialized, .. } => {
-                serialized.capacity()
-            }
+            Self::Message(serialized) => serialized.capacity(),
+            Self::PortMessage { serialized, .. } => serialized.capacity(),
             Self::Database { payload, .. } => payload.capacity(),
             Self::Fetch { event, .. } => match event {
                 ScriptFetchEvent::Chunk(bytes) => bytes.capacity(),

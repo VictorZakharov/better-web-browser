@@ -66,7 +66,7 @@ fn offscreen_canvas_in_a_worker_uses_its_own_font_set() {
         std::sync::Arc::new(|url, _| Err(format!("unexpected script import {url}"))),
     );
     assert!(initial.errors.is_empty(), "{:?}", initial.errors);
-    assert!(initial.messages.contains(&"\"loading\"".to_owned()));
+    assert!(initial.messages.contains(&"\"loading\"".into()));
     let mut runtime = runtime.unwrap();
     assert_eq!(initial.fetch_actions.len(), 1);
     let ScriptFetchAction::Start { id, request } = &initial.fetch_actions[0] else {
@@ -93,7 +93,7 @@ fn offscreen_canvas_in_a_worker_uses_its_own_font_set() {
         messages.extend(outcome.messages);
     }
     assert!(
-        messages.contains(&"\"NetworkError\"".to_owned()),
+        messages.contains(&"\"NetworkError\"".into()),
         "{messages:?}"
     );
 }

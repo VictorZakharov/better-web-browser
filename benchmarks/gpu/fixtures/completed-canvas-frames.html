@@ -1,0 +1,43 @@
+<!doctype html><meta charset="utf-8"><title>pending native frame readback</title>
+<canvas id="result" width="1024" height="512"></canvas>
+<script>
+(async()=>{
+  const target=document.getElementById('result').getContext('2d');
+  const results=[],taskTimes=[],errors=[],frames=64;
+  for(const attributes of [
+    {alpha:false,premultipliedAlpha:true},
+    {alpha:true,premultipliedAlpha:true},
+    {alpha:true,premultipliedAlpha:false}
+  ]) {
+    const source=new OffscreenCanvas(1024,512);
+    const gl=source.getContext('webgl2',{...attributes,antialias:false,preserveDrawingBuffer:true});
+    if(!gl)throw Error('native WebGL 2 is unavailable');
+    const live=gl.getContextAttributes();
+    if(live.alpha!==attributes.alpha || live.premultipliedAlpha!==attributes.premultipliedAlpha)
+      throw Error('context attributes differ');
+    const started=performance.now();let active=0;
+    for(let block=0;block<16;block++) {
+      const blockStarted=performance.now();
+      for(let frame=0;frame<4;frame++) {
+        gl.clearColor(.25,.125,0,.5);gl.clear(gl.COLOR_BUFFER_BIT);
+        target.clearRect(0,0,1024,512);target.drawImage(source,0,0);
+      }
+      // Include actual completion, not only Chrome's asynchronous submission.
+      const completed=target.getImageData(0,0,1,1).data;
+      if(completed[2]!==0)throw Error('completed frame mismatch');
+      active+=performance.now()-blockStarted;
+      await new Promise(resolve=>setTimeout(resolve,0));
+    }
+    results.push(Math.round((performance.now()-started)*10)/10);
+    taskTimes.push(Math.round(active*10)/10);
+    const actual=target.getImageData(0,0,1,1).data;
+    const expected=!attributes.alpha?[64,32,0,255]:
+      attributes.premultipliedAlpha?[128,64,0,128]:[64,32,0,128];
+    for(let i=0;i<4;i++)if(Math.abs(actual[i]-expected[i])>1)
+      throw Error('readback mismatch '+JSON.stringify(attributes)+' '+actual);
+    errors.push(gl.getError());
+  }
+  if(errors.some(error=>error!==0))throw Error('WebGL errors '+errors);
+  document.title='done readback frames='+frames+';ms='+results.join(',')+';active='+taskTimes.join(',')+';errors='+errors.join(',');
+})().catch(error=>{document.title='failed '+error.message;throw error});
+</script>

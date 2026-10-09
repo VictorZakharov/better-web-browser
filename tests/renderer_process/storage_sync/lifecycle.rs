@@ -118,9 +118,13 @@ fn full_quota_old_and_new_values_cross_the_real_pipe_without_truncation() {
             if (localStorage.getItem('key') !== e.newValue) throw Error('map not synchronized before event');
             if (++count === 2) console.log('large-passed');
         };
+        console.log('large-ready');
     </script>"#,
     );
-    until(&mut recipient, &hub, |tab| tab.presented);
+    // The first parser-prefix paint need not have installed onstorage yet.
+    until(&mut recipient, &hub, |tab| {
+        tab.console.iter().any(|line| line.contains("large-ready"))
+    });
     let length = 5 * 1024 * 1024 - 3;
     assert!(
         hub.apply(

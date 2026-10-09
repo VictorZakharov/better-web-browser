@@ -8,7 +8,11 @@ internal readonly record struct ProcessSample(
     long PrivateBytes,
     long PeakWorkingSetBytes,
     double CpuTimeMs,
-    int ProcessCount);
+    int ProcessCount,
+    IReadOnlyList<OwnedProcessSample> Processes);
+
+internal readonly record struct OwnedProcessSample(
+    int Id, long WorkingSetBytes, long PrivateBytes, long PeakWorkingSetBytes, double CpuTimeMs);
 
 internal static class ProcessTree
 {
@@ -22,15 +26,20 @@ internal static class ProcessTree
         long peakWorkingSet = 0;
         double cpu = 0;
         var count = 0;
+        var samples = new List<OwnedProcessSample>();
         foreach (var processId in Descendants(rootProcessId))
         {
             try
             {
                 using var process = Process.GetProcessById(processId);
-                workingSet += process.WorkingSet64;
-                privateBytes += process.PrivateMemorySize64;
-                peakWorkingSet += process.PeakWorkingSet64;
-                cpu += process.TotalProcessorTime.TotalMilliseconds;
+                var sample = new OwnedProcessSample(processId, process.WorkingSet64,
+                    process.PrivateMemorySize64, process.PeakWorkingSet64,
+                    process.TotalProcessorTime.TotalMilliseconds);
+                samples.Add(sample);
+                workingSet += sample.WorkingSetBytes;
+                privateBytes += sample.PrivateBytes;
+                peakWorkingSet += sample.PeakWorkingSetBytes;
+                cpu += sample.CpuTimeMs;
                 count++;
             }
             catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
@@ -38,7 +47,7 @@ internal static class ProcessTree
                 // The process exited or became inaccessible between snapshots.
             }
         }
-        return new ProcessSample(workingSet, privateBytes, peakWorkingSet, cpu, count);
+        return new ProcessSample(workingSet, privateBytes, peakWorkingSet, cpu, count, samples);
     }
 
     public static bool HasVisibleWindow(int rootProcessId)
@@ -57,7 +66,7 @@ internal static class ProcessTree
         });
     }
 
-    private static HashSet<int> Descendants(int rootProcessId)
+    internal static HashSet<int> Descendants(int rootProcessId)
     {
         var parents = SnapshotParentMap();
         var started = new Dictionary<int, long?>();

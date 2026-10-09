@@ -1,0 +1,60 @@
+<!doctype html><meta charset=utf-8><title>WebGL numeric command timing</title>
+<canvas width=2 height=2></canvas><pre id=result>running</pre>
+<script>
+'use strict';
+(async()=>{
+    const gl=document.querySelector('canvas').getContext('webgl2',{antialias:false,preserveDrawingBuffer:true});
+    if(!gl)throw Error('WebGL2 unavailable');
+    const p=gl.createProgram();
+    for(const [kind,source] of [
+        [gl.VERTEX_SHADER,'#version 300 es\nuniform mat4 m;void main(){gl_Position=m*vec4(.5,.5,0,1);gl_PointSize=1.;}'],
+        [gl.FRAGMENT_SHADER,'#version 300 es\nprecision highp float;uniform vec4 c;out vec4 color;void main(){color=c;}']
+    ]) {
+        const s=gl.createShader(kind);gl.shaderSource(s,source);gl.compileShader(s);
+        if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));gl.attachShader(p,s);
+    }
+    gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));gl.useProgram(p);
+    const matrix=gl.getUniformLocation(p,'m'),color=gl.getUniformLocation(p,'c');
+    const identity=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
+    const rgba=new Float32Array([0,1,0,1]);
+    const results={iterations_per_phase:100000,phase_ms:{},errors:[]};
+    for(const [name,call] of [
+        ['state',()=>gl.clearColor(0,1,0,1)],
+        ['matrix',()=>gl.uniformMatrix4fv(matrix,false,identity)],
+        ['vector',()=>gl.uniform4fv(color,rgba)],
+        ['state_varying',i=>gl.clearColor((i&127)/128,1,0,1)],
+        ['matrix_varying',i=>{identity[12]=(i&127)/128;gl.uniformMatrix4fv(matrix,false,identity)}],
+        ['vector_varying',i=>{rgba[0]=(i&127)/128;gl.uniform4fv(color,rgba)}]
+    ]) {
+        for(let warm=0;warm<1000;warm++)call(warm);gl.getError();
+        let elapsed=0;
+        for(let task=0;task<20;task++) {
+            const start=performance.now();
+            for(let i=0;i<5000;i++)call(task*5000+i);
+            const error=gl.getError(); // Include ordered queue draining, not GPU completion.
+            elapsed+=performance.now()-start;
+            if(error)results.errors.push(error);
+            await new Promise(resolve=>setTimeout(resolve,0));
+        }
+        results.phase_ms[name]=elapsed;
+        // Validate actual state outside the timed loop. Transport unit tests
+        // also check reused sources across intervening draws/capacity flushes.
+        const actual=name.startsWith('state')?gl.getParameter(gl.COLOR_CLEAR_VALUE):
+            gl.getUniform(p,name.startsWith('matrix')?matrix:color);
+        const expected=name.startsWith('state')?
+            [name==='state_varying'?((99999&127)/128):0,1,0,1]:
+            name.startsWith('matrix')?identity:rgba;
+        if(!actual || actual.length!==expected.length)throw Error('state shape '+name);
+        for(let i=0;i<expected.length;i++)if(actual[i]!==expected[i])throw Error('state mismatch '+name);
+    }
+    identity[12]=0;rgba[0]=0;
+    gl.uniformMatrix4fv(matrix,false,identity);gl.uniform4fv(color,rgba);
+    gl.drawArrays(gl.POINTS,0,1);
+    const pixel=new Uint8Array(4);gl.readPixels(1,1,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);
+    results.pixel=Array.from(pixel);
+    results.final_error=gl.getError();
+    document.querySelector('#result').textContent=JSON.stringify(results,null,2);
+    document.title='done '+Object.values(results.phase_ms).map(value=>value.toFixed(3)).join(',')+
+        ';pixel='+results.pixel.join(',')+';errors='+results.errors.length+','+results.final_error;
+})().catch(error=>{document.querySelector('#result').textContent=String(error);document.title='failed'});
+</script>

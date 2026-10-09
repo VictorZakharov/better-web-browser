@@ -149,7 +149,8 @@ pub(super) fn finish_host(
         .graph_audio_actions
         .append(&mut state.pending_graph_audio_actions);
     outcome.font_actions.append(&mut state.pending_font_actions);
-    outcome.render_requested |= state.timers.take_render_request();
+    let scope = state.timers.take_render_scope();
+    outcome.merge_render_request(scope.is_some(), scope);
     outcome.invalidation.merge_conservatively(
         state.pending_invalidation.take(mutations),
         state.document.id(),

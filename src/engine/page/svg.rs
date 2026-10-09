@@ -6,6 +6,8 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 mod admission;
 mod decoder;
+#[cfg(test)]
+mod deferred_tests;
 mod expansion;
 mod fonts;
 #[cfg(test)]
@@ -53,6 +55,13 @@ impl Page {
         for svg in svgs {
             let key = inline_svg_key(&svg);
             let styles = self.cached_styles.as_ref().map(|(_, _, styles)| styles);
+            if styles.is_some_and(|styles| super::render_visibility::suppressed(&svg, styles)) {
+                // Keep the DOM and referenced definitions intact. No new stamp
+                // is installed: revealing the subtree recomputes the complete
+                // current source, inherited styles, references and font input.
+                // https://www.w3.org/TR/SVG2/render.html#Rendered-vs-NonRendered
+                continue;
+            }
             let input = InlineSvgInput::with_font_input(&svg, styles, &font_input);
             let version = input.version;
             let changed = self.inline_svg_versions.get(&svg.id()).copied() != Some(version);

@@ -272,6 +272,7 @@ impl ScriptRuntime {
 
     /// Enables bounded native bridge timing for diagnostics produced by subsequent tasks.
     pub fn set_host_call_profiling(&mut self, enabled: bool) {
+        self.host.borrow_mut().webgl.set_profiling(enabled);
         self.host
             .borrow_mut()
             .host_call_profile

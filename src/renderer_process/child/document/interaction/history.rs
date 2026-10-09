@@ -47,7 +47,7 @@ impl DocumentRuntime {
         if let Some(y) = outcome.viewport_scroll_y {
             self.page.dom.document.scroll_offset.set((0.0, y));
         }
-        outcome.render_requested = true;
+        outcome.request_full_render();
         outcome
     }
 }

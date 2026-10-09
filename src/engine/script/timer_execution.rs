@@ -150,7 +150,7 @@ pub(super) fn settle_timer_slice(
         outcome.record_timing("JavaScript timer promise jobs", jobs_started.elapsed());
         super::module_lifecycle::drain(context, host, outcome);
         drain_dynamic_scripts(context, host, outcome, dynamic_script_loader, total_bytes);
-        if let Err(error) = context.complete_gpu_task() {
+        if let Err(error) = context.complete_task() {
             outcome.errors.push(format!(
                 "JavaScript timer {timer_id} GPU task boundary: {error}"
             ));

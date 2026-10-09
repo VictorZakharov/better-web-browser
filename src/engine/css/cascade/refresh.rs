@@ -1,6 +1,7 @@
 //! Incremental computed-style refresh over bounded, independent dirty subtrees.
 
 use super::*;
+use crate::engine::invalidation::InvalidationImpact;
 
 #[cfg(test)]
 mod deferred_paint_tests;
@@ -12,7 +13,33 @@ impl StyleSet {
         requested_roots: &[NodeRef],
         removed_nodes: &[NodeId],
     ) -> StyleRefreshStats {
-        let roots = normalized_roots(document, requested_roots);
+        self.refresh_subtrees_after_invalidation(
+            document,
+            requested_roots,
+            removed_nodes,
+            InvalidationImpact::default(),
+        )
+    }
+
+    pub(crate) fn refresh_subtrees_after_invalidation(
+        &mut self,
+        document: &NodeRef,
+        requested_roots: &[NodeRef],
+        removed_nodes: &[NodeId],
+        impact: InvalidationImpact,
+    ) -> StyleRefreshStats {
+        let roots = if self
+            .compiled
+            .nonlocal_dependencies
+            .needs_document_refresh(impact)
+        {
+            // A local equality check cannot conceal a changed ancestor or
+            // sibling :has() result. Widen only when this mutation can affect
+            // the compiled relative-selector dependencies.
+            vec![document.clone()]
+        } else {
+            normalized_roots(document, requested_roots)
+        };
         let mut stats = StyleRefreshStats::default();
         for root in roots {
             if self.has_deferred_ancestor(&root) {

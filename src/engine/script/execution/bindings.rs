@@ -8,7 +8,10 @@ pub(super) fn initialize(context: &mut Context) -> Result<(), String> {
         ))
         .map_err(|error| format!("initialize browser bindings: {error}"))?;
     context
-        .capture_hook("__trackModulePromise")
+        .install_worker_packets()
+        .map_err(|error| format!("initialize Worker clone bindings: {error}"))?;
+    context
+        .capture_hook("__moduleCompletionHandlers")
         .map_err(|error| format!("capture private module completion hook: {error}"))?;
     for name in [
         "__parserDomChanged",
@@ -21,6 +24,7 @@ pub(super) fn initialize(context: &mut Context) -> Result<(), String> {
         "__receiveMediaCaptureUpdate",
         "__receiveMediaCaptureFrame",
         "__receiveMediaCaptureAudioFrame",
+        "__completeWorkerEvent",
     ] {
         context
             .capture_hook(name)

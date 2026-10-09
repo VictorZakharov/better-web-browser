@@ -5,6 +5,10 @@ impl Context {
     pub(in crate::engine::script) fn take_cpu_task_diagnostics(&mut self) -> Vec<String> {
         self.agent.borrow_mut().take_cpu_diagnostics()
     }
+
+    pub(in crate::engine::script) fn take_pressure_diagnostics(&mut self) -> Vec<String> {
+        self.agent.borrow_mut().take_pressure_diagnostics()
+    }
     pub(in crate::engine::script) fn set_document_task_profiling(&mut self, enabled: bool) {
         self.agent.borrow_mut().set_task_profiling(enabled);
     }

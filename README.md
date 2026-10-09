@@ -1299,11 +1299,11 @@ bounds and the renderer Job remains the hard backstop. This is an execution
 policy change, not a speedup or site exception; see
 [execution and cancellation](docs/script-execution-policy.md).
 
-Production GPU storage limits remain 64 MiB per context and 128 MiB per renderer,
-with the unchanged 1 GiB renderer Job. The unchanged sibling game is still not
-accepted as rendered gameplay: its final production replay gets past loading
-but has a blank 3D view and shader errors. An authorized larger-budget experiment is
-separate from production policy, and faster owned fixtures alone cannot establish
+At this October 8 checkpoint, production GPU storage limits remained 64 MiB per
+context and 128 MiB per renderer, with the 1 GiB renderer Job. The unchanged
+sibling game was not accepted as rendered gameplay: its production replay got
+past loading but had a blank 3D view and shader errors. The larger-budget
+experiment was separate from production policy; faster owned fixtures alone cannot establish
 game readiness. See [resource accounting](docs/webgl-resource-accounting.md) and
 [the game acceptance history](docs/gd-clone-compatibility.md).
 
@@ -1337,6 +1337,57 @@ tests. Curated WPT passes all 583 files / 6,425 subtests; curated Khronos passes
 all 74 files / 8,696 subtests, without expectation waivers. Full-target Clippy,
 format and source-size checks also pass. These local suites do not expand CI
 beyond its existing smoke workers or imply complete web-platform compliance.
+
+### October 9: owned command transport and resource-aware graphics
+
+Small converted WebGL setters now copy into bounded private packets, preserving
+conversion order, source ownership, GL errors and Window/Worker isolation.
+Queries, uploads, context lifecycle and presentation drain earlier commands.
+Consecutive native numeric setters share a context-binding check only within
+one owner-thread batch; no binding proof survives another mailbox operation.
+The existing ANGLE backend still validates and executes each operation. See
+[the transport contract](docs/webgl-numeric-command-transport.md).
+
+Two fresh rotating-order local series retain all six samples per case. Their
+aggregate setter medians are 13–44% lower than the same batch before packets,
+but ranges are broad and the first series includes regressions; this is not a
+reliable per-run speedup guarantee. Uniform calls still cost roughly 7.2–8.5
+times Chrome's. A separate completed-frame control does not improve consistently.
+Both series, the earlier checkpoint, replay identities and full ranges are in
+[the command measurements](docs/october-9-command-measurements.md).
+These are operation-level measurements, not claims of game-startup or universal
+rendering parity. The reusable [local runner](docs/gpu-command-benchmarks.md)
+checks actual values/pixels and keeps all samples; CI remains smoke-only.
+
+Canvas retains owned presentation pixels and optimizes eligible integer image
+blits without changing clipping or source independence. Hidden SVG resource
+work is deferred only with a proved `display:none` ancestry; reveal performs
+the real rasterization rather than claiming its cost disappeared. Worker binary
+messages retain bounded owned payloads rather than decimal-string envelopes.
+Renderer diagnostics now distinguish private memory, peak working set and
+charged GPU storage. The opt-in graphics budget is separate from the default
+containment policy, and sampling remains off in ordinary browsing. See
+[Canvas ownership](docs/canvas-retained-pixel-checkpoints.md),
+[SVG deferral](docs/deferred-svg-rasterization.md),
+[Worker messages](docs/worker-binary-envelopes.md), and
+[memory pressure](docs/renderer-memory-pressure.md).
+
+The default renderer Job remains 1 GiB. For larger native 3D workloads, select
+**Options → Renderer: 2 GiB (3D workloads)** and restart Breeze. This choice is
+persisted in the browser profile, applies per renderer rather than to the whole
+browser, and cannot be enlarged by page code. GPU storage still has bounded
+per-context/owner ledgers and process-private emergency-headroom admission;
+these ledgers are not measurements of driver VRAM or total process memory.
+
+Fresh rendered HTML5test captures remain **507/588 before and after**, versus
+**579/588** in Chrome 154. This is a correctness/performance batch, not a score
+increase. An ordinary hidden capture of the unchanged Last Stand snapshot with
+the opt-in graphics setting renders the actual arena, player and lobby HUD,
+without an uncaught script error or renderer stop. The 60-second filmstrip still
+contains slow loading, missing ability icons and visible UI artifacts; this is
+not accepted Chrome visual parity or full gameplay. Observed renderer-private
+high water is 1,555.6 MiB, including native GPU/compiler allocations, not driver
+VRAM. See [the game acceptance record](docs/gd-clone-compatibility.md).
 
 YouTube remains work in progress: non-DRM video/audio can play, but startup, seeking/recovery,
 video frame cadence, layout fidelity, and memory use are not an accepted browser baseline.

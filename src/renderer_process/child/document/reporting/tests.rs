@@ -5,6 +5,33 @@ use crate::renderer_protocol::{
 };
 use std::io::Cursor;
 
+#[test]
+fn combining_surface_tasks_keeps_empty_invalidation_but_normal_work_is_full() {
+    use crate::engine::scheduler::RenderScope;
+    let root = crate::engine::dom::parse("<canvas></canvas>").document.id();
+    let pixels = || ScriptOutcome {
+        render_requested: true,
+        render_scope: Some(RenderScope::SurfacePixels),
+        ..Default::default()
+    };
+    let mut combined = ScriptOutcome::default();
+    merge_outcome(&mut combined, pixels(), root);
+    merge_outcome(&mut combined, ScriptOutcome::default(), root);
+    merge_outcome(&mut combined, pixels(), root);
+    assert!(combined.is_surface_repaint());
+    assert_eq!(combined.invalidation, RenderInvalidation::default());
+    merge_outcome(
+        &mut combined,
+        ScriptOutcome {
+            render_requested: true,
+            ..Default::default()
+        },
+        root,
+    );
+    assert!(!combined.is_surface_repaint());
+    assert_eq!(combined.invalidation, RenderInvalidation::full(root));
+}
+
 fn round_trip(report: RuntimeReport) {
     let session = RendererSessionId::new(1).unwrap();
     let message = RendererMessage::RuntimeUpdate(Box::new(RendererRuntimeUpdate {

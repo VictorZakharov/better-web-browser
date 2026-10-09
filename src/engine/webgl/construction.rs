@@ -69,8 +69,9 @@ impl WebGl {
             options,
             stencil_masks: stencil_masks::StencilMasks::default(),
             resource_bytes: surface_bytes,
-            resource_limit: MAX_RESOURCE_BYTES,
+            resource_limit: resource_ceiling(),
             resource_diagnostics: Default::default(),
+            execution_profile: Default::default(),
             array_buffer: 0,
             element_buffer: 0,
             program: 0,
@@ -112,6 +113,8 @@ impl Drop for WebGl {
         // gl::Compiler::onDestroy finalizes shared translator TLS when the last
         // native compiler is released. Destroy explicit validator handles first;
         // their destructors still require that TLS, even with no current EGL binding.
+        // Each retained entry also initializes TLS itself: a peer's lazy native
+        // compiler may already have retired without owning our validators.
         self.shader_validators.clear();
         if self.native.make_current().is_ok() {
             if self.vertex_arrays.default_native != 0 {

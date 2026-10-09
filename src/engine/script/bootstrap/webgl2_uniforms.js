@@ -6,7 +6,7 @@
         });
         for (const kind of ['f','i','u']) {
             const name = 'uniform'+count+(kind === 'u' ? 'ui' : kind)+'v';
-            webGl2Method(name,2,'--au',[[0,'WebGLUniformLocation',true],[1,webGl2NumericArgument(kind)]],function(location,source,offset,length) {
+            webGl2Method(name,2,'--au',[[0,'WebGLUniformLocation',true],[1,webGl2NumericArgument(kind),false,true]],function(location,source,offset,length) {
                 if (!webGlNumericValidate(this,source)) return;
                 const id = webGl2Handle(this,location,'WebGLUniformLocation',true);
                 if (id <= 0) return;
@@ -19,11 +19,11 @@
     }
     for (let columns = 2; columns <= 4; columns++) for (let rows = 2; rows <= 4; rows++) {
         const name = 'uniformMatrix'+columns+(rows===columns?'':'x'+rows)+'fv';
-        webGl2Method(name,3,'-b-au',[[0,'WebGLUniformLocation',true],[2,webGl2NumericArgument('f')]],function(location,transpose,source,offset,length) {
+        webGl2Method(name,3,'-b-au',[[0,'WebGLUniformLocation',true],[2,webGl2NumericArgument('f'),false,true]],function(location,transpose,source,offset,length) {
             if (!webGlNumericValidate(this,source)) return;
             const id = webGl2Handle(this,location,'WebGLUniformLocation',true);
             if (id <= 0) return;
             const values = webGl2NumericSlice(this,source,offset,length);
-            if (values) webGl2Invoke(this,name,[id,Number(transpose)],values);
+            if (values) webGl2Invoke(this,name,[id,+transpose],values);
         });
     }

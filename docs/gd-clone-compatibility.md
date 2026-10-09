@@ -323,3 +323,47 @@ failure. Renderer memory fields are zero after exit and must not be interpreted
 as a low-memory result or a measured peak. This does not identify every native
 allocation's owner or justify increasing production limits. The production
 source is restored byte-for-byte before final checks and handoff.
+
+## October 9 final-source rendering check
+
+The ordinary hidden capture uses the frozen, unchanged eight-file production
+snapshot, shipped V8, scale 1, a fresh profile with the game's own persisted
+Crypt preference, and the authorized opt-in graphics setting. No game code or
+RNG is patched. Source sampling and DOM diagnostic selectors are off. The
+capture settles for 45 seconds and retains a 60-second filmstrip at two-second
+intervals; this is a functionality check, not a Chrome startup benchmark.
+
+Original images show loading at 4, 16 and 30 seconds, then the actual textured
+arena, player and lobby HUD in the final capture and 60-second frame. This
+advances beyond the preceding black 3D canvas. HTTP is 200, with no uncaught
+JavaScript errors, shader console errors, renderer exit or runtime stop. ANGLE
+still reports HLSL precision/`isnan` compiler warnings; they are retained rather
+than treated as successful pixel checks.
+
+The capture is not accepted visual parity or full gameplay: ability icons are
+missing, the HUD has visible dark rectangular artifacts, and loading remains
+slow. Interactive movement, a complete wave and sustained frame cadence are
+not verified by this capture. Smaller checked command workloads remain the
+optimization target; its 1,656.881-ms harness page-ready field is explicitly
+not time-to-arena.
+
+The default renderer Job stays 1 GiB. This replay selects the persisted
+**2 GiB (3D workloads)** option, with bounded 1-GiB context/owner GPU-storage
+ledgers and process-private emergency-headroom admission. Its 60 successful
+one-second renderer samples observe a private-byte high water of
+1,631,133,696 bytes (1,555.6 MiB). Final private bytes are 1,352,531,968
+(1,289.9 MiB), and the retained OS peak working set is 1,080,995,840 bytes
+(1,030.9 MiB). Private bytes include native GPU/compiler allocations; neither
+the sampled high water nor GPU storage ledgers are exact driver VRAM or an
+allocation-by-allocation leak attribution.
+
+Replay identities (SHA-256):
+
+- Source release: `7A5EC5A0EE963E34E2DD2620D6BCF8CA060DAD00FA2F30B6D0C055E83E0253F4`.
+- Frozen game index: `204407381FA0E210324BD5847017D4C2167E41DD20A34961B01AEE64FF71413A`.
+
+The complete report and original frames are retained locally on G: under
+`game-memory-startup-20261009/final-unchanged-game-breeze`; captured assets
+and profiles are not committed. The opt-in policy and earlier failed default
+captures are not substituted for each other or presented as a default-budget
+acceptance pass.

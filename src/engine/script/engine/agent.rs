@@ -1,6 +1,7 @@
 //! Related document realms share one isolate and one execution deadline.
 use super::value::JsResult;
 use super::watchdog::{ExecutionWatchdog, ScriptCancellation};
+mod memory;
 
 pub(super) struct Agent {
     // Stop cross-thread termination before releasing V8.
@@ -9,6 +10,8 @@ pub(super) struct Agent {
     gc_profile: super::gc_profile::Profile,
     task_profile: super::task_profile::Profile,
     cpu_samples: super::cpu_samples::Profile,
+    pressure: super::memory_pressure::Consumer,
+    pressure_profile: super::memory_pressure::Profile,
 }
 
 impl Agent {
@@ -31,6 +34,8 @@ impl Agent {
             gc_profile: Default::default(),
             task_profile: Default::default(),
             cpu_samples: Default::default(),
+            pressure: Default::default(),
+            pressure_profile: Default::default(),
         })
     }
 
@@ -40,6 +45,7 @@ impl Agent {
 
     pub(super) fn set_gc_profiling(&mut self, enabled: bool) {
         self.cpu_samples.enable(enabled);
+        self.pressure_profile.enable(enabled);
         // The isolate is idle between tasks; balance this setup-only entry.
         unsafe { self.isolate.enter() };
         self.gc_profile.enable(&mut self.isolate, enabled);
@@ -58,6 +64,7 @@ impl Agent {
     pub(super) fn take_task_diagnostics(&mut self) -> Vec<String> {
         let mut rows = self.task_profile.take();
         rows.extend(self.cpu_samples.take());
+        rows.extend(self.pressure_profile.take());
         rows
     }
 
@@ -65,8 +72,30 @@ impl Agent {
         self.cpu_samples.take()
     }
 
+    pub(super) fn take_pressure_diagnostics(&mut self) -> Vec<String> {
+        self.pressure_profile.take()
+    }
+
     pub(super) fn run<T>(
         &mut self,
+        work: impl FnOnce(&mut v8::OwnedIsolate) -> JsResult<T>,
+    ) -> JsResult<T> {
+        self.run_with_sampling(false, work)
+    }
+
+    /// Sample author execution entry points, not every engine state-transfer
+    /// operation. CPU-profiler startup enumerates compiled code and can dwarf
+    /// a small internal call during style/layout; all calls remain watchdoged.
+    pub(super) fn run_sampled<T>(
+        &mut self,
+        work: impl FnOnce(&mut v8::OwnedIsolate) -> JsResult<T>,
+    ) -> JsResult<T> {
+        self.run_with_sampling(true, work)
+    }
+
+    pub(super) fn run_with_sampling<T>(
+        &mut self,
+        sample_author_code: bool,
         work: impl FnOnce(&mut v8::OwnedIsolate) -> JsResult<T>,
     ) -> JsResult<T> {
         let sample = self.task_profile.start(self.gc_profile.sample());
@@ -74,7 +103,9 @@ impl Agent {
         let result = self
             .watchdog
             .run_observed(&mut self.isolate, |isolate, termination| {
-                let recording = super::cpu_samples::Recording::start(cpu_samples.enabled());
+                let recording = super::cpu_samples::Recording::start(
+                    sample_author_code && cpu_samples.enabled(),
+                );
                 let result = work(isolate);
                 // A microtask checkpoint returns no JS value: its closure can return
                 // Ok even when V8 was terminated and cleared its termination bit.
@@ -165,7 +196,7 @@ mod tests {
         isolate.set_microtasks_policy(v8::MicrotasksPolicy::Explicit);
         let mut agent = Agent::new(isolate).unwrap();
         agent.cpu_samples.enable_for_test();
-        let result = agent.run(|isolate| {
+        let result = agent.run_sampled(|isolate| {
             v8::scope!(let scope, isolate);
             let context = v8::Context::new(scope, Default::default());
             let scope = &mut v8::ContextScope::new(scope, context);
@@ -182,5 +213,38 @@ mod tests {
         assert!(rows.iter().any(|row| row.starts_with("engine CPU source")));
         assert!(!agent.cpu_samples.enabled());
         assert!(agent.take_cpu_diagnostics().is_empty());
+    }
+
+    #[test]
+    fn internal_operations_keep_the_watchdog_without_starting_a_cpu_recording() {
+        super::super::runtime::initialize_v8();
+        let isolate = v8::Isolate::new(v8::CreateParams::default());
+        let mut agent = Agent::new(isolate).unwrap();
+        agent.cpu_samples.enable_for_test();
+        assert!(
+            agent
+                .run::<()>(|_| Err(super::super::value::JsError {
+                    kind: super::super::value::JsErrorKind::Type,
+                    message: "internal transfer failure".into(),
+                }))
+                .is_err()
+        );
+        assert!(agent.take_cpu_diagnostics().is_empty());
+        assert!(agent.cpu_samples.enabled());
+        assert_eq!(agent.run(|_| Ok(17)).unwrap(), 17);
+        let failed = agent.run_sampled::<()>(|_| {
+            Err(super::super::value::JsError {
+                kind: super::super::value::JsErrorKind::Type,
+                message: "sampled execution failure".into(),
+            })
+        });
+        assert!(failed.is_err());
+        assert!(
+            agent
+                .take_cpu_diagnostics()
+                .iter()
+                .any(|row| row.contains("first failed task"))
+        );
+        assert!(!agent.cpu_samples.enabled());
     }
 }

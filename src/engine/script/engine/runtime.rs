@@ -18,6 +18,7 @@ mod gpu_tasks;
 mod hooks;
 mod module_preparation;
 mod platform_tasks;
+mod task_boundary;
 #[cfg(all(test, windows))]
 mod webgl2_bindings_tests;
 #[cfg(all(test, windows))]
@@ -49,22 +50,36 @@ mod webgl2_uniform_bindings_tests;
 #[cfg(test)]
 mod webgl2_view_transform_tests;
 #[cfg(all(test, windows))]
+mod webgl_argument_plan_tests;
+#[cfg(all(test, windows))]
 mod webgl_buffer_admission_tests;
+#[cfg(all(test, windows))]
+mod webgl_direct_uniform_tests;
+#[cfg(all(test, windows))]
+mod webgl_numeric_command_tests;
 #[cfg(all(test, windows))]
 mod webgl_owned_copy_tests;
 #[cfg(all(test, windows))]
 mod webgl_owned_typed_copy_tests;
+#[cfg(all(test, windows))]
+mod webgl_packet_admission_tests;
+#[cfg(all(test, windows))]
+mod webgl_packet_order_tests;
+#[cfg(all(test, windows))]
+mod webgl_readback_pixel_tests;
 #[cfg(all(test, windows))]
 mod webgl_reflection_bindings_tests;
 #[cfg(all(test, windows))]
 mod webgl_restoration_policy_tests;
 #[cfg(all(test, windows))]
 mod webgl_video_source_tests;
+mod worker_packets;
 
 pub(in crate::engine::script) struct Context {
     // Persistent handles must be released before their isolate.
     context: v8::Global<v8::Context>,
     private_hooks: HashMap<String, v8::Global<v8::Function>>,
+    worker_packets: Rc<super::worker_packets::State>,
     imports: Rc<super::dynamic_imports::Imports>,
     _frames: Rc<super::frames::FrameTree>,
     gpu_host: std::rc::Weak<HostBridge>,
@@ -95,12 +110,13 @@ impl Context {
     ) -> JsResult<Self> {
         let is_window = matches!(bridge, HostBridge::Document(_));
         initialize_v8();
-        let mut isolate = v8::Isolate::new(v8::CreateParams::default());
+        let mut isolate = v8::Isolate::new(super::stack_boundary::create_params()?);
         isolate.set_microtasks_policy(v8::MicrotasksPolicy::Explicit);
         isolate.set_allow_wasm_code_generation_callback(super::policy::allow_wasm);
         isolate.set_host_import_module_dynamically_callback(super::dynamic_imports::request);
         let imports = Rc::new(super::dynamic_imports::Imports::default());
         let frames = Rc::new(super::frames::FrameTree::default());
+        let worker_packets = Rc::new(super::worker_packets::State::default());
         let bridge = Rc::new(bridge);
         let gpu_host = Rc::downgrade(&bridge);
         isolate.set_host_initialize_import_meta_object_callback(
@@ -121,6 +137,7 @@ impl Context {
             );
             context.set_slot(bridge);
             context.set_slot(Rc::clone(&imports));
+            context.set_slot(Rc::clone(&worker_packets));
             super::frames::register(context, &frames);
             let scope = &mut v8::ContextScope::new(scope, context);
             super::frames::register_document(scope, context, &frames);
@@ -131,6 +148,7 @@ impl Context {
         Ok(Self {
             context,
             private_hooks: HashMap::new(),
+            worker_packets,
             imports,
             _frames: frames,
             gpu_host,
@@ -142,7 +160,7 @@ impl Context {
 
     pub(in crate::engine::script) fn eval(&mut self, source: Source) -> JsResult<JsValue> {
         let context = self.context.clone();
-        self.agent.borrow_mut().run(|isolate| {
+        self.agent.borrow_mut().run_sampled(|isolate| {
             v8::scope!(let scope, isolate);
             let context = v8::Local::new(scope, &context);
             let scope = &mut v8::ContextScope::new(scope, context);
@@ -185,34 +203,46 @@ impl Context {
     ) -> JsResult<JsValue> {
         let context = self.context.clone();
         let captured = self.private_hooks.get(name).cloned();
-        self.agent.borrow_mut().run(|isolate| {
-            v8::scope!(let scope, isolate);
-            let context = v8::Local::new(scope, &context);
-            let scope = &mut v8::ContextScope::new(scope, context);
-            v8::tc_scope!(let tc, scope);
-            let key = v8::String::new(tc, name).ok_or_else(|| allocation_error("function name"))?;
-            let value = if let Some(captured) = &captured {
-                v8::Local::new(tc, captured).into()
-            } else {
-                context
-                    .global(tc)
-                    .get(tc, key.into())
-                    .ok_or_else(|| caught_error(tc, "read global function"))?
-            };
-            let function = v8::Local::<v8::Function>::try_from(value).map_err(|_| JsError {
-                kind: JsErrorKind::Type,
-                message: format!("{name} hook is unavailable"),
-            })?;
-            let values = arguments
-                .iter()
-                .map(|value| value_to_v8(tc, value))
-                .collect::<JsResult<Vec<_>>>()?;
-            let receiver: v8::Local<v8::Value> = context.global(tc).into();
-            let result = function
-                .call(tc, receiver, &values)
-                .ok_or_else(|| caught_error(tc, &format!("call {name}")))?;
-            value_from_v8(tc, result)
-        })
+        // Skip repeated profiler setup for captured state/presentation hooks.
+        // This is a diagnostic selection, not proof that getters cannot run
+        // author code: every call still has its ordinary execution watchdog.
+        // Uncaptured replacements remain part of source sampling.
+        let sample = captured.is_none()
+            || !matches!(
+                name,
+                "__setCurrentScript" | "__setHistoryMetrics" | "__takeCanvasPresentation"
+            );
+        self.agent
+            .borrow_mut()
+            .run_with_sampling(sample, |isolate| {
+                v8::scope!(let scope, isolate);
+                let context = v8::Local::new(scope, &context);
+                let scope = &mut v8::ContextScope::new(scope, context);
+                v8::tc_scope!(let tc, scope);
+                let key =
+                    v8::String::new(tc, name).ok_or_else(|| allocation_error("function name"))?;
+                let value = if let Some(captured) = &captured {
+                    v8::Local::new(tc, captured).into()
+                } else {
+                    context
+                        .global(tc)
+                        .get(tc, key.into())
+                        .ok_or_else(|| caught_error(tc, "read global function"))?
+                };
+                let function = v8::Local::<v8::Function>::try_from(value).map_err(|_| JsError {
+                    kind: JsErrorKind::Type,
+                    message: format!("{name} hook is unavailable"),
+                })?;
+                let values = arguments
+                    .iter()
+                    .map(|value| value_to_v8(tc, value))
+                    .collect::<JsResult<Vec<_>>>()?;
+                let receiver: v8::Local<v8::Value> = context.global(tc).into();
+                let result = function
+                    .call(tc, receiver, &values)
+                    .ok_or_else(|| caught_error(tc, &format!("call {name}")))?;
+                value_from_v8(tc, result)
+            })
     }
 
     pub(in crate::engine::script) fn evaluate_module(
@@ -222,7 +252,7 @@ impl Context {
         sources: &HashMap<String, String>,
     ) -> JsResult<ModuleEvaluation> {
         let context = self.context.clone();
-        let evaluation = self.agent.borrow_mut().run(|isolate| {
+        let evaluation = self.agent.borrow_mut().run_sampled(|isolate| {
             super::modules::evaluate(isolate, &context, root_url, root_source, sources, false)
         })?;
         match evaluation {
@@ -255,65 +285,48 @@ impl Context {
                 kind: JsErrorKind::Type,
                 message: "module Promise is unavailable".into(),
             })?;
-        if let Some(hook) = self.private_hooks.get("__trackModulePromise").cloned() {
-            // Browser bootstrap captured the native bridge in a closure and
-            // removed this hook from Window. Pass the V8 Promise directly so
-            // neither it nor the native bridge is temporarily page-visible.
-            let context = self.context.clone();
-            return self.agent.borrow_mut().run(|isolate| {
-                v8::scope!(let scope, isolate);
-                let context = v8::Local::new(scope, &context);
-                let scope = &mut v8::ContextScope::new(scope, context);
-                v8::tc_scope!(let tc, scope);
-                let hook = v8::Local::new(tc, &hook);
-                let promise = v8::Local::new(tc, &promise);
-                let operation = v8::String::new(tc, operation)
-                    .ok_or_else(|| allocation_error("module completion operation"))?;
-                let completion_id = v8::Integer::new_from_unsigned(tc, completion_id);
-                let arguments: [v8::Local<v8::Value>; 3] =
-                    [promise.into(), operation.into(), completion_id.into()];
-                let receiver: v8::Local<v8::Value> = context.global(tc).into();
-                hook.call(tc, receiver, &arguments)
-                    .ok_or_else(|| caught_error(tc, "track module Promise"))?;
-                Ok(())
-            });
-        }
-        // Worker bootstrap retains its own worker-scoped native bridge.
-        let property = format!("__breezeModulePromise{promise_id}");
-        {
-            let context = self.context.clone();
-            self.agent.borrow_mut().run(|isolate| {
-                v8::scope!(let scope, isolate);
-                let context = v8::Local::new(scope, &context);
-                let scope = &mut v8::ContextScope::new(scope, context);
-                let key = v8::String::new(scope, &property)
-                    .ok_or_else(|| allocation_error("module Promise name"))?;
-                let promise = v8::Local::new(scope, promise);
-                context
-                    .global(scope)
-                    .set(scope, key.into(), promise.into())
-                    .filter(|set| *set)
-                    .ok_or_else(|| JsError {
-                        kind: JsErrorKind::Error,
-                        message: "expose pending module Promise".into(),
-                    })?;
-                Ok(())
-            })?;
-        }
-        let property = serde_json::to_string(&property).map_err(|error| JsError {
-            kind: JsErrorKind::Error,
-            message: error.to_string(),
-        })?;
-        let operation = serde_json::to_string(operation).map_err(|error| JsError {
-            kind: JsErrorKind::Error,
-            message: error.to_string(),
-        })?;
-        self.eval(Source::from_bytes(format!(
-            "globalThis[{property}].then(\
-                () => __hostCall({operation}, {completion_id}, true, ''),\
-                reason => __hostCall({operation}, {completion_id}, false, String(reason))\
-             ).finally(() => delete globalThis[{property}]);"
-        )))?;
-        Ok(())
+        let hook = self
+            .private_hooks
+            .get("__moduleCompletionHandlers")
+            .cloned()
+            .ok_or_else(|| allocation_error("private module completion hook"))?;
+        // Keep the internal evaluation Promise native. V8's public Then API
+        // performs settlement without author constructor/species access, unlike
+        // even a captured Promise.prototype.then. The private factory supplies
+        // bridge-owning callbacks, never an author-global Promise or fallback.
+        let context = self.context.clone();
+        self.agent.borrow_mut().run(|isolate| {
+            v8::scope!(let scope, isolate);
+            let context = v8::Local::new(scope, &context);
+            let scope = &mut v8::ContextScope::new(scope, context);
+            v8::tc_scope!(let tc, scope);
+            let hook = v8::Local::new(tc, &hook);
+            let promise = v8::Local::new(tc, &promise);
+            let operation = v8::String::new(tc, operation)
+                .ok_or_else(|| allocation_error("module completion operation"))?;
+            let completion_id = v8::Integer::new_from_unsigned(tc, completion_id);
+            let arguments: [v8::Local<v8::Value>; 2] = [operation.into(), completion_id.into()];
+            let receiver: v8::Local<v8::Value> = context.global(tc).into();
+            let handlers = hook
+                .call(tc, receiver, &arguments)
+                .ok_or_else(|| caught_error(tc, "construct module completion handlers"))?;
+            let handlers = v8::Local::<v8::Array>::try_from(handlers)
+                .map_err(|_| allocation_error("module completion handlers"))?;
+            if handlers.length() != 2 {
+                return Err(allocation_error("module completion handler count"));
+            }
+            let fulfilled = handlers
+                .get_index(tc, 0)
+                .and_then(|value| v8::Local::<v8::Function>::try_from(value).ok())
+                .ok_or_else(|| allocation_error("module fulfillment handler"))?;
+            let rejected = handlers
+                .get_index(tc, 1)
+                .and_then(|value| v8::Local::<v8::Function>::try_from(value).ok())
+                .ok_or_else(|| allocation_error("module rejection handler"))?;
+            promise
+                .then2(tc, fulfilled, rejected)
+                .ok_or_else(|| caught_error(tc, "observe module evaluation"))?;
+            Ok(())
+        })
     }
 }

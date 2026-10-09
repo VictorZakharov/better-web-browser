@@ -28,13 +28,17 @@ impl WorkerRuntime {
         }
     }
 
-    pub(super) fn dispatch_message_now(&mut self, serialized: &str) -> JsResult<()> {
-        self.context.call_global(
+    pub(super) fn dispatch_message_now(
+        &mut self,
+        serialized: &super::worker_message::WorkerMessage,
+    ) -> JsResult<()> {
+        self.context.call_worker_hook(
             "__dispatchWorkerMessage",
-            &[JsValue::from(JsString::from(serialized))],
+            &[JsValue::from(JsString::from(serialized.as_str()))],
+            serialized.clone(),
         )?;
         self.context.run_jobs()?;
-        self.context.complete_gpu_task()
+        self.context.complete_task()
     }
 
     pub(super) fn settle_module_evaluation(&mut self, outcome: &mut WorkerRuntimeOutcome) {
@@ -49,7 +53,7 @@ impl WorkerRuntime {
             self.pending_messages.clear();
             return;
         }
-        if let Err(error) = self.context.complete_gpu_task() {
+        if let Err(error) = self.context.complete_task() {
             outcome
                 .errors
                 .push(format!("Worker module GPU task boundary: {error}"));
@@ -72,7 +76,7 @@ impl WorkerRuntime {
             && let Err(error) = self
                 .context
                 .run_jobs()
-                .and_then(|()| self.context.complete_gpu_task())
+                .and_then(|()| self.context.complete_task())
         {
             outcome.errors.push(format!("finish Worker task: {error}"));
         }

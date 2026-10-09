@@ -63,7 +63,13 @@ impl WebGl {
             floats.len()
         };
         let group = if matrix { columns * columns } else { columns };
-        if !values.is_multiple_of(group) || (!c.op.ends_with('v') && values != group) {
+        // WebGL requires at least one complete assigned value, unlike GLES'
+        // legal zero-count upload. A null location returned before this check.
+        // https://registry.khronos.org/webgl/specs/latest/1.0/#5.14.10
+        if values < group
+            || !values.is_multiple_of(group)
+            || (!c.op.ends_with('v') && values != group)
+        {
             return Err(gl::INVALID_VALUE);
         }
         if matrix && c.u(1)? != 0 {

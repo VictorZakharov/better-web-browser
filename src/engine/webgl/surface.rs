@@ -31,7 +31,7 @@ impl Surface {
             return Err("WebGL drawing buffer exceeds the admitted bitmap size".into());
         }
         let allocated_bytes = Self::allocation_bytes(width, height, options)
-            .filter(|bytes| *bytes <= super::MAX_RESOURCE_BYTES)
+            .filter(|bytes| *bytes <= super::resource_ceiling())
             .ok_or("WebGL drawing buffer exceeds the context storage budget")?;
         let mut result = Self {
             api: options.api,

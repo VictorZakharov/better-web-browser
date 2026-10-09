@@ -53,12 +53,17 @@
     }
     for (let count = 2; count <= 4; count++) webGlScalarArguments.set('uniformMatrix' + count + 'fv', '-bF');
 
+    // Web IDL scalar conversion uses intrinsic operations, not replaceable
+    // author Math/Number/BigInt helpers. ToNumber still runs valueOf exactly once.
+    const webGlIdlFinite = Number.isFinite, webGlIdlTrunc = Math.trunc;
+    const webGlIdlFround = Math.fround, webGlIdlString = String, webGlIdlNumber = Number;
+    const webGlIdlBigInt = BigInt, webGlIdlIntN = BigInt.asIntN, webGlIdlUintN = BigInt.asUintN;
     const webGlNumber = value => +value; // ToNumber rejects BigInt, including boxed BigInt.
     const webGlLongLong = value => {
         const number = webGlNumber(value);
-        if (!Number.isFinite(number) || number === 0) return 0;
+        if (!webGlIdlFinite(number) || number === 0) return 0;
         // BigInt is used internally only to retain the 64-bit modulo operation.
-        return Number(BigInt.asIntN(64, BigInt(Math.trunc(number))));
+        return webGlIdlNumber(webGlIdlIntN(64, webGlIdlBigInt(webGlIdlTrunc(number))));
     };
     const webGlDetachedNumericLists = new WeakSet();
     const webGlScalar = (kind, value) => {
@@ -88,41 +93,55 @@
         if (kind === 'u') return webGlNumber(value) >>> 0;
         if (kind === 'i') return webGlNumber(value) | 0;
         if (kind === 'l') return webGlLongLong(value);
-        if (kind === 'f') return Math.fround(webGlNumber(value));
-        if (kind === 'b') return Boolean(value);
+        if (kind === 'f') return webGlIdlFround(webGlNumber(value));
+        if (kind === 'b') return !!value;
         if (kind === 's') {
             if (typeof value === 'symbol') throw new TypeError('Cannot convert Symbol to DOMString');
-            return String(value);
+            return webGlIdlString(value);
         }
         return value;
     };
-    const webGlConvertArguments = (name, args) => {
-        let valid=true;
-        let signature = webGlScalarArguments.get(name) ?? '';
-        if (name === 'texImage2D') signature = args.length >= 9 ? 'uiiiiiuu-' : 'uiiuu-';
-        if (name === 'texSubImage2D') signature = args.length >= 9 ? 'uiiiiiuu-' : 'uiiiuu-';
+    const webGlArgumentPlan = (name, arity) => {
+        const texture = name === 'texImage2D' || name === 'texSubImage2D';
+        const signature = name === 'texImage2D' ? 'uiiuu-' :
+            name === 'texSubImage2D' ? 'uiiiuu-' : webGlScalarArguments.get(name) ?? '';
         const interfaces = webGlInterfaceArguments.get(name) ?? [];
-        const count = Math.max(signature.length, ...interfaces.map(entry => entry[0] + 1));
+        const slots = webGlWireCreate(null);
+        let count = signature.length;
+        for (let index = 0; index < interfaces.length; index++) {
+            const entry = interfaces[index];
+            slots[entry[0]] = entry;
+            count = Math.max(count, entry[0] + 1);
+        }
+        return {signature, slots, count, arity, texture,
+            sizeOverload:name === 'bufferData', subupload:name === 'bufferSubData',
+            viewSlot:name === 'readPixels' ? 6 : name.startsWith('compressedTex') ? signature.length - 1 : -1};
+    };
+    const webGlConvertArguments = (plan, args) => {
+        let valid=true;
+        const signature = plan.texture && args.length >= 9 ? 'uiiiiiuu-' : plan.signature;
+        const count = plan.texture ? signature.length : plan.count;
         for (let index = 0; index < count; index++) {
-            const entry = interfaces.find(entry => entry[0] === index);
+            // The private IDL slot table is fixed at installation. Do not search
+            // an array or allocate a predicate on each public method invocation.
+            const entry = plan.slots[index];
             if (entry) webGlConvertInterface(args, ...entry);
             if (signature[index] && signature[index] !== '-') args[index] = webGlScalar(signature[index], args[index]);
             if ((signature[index] === 'F' || signature[index] === 'I') && webGlDetachedNumericLists.has(args[index])) valid=false;
-            if (name === 'bufferData' && index === 1 && args[index] !== null) {
+            if (plan.sizeOverload && index === 1 && args[index] !== null) {
                 if (webGl2IsBuffer(args[index]) || webGl2IsView(args[index])) webGl2Source(args[index]);
                 else args[index] = webGlLongLong(args[index]);
             }
-            if ((name === 'readPixels' && index === 6 || name.startsWith('compressedTex') && index === signature.length - 1 ||
-                (name === 'texImage2D' || name === 'texSubImage2D') && signature.length === 9 && index === 8) &&
+            if ((index === plan.viewSlot || plan.texture && signature.length === 9 && index === 8) &&
                 args[index] !== null) webGl2View(args[index]);
-            if (name === 'bufferSubData' && index === 2) {
+            if (plan.subupload && index === 2) {
                 if (args[index] === null) throw new TypeError('Expected BufferSource');
                 webGl2Source(args[index]);
             }
         }
         // Web IDL ignores additional arguments. Texture overload selection uses
         // effective argument count first; its implementation receives that shape.
-        if (name === 'texImage2D' || name === 'texSubImage2D') args.length = signature.length;
-        else args.length = Math.min(args.length, webGlArities[name]);
+        if (plan.texture) args.length = signature.length;
+        else args.length = Math.min(args.length, plan.arity);
         return valid;
     };

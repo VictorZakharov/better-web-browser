@@ -24,6 +24,7 @@ pub(super) fn run(arguments: &[String]) -> Result<(), String> {
     crate::engine::script::runtime_guard::install_runtime_panic_hook();
     let mut options = ChildOptions::parse(arguments)?;
     crate::branding::install_renderer_user_agent_mode(options.user_agent_mode)?;
+    crate::renderer_budget::install(options.memory_budget)?;
     let input_handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
     let output_handle = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
     if !valid_handle(input_handle) || !valid_handle(output_handle) {
@@ -337,68 +338,9 @@ enum StartupFault {
     IncompatibleVersion,
 }
 
-struct ChildOptions {
-    nonce: Nonce,
-    session: RendererSessionId,
-    user_agent_mode: crate::branding::UserAgentMode,
-    test_mode: bool,
-    fault: Option<StartupFault>,
-    media: Option<media::ChildMediaOptions>,
-}
-
-impl ChildOptions {
-    fn parse(arguments: &[String]) -> Result<Self, String> {
-        let value = |name: &str| {
-            arguments
-                .iter()
-                .position(|argument| argument == name)
-                .and_then(|index| arguments.get(index + 1))
-                .ok_or_else(|| format!("{name} requires a value"))
-        };
-        let nonce = Nonce::from_hex(value("--renderer-nonce")?)
-            .map_err(|error| format!("parse renderer nonce: {error}"))?;
-        let session = value("--renderer-session")?
-            .parse::<u64>()
-            .map_err(|_| "--renderer-session requires an integer".to_string())
-            .and_then(|value| RendererSessionId::new(value).map_err(|error| error.to_string()))?;
-        let user_agent_mode = arguments
-            .iter()
-            .any(|argument| argument == "--renderer-user-agent")
-            .then(|| value("--renderer-user-agent"))
-            .transpose()?
-            .map(|value| {
-                crate::branding::UserAgentMode::parse(value)
-                    .ok_or_else(|| format!("unknown renderer User-Agent mode: {value}"))
-            })
-            .transpose()?
-            .unwrap_or_default();
-        let fault = arguments
-            .iter()
-            .any(|argument| argument == "--renderer-startup-fault")
-            .then(|| value("--renderer-startup-fault"))
-            .transpose()?
-            .map(|fault| match fault.as_str() {
-                "silent" => Ok(StartupFault::Silent),
-                "wrong-nonce" => Ok(StartupFault::WrongNonce),
-                "malformed" => Ok(StartupFault::MalformedFrame),
-                "oversized" => Ok(StartupFault::OversizedFrame),
-                "incompatible" => Ok(StartupFault::IncompatibleVersion),
-                _ => Err(format!("unknown renderer startup fault: {fault}")),
-            })
-            .transpose()?;
-        Ok(Self {
-            nonce,
-            session,
-            user_agent_mode,
-            test_mode: arguments
-                .iter()
-                .any(|argument| argument == "--renderer-test-mode"),
-            fault,
-            media: media::ChildMediaOptions::parse(arguments)?,
-        })
-    }
-}
+use options::ChildOptions;
 mod connection;
 mod document;
 mod media;
+mod options;
 mod stdio;

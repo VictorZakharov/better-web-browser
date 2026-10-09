@@ -32,6 +32,7 @@ mod tests {
             working_set: 10,
             private_memory: 11,
             peak_working_set: 12,
+            memory_evidence: Default::default(),
             cpu_ticks: 13,
             handle_count: 14,
             uptime: Duration::from_secs(3),

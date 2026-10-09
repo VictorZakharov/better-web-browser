@@ -4,6 +4,7 @@ mod element_images;
 mod embedded;
 mod font_loading;
 mod font_requests;
+mod initial_svg;
 mod integrity;
 pub(crate) use integrity::{resource_integrity, stylesheet_crossorigin};
 mod link_preloads;
@@ -15,6 +16,7 @@ mod modern_image_tests;
 mod parsing;
 mod preload;
 mod refresh;
+mod render_visibility;
 mod rendering;
 mod resource_events;
 mod resource_hints;
@@ -88,6 +90,7 @@ pub struct Page {
     pub diagnostics: Vec<String>,
     media_environment: MediaEnvironment,
     layout_viewport: (f32, f32),
+    resource_profile: refresh::profile::Profile,
 }
 
 impl Page {
@@ -107,6 +110,7 @@ impl Page {
             }
         }
         let mut page = Self::from_dom(dom, source_url);
+        page.prepare_standalone_svgs();
         page.scripting_enabled = scripting_enabled;
         page
     }
@@ -126,18 +130,8 @@ impl Page {
             discover_resources(&dom, source_url, &base_url, media_environment);
 
         let mut images = HashMap::new();
-        let mut inline_svg_versions = HashMap::new();
-        for svg in Node::shadow_including_descendants(&dom.document)
-            .filter(|node| node.tag_name() == Some("svg"))
-            .take(MAX_INLINE_SVGS)
-        {
-            let input = svg::InlineSvgInput::new(&svg, None);
-            inline_svg_versions.insert(svg.id(), input.version);
-            if let Ok(image) = input.decode() {
-                let _ =
-                    media::install_initial_decoded_image(&mut images, inline_svg_key(&svg), image);
-            }
-        }
+        // Live/streaming documents rasterize after their presentation cascade.
+        // Parsing a DOM does not prove that an SVG generates a rendered box.
         media::install_placeholder(&dom, &mut images);
 
         let mut page = Self {
@@ -159,11 +153,12 @@ impl Page {
             image_origin_clean: HashMap::new(),
             scripting_enabled: true,
             hidden_media_video: HashSet::new(),
-            inline_svg_versions,
+            inline_svg_versions: HashMap::new(),
             fonts: Vec::new(),
             diagnostics,
             media_environment,
             layout_viewport: (1280.0, 720.0),
+            resource_profile: Default::default(),
         };
         page.refresh_media_sources();
         page.install_embedded_images();

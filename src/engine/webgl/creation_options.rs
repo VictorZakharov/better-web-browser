@@ -6,6 +6,7 @@ use super::ApiVersion;
 pub(super) struct Options {
     pub api: ApiVersion,
     pub alpha: bool,
+    pub premultiplied_alpha: bool,
     pub depth: bool,
     pub stencil: bool,
     pub antialias: bool,
@@ -28,6 +29,7 @@ impl Default for Options {
         Self {
             api: ApiVersion::One,
             alpha: true,
+            premultiplied_alpha: true,
             depth: true,
             stencil: false,
             antialias: false,
@@ -47,6 +49,7 @@ mod tests {
         let options: Options = serde_json::from_str("{}").unwrap();
         assert_eq!(options.api, ApiVersion::One);
         assert!(options.alpha && options.depth);
+        assert!(options.premultiplied_alpha);
         assert!(!options.stencil && !options.antialias && !options.preserve);
         assert!(!options.fail_if_major_performance_caveat);
         assert_eq!(options.power_preference, PowerPreference::Default);
@@ -71,11 +74,22 @@ mod tests {
             r#"{"fail_if_major_performance_caveat":"false"}"#,
             r#"{"adapter_luid":42}"#,
             r#"{"backend":"null"}"#,
+            r#"{"premultiplied_alpha":"false"}"#,
+            r#"{"premultiplied_alpha":null}"#,
         ] {
             assert!(
                 serde_json::from_str::<Options>(invalid).is_err(),
                 "{invalid}"
             );
+        }
+    }
+
+    #[test]
+    fn native_snapshot_representation_uses_the_converted_alpha_flag() {
+        for flag in [false, true] {
+            let options: Options =
+                serde_json::from_str(&format!(r#"{{"premultiplied_alpha":{flag}}}"#)).unwrap();
+            assert_eq!(options.premultiplied_alpha, flag);
         }
     }
 }

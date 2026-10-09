@@ -70,7 +70,7 @@ impl WebGl {
                 return Err(gl::INVALID_VALUE);
             }
             let group = MATRIX_COMPONENTS[index];
-            if !command.f.len().is_multiple_of(group) {
+            if command.f.len() < group || !command.f.len().is_multiple_of(group) {
                 return Err(gl::INVALID_VALUE);
             }
             let count = i32::try_from(command.f.len() / group).map_err(|_| gl::INVALID_VALUE)?;
@@ -99,7 +99,8 @@ impl WebGl {
                 .skip(1)
                 .map(|value| u32::try_from(*value).map_err(|_| gl::INVALID_VALUE))
                 .collect::<Result<Vec<_>>>()?;
-            if !values.len().is_multiple_of(group)
+            if values.len() < group
+                || !values.len().is_multiple_of(group)
                 || (!command.op.ends_with('v') && values.len() != group)
             {
                 return Err(gl::INVALID_VALUE);

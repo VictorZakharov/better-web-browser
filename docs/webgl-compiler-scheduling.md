@@ -49,6 +49,25 @@ deadline. Compilation validation in Breeze's WebGL validator remains synchronous
 and bounded; ordinary submission/front-end validation can still consume time.
 Backpressure and queries that actually need compiled code can still block.
 
+### Explicit validator lifetime
+
+The pinned ANGLE `gl::Compiler` refcount covers its lazy native GLES compilers,
+not Breeze's explicit WebGL validator handles. A context can own a retained
+validator before it ever calls native `glCompileShader`. Destruction of a peer's
+last native compiler then finalizes the process-wide pool TLS while that
+explicit validator remains alive. Clearing only the retiring context's
+validators does not protect its peers.
+
+Retained entries therefore call the existing, idempotent translator initializer
+before reuse and before native destruction. No extra compiler, display or
+permanent context is pinned. If OS TLS allocation fails during destruction,
+the already-bounded handle is left for process teardown instead of calling a
+destructor with invalid TLS; later prepare/compile fails on initialization.
+Regression tests interleave translation-only contexts with actual native peer
+compilation and retirement in both API versions, including reuse and drop
+without reuse. These rules derive from the pinned provider's `Compiler.cpp`,
+`ShaderLang.cpp` and `InitializeDll.cpp`; no upstream code is copied or patched.
+
 ## Regression coverage and measurements
 
 ### Owner-side link ordering

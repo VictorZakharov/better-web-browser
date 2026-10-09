@@ -1,6 +1,12 @@
 # WebGL storage admission and retirement
 
-Breeze retains its 64 MiB per-context and 128 MiB per-owner storage limits.
+The standard renderer policy admits at most 256 MiB per context and 512 MiB
+per native owner, inside the default 1 GiB Windows Job limit. The opt-in 3D
+policy admits at most 1 GiB per context and owner, inside a 2 GiB Job limit.
+Both policies reserve process-private emergency headroom before storage growth;
+see [renderer pressure and headroom](renderer-memory-pressure.md). User selection
+requires a restart and does not grant any new JavaScript capability.
+
 GPU-object and uniform-location counts are separate limits. Storage accounting
 is a conservative reservation, not a claim to measure the driver's exact VRAM.
 Two copies cover native storage and browser mirrors used to validate draws.
@@ -27,8 +33,10 @@ rather than admitting untracked storage.
 
 This fixes the previous lifetime-total counter, which charged resources after
 their actual retirement and could eventually reject an otherwise bounded
-allocation/release workload. It does not add a site-specific exemption or raise
-storage limits to conceal a rendering failure.
+allocation/release workload. The later policy increase is separate: renderer
+Job and ledger experiments establish whether a page actually fits and renders,
+not whether its JavaScript merely survives an allocation failure. There is no
+site-specific exception, URL-dependent policy or successful fake allocation.
 
 Native tests cover buffer churn under a small budget, delayed VAO/FBO/program
 retirement, repeated and shrinking renderbuffer definitions, multisample
@@ -60,6 +68,10 @@ Reference: [WebGL resource deletion](https://registry.khronos.org/webgl/specs/la
 and the corresponding [WebGL 2 object operations](https://registry.khronos.org/webgl/specs/latest/2.0/).
 
 ## Controlled larger-budget experiment
+
+The following October 8 observations describe the previous release and its
+then-unchanged production policy. They are historical evidence, not the current
+limits or an assertion that the game now fits the standard renderer budget.
 
 A local October 8 experiment compared two frozen intermediate builds differing
 only in the context/owner limits: 64/128 MiB and 256/512 MiB. The renderer Job

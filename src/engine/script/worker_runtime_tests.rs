@@ -5,6 +5,10 @@ mod cancellation;
 
 #[path = "worker_runtime_tests/binary_clone.rs"]
 mod binary_clone;
+#[path = "worker_runtime_tests/module_loading.rs"]
+mod module_loading;
+#[path = "worker_runtime_tests/packet_transport.rs"]
+mod packet_transport;
 
 #[path = "worker_runtime_tests/numeric_globals.rs"]
 mod numeric_globals;
@@ -302,79 +306,6 @@ fn isolated_worker_url_components_and_search_params_are_live() {
         [
             "{\"t\":\"object\",\"id\":1,\"n\":false,\"v\":[[\"href\",\"https://user:pass@example.com:8443/next?a=1&b=2&space=a+b#after\"],[\"same\",true],[\"old\",null],[\"username\",\"user\"],[\"password\",\"pass\"],[\"host\",\"example.com:8443\"],[\"pathname\",\"/next\"],[\"search\",\"?a=1&b=2&space=a+b\"],[\"hash\",\"#after\"],[\"origin\",\"https://example.com:8443\"]]}"
         ],
-    );
-    assert!(runtime.is_some());
-}
-
-#[test]
-fn module_worker_loads_a_relative_dependency() {
-    let loader: Arc<WorkerSourceLoader> = Arc::new(|url, kind| {
-        assert_eq!(kind, ScriptKind::Module);
-        match url {
-            "https://example.com/value.js" => Ok("export const value = 42;".into()),
-            _ => Err(format!("unexpected {url}")),
-        }
-    });
-    let (runtime, outcome) = WorkerRuntime::start(
-        "https://example.com/worker.js",
-        "import { value } from './value.js'; postMessage({ value, url: import.meta.url, name });",
-        "module-test",
-        ScriptKind::Module,
-        loader,
-    );
-
-    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(
-        outcome.messages,
-        [
-            "{\"t\":\"object\",\"id\":1,\"n\":false,\"v\":[[\"value\",42],[\"url\",\"https://example.com/worker.js\"],[\"name\",\"module-test\"]]}"
-        ]
-    );
-    assert!(runtime.is_some());
-}
-
-#[test]
-fn module_worker_queues_messages_until_top_level_await_settles() {
-    let loader: Arc<WorkerSourceLoader> = Arc::new(|url, _| Err(format!("unexpected {url}")));
-    let (runtime, initial) = WorkerRuntime::start(
-        "https://example.com/worker.js",
-        r#"await new Promise(resolve => setTimeout(resolve, 10));
-           onmessage = event => postMessage({ answer: event.data.value + 1 });"#,
-        "",
-        ScriptKind::Module,
-        loader,
-    );
-    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
-    let mut runtime = runtime.expect("Worker failed to start");
-
-    let queued =
-        runtime.dispatch_message("{\"t\":\"object\",\"id\":1,\"n\":false,\"v\":[[\"value\",41]]}");
-    assert!(queued.errors.is_empty(), "{:?}", queued.errors);
-    assert!(queued.messages.is_empty());
-
-    let settled = runtime.advance_time(Duration::from_millis(10), 8);
-    assert!(settled.errors.is_empty(), "{:?}", settled.errors);
-    assert_eq!(
-        settled.messages,
-        ["{\"t\":\"object\",\"id\":1,\"n\":false,\"v\":[[\"answer\",42]]}"]
-    );
-}
-
-#[test]
-fn module_worker_rejects_import_scripts() {
-    let loader: Arc<WorkerSourceLoader> = Arc::new(|url, _| Err(format!("unexpected {url}")));
-    let (runtime, outcome) = WorkerRuntime::start(
-        "https://example.com/worker.js",
-        "let result = ''; try { importScripts('./classic.js'); } catch (error) { result = error.name; } postMessage({ result });",
-        "",
-        ScriptKind::Module,
-        loader,
-    );
-
-    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(
-        outcome.messages,
-        ["{\"t\":\"object\",\"id\":1,\"n\":false,\"v\":[[\"result\",\"TypeError\"]]}"]
     );
     assert!(runtime.is_some());
 }
