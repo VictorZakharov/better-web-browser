@@ -71,6 +71,9 @@ impl LineHeight {
 }
 
 impl ComputedStyle {
+    pub(crate) fn normal_line_height(&self) -> bool {
+        matches!(self.line_height_value, LineHeight::Normal)
+    }
     pub(crate) fn resolve_line_height(&mut self, width: f32, height: f32) {
         (self.line_height_value, self.line_height) = self.line_height_value.clone().resolve(
             self.font_size,

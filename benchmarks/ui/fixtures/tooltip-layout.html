@@ -1,0 +1,49 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Tooltip layout pending</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#16131b;color:#eee;font:14px Arial}
+#inventory{width:720px;height:400px;overflow:auto;display:grid;grid-template-columns:repeat(12,1fr);gap:4px}
+.item{height:40px;border:1px solid #ad9250;background:#292333}
+#tooltip{position:fixed;max-width:650px;padding:12px;background:#18271d;border:1px solid #bda358;z-index:5}
+.hidden{display:none}.cards{display:flex;gap:12px}.cards.stack{flex-direction:column}
+.card{width:260px;border:1px solid #776b42;padding:8px}.row{display:flex;justify-content:space-between;gap:8px}
+.card h2{font-size:17px;margin:0 0 8px}.card p{margin:3px 0}.row b{color:#ead07a}
+</style>
+<div id=inventory></div><div id=tooltip class=hidden></div>
+<script>
+// Measure individual synchronous author commands, not navigation or a game loop.
+// Every sample changes real content, then verifies nonzero boxes and fresh text.
+const inventory=document.querySelector('#inventory'),tooltip=document.querySelector('#tooltip');
+for(let i=0;i<720;i++){
+ const item=document.createElement('div');item.className='item';item.textContent='Item '+i;inventory.append(item);
+}
+const samples=[];
+function sample(index){
+ const stamp=performance.now();
+ tooltip.innerHTML='<div class="cards">'+[0,1].map(card=>'<section class="card"><h2>Equipment '+index+' / '+card+'</h2>'+
+  Array.from({length:8},(_,row)=>'<p class="row"><span>Attribute '+row+'</span><b>'+(index+row+card)+'</b></p>').join('')+
+  '<p>Compare the equipped item with this inventory item.</p></section>').join('')+'</div>';
+ tooltip.classList.remove('hidden');
+ const content=performance.now();
+ const cards=tooltip.querySelector('.cards');cards.classList.remove('stack');
+ if(tooltip.offsetWidth>innerWidth-16)cards.classList.add('stack');
+ const width=tooltip.offsetWidth,height=tooltip.offsetHeight;
+ const measured=performance.now();
+ tooltip.style.left='100px';tooltip.style.top='40px';
+ const positioned=tooltip.getBoundingClientRect();
+ const finished=performance.now();
+ if(width<=0||height<=0||positioned.x!==100||positioned.y!==40||!tooltip.textContent.includes('Equipment '+index))
+  throw new Error('Stale tooltip geometry or content');
+ samples.push([content-stamp,measured-content,finished-measured,finished-stamp].map(v=>Math.round(v*100)/100));
+}
+addEventListener('load',()=>{
+ let index=0;
+ function next(){
+  sample(++index);
+  if(index<5)requestAnimationFrame(next);
+  else{document.documentElement.dataset.fixtureReady='true';document.title=JSON.stringify({phases:['content','size','position','total'],samples});}
+ }
+ requestAnimationFrame(next);
+});
+</script>

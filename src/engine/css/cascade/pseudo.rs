@@ -181,7 +181,8 @@ impl StyleSet {
         }
         style.blockify_float();
         style.resolve_line_height(self.viewport_width, self.viewport_height);
-        style.snap_border_widths(self.resolution_dppx);
+        style.effective_zoom = zoom::combine(origin_style.effective_zoom, style.zoom);
+        style.snap_border_widths(self.resolution_dppx * style.effective_zoom);
         style
     }
 

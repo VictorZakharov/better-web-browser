@@ -44,7 +44,7 @@ impl Length {
         }
     }
 
-    pub(in crate::engine::css) fn resolve_root_font_units(self, root_font_size: f32) -> Self {
+    pub(crate) fn resolve_root_font_units(self, root_font_size: f32) -> Self {
         match self {
             Self::Math(value) => value
                 .map_lengths(&|length| length.clone().resolve_root_font_units(root_font_size))

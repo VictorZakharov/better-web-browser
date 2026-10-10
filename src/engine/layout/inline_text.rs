@@ -2,6 +2,14 @@
 use super::*;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    pub(super) fn used_line_height(&mut self, style: &ComputedStyle) -> f32 {
+        if style.normal_line_height() {
+            self.measurer
+                .normal_line_height(&FontSpec::from_style(style))
+        } else {
+            style.line_height
+        }
+    }
     pub(super) fn paint_text_atom(
         &mut self,
         measured: &MeasuredAtom<'_>,

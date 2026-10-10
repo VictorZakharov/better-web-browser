@@ -25,6 +25,7 @@ mod responsive_images;
 pub use resource_types::{MediaElementKind, PageResource, PageScript, PreloadAs};
 mod resources;
 pub(crate) use resources::prepare_script as prepare_written_script;
+mod css_paint;
 mod scripts;
 mod snapshot;
 mod stylesheets;

@@ -47,6 +47,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             self.output
                 .items
                 .push(DisplayItem::Control(Box::new(ControlSpec {
+                    checkable: checkable_state(node, style, kind),
                     node_id: node_id(node),
                     authored_content,
                     rect,
@@ -66,8 +67,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     placeholder_color: self
                         .styles
                         .placeholder_color(node, self.effective_background_color(node)),
-                    border_colors: style
-                        .painted_border_colors(self.effective_background_color(node)),
+                    border_colors: style.resolved_border_colors(),
                     border_width: [borders.top, borders.right, borders.bottom, borders.left],
                     border_radius: resolve_border_radius(
                         style.border_radius.clone(),

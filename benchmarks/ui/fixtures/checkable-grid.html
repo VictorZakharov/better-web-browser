@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Checkable grid sizing</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#111;color:#ddd;font:16px Arial}
+main{display:grid;width:600px;grid-template-columns:1.35fr 1fr;gap:20px;border:1px solid gold;padding:20px}
+section{min-width:0}aside{min-width:0;display:flex;flex-direction:column;align-items:center;border-left:1px solid gold;padding-left:20px}
+.wide{width:440px;border:1px solid gold}.actions{width:100%;display:flex;gap:10px;margin-top:20px}.actions button{flex:1;min-width:0}
+label{display:flex;align-items:center;gap:8px;margin:10px 0}input{width:16px;height:16px;accent-color:#dcb45f}
+</style>
+<main><section><div class=wide>Explicitly wide controls may overflow their own track, not enlarge the grid fractions.</div></section><aside>
+<label><input id=unchecked type=checkbox>Unchecked</label><label><input id=checked type=checkbox checked>Checked</label>
+<label><input id=mixed type=checkbox>Mixed</label><label><input type=checkbox checked disabled>Disabled</label>
+<label><input type=radio name=choice checked>Selected radio</label><label><input type=radio name=choice>Other radio</label>
+<div class=actions><button>First</button><button>Second</button></div>
+</aside></main>
+<script>document.querySelector('#mixed').indeterminate=true;</script>

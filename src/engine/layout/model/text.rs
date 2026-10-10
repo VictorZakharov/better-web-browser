@@ -56,6 +56,11 @@ pub struct ShapedText {
 }
 
 pub trait TextMeasurer {
+    /// The first available font supplies the block's normal-height strut.
+    /// Backends with real font metrics override this without allocating glyph pixels.
+    fn normal_line_height(&mut self, font: &FontSpec) -> f32 {
+        font.size * 1.2
+    }
     /// Returns the same layout width and height as `shape` for this text and font.
     /// Geometry-only callers may use this method to avoid allocating painted glyph payloads;
     /// implementations must retain contextual shaping, fallback, and spacing in these metrics.

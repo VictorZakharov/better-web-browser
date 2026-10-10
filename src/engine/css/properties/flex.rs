@@ -3,6 +3,16 @@ use super::*;
 
 pub(super) fn apply(style: &mut ComputedStyle, name: &str, value: &str) -> bool {
     match name {
+        "align-self" => {
+            style.align_self = match value {
+                "auto" => None,
+                "normal" | "stretch" => Some(AlignItems::Stretch),
+                "start" | "flex-start" => Some(AlignItems::Start),
+                "end" | "flex-end" => Some(AlignItems::End),
+                "center" => Some(AlignItems::Center),
+                _ => return true,
+            };
+        }
         "flex-direction" | "-webkit-flex-direction" | "-moz-flex-direction" => {
             if let Some(direction) = parse_flex_direction(value) {
                 style.flex_direction = direction;

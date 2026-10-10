@@ -3,6 +3,7 @@
 pub(crate) mod animations;
 pub(super) mod border_widths;
 pub(super) mod borders;
+pub(crate) mod box_shadow;
 pub(crate) mod calculated_easing;
 pub(crate) mod calculated_times;
 mod content_alignment;
@@ -16,9 +17,12 @@ pub(crate) mod text_spacing;
 pub(crate) use line_height::LineHeight;
 mod overflow;
 pub use overflow::Overflow;
+mod widget;
+pub use widget::{AccentColor, Appearance};
 mod object;
 pub use object::{ObjectFit, ObjectPosition};
 pub(crate) mod font_features;
+pub(crate) mod grid_auto;
 pub(crate) mod grid_tracks;
 mod text_direction;
 pub use font_features::{FontFeatures, FontKerning};
@@ -200,14 +204,21 @@ pub struct ComputedStyle {
     pub float: Float,
     pub clear: Clear,
     pub color: Color,
+    pub appearance: Appearance,
+    pub accent_color: AccentColor,
     pub background_color: Color,
-    pub background_image: Option<String>,
-    pub mask_image: Option<String>,
+    pub background_image: super::images::BackgroundImages,
+    pub mask_image: BackgroundImages,
+    pub mask_layers: BackgroundLayers,
     pub background_repeat_x: bool,
     pub background_repeat_y: bool,
     pub background_position_x: Length,
     pub background_position_y: Length,
     pub background_size: BackgroundSize,
+    pub background_layers: BackgroundLayers,
+    pub box_shadows: Vec<box_shadow::BoxShadow>,
+    pub scrollbar_width: scrollbars::ScrollbarWidth,
+    pub scrollbar_color: Option<(Color, Color)>,
     pub object_fit: ObjectFit,
     pub object_position: ObjectPosition,
     pub aspect_ratio: AspectRatio,
@@ -261,8 +272,12 @@ pub struct ComputedStyle {
     pub(crate) content_visibility_hidden: bool,
     pub pointer_events: bool,
     pub opacity: f32,
+    /// Computed, non-inherited CSS zoom. Layout applies ancestor products separately.
+    pub zoom: f32,
+    pub(crate) effective_zoom: f32,
     pub(crate) clip_path: clip_path::ClipPath,
     pub(crate) transform: transform::TransformList,
+    pub(crate) translate: transform::individual::IndividualTranslate,
     pub(crate) perspective_non_none: bool,
     pub(crate) filter_non_none: bool,
     pub(crate) transform_style_preserve_3d: bool,
@@ -275,6 +290,7 @@ pub struct ComputedStyle {
     pub flex_direction: FlexDirection,
     pub justify_content: JustifyContent,
     pub align_items: AlignItems,
+    pub align_self: Option<AlignItems>,
     pub align_content: ContentAlignment,
     pub justify_self: AlignItems,
     pub flex_wrap: bool,
@@ -291,21 +307,27 @@ pub struct ComputedStyle {
     pub grid_template_columns: String,
     pub grid_template_rows: String,
     pub grid_template_areas: String,
+    pub grid_auto_columns: String,
+    pub grid_auto_rows: String,
+    pub(crate) grid_auto_flow: grid_auto::GridAutoFlow,
     pub grid_column_gap: Length,
     pub grid_row_gap: Length,
     pub grid_area_name: Option<String>,
-    pub grid_column_start: Option<usize>,
-    pub grid_column_end: Option<usize>,
-    pub grid_row_start: Option<usize>,
-    pub grid_row_end: Option<usize>,
+    pub grid_column_start: grid_line::GridLine,
+    pub grid_column_end: grid_line::GridLine,
+    pub grid_row_start: grid_line::GridLine,
+    pub grid_row_end: grid_line::GridLine,
     pub(super) custom_properties: Arc<HashMap<String, String>>,
 }
 
 mod computed_defaults;
+pub(crate) mod grid_line;
+pub(crate) mod scrollbars;
+pub(crate) mod zoom;
 
 impl ComputedStyle {
     pub(crate) fn establishes_fixed_position_containing_block(&self) -> bool {
-        !self.transform.is_none()
+        self.has_transform()
             || self.perspective_non_none
             || self.filter_non_none
             || self.transform_style_preserve_3d

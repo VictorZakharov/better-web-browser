@@ -18,6 +18,51 @@ fn border_color(value: &str) -> Option<Option<Color>> {
     }
 }
 
+pub(in crate::engine::css) fn shorthand_valid(value: &str, preserve_pattern: bool) -> bool {
+    let Some(parts) = components(value) else {
+        return false;
+    };
+    if !(1..=3).contains(&parts.len()) {
+        return false;
+    }
+    let (mut width, mut color, mut line) = (false, false, false);
+    for part in parts {
+        let name = part.to_ascii_lowercase();
+        if matches!(
+            name.as_str(),
+            "none"
+                | "hidden"
+                | "solid"
+                | "dotted"
+                | "dashed"
+                | "double"
+                | "groove"
+                | "ridge"
+                | "inset"
+                | "outset"
+        ) {
+            if line || (!preserve_pattern && !matches!(name.as_str(), "none" | "hidden" | "solid"))
+            {
+                return false;
+            }
+            line = true;
+        } else if border_color(&part).is_some() {
+            if color {
+                return false;
+            }
+            color = true;
+        } else if super::border_widths::parse(&part).is_some() {
+            if width {
+                return false;
+            }
+            width = true;
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
 pub(in crate::engine::css) fn color_side(property: &str) -> Option<usize> {
     match property {
         "border-top-color" | "border-top" => Some(0),
@@ -62,16 +107,6 @@ impl ComputedStyle {
         // CSS Color 4: currentcolor computes (and inherits) as the keyword, resolving
         // against this element's color only when its used value is needed.
         self.border_colors.map(|color| color.unwrap_or(self.color))
-    }
-
-    pub(crate) fn painted_border_colors(&self, backdrop: Color) -> [Color; 4] {
-        self.resolved_border_colors().map(|color| {
-            if color.alpha == 0 {
-                color
-            } else {
-                color.composite_over(backdrop)
-            }
-        })
     }
 
     pub(in crate::engine::css) fn apply_border_color(&mut self, property: &str, value: &str) {

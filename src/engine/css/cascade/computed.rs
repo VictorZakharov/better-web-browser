@@ -75,7 +75,7 @@ impl StyleSet {
         if node.attr("hidden").is_some() || is_hidden_by_html_rendering(node) {
             style.display = Display::None;
         }
-        super::fullscreen::apply_fullscreen_ua_style(
+        super::user_agent::apply_fullscreen_ua_style(
             node,
             &mut style,
             self.viewport_width,
@@ -88,7 +88,11 @@ impl StyleSet {
         }
         style.blockify_float();
         style.resolve_line_height(self.viewport_width, self.viewport_height);
-        style.snap_border_widths(self.resolution_dppx);
+        style.effective_zoom = zoom::combine(
+            parent.map_or(1.0, |parent| parent.effective_zoom),
+            style.zoom,
+        );
+        style.snap_border_widths(self.resolution_dppx * style.effective_zoom);
         // Preserve inherited-map identity across incremental recalculation. Otherwise an
         // unchanged ancestor's rebuilt variable map makes every descendant compare a large
         // equivalent map again. Equality is exact; changed values never reuse stale storage.

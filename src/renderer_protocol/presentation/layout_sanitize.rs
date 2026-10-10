@@ -60,6 +60,9 @@ fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
     Some(match item {
         DisplayItem::NodeBoundary { .. }
         | DisplayItem::PaintBoundary { .. }
+        | DisplayItem::CssGradient { .. }
+        | DisplayItem::CssBoxShadow { .. }
+        | DisplayItem::BeginCssMask { .. }
         | DisplayItem::EmbeddedFrame { .. } => return None,
         DisplayItem::BeginClip { bounds } => DisplayItem::BeginClip {
             bounds: sanitize_rect(bounds)?,
@@ -72,6 +75,17 @@ fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
             opacity: finite_or(opacity, 1.0).clamp(0.0, 1.0),
         },
         DisplayItem::EndOpacity { bounds } => DisplayItem::EndOpacity {
+            bounds: sanitize_rect(bounds)?,
+        },
+        DisplayItem::BeginMask { bounds, url } => DisplayItem::BeginMask {
+            bounds: sanitize_rect(bounds)?,
+            url: if url.len() <= MAX_URL_BYTES {
+                url
+            } else {
+                return None;
+            },
+        },
+        DisplayItem::EndMask { bounds } => DisplayItem::EndMask {
             bounds: sanitize_rect(bounds)?,
         },
         DisplayItem::SolidRect {
@@ -211,12 +225,17 @@ fn item_rect(item: &DisplayItem) -> Option<RectF> {
         DisplayItem::BeginClip { bounds }
         | DisplayItem::EndClip { bounds }
         | DisplayItem::BeginOpacity { bounds, .. }
+        | DisplayItem::BeginMask { bounds, .. }
+        | DisplayItem::BeginCssMask { bounds, .. }
+        | DisplayItem::EndMask { bounds }
         | DisplayItem::EndOpacity { bounds } => Some(*bounds),
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. } => Some(*rect),
         DisplayItem::Image { rect, clip, .. } => Some(clip.unwrap_or(*rect)),
-        DisplayItem::BackgroundImage { clip_rect, .. } => Some(*clip_rect),
+        DisplayItem::BackgroundImage { clip_rect, .. }
+        | DisplayItem::CssGradient { clip_rect, .. } => Some(*clip_rect),
+        DisplayItem::CssBoxShadow { bounds, .. } => Some(*bounds),
         DisplayItem::Control(spec) => Some(spec.rect),
     }
 }
@@ -230,6 +249,8 @@ fn retain_balanced_display_groups(items: &mut Vec<DisplayItem>) {
             DisplayItem::EndClip { .. } => Some((false, 1)),
             DisplayItem::BeginOpacity { .. } => Some((true, 2)),
             DisplayItem::EndOpacity { .. } => Some((false, 2)),
+            DisplayItem::BeginMask { .. } => Some((true, 3)),
+            DisplayItem::EndMask { .. } => Some((false, 3)),
             _ => None,
         };
         if let Some((begin, kind)) = action {

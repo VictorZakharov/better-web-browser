@@ -3,7 +3,10 @@ use super::wide_without_null;
 use better_web_browser::engine::{DecodedImage, RectF};
 use std::mem::size_of;
 mod border;
+mod opaque;
+mod sparse;
 pub(super) use border::{paint_border, paint_border_colors};
+pub(super) use sparse::paint as paint_sparse_bitmap;
 
 pub(super) fn screen_rect(rect: RectF, scroll_y: i32, content_top: i32, scale: f32) -> Rect {
     Rect {
@@ -33,6 +36,7 @@ pub(super) fn bitmap_info(image: &DecodedImage) -> BitmapInfo {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) unsafe fn paint_alpha_image(
     destination: Hdc,
     bitmap: Hbitmap,
@@ -40,14 +44,27 @@ pub(super) unsafe fn paint_alpha_image(
     rect: RectF,
     screen_y: i32,
     scale: f32,
+    opaque: bool,
+    coverage: Option<&[Rect]>,
 ) {
-    let destination_rect = Rect {
+    let destination_rect = image_rect(rect, screen_y, scale);
+    if let Some(coverage) = coverage
+        && sparse::paint(destination, bitmap, &destination_rect, coverage)
+    {
+        return;
+    }
+    if !opaque || !opaque::paint(destination, bitmap, image, &destination_rect) {
+        paint_alpha_bitmap(destination, bitmap, image, &destination_rect);
+    }
+}
+
+pub(super) fn image_rect(rect: RectF, screen_y: i32, scale: f32) -> Rect {
+    Rect {
         left: (rect.x * scale).round() as i32,
         top: screen_y,
         right: ((rect.x + rect.width) * scale).round() as i32,
         bottom: screen_y + (rect.height * scale).round().max(1.0) as i32,
-    };
-    paint_alpha_bitmap(destination, bitmap, image, &destination_rect);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -62,6 +79,7 @@ pub(super) unsafe fn paint_background_image(
     scroll_y: i32,
     content_top: i32,
     scale: f32,
+    opaque: bool,
 ) {
     if tile_rect.width <= 0.0 || tile_rect.height <= 0.0 {
         return;
@@ -92,7 +110,9 @@ pub(super) unsafe fn paint_background_image(
                 height: tile_rect.height,
             };
             let destination_rect = screen_rect(tile, scroll_y, content_top, scale);
-            paint_alpha_bitmap(destination, bitmap, image, &destination_rect);
+            if !opaque || !opaque::paint(destination, bitmap, image, &destination_rect) {
+                paint_alpha_bitmap(destination, bitmap, image, &destination_rect);
+            }
             painted += 1;
             if !repeat_x || painted >= 4_096 {
                 break;

@@ -10,8 +10,7 @@ dedicated Worker retain the same public argument conversion and GPU behavior.
 The existing Web IDL layer runs conversions, sequence iteration and typed-view
 snapshotting in their specified order. Only afterward does the bridge consider
 the numeric path. Its closed operation set excludes queries, string payloads,
-uploads and readback. Commands with more than 64 numeric values use the ordinary
-bounded transport. Integer values must be safe JavaScript integers; unrestricted
+uploads and readback. The fixed packet retains its 64-value record limit. Thirteen floating-point uniform operations additionally accept a genuine fixed Float32Array with at most 8,192 components and at most two integer arguments through the separately owned numeric-value path. Other large numeric commands use the ordinary bounded transport. Integer values must be safe JavaScript integers; unrestricted
 float values retain negative zero, NaN and infinities.
 
 The native boundary checks the operation, exact argument count, context ID,
@@ -21,13 +20,13 @@ property reads, so a malformed getter cannot grow a later allocation. A changed
 length rejects the command. Native vectors own the copied primitive values; no
 author backing buffer, V8 handle or borrowed JavaScript storage crosses threads.
 
-Small floating-point uniform ranges use the existing public V8 `CopyContents`
+Floating-point uniform ranges use the existing public V8 `CopyContents`
 API to copy their exact byte-offset range into a bounded Rust buffer; no second
 JS component-boxing loop is needed. WebGL 2 may defer the independent snapshot
-until that native copy only for a fixed, non-shared Float32Array of at most 62
+until that native copy only for a fixed, non-shared Float32Array of at most 8,192
 elements, in an installed uniform slot whose remaining arguments are numbers or
 undefined. The remaining intrinsic conversions cannot execute author code.
-Sequences, shared or larger sources, and object/string offset or length arguments
+Sequences, shared sources, and object/string offset or length arguments
 retain the early independent IDL snapshot. In particular, a later getter that
 mutates or detaches the source cannot change the values already converted.
 Direct malformed private calls reject shared, resizable, detached and
@@ -76,17 +75,13 @@ Each admitted record still passes through normal realm ownership, command
 validation, resource accounting and context-loss reporting. The return array
 initializes own elements without invoking author Array.prototype setters.
 
-Numeric and JSON entries share a bounded 128-command pending queue. A numeric
-entry contains at most 512 bytes of numeric payload, plus fixed record overhead;
-JSON entries retain their separate 1,024-byte batching admission bound. Larger
-ordinary commands keep their existing overall command and upload limits.
+Numeric, JSON and small owned-upload entries share a bounded 128-command pending queue. Ordinary numeric entries contain at most 512 bytes of numeric payload; a separately admitted large floating-point uniform contains at most 65,536 bytes of f64 values plus its two integers. JSON entries and upload metadata retain their 1,024-byte admission bound. A small upload contains at most 256 KiB, with at most 4 MiB of upload bytes in each pending list. These are internal batching bounds, not tighter public upload limits: larger valid uploads retain the existing synchronous path and overall limits.
 
 One submitted batch may overlap JavaScript preparing the next bounded list. A
 realm retains at most one outstanding reply plus one 128-command pending list;
 it waits for the previous reply before submitting another. The native owner still
 receives every operation through its existing single bounded FIFO channel.
-Queries, uploads, readback, profiling and task boundaries drain both lists in
-order. Retiring a context cancels its unsent work and releases its native lease;
+Queries, larger/noncanonical uploads, readback, profiling and task boundaries drain both lists in order. Small already-owned buffer and texture uploads join the same FIFO, avoiding a round trip per upload; byte-budget exhaustion submits the earlier list before admitting the next payload. The native owner still parses every serialized upload and performs ordinary activation, validation, resource accounting and error handling. Retiring a context cancels its unsent work and releases its native lease;
 other contexts keep their relative command order. Clearing a realm drops its
 outstanding reply without waiting for GPU work. Owner-side orphan cleanup and
 lease retirement prevent cancelled operations from leaving native objects alive.

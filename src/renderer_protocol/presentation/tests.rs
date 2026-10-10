@@ -209,6 +209,7 @@ pub(super) fn sample() -> RendererPresentation {
                 read_only: false,
                 actions: SemanticActions::default(),
                 selection: None,
+                checked: None,
             }],
             added: Vec::new(),
             removed: Vec::new(),
@@ -276,6 +277,46 @@ fn balanced_opacity_groups_round_trip_through_the_checked_codec() {
             DisplayItem::EndOpacity { .. }
         ] if (*opacity - 0.5).abs() < f32::EPSILON
     ));
+}
+
+#[test]
+fn balanced_mask_groups_round_trip_and_reject_oversized_resource_keys() {
+    let mut presentation = sample();
+    let bounds = RectF {
+        x: 1.0,
+        y: 2.0,
+        width: 3.0,
+        height: 4.0,
+    };
+    presentation.layout.items.insert(
+        0,
+        DisplayItem::BeginMask {
+            bounds,
+            url: "breeze-css-paint:mask:test".into(),
+        },
+    );
+    presentation
+        .layout
+        .items
+        .push(DisplayItem::EndMask { bounds });
+    let decoded = RendererPresentation::decode(&presentation.encode().unwrap()).unwrap();
+    assert!(matches!(
+        decoded.layout.items.as_slice(),
+        [
+            DisplayItem::BeginMask { .. },
+            DisplayItem::Text { .. },
+            DisplayItem::EndMask { .. }
+        ]
+    ));
+    if let DisplayItem::BeginMask { url, .. } = &mut presentation.layout.items[0] {
+        *url = "x".repeat(crate::limits::MAX_URL_BYTES + 1);
+    }
+    assert!(
+        presentation
+            .encode()
+            .and_then(|bytes| RendererPresentation::decode(&bytes))
+            .is_err()
+    );
 }
 
 #[test]

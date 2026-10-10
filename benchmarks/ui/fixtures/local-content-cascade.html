@@ -1,0 +1,65 @@
+<!doctype html><meta charset="utf-8"><title>pending local content cascade</title>
+<style>
+body { font: 16px sans-serif; }
+.shell:has(.active) #probe { color: rgb(128, 0, 0); }
+.label:empty + .peer { font-size: 24px; }
+.card { display: inline-block; width: 12px; height: 12px; }
+</style>
+<main class="shell"><section id="panel"><input id="switch" type="checkbox">
+<b id="probe">label 0</b><span class="peer">peer</span>
+<svg width="16" height="16"><path id="path" d="M0 0L1 1"/></svg>
+</section><aside id="unrelated"></aside></main><output id="result"></output>
+<script>
+(async () => {
+  const unrelated = document.getElementById('unrelated');
+  for (let i = 0; i < 300; i++) {
+    const card = document.createElement('article');card.className = 'card';
+    const child = document.createElement('span');child.textContent = 'card ' + i;
+    card.appendChild(child);unrelated.appendChild(card);
+  }
+  const probe = document.getElementById('probe'), path = document.getElementById('path');
+  probe.className = 'label';
+  const values = ['label 1', 'label 2'], colors = ['rgb(0, 0, 128)', 'rgb(0, 128, 0)'];
+  const paths = ['M0 0L1 1', 'M1 1L2 2'];
+  let iteration = 0;
+  const geometry = new URLSearchParams(location.search).get('geometry') === '1';
+  const update = () => {
+    const index = iteration++ % 2;
+    probe.textContent = values[index];path.setAttribute('d', paths[index]);
+    probe.style.color = colors[index];
+    // Geometry mode observes the renderer's incremental cascade and completed
+    // layout; computed-style mode separately measures its lazy query cache.
+    if (geometry && probe.getBoundingClientRect().width <= 0) throw Error('missing geometry');
+    return getComputedStyle(probe).color;
+  };
+  const verify = () => {
+    const index = (iteration - 1) % 2;
+    if (probe.textContent !== values[index] || path.getAttribute('d') !== paths[index]
+        || getComputedStyle(probe).color !== colors[index]) throw Error('stale local content');
+  };
+  for (let i = 0; i < 5; i++) update();
+  verify();
+  const samples = [];
+  for (let block = 0; block < 15; block++) {
+    const start = performance.now();
+    for (let i = 0; i < 10; i++) update();
+    samples.push((performance.now() - start) / 10);
+    verify();
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  probe.textContent = '';
+  if (getComputedStyle(probe.nextElementSibling).fontSize !== '24px')
+    throw Error('local empty sibling selector was not refreshed');
+  probe.style.removeProperty('color');
+  document.getElementById('switch').className = 'active';
+  if (getComputedStyle(probe).color !== 'rgb(128, 0, 0)') throw Error('nonlocal selector was stale');
+  document.getElementById('switch').className = '';
+  if (getComputedStyle(probe).color === 'rgb(128, 0, 0)') throw Error('removed membership was stale');
+  const result = document.getElementById('result');
+  result.setAttribute('data-samples-ms', JSON.stringify(samples));
+  result.textContent = 'Verified local and nonlocal selector results';
+  result.setAttribute('data-mode', geometry ? 'geometry' : 'computed-style');
+  document.title = 'done local-content ' + (geometry ? 'geometry' : 'computed-style')
+    + ' ms=' + (samples.reduce((a,b) => a+b, 0)/samples.length).toFixed(3);
+})().catch(error => {document.title = 'failed ' + error.message;throw error;});
+</script>

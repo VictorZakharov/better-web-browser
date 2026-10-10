@@ -1,5 +1,6 @@
 use super::*;
 mod initial_action_delay;
+mod native_paint;
 
 #[test]
 fn benchmark_scale_is_explicit_and_interactive_scale_stays_native() {

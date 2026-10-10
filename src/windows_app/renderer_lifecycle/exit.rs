@@ -20,6 +20,9 @@ impl BrowserState {
         self.retire_sensors_for_tab(id);
         self.retire_wake_locks_for_tab(id);
         self.retire_permissions_for_tab(id);
+        if let Some(tab) = self.tabs.get_mut(id) {
+            tab.pending_renderer_inputs.clear();
+        }
         let crash_surface = exit.crash_surface();
         let task_budget_exceeded = matches!(exit.reason, RendererExitReason::TaskBudgetExceeded(_));
         self.update_renderer_status(id, title, |status| {

@@ -30,8 +30,12 @@ impl PendingInvalidation {
             return;
         };
         let root = match kind {
+            // A stylesheet's text replacement keeps the old child-list scope;
+            // rebuilding rules already clears local-content evidence above.
+            MutationKind::TextChildren if rebuild_rules => target.clone(),
             MutationKind::Attribute(_)
             | MutationKind::CharacterData
+            | MutationKind::TextChildren
             | MutationKind::State
             | MutationKind::StyleOverlay
             | MutationKind::PointerDesignation => target
@@ -58,8 +62,10 @@ impl PendingInvalidation {
         target: &NodeRef,
         kind: MutationKind<'_>,
     ) {
-        let relevant = matches!(kind, MutationKind::State | MutationKind::ChildList)
-            || matches!(kind, MutationKind::Attribute(name) if is_validation_attribute(name));
+        let relevant = matches!(
+            kind,
+            MutationKind::State | MutationKind::ChildList | MutationKind::TextChildren
+        ) || matches!(kind, MutationKind::Attribute(name) if is_validation_attribute(name));
         if !relevant {
             return;
         }
@@ -124,8 +130,10 @@ pub(super) fn rebuilds_style_rules(target: Option<&NodeRef>, kind: MutationKind<
             kind,
             MutationKind::Attribute("href" | "rel" | "media" | "type" | "disabled" | "title")
         ) && target.is_some_and(|node| matches!(node.tag_name(), Some("style" | "link"))))
-        || (matches!(kind, MutationKind::CharacterData | MutationKind::ChildList)
-            && target.is_some_and(is_in_style_element))
+        || (matches!(
+            kind,
+            MutationKind::CharacterData | MutationKind::ChildList | MutationKind::TextChildren
+        ) && target.is_some_and(is_in_style_element))
 }
 
 fn is_in_style_element(node: &NodeRef) -> bool {

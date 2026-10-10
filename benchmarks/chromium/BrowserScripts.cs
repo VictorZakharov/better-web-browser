@@ -98,16 +98,19 @@ internal static class BrowserScripts
                 }
               }
               const properties = [
-                'display', 'position', 'visibility', 'opacity', 'box-sizing',
+                'display', 'position', 'visibility', 'opacity', 'box-sizing', 'zoom',
                 'width', 'height', 'min-width', 'min-height', 'max-width', 'max-height',
                 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
                 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
                 'flex-basis', 'flex-direction', 'flex-grow', 'flex-shrink', 'flex-wrap',
                 'align-items', 'align-self', 'justify-content', 'gap',
                 'grid-template-columns', 'grid-template-rows',
+                'grid-column', 'grid-row', 'grid-auto-flow',
                 'overflow-x', 'overflow-y', 'aspect-ratio', 'object-fit',
                 'inset', 'top', 'right', 'bottom', 'left', 'z-index',
                 'transform', 'background-color', 'background-image', 'box-shadow',
+                'background-size', 'background-position', 'background-repeat',
+                'filter', 'backdrop-filter',
                 'border-radius', 'border-top-left-radius', 'border-top-right-radius',
                 'border-bottom-right-radius', 'border-bottom-left-radius', 'color',
                 'font-family', 'font-size', 'line-height', 'mask-image', 'clip', 'clip-path'

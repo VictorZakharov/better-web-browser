@@ -61,11 +61,12 @@
     const targetEdges = target => {
         const rect = getRect.call(target);
         const style = computedStyleProxy(target, '');
+        const zoom = effectiveZoom(target);
         return {
-            top: rect.top - scrollSpacingValue(style.scrollMarginTop, 0),
-            right: rect.right + scrollSpacingValue(style.scrollMarginRight, 0),
-            bottom: rect.bottom + scrollSpacingValue(style.scrollMarginBottom, 0),
-            left: rect.left - scrollSpacingValue(style.scrollMarginLeft, 0)
+            top: rect.top - scrollSpacingValue(style.scrollMarginTop, 0) * zoom,
+            right: rect.right + scrollSpacingValue(style.scrollMarginRight, 0) * zoom,
+            bottom: rect.bottom + scrollSpacingValue(style.scrollMarginBottom, 0) * zoom,
+            left: rect.left - scrollSpacingValue(style.scrollMarginLeft, 0) * zoom
         };
     };
     const boxEdges = container => {
@@ -80,13 +81,15 @@
         }
         const rect = getRect.call(container);
         const style = computedStyleProxy(container, '');
-        const left = rect.left + clientLeftGetter.call(container);
-        const top = rect.top + clientTopGetter.call(container);
+        const zoom = effectiveZoom(container);
+        const width = clientWidthGetter.call(container), height = clientHeightGetter.call(container);
+        const left = rect.left + clientLeftGetter.call(container) * zoom;
+        const top = rect.top + clientTopGetter.call(container) * zoom;
         return {
-            left: left + Math.max(0, scrollSpacingValue(style.scrollPaddingLeft, clientWidthGetter.call(container))),
-            top: top + Math.max(0, scrollSpacingValue(style.scrollPaddingTop, clientHeightGetter.call(container))),
-            right: left + clientWidthGetter.call(container) - Math.max(0, scrollSpacingValue(style.scrollPaddingRight, clientWidthGetter.call(container))),
-            bottom: top + clientHeightGetter.call(container) - Math.max(0, scrollSpacingValue(style.scrollPaddingBottom, clientHeightGetter.call(container)))
+            left: left + Math.max(0, scrollSpacingValue(style.scrollPaddingLeft, width)) * zoom,
+            top: top + Math.max(0, scrollSpacingValue(style.scrollPaddingTop, height)) * zoom,
+            right: left + (width - Math.max(0, scrollSpacingValue(style.scrollPaddingRight, width))) * zoom,
+            bottom: top + (height - Math.max(0, scrollSpacingValue(style.scrollPaddingBottom, height))) * zoom
         };
     };
     const scrollBoxToTarget = (target, container, options) => {
@@ -96,8 +99,9 @@
         const dx = alignedScrollDelta(element.left, element.right, box.left, box.right, options.inline);
         const dy = alignedScrollDelta(element.top, element.bottom, box.top, box.bottom, options.block);
         if (container) {
-            if (dx) scrollLeftDescriptor.set.call(container, scrollLeftDescriptor.get.call(container) + dx);
-            if (dy) scrollTopDescriptor.set.call(container, scrollTopDescriptor.get.call(container) + dy);
+            const zoom = effectiveZoom(container);
+            if (dx) scrollLeftDescriptor.set.call(container, scrollLeftDescriptor.get.call(container) + dx / zoom);
+            if (dy) scrollTopDescriptor.set.call(container, scrollTopDescriptor.get.call(container) + dy / zoom);
         } else if (dy) {
             scrollViewport(viewportScrollY + dy);
         }

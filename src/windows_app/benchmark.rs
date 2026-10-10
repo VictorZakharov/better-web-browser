@@ -2,6 +2,8 @@ mod diagnostics;
 mod early_scroll;
 mod filmstrip;
 mod initialization;
+mod installation;
+mod native_paint;
 mod navigation;
 mod options;
 mod renderer_diagnostics;
@@ -14,6 +16,7 @@ use super::benchmark_capture::ScrollPaintMetrics;
 use super::*;
 use early_scroll::{BenchmarkActivity, EarlyScrollTrace};
 
+pub(in crate::windows_app) use installation::{InstallationTiming, Stage as InstallationStage};
 pub(super) use options::LaunchOptions;
 
 const RENDERER_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(25);
@@ -90,6 +93,7 @@ pub(super) struct BenchmarkRun {
     pub(super) early_scroll: Option<EarlyScrollTrace>,
     pub(super) wheel_trace: wheel_timing::WheelTrace,
     pub(super) scroll_surface: Option<benchmark_capture::OffscreenSurface>,
+    pub(super) native_paint: Option<native_paint::NativePaintTrace>,
     pub(super) activity: BenchmarkActivity,
     pub(super) diagnostic_selectors: Vec<String>,
     pub(super) window_width_dip: i32,

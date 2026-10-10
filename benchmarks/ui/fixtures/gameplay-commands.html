@@ -1,0 +1,74 @@
+<!doctype html><meta charset="utf-8"><title>pending gameplay commands</title>
+<canvas id="result" width="128" height="128"></canvas>
+<script>
+(async () => {
+  const canvas = document.getElementById('result');
+  const gl = canvas.getContext('webgl2', {antialias:false, preserveDrawingBuffer:true});
+  if (!gl) throw Error('WebGL 2 unavailable');
+  const compile = (type, source) => {
+    const shader = gl.createShader(type); gl.shaderSource(shader, source); gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw Error(gl.getShaderInfoLog(shader));
+    return shader;
+  };
+  const program = gl.createProgram();
+  gl.attachShader(program, compile(gl.VERTEX_SHADER, '#version 300 es\nuniform mat4 matrix;void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=matrix*vec4(p*2.-1.,0.,1.);}'));
+  gl.attachShader(program, compile(gl.FRAGMENT_SHADER, '#version 300 es\nprecision highp float;uniform vec4 palette[64];uniform int selected;uniform sampler2D image;uniform bool textured;out vec4 color;void main(){color=textured?texelFetch(image,ivec2(gl_FragCoord.xy),0):palette[selected];}'));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(program));
+  gl.useProgram(program);
+  const matrix=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
+  const matrixLocation=gl.getUniformLocation(program,'matrix');gl.uniformMatrix4fv(matrixLocation,false,matrix);
+  const palette = new Float32Array(256), location = gl.getUniformLocation(program, 'palette[0]');
+  const selected = gl.getUniformLocation(program, 'selected'), textured = gl.getUniformLocation(program, 'textured');
+  for (let i=0; i<64; i++) palette.set([0,1,0,1], i*4);
+  const texture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  const pixels = new Uint8Array(128*128*4);
+  for (let i=0; i<pixels.length; i+=4) pixels.set([0,255,0,255], i);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,128,128,0,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+  const measurements = [];
+  const measure = async (name, count, command, verify) => {
+    command(0); gl.finish();
+    let active=0;const samples=[];
+    for (let block=0; block<5; block++) {
+      const start=performance.now();
+      for (let i=0; i<count; i++) command(block*count+i);
+      // Completion is included; do not compare asynchronous submission with completed work.
+      gl.finish(); const elapsed=performance.now()-start;active+=elapsed;
+      samples.push(elapsed*1000/count);
+      await new Promise(resolve=>setTimeout(resolve,0));
+    }
+    verify();
+    if (gl.getError()!==gl.NO_ERROR) throw Error(name+' GL error');
+    canvas.setAttribute('data-'+name,JSON.stringify(samples));
+    measurements.push(name+':'+(active*1000/(count*5)).toFixed(2));
+  };
+  const green = () => {
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    const actual=new Uint8Array(4);gl.readPixels(64,64,1,1,gl.RGBA,gl.UNSIGNED_BYTE,actual);
+    if (actual.join(',')!=='0,255,0,255') throw Error('pixel mismatch '+actual);
+  };
+  await measure('palette',100,i=>{palette[0]=(i&1);gl.uniform4fv(location,palette);},()=>{
+    if (gl.getUniform(program,location)[0]!==1) throw Error('uniform snapshot mismatch');
+    gl.uniform1i(selected,0);gl.uniform1i(textured,0);gl.drawArrays(gl.TRIANGLES,0,3);
+    const actual=new Uint8Array(4);gl.readPixels(64,64,1,1,gl.RGBA,gl.UNSIGNED_BYTE,actual);
+    if (actual.join(',')!=='255,255,0,255') throw Error('changed palette pixel mismatch '+actual);
+    palette[0]=0;gl.uniform4fv(location,palette);gl.uniform1i(selected,63);gl.uniform1i(textured,0);green();
+  });
+  await measure('texture',40,i=>{pixels[0]=(i&1);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,128,128,gl.RGBA,gl.UNSIGNED_BYTE,pixels);},()=>{
+    gl.uniform1i(textured,1);green();
+    const actual=new Uint8Array(4);gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,actual);
+    if (actual.join(',')!=='1,255,0,255') throw Error('changed texture pixel mismatch '+actual);
+  });
+  await measure('matrix',1000,i=>{matrix[12]=(i&1)*0.125;gl.uniformMatrix4fv(matrixLocation,false,matrix);},()=>{
+    if(gl.getUniform(program,matrixLocation)[12]!==0.125)throw Error('matrix snapshot mismatch');
+    matrix[12]=0;gl.uniformMatrix4fv(matrixLocation,false,matrix);green();
+  });
+  let width=0;
+  await measure('buffer-size',100,()=>{width=gl.drawingBufferWidth;},()=>{
+    if (width!==128 || gl.drawingBufferHeight!==128) throw Error('drawing buffer size mismatch');
+  });
+  document.title='done gameplay us='+measurements.join(';')+';pixel=0,255,0,255';
+})().catch(error=>{document.title='failed '+error.message;throw error;});
+</script>

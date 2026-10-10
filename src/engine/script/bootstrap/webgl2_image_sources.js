@@ -43,6 +43,11 @@
         const count=width*height*depth*(packing?1:components);
         const size=count*(packing?.bytes ?? (type===0x1401?1:type===0x140b?2:4));
         if (!Number.isSafeInteger(size) || size>16*1024*1024) { webGlError(context,0x0505); return null; }
+        if (format===0x1908 && type===0x1401 && (bitmap || !state.unpackPremultiply)) {
+            const bytes=webGl2Rgba8Rows(snapshot,width,height,depth,skipPixels,skipRows,
+                imageHeight,skipImages,!bitmap && state.unpackFlip);
+            if (bytes) return {bytes,width,height};
+        }
         const values=new constructor(count);
         for (let layer=0;layer<depth;layer++) for (let row=0;row<height;row++) for (let column=0;column<width;column++) {
             const selectedY=skipRows+(skipImages+layer)*imageHeight+row;

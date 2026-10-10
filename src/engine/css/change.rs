@@ -26,6 +26,7 @@ impl ComputedStyle {
         self.generated_content == other.generated_content
             && self.display == other.display
             && self.position == other.position
+            && self.zoom == other.zoom
             && self.float == other.float
             && self.clear == other.clear
             && self.font_size == other.font_size
@@ -62,8 +63,11 @@ impl ComputedStyle {
             && self.bottom == other.bottom
             && self.left == other.left
             && self.transform == other.transform
+            && self.translate == other.translate
             // Retained paint and native hit regions depend on the basic-shape clip.
             && self.clip_path == other.clip_path
+            && self.mask_image == other.mask_image
+            && self.mask_layers == other.mask_layers
             && self.content_visibility_hidden == other.content_visibility_hidden
             && self.pointer_events == other.pointer_events
             && self.perspective_non_none == other.perspective_non_none
@@ -72,11 +76,13 @@ impl ComputedStyle {
             && self.contain_layout_or_paint == other.contain_layout_or_paint
             && self.will_change_containing_block == other.will_change_containing_block
             && self.overflow_hidden == other.overflow_hidden
+            && self.scrollbar_width == other.scrollbar_width
             && self.justify_content_end == other.justify_content_end
             && self.align_items_center == other.align_items_center
             && self.flex_direction == other.flex_direction
             && self.justify_content == other.justify_content
             && self.align_items == other.align_items
+            && self.align_self == other.align_self
             && self.align_content == other.align_content
             && self.justify_self == other.justify_self
             && self.flex_wrap == other.flex_wrap
@@ -95,6 +101,9 @@ impl ComputedStyle {
             && self.grid_template_columns == other.grid_template_columns
             && self.grid_template_rows == other.grid_template_rows
             && self.grid_template_areas == other.grid_template_areas
+            && self.grid_auto_columns == other.grid_auto_columns
+            && self.grid_auto_rows == other.grid_auto_rows
+            && self.grid_auto_flow == other.grid_auto_flow
             && self.grid_column_gap == other.grid_column_gap
             && self.grid_row_gap == other.grid_row_gap
             && self.grid_area_name == other.grid_area_name

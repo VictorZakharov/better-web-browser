@@ -281,6 +281,7 @@ unsafe extern "system" {
         offset: u32,
     ) -> Hbitmap;
     pub(in crate::windows_app) fn CreateCompatibleDC(dc: Hdc) -> Hdc;
+    pub(in crate::windows_app) fn GdiFlush() -> i32;
     pub(in crate::windows_app) fn CreateCompatibleBitmap(
         dc: Hdc,
         width: i32,

@@ -6,9 +6,8 @@ use crate::renderer_process::child::document::{
     AdvanceResult, DocumentRuntime, LoadResult, RendererTextSystem,
 };
 use crate::renderer_protocol::{
-    DocumentId, DocumentInput, DocumentStart, FullscreenResponse, NavigationCause,
-    NavigationDisposition, PresentationAcknowledgement, RendererMessage, TransferAssembler,
-    TransferChunk,
+    DocumentId, DocumentStart, FullscreenResponse, NavigationCause, NavigationDisposition,
+    PresentationAcknowledgement, RendererMessage, TransferAssembler, TransferChunk,
 };
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
@@ -244,58 +243,6 @@ impl ChildConnection {
             }
         }
         self.document = Some(runtime);
-        Ok(())
-    }
-
-    pub(super) fn interact_document(&mut self, input: DocumentInput) -> Result<(), String> {
-        let document = input.document();
-        let Some(mut runtime) = self.document.take() else {
-            return Ok(());
-        };
-        if runtime.id() != document {
-            self.document = Some(runtime);
-            return Ok(());
-        }
-        let result = catch_unwind(AssertUnwindSafe(|| runtime.interact(input, self)));
-        match result {
-            Ok(Ok(result)) => {
-                if let Some(cursor) = result.cursor {
-                    self.writer
-                        .send_renderer(&RendererMessage::PointerCursor(cursor))
-                        .map_err(|error| error.to_string())?;
-                }
-                if let Some(presentation) = result.presentation {
-                    self.send_document_update(presentation)?;
-                } else if let Some(update) = runtime.pending_geometry_observer_update() {
-                    // A scroll-only input has no visual revision, but its observer task must
-                    // still wake an otherwise idle browser-owned document clock.
-                    self.writer
-                        .send_renderer(&RendererMessage::RuntimeUpdate(Box::new(update)))
-                        .map_err(|error| error.to_string())?;
-                }
-                if let Some((url, disposition)) = result.navigation {
-                    self.writer
-                        .send_renderer(&RendererMessage::NavigationRequested {
-                            document,
-                            url,
-                            disposition,
-                            cause: NavigationCause::UserActivation,
-                        })
-                        .map_err(|error| error.to_string())?;
-                }
-            }
-            Ok(Err(error)) => {
-                self.send_document_failure(document, error)?;
-                return Ok(());
-            }
-            Err(payload) => {
-                self.send_document_failure(document, panic_detail(payload))?;
-                return Ok(());
-            }
-        }
-        if !self.stopping {
-            self.document = Some(runtime);
-        }
         Ok(())
     }
 

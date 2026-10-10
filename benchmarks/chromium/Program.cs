@@ -47,6 +47,7 @@ internal sealed class Options
     public bool EarlyScroll { get; init; }
     public bool RequireFixtureReady { get; init; }
     public ClickPoint? ClickAfterReady { get; init; }
+    public ControlKey? KeyAfterReady { get; init; }
     public string? ActivateLinkAfterReady { get; init; }
     public bool BackAfterReady { get; init; }
     public string? SubmitControlSelector { get; init; }
@@ -143,7 +144,7 @@ internal sealed class Options
             ? ParseInitialDelay(initialValue) : 0;
         if (wheels.Count > 0 && (switches.Contains("--early-scroll") || Integer("--scroll-samples", 0, 0, 120) > 0))
             throw new ArgumentException("Native wheel traces cannot be combined with direct scrollTo probes.");
-        var otherAction = clickAfterReady is not null || values.ContainsKey("--activate-link-after-ready") ||
+        var otherAction = clickAfterReady is not null || values.ContainsKey("--key-after-ready") || values.ContainsKey("--activate-link-after-ready") ||
             switches.Contains("--back-after-ready") || values.ContainsKey("--submit-control-selector");
         if (wheels.Count > 0 && otherAction)
             throw new ArgumentException("Native wheel traces require a single owned document; do not combine navigation/editing actions.");
@@ -177,6 +178,7 @@ internal sealed class Options
             EarlyScroll = switches.Contains("--early-scroll"),
             RequireFixtureReady = switches.Contains("--require-fixture-ready"),
             ClickAfterReady = clickAfterReady,
+            KeyAfterReady = values.TryGetValue("--key-after-ready", out var key) ? ControlKey.Parse(key) : null,
             ActivateLinkAfterReady = values.GetValueOrDefault("--activate-link-after-ready"),
             BackAfterReady = switches.Contains("--back-after-ready"),
             SubmitControlSelector = values.GetValueOrDefault("--submit-control-selector"),

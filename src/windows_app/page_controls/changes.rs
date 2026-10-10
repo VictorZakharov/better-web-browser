@@ -19,7 +19,7 @@ pub(in crate::windows_app) fn native_controls_changed(
 
 fn native_control(item: &DisplayItem) -> Option<&better_web_browser::engine::ControlSpec> {
     match item {
-        DisplayItem::Control(spec) if !spec.authored_content => Some(spec),
+        DisplayItem::Control(spec) if spec.uses_native_window() => Some(spec),
         _ => None,
     }
 }
@@ -43,6 +43,7 @@ mod tests {
 
     fn control() -> better_web_browser::engine::ControlSpec {
         better_web_browser::engine::ControlSpec {
+            checkable: None,
             authored_content: false,
             node_id: better_web_browser::engine::dom::NodeId::from_wire((1_u128 << 64) | 1)
                 .unwrap(),

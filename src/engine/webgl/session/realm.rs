@@ -5,6 +5,8 @@ mod submission;
 use submission::Flight;
 #[cfg(test)]
 mod pipeline_tests;
+#[cfg(test)]
+mod upload_tests;
 
 #[derive(Default)]
 pub(crate) struct Contexts {
@@ -148,6 +150,28 @@ impl Contexts {
         self.reap_pending(false);
         if !self.live.contains(&id) {
             return json!({"lost":true});
+        }
+        if let Some(payload) = bytes.as_ref()
+            && command_batch::Pending::upload_candidate(command, payload.len())
+        {
+            if !self.pending.upload_fits(payload.len()) {
+                self.submit_pending();
+            }
+            // Submission can retire a lost owner before the next allocation.
+            if !self.live.contains(&id) {
+                return json!({"lost":true});
+            }
+            self.sync_replies.remove(id);
+            self.pending
+                .push_upload(id, command, bytes.unwrap().into_owned());
+            if self.pending.full() {
+                self.submit_pending();
+            }
+            return if self.live.contains(&id) {
+                Value::Null
+            } else {
+                json!({"lost":true})
+            };
         }
         if bytes.is_none() && command_batch::Pending::candidate(command) {
             self.sync_replies.remove(id);

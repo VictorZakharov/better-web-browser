@@ -35,9 +35,14 @@
         'deleteBuffer deleteTexture deleteFramebuffer deleteRenderbuffer deleteShader deleteProgram deleteVertexArray '+
         'deleteVertexArrayOES bridgeError').split(' '));
     const webGlWireHasNumeric = Function.call.bind(Set.prototype.has, webGlWireNumericOperations);
+    const webGlWireLargeUniforms = new Set(('uniform1fv uniform2fv uniform3fv uniform4fv '+
+        'uniformMatrix2fv uniformMatrix3fv uniformMatrix4fv uniformMatrix2x3fv uniformMatrix2x4fv '+
+        'uniformMatrix3x2fv uniformMatrix3x4fv uniformMatrix4x2fv uniformMatrix4x3fv').split(' '));
+    const webGlWireLargeUniform = Function.call.bind(Set.prototype.has, webGlWireLargeUniforms);
     const webGlWireNumericCandidate = (op, integers, floats, text, bytes) => {
         const typed=webGlWireFloat32(floats), length=typed?webGlWireTypedLength(floats):floats.length;
-        if (text !== '' || bytes !== undefined || integers.length+length > 64 || !webGlWireHasNumeric(op)) return false;
+        const large=typed && webGlWireLargeUniform(op) && integers.length<=2 && length<=8192;
+        if (text !== '' || bytes !== undefined || (!large && integers.length+length > 64) || !webGlWireHasNumeric(op)) return false;
         for (let i=0;i<integers.length;i++) if (!webGlWireInteger(integers[i])) return false;
         if (!typed) for (let i=0;i<length;i++) if (typeof floats[i] !== 'number') return false;
         return true;

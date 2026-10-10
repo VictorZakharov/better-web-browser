@@ -126,7 +126,9 @@ pub(super) fn apply_user_agent_defaults(
             style.color = Color::BLACK;
             style.background_color = Color::rgb(255, 255, 0);
         }
-        "a" => {
+        // HTML's suggested UA style targets :link/:visited, not placeholder anchors.
+        // https://html.spec.whatwg.org/multipage/rendering.html#phrasing-content-3
+        "a" if node.attr("href").is_some() => {
             style.color = Color::rgb(0, 0, 238);
             style.text_decoration_underline = true;
         }
@@ -143,6 +145,24 @@ pub(super) fn apply_user_agent_defaults(
             style.background_color = Color::WHITE;
             style.border_width = uniform_edges(Length::Px(2.0));
             style.border_colors = [Some(Color::rgb(118, 118, 118)); 4];
+            if tag == "input"
+                && node.attr("type").is_some_and(|kind| {
+                    kind.eq_ignore_ascii_case("checkbox") || kind.eq_ignore_ascii_case("radio")
+                })
+            {
+                style.box_sizing = BoxSizing::BorderBox;
+                style.width = Length::Px(13.0);
+                style.height = Length::Px(13.0);
+                style.margin = Edges {
+                    top: Length::Px(3.0),
+                    right: Length::Px(3.0),
+                    bottom: Length::Px(3.0),
+                    left: Length::Px(4.0),
+                };
+                style.padding = uniform_edges(Length::Px(0.0));
+                style.border_width = uniform_edges(Length::Px(0.0));
+                style.background_color = Color::TRANSPARENT;
+            }
         }
         "table" => {
             style.box_sizing = BoxSizing::BorderBox;
@@ -177,3 +197,5 @@ pub(super) fn heading_defaults(style: &mut ComputedStyle, scale: f32, margin: f3
     style.margin.top = Length::Em(margin);
     style.margin.bottom = Length::Em(margin);
 }
+mod fullscreen;
+pub(super) use fullscreen::apply_fullscreen_ua_style;

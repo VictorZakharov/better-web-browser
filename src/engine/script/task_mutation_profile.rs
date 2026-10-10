@@ -11,7 +11,7 @@ pub(super) struct TaskMutationProfile {
 impl TaskMutationProfile {
     pub(super) fn record(&mut self, kind: MutationKind<'_>) {
         let counter = match kind {
-            MutationKind::ChildList => &mut self.child_list,
+            MutationKind::ChildList | MutationKind::TextChildren => &mut self.child_list,
             MutationKind::Stylesheet => &mut self.stylesheets,
             MutationKind::Attribute(_)
             | MutationKind::CharacterData

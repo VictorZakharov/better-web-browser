@@ -1,4 +1,4 @@
-//! Explicit diagnostic-only statistical source coordinates at a failing task.
+//! Explicit diagnostic-only statistical source coordinates at selected tasks.
 //! Default builds/runs do not create a profiler. Values are numeric and bounded;
 //! no author names, strings, source, arguments or objects are inspected.
 use std::ffi::c_void;
@@ -14,6 +14,8 @@ pub(super) struct Profile {
     enabled: bool,
     failed: bool,
     completed: u8,
+    steady_since: Option<Instant>,
+    steady_delay: Duration,
     diagnostics: Vec<String>,
 }
 
@@ -82,20 +84,32 @@ impl Profile {
     }
 
     pub(super) fn enable(&mut self, enabled: bool) {
-        let enabled = enabled
-            && std::env::var_os("BREEZE_DIAGNOSTIC_CPU_SAMPLING").as_deref()
-                == Some(std::ffi::OsStr::new("1"));
-        if self.enabled != enabled {
+        let mode = std::env::var_os("BREEZE_DIAGNOSTIC_CPU_SAMPLING");
+        let steady = mode.as_deref() == Some(std::ffi::OsStr::new("frames"));
+        let enabled = enabled && (steady || mode.as_deref() == Some(std::ffi::OsStr::new("1")));
+        if self.enabled != enabled || enabled && self.steady_since.is_some() != steady {
             *self = Self {
                 enabled,
-                completed: 2,
+                completed: if steady { 4 } else { 2 },
+                steady_since: steady.then(Instant::now),
+                steady_delay: sampling_delay(
+                    std::env::var_os("BREEZE_DIAGNOSTIC_CPU_SAMPLING_DELAY_MS").as_deref(),
+                ),
                 ..Self::default()
             };
         }
     }
 
     pub(super) fn enabled(&self) -> bool {
-        self.enabled && !self.failed
+        self.enabled
+            && !self.failed
+            && self
+                .steady_since
+                .is_none_or(|started| self.completed > 0 && started.elapsed() >= self.steady_delay)
+    }
+
+    pub(super) fn allows_global(&self, name: &str) -> bool {
+        self.steady_since.is_none() || name == "__runTimer"
     }
 
     pub(super) fn finish(&mut self, recording: Option<Recording>, failed: bool) {
@@ -104,10 +118,18 @@ impl Profile {
             self.record(recording.finish());
         } else if self.enabled()
             && self.completed > 0
-            && recording.1.elapsed() >= Duration::from_millis(500)
+            && recording.1.elapsed()
+                >= Duration::from_millis(if self.steady_since.is_some() { 8 } else { 500 })
         {
             self.completed -= 1;
-            self.emit(recording.finish(), "completed slow task");
+            self.emit(
+                recording.finish(),
+                if self.steady_since.is_some() {
+                    "completed steady task"
+                } else {
+                    "completed slow task"
+                },
+            );
         } else {
             // Stop/delete profiles that will not be exported without walking
             // their trees. Draining diagnostics never replenishes the budget.
@@ -143,9 +165,66 @@ impl Profile {
     }
 }
 
+fn sampling_delay(value: Option<&std::ffi::OsStr>) -> Duration {
+    Duration::from_millis(
+        value
+            .and_then(std::ffi::OsStr::to_str)
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|value| *value <= 60_000)
+            .unwrap_or(20_000),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn steady_sampling_waits_then_stops_after_four_completed_tasks() {
+        super::super::runtime::initialize_v8();
+        let _isolate = v8::Isolate::new(v8::CreateParams::default());
+        let mut profile = Profile {
+            enabled: true,
+            completed: 4,
+            steady_since: Some(Instant::now()),
+            steady_delay: Duration::from_secs(20),
+            ..Profile::default()
+        };
+        assert!(!profile.enabled(), "startup remains unsampled");
+        assert!(profile.allows_global("__runTimer"));
+        assert!(!profile.allows_global("__timerLabel"));
+        assert!(!profile.allows_global("__takeCanvasPresentation"));
+        profile.steady_since = Some(Instant::now() - Duration::from_secs(21));
+        for index in 0..4 {
+            assert!(profile.enabled());
+            let mut recording = Recording::start(true).unwrap();
+            recording.1 = Instant::now() - Duration::from_millis(9);
+            profile.finish(Some(recording), false);
+            assert!(profile.take()[0].contains("completed steady task"));
+            assert_eq!(profile.completed, 3 - index);
+        }
+        assert!(!profile.enabled(), "no profiler setup on later frames");
+        assert!(Recording::start(profile.enabled()).is_none());
+        assert!(profile.take().is_empty(), "draining cannot rearm sampling");
+    }
+
+    #[test]
+    fn sampling_delay_is_explicit_and_bounded() {
+        use std::ffi::OsStr;
+        assert_eq!(sampling_delay(None), Duration::from_secs(20));
+        assert_eq!(sampling_delay(Some(OsStr::new("0"))), Duration::ZERO);
+        assert_eq!(
+            sampling_delay(Some(OsStr::new("60000"))),
+            Duration::from_secs(60)
+        );
+        for invalid in ["-1", "60001", "18446744073709551616", "", "1.5"] {
+            assert_eq!(
+                sampling_delay(Some(OsStr::new(invalid))),
+                Duration::from_secs(20)
+            );
+        }
+        assert!(Profile::default().allows_global("__timerLabel"));
+    }
 
     #[test]
     fn completed_slow_samples_are_bounded_without_consuming_the_failure_slot() {

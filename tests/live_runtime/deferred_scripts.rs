@@ -4,7 +4,8 @@ use std::{fs, net::TcpListener, thread, time::Duration};
 
 const ORDERING_HTML: &str = r#"<!doctype html>
 <title>ordering pending</title>
-<style>html, body { margin: 0; background: rgb(220, 20, 20); }</style>
+<style>html, body { margin: 0; background: rgb(220, 20, 20); }
+body { min-height: 100vh; }</style>
 <script>window.executionOrder = []; window.asyncCount=0;
 window.addEventListener('load',()=>{
   if(executionOrder.join(',')!=='classic,inline-tail,defer,module' || asyncCount!==1)

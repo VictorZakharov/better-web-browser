@@ -2,13 +2,16 @@
 //! Cascade regression tests grouped by area.
 use super::*;
 
+mod anchor_defaults;
 mod aspect_ratio;
+mod background_layers;
 mod background_resources;
 mod easing_context;
 mod flex_flow;
 mod fullscreen;
 mod iteration_context;
 mod layers;
+mod masks;
 mod math;
 mod math_functions;
 mod nesting;
@@ -26,6 +29,7 @@ mod time_context;
 #[path = "tests_truncation.rs"]
 mod truncation;
 mod wide_keywords;
+mod widgets;
 use crate::engine::dom;
 
 #[test]
@@ -322,3 +326,4 @@ fn parses_css_lengths_and_colors() {
         })
     );
 }
+mod zoom;

@@ -18,7 +18,8 @@ impl BrowserState {
             return;
         }
         image.bgra = update.pixels;
-        self.image_bitmaps.remove(&key);
+        let refreshed = image.clone();
+        self.image_bitmaps.update(&key, &refreshed);
         self.video_presentation.accept(Instant::now());
         if !self.processing_background_tab {
             let mut client = Rect::default();

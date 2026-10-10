@@ -14,6 +14,7 @@ mod inline_layout;
 mod inline_paint;
 mod inline_text;
 mod inline_truncate;
+mod masking;
 mod model;
 mod object;
 mod opacity;
@@ -22,12 +23,13 @@ mod scrolling;
 mod sizing;
 mod sticky;
 mod table;
-mod test_support;
+pub(crate) mod test_support;
 mod tests;
 mod tracks;
 mod translate;
 mod truncation;
 use self::{forms::*, model::*, sizing::*, tracks::*, truncation::*};
+pub use self::{scrolling::ScrollBox, sticky::StickyLayer};
 use super::css::*;
 use super::dom::{Node, NodeData, NodeId, NodeRef};
 use super::page::{Page, inline_svg_key};
@@ -38,11 +40,9 @@ pub use engine::{
 };
 pub use hit_test::HitTestSnapshot;
 pub use model::{
-    ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, FragmentGeometry, LayoutOutput,
-    PositionedGlyph, RectF, ResizeBox, SelectOption, ShapedText, TextCluster, TextGeometry,
-    TextMeasurer,
+    CheckableState, ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, FragmentGeometry,
+    LayoutOutput, PositionedGlyph, RectF, ResizeBox, SelectOption, ShapedText, TextCluster,
+    TextGeometry, TextMeasurer,
 };
-pub use scrolling::ScrollBox;
 use std::collections::{HashMap, HashSet};
-pub use sticky::StickyLayer;
 pub(crate) use translate::translate_display_items;

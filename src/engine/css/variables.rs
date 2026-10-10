@@ -108,9 +108,11 @@ pub(super) fn apply_scoped_declaration(
         substituted = value;
         &substituted
     };
-    if variable_reference && !supports::supports_declaration_value(&declaration.name, value) {
+    if variable_reference && !supports::cssom_declaration_value(&declaration.name, value) {
         // Substitution happens after the cascade chose this declaration. An
-        // invalid result cannot resurrect a lower-priority authored value.
+        // invalid result cannot resurrect a lower-priority authored value. Validate
+        // declarations, not feature-query admission: partially implemented visual
+        // properties may deliberately decline CSS.supports without being invalid CSS.
         // https://drafts.csswg.org/css-variables-1/#invalid-at-computed-value-time
         apply_declaration(style, (&declaration.name, "unset"), context);
         return;

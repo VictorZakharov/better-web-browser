@@ -46,6 +46,12 @@ impl RuntimeWakeup {
         self.installed
             .is_some_and(|wake| Some(wake.owner) == owner && now >= wake.deadline)
     }
+
+    pub(super) fn deadline(&self, owner: Option<(TabId, DocumentId)>) -> Option<Instant> {
+        self.installed
+            .filter(|wake| Some(wake.owner) == owner)
+            .map(|wake| wake.deadline)
+    }
 }
 
 #[cfg(test)]

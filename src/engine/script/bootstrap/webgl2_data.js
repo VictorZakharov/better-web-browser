@@ -85,7 +85,14 @@
         if (resizable) throw new TypeError('WebGL requires a fixed-length backing store');
         return shared;
     };
-    const webGlNumericDetached = buffer => {
+    const webGlNumericDetachedGetter = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype,'detached')?.get;
+    const webGlNumericDetached = (buffer,shared) => {
+        // Fixed SharedArrayBuffers cannot detach; their independent snapshot is
+        // still taken below. Never invoke the ArrayBuffer-only getter on them.
+        if (shared) return false;
+        // Read the intrinsic slot without allocating a zero-length byte view.
+        // https://tc39.es/ecma262/#sec-get-arraybuffer.prototype.detached
+        if (webGlNumericDetachedGetter) return webGl2Apply(webGlNumericDetachedGetter,buffer,[]);
         try { new webGl2ByteArray(buffer,0,0); return false; }
         catch (error) { if (error instanceof TypeError) return true; throw error; }
     };
@@ -99,14 +106,14 @@
         // https://registry.khronos.org/webgl/specs/latest/1.0/#TYPES
         const buffer=webGl2Apply(webGl2TypedGetters.buffer,value,[]);
         const shared=webGlFixedBuffer(buffer);
-        if (webGlNumericDetached(buffer)) return {values:[],length:0,detached:true};
+        if (webGlNumericDetached(buffer,shared)) return {values:[],length:0,detached:true};
         const offset=webGl2Apply(webGl2TypedGetters.byteOffset,value,[]);
         const length=webGl2Apply(webGl2TypedGetters.length,value,[]);
         if (length>limit) throw new RangeError('WebGL typed numeric list exceeds the snapshot budget');
-        if (direct && kind==='f' && !shared && length<=62) {
+        if (direct && kind==='f' && !shared && length<=8192) {
             // Only an installed uniform slot with a number/undefined tail can
             // reach this branch. No later author coercion can run before native
-            // CopyContents takes the owned snapshot. Shared/large sources and
+            // CopyContents takes the owned snapshot. Shared sources and
             // any observable tail retain the early independent IDL snapshot.
             return {values:value,length,detached:false,float32:true,sourceOffset:offset};
         }
@@ -137,8 +144,12 @@
             count > source.length-offset || count > 8192) {
             webGlError(context,count > 8192 ? 0x0505 : 0x0501); return null;
         }
-        if (source.float32 && count <= 62) {
-            // Preserve the admitted small range for one owned native copy
+        if (source.float32 && count <= 8192) {
+            // The source is already admitted through captured intrinsic getters.
+            // A full range needs no second view: packet/native transport still
+            // copies its contents at this public call, before author code runs.
+            if (offset === 0 && count === source.length) return source.values;
+            // Preserve the admitted bounded range for one owned native copy
             // instead of boxing each component a second time.
             // Construct directly: subarray() consults author-controlled species.
             const buffer=webGl2Apply(webGl2TypedGetters.buffer,source.values,[]);

@@ -10,6 +10,8 @@ pub(crate) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, 
             DisplayItem::BeginClip { bounds }
             | DisplayItem::EndClip { bounds }
             | DisplayItem::BeginOpacity { bounds, .. }
+            | DisplayItem::BeginMask { bounds, .. }
+            | DisplayItem::EndMask { bounds }
             | DisplayItem::EndOpacity { bounds } => bounds,
             DisplayItem::SolidRect { rect, .. }
             | DisplayItem::BorderRect { rect, .. }
@@ -26,6 +28,11 @@ pub(crate) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, 
                 clip_rect,
                 tile_rect,
                 ..
+            }
+            | DisplayItem::CssGradient {
+                clip_rect,
+                tile_rect,
+                ..
             } => {
                 clip_rect.x += offset_x;
                 clip_rect.y += offset_y;
@@ -34,6 +41,17 @@ pub(crate) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, 
                 continue;
             }
             DisplayItem::Control(spec) => &mut spec.rect,
+            DisplayItem::BeginCssMask { bounds, layers } => {
+                translate_display_items(layers, offset_x, offset_y);
+                bounds
+            }
+            DisplayItem::CssBoxShadow { bounds, edge, .. } => {
+                bounds.x += offset_x;
+                bounds.y += offset_y;
+                edge.x += offset_x;
+                edge.y += offset_y;
+                continue;
+            }
         };
         rect.x += offset_x;
         rect.y += offset_y;
@@ -47,10 +65,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         border_box: RectF,
         item_start: usize,
     ) {
-        let (offset_x, offset_y) =
-            style
-                .transform
-                .resolve(border_box.width, border_box.height, style.font_size);
+        let (offset_x, offset_y) = style.translation_transform().resolve(
+            border_box.width,
+            border_box.height,
+            style.font_size,
+        );
         if offset_x.abs() > f32::EPSILON || offset_y.abs() > f32::EPSILON {
             translate_display_items(&mut self.output.items[item_start..], offset_x, offset_y);
         }
@@ -103,10 +122,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         border_box: RectF,
         item_start: usize,
     ) {
-        let (offset_x, offset_y) =
-            style
-                .transform
-                .resolve(border_box.width, border_box.height, style.font_size);
+        let (offset_x, offset_y) = style.translation_transform().resolve(
+            border_box.width,
+            border_box.height,
+            style.font_size,
+        );
         if offset_x.abs() <= f32::EPSILON && offset_y.abs() <= f32::EPSILON {
             return;
         }

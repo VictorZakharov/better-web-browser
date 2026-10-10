@@ -1,6 +1,7 @@
 //! Resolve intrinsic track contributions before assigning leftover space to fr tracks.
 //! https://www.w3.org/TR/css-grid-1/#algo-content
 use super::*;
+mod minimum;
 #[cfg(test)]
 mod tests;
 
@@ -44,6 +45,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 continue;
             }
             let (lo, hi) = self.float_intrinsic_widths(&item.node, available);
+            let minimum =
+                minimum::contribution(&item.node, self.styles.get(&item.node), available, lo);
             let spacing = gap * range.len().saturating_sub(1) as f32;
             for maximum in [false, true] {
                 let contributors = range
@@ -54,7 +57,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         } else {
                             intrinsic_min(&tracks[i])
                         }?;
-                        Some((i, if max_content { hi } else { lo }))
+                        let contribution = if max_content {
+                            hi
+                        } else if !maximum && minimum::is_automatic(&tracks[i]) {
+                            minimum
+                        } else {
+                            lo
+                        };
+                        Some((i, contribution))
                     })
                     .collect::<Vec<_>>();
                 if contributors.is_empty() {

@@ -34,6 +34,7 @@ impl BrowserState {
                 InvalidateRect(self.window, &dirty, 0);
             }
             UpdateWindow(self.window);
+            self.paint_benchmark_native_presentation();
             if first_presentation && let Some(benchmark) = self.benchmark.as_mut() {
                 benchmark.paint_time = paint_started.elapsed();
             }

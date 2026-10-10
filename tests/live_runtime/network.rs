@@ -1,8 +1,12 @@
 use super::*;
 
+// Pixel checks need a viewport-sized body. An independently red HTML canvas
+// does not take a short body's changed background (CSS Backgrounds 3 §2.11.2).
+
 const SCRIPT_NETWORK_HTML: &str = r#"<!doctype html>
 <title>script network pending</title>
-<style>html, body { margin: 0; background: rgb(220, 20, 20); }</style>
+<style>html, body { margin: 0; background: rgb(220, 20, 20); }
+body { min-height: 100vh; }</style>
 <div id="state">pending</div>
 <script>
   const fetched = fetch('/fetch-data').then(response => response.json());
@@ -23,7 +27,8 @@ const SCRIPT_NETWORK_HTML: &str = r#"<!doctype html>
 </script>"#;
 const MODULE_HTML: &str = r#"<!doctype html>
 <title>module pending</title>
-<style>html, body { margin: 0; background: rgb(220, 20, 20); }</style>
+<style>html, body { margin: 0; background: rgb(220, 20, 20); }
+body { min-height: 100vh; }</style>
 <script type="module" src="/modules/main.js"></script>"#;
 const MODULE_MAIN: &str = r#"
 import { answer } from './dependency.js';
@@ -31,11 +36,13 @@ await Promise.resolve();
 if (answer !== 42 || import.meta.url.indexOf('/modules/main.js') < 0)
     throw new Error('module graph mismatch');
 document.body.style.backgroundColor = 'rgb(17, 170, 34)';
-document.title = 'module complete';"#;
+document.title = 'module complete';
+console.info('__BREEZE_MODULE_GRAPH_COMPLETE__');"#;
 const MODULE_DEPENDENCY: &str = "export const answer = 42;";
 const WORKER_HTML: &str = r#"<!doctype html>
 <title>worker pending</title>
-<style>html, body { margin: 0; background: rgb(220, 20, 20); }</style>
+<style>html, body { margin: 0; background: rgb(220, 20, 20); }
+body { min-height: 100vh; }</style>
 <script>
   const worker = new Worker('/worker/main.js', { type: 'module', name: 'integration' });
   worker.onmessage = event => {
@@ -56,7 +63,8 @@ onmessage = event => {
 const WORKER_DEPENDENCY: &str = "export const moduleDelta = 1;";
 const SLOW_WORKER_HTML: &str = r#"<!doctype html>
 <title>slow worker pending</title>
-<style>html, body { margin: 0; background: rgb(220, 20, 20); }</style>
+<style>html, body { margin: 0; background: rgb(220, 20, 20); }
+body { min-height: 100vh; }</style>
 <script>
   const worker = new Worker('/slow-worker.js');
   worker.onmessage = () => {
@@ -121,7 +129,14 @@ fn external_module_graph_executes_with_relative_imports_and_top_level_await() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/module-runtime");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 700);
+    // Wait for the actual async graph result, not a shared-machine wall-clock
+    // guess. Missing imports or a rejected top-level await still hit the deadline.
+    let mut child = hidden_benchmark_with_args(
+        &url,
+        &artifacts,
+        700,
+        &["--completion-marker", "__BREEZE_MODULE_GRAPH_COMPLETE__"],
+    );
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     server
         .join()
@@ -134,6 +149,12 @@ fn external_module_graph_executes_with_relative_imports_and_top_level_await() {
         report.contains("\"javascript_errors\": []"),
         "module graph reported JavaScript errors:\n{report}"
     );
+    let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
+    assert_eq!(
+        parsed["titles"]["document_title"], "module complete",
+        "{report}"
+    );
+    assert_eq!(parsed["javascript_runtime_stopped"], false, "{report}");
     assert_green_capture(&artifacts, "module graph did not repaint its document");
 }
 
@@ -309,7 +330,8 @@ fn cross_origin_module_use_credentials_reaches_the_cors_broker() {
     let page_origin = format!("http://{page_address}");
     let html = format!(
         r#"<!doctype html><title>credential module pending</title>
-        <style>html, body {{ margin: 0; background: rgb(220, 20, 20); }}</style>
+        <style>html, body {{ margin: 0; background: rgb(220, 20, 20); }}
+        body {{ min-height: 100vh; }}</style>
         <script type="module" crossorigin="use-credentials"
                 src="http://{module_address}/credential.js"></script>"#
     );

@@ -18,7 +18,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             kind,
             ControlKind::Submit | ControlKind::Button | ControlKind::Reset | ControlKind::File
         );
-        let default_width = if let Some(select) = &select {
+        let default_width = if kind.is_checkable() {
+            13.0
+        } else if let Some(select) = &select {
             select.preferred_width(style.font_size)
         } else if is_button {
             let label = input_control_label(node, kind, &value);
@@ -85,6 +87,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         );
         output.push(InlineAtom::Control {
             spec: Box::new(ControlSpec {
+                checkable: checkable_state(node, style, kind),
                 authored_content: false,
                 node_id: node_id(node),
                 rect: RectF::default(),
@@ -104,7 +107,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 placeholder_color: self
                     .styles
                     .placeholder_color(node, self.effective_background_color(node)),
-                border_colors: style.painted_border_colors(self.effective_background_color(node)),
+                border_colors: style.resolved_border_colors(),
                 border_width: [border.top, border.right, border.bottom, border.left],
                 border_radius: resolve_border_radius(
                     style.border_radius.clone(),

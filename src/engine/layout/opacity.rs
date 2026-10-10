@@ -8,13 +8,18 @@ pub(super) fn display_item_bounds(item: &DisplayItem) -> Option<RectF> {
         DisplayItem::BeginClip { bounds }
         | DisplayItem::EndClip { bounds }
         | DisplayItem::BeginOpacity { bounds, .. }
+        | DisplayItem::BeginMask { bounds, .. }
+        | DisplayItem::BeginCssMask { bounds, .. }
+        | DisplayItem::EndMask { bounds }
         | DisplayItem::EndOpacity { bounds } => Some(*bounds),
+        DisplayItem::CssBoxShadow { bounds, .. } => Some(*bounds),
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. }
         | DisplayItem::EmbeddedFrame { rect, .. } => Some(*rect),
         DisplayItem::Image { rect, clip, .. } => Some(clip.unwrap_or(*rect)),
-        DisplayItem::BackgroundImage { clip_rect, .. } => Some(*clip_rect),
+        DisplayItem::BackgroundImage { clip_rect, .. }
+        | DisplayItem::CssGradient { clip_rect, .. } => Some(*clip_rect),
         DisplayItem::Control(spec) => Some(spec.rect),
     }
 }

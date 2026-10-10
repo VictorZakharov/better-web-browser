@@ -39,7 +39,7 @@
             const width=canvasUnsignedDimension(value);
             if (state.detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
             state.width = width;
-            stateForCanvas(this, true);
+            stateForCanvas(this, true, false);
         }
         get height() { const state=canvasOffscreenDimensions(this);return state.detached ? 0 : state.height; }
         set height(value) {
@@ -47,7 +47,7 @@
             const height=canvasUnsignedDimension(value);
             if (state.detached) throw new DOMException('OffscreenCanvas is detached', 'InvalidStateError');
             state.height = height;
-            stateForCanvas(this, true);
+            stateForCanvas(this, true, false);
         }
         getContext(contextId, options = undefined) {
             const dimensions = canvasOffscreenDimensions(this);

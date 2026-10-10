@@ -29,9 +29,7 @@ registry and the existing bounded single-owner request channel. It never borrows
 V8 backing storage across a host call. Unsupported platforms keep declining
 native context creation; this path does not fabricate GPU functionality.
 
-The same registry checks host liveness and realm ownership, flushes preceding
-commands, validates command/upload limits, invalidates affected synchronous
-reply caches and handles lost contexts. Only the two established host operations
+The same registry checks host liveness and realm ownership, preserves preceding command order, validates command/upload limits, invalidates affected synchronous reply caches and handles lost contexts. Small already-owned void uploads can join the bounded command FIFO; observations and task boundaries drain it, while larger/noncanonical operations keep the ordinary synchronous path. The upload is still independently copied at its public call, not when the GPU eventually consumes it. Only the two established host operations
 (`webglCommand` and `webglReadPixels`) select this routing. The binary-readback
 operation still rejects every native operation except `readPixels` and
 `getBufferSubData`.

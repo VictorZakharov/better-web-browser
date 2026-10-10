@@ -126,6 +126,7 @@ fn compose_items(
         page.set_layout_viewport(rect.width, rect.height);
         let mut layout =
             layout_page_with_style_viewport(&page, rect.width, rect.height, rect.width, text);
+        page.prepare_css_images(&mut layout);
         (snapshot.publish_geometry)(&layout, rect);
         let mut children = Vec::new();
         let mut child_boundaries = Vec::new();

@@ -1,11 +1,12 @@
 //! Native UI fonts and decoded-image/glyph bitmap caches.
 
 mod glyphs;
+mod images;
 
-use super::paint_primitives::bitmap_info;
 use super::*;
 
 pub(super) use glyphs::GlyphBitmaps;
+pub(super) use images::ImageBitmaps;
 
 #[derive(Clone, Copy)]
 pub(super) enum FontKind {
@@ -170,97 +171,6 @@ fn font_key(spec: &FontSpec, dpi: u32) -> FontKey {
 }
 
 impl Drop for DynamicFonts {
-    fn drop(&mut self) {
-        unsafe { self.clear() }
-    }
-}
-
-#[derive(Default)]
-pub(super) struct ImageBitmaps {
-    bitmaps: HashMap<String, Hbitmap>,
-}
-
-impl ImageBitmaps {
-    pub(super) unsafe fn get_or_create(
-        &mut self,
-        key: &str,
-        image: &DecodedImage,
-        dc: Hdc,
-    ) -> Hbitmap {
-        if let Some(bitmap) = self.bitmaps.get(key) {
-            return *bitmap;
-        }
-        let info = bitmap_info(image);
-        let mut pixels = null_mut();
-        let bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &mut pixels, null_mut(), 0);
-        if !bitmap.is_null() && !pixels.is_null() {
-            std::ptr::copy_nonoverlapping(image.bgra.as_ptr(), pixels.cast(), image.bgra.len());
-            self.bitmaps.insert(key.to_string(), bitmap);
-        }
-        bitmap
-    }
-
-    pub(super) unsafe fn get_or_create_tinted(
-        &mut self,
-        key: &str,
-        image: &DecodedImage,
-        tint: [u8; 4],
-        dc: Hdc,
-    ) -> Hbitmap {
-        let cache_key = format!(
-            "{key}#tint:{:02x}{:02x}{:02x}{:02x}",
-            tint[0], tint[1], tint[2], tint[3]
-        );
-        if let Some(bitmap) = self.bitmaps.get(&cache_key) {
-            return *bitmap;
-        }
-
-        let mut tinted = Vec::with_capacity(image.bgra.len());
-        for pixel in image.bgra.chunks_exact(4) {
-            let alpha = u16::from(pixel[3]) * u16::from(tint[3]) / 255;
-            tinted.push((u16::from(tint[2]) * alpha / 255) as u8);
-            tinted.push((u16::from(tint[1]) * alpha / 255) as u8);
-            tinted.push((u16::from(tint[0]) * alpha / 255) as u8);
-            tinted.push(alpha as u8);
-        }
-
-        let info = bitmap_info(image);
-        let mut pixels = null_mut();
-        let bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &mut pixels, null_mut(), 0);
-        if !bitmap.is_null() && !pixels.is_null() {
-            std::ptr::copy_nonoverlapping(tinted.as_ptr(), pixels.cast(), tinted.len());
-            self.bitmaps.insert(cache_key, bitmap);
-        }
-        bitmap
-    }
-
-    pub(super) unsafe fn clear(&mut self) {
-        for bitmap in self.bitmaps.drain().map(|(_, bitmap)| bitmap) {
-            if !bitmap.is_null() {
-                DeleteObject(bitmap);
-            }
-        }
-    }
-
-    pub(super) unsafe fn remove(&mut self, key: &str) {
-        let tint_prefix = format!("{key}#tint:");
-        let stale = self
-            .bitmaps
-            .keys()
-            .filter(|candidate| candidate.as_str() == key || candidate.starts_with(&tint_prefix))
-            .cloned()
-            .collect::<Vec<_>>();
-        for key in stale {
-            if let Some(bitmap) = self.bitmaps.remove(&key)
-                && !bitmap.is_null()
-            {
-                DeleteObject(bitmap);
-            }
-        }
-    }
-}
-
-impl Drop for ImageBitmaps {
     fn drop(&mut self) {
         unsafe { self.clear() }
     }

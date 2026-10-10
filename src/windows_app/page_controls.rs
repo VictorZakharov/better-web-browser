@@ -97,7 +97,7 @@ impl BrowserState {
             .items
             .iter()
             .filter_map(|item| match item {
-                DisplayItem::Control(spec) if !spec.authored_content => Some((**spec).clone()),
+                DisplayItem::Control(spec) if spec.uses_native_window() => Some((**spec).clone()),
                 _ => None,
             })
             .collect::<Vec<_>>();

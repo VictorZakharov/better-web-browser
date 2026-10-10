@@ -28,10 +28,17 @@ impl StyleSet {
         removed_nodes: &[NodeId],
         impact: InvalidationImpact,
     ) -> StyleRefreshStats {
-        let roots = if self
-            .compiled
-            .nonlocal_dependencies
-            .needs_document_refresh(impact)
+        // The new text/graphics proof is limited to ordinary document rules.
+        // Part, slot, host and scope conditions have separate selector graphs;
+        // do not infer their dependencies from the ordinary selector alone.
+        let unsupported_local_scope = self.compiled.cross_tree_or_scoped
+            && impact.is_local_content_only()
+            && !impact.is_style_only();
+        let roots = if unsupported_local_scope
+            || self
+                .compiled
+                .nonlocal_dependencies
+                .needs_document_refresh(impact)
         {
             // A local equality check cannot conceal a changed ancestor or
             // sibling :has() result. Widen only when this mutation can affect

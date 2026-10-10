@@ -1,6 +1,7 @@
 //! Closed numeric records, fully admitted before any native command executes.
 //! The operation table is shared with the trusted Window/Worker bootstrap.
 use super::{MAX_NUMERIC_VALUES, NumericCommand};
+use smallvec::SmallVec;
 use std::sync::OnceLock;
 
 pub(crate) const MAX_PACKET_COMMANDS: usize = 128;
@@ -45,17 +46,17 @@ pub(crate) fn decode(values: &[f64]) -> Option<Vec<(u32, NumericCommand)>> {
         }
         cursor += HEADER_VALUES;
         let arguments = values.get(cursor..cursor.checked_add(count)?)?;
-        let mut integers = Vec::with_capacity(integer_count);
+        let mut integers = SmallVec::<[i64; 8]>::new();
         for &value in &arguments[..integer_count] {
             if !value.is_finite() || value.abs() > 9_007_199_254_740_991. || value.fract() != 0. {
                 return None;
             }
             integers.push(value as i64);
         }
-        let command = NumericCommand::new(
-            operations().get(operation)?.clone(),
+        let command = NumericCommand::packet(
+            operations().get(operation)?.as_str(),
             integers,
-            arguments[integer_count..].to_vec(),
+            arguments[integer_count..].iter().copied().collect(),
         )?;
         entries.push((id, command));
         cursor += count;

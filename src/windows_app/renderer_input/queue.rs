@@ -1,6 +1,7 @@
 //! Bounded browser-to-renderer input delivery and deferred History retry.
 
 use super::*;
+use crate::windows_app::renderer_input_queue::PendingRendererInputs;
 use better_web_browser::limits::MAX_QUEUED_BROWSER_COMMANDS;
 
 impl BrowserState {
@@ -10,7 +11,17 @@ impl BrowserState {
         {
             unsafe { self.observe_native_wheel(wheel.sequence, wheel.delta_y) };
         }
-        let result = if self.pending_renderer_inputs.is_empty() {
+        let move_key = PendingRendererInputs::move_key(&input);
+        // The broker discards inputs for documents that are not active yet. Such
+        // a move cannot supply a completion signal; wait for the first paint.
+        if move_key.is_some_and(|(document, _)| {
+            self.renderer_revision == 0 || !self.navigation.owns_document(document)
+        }) {
+            return false;
+        }
+        let result = if self.pending_renderer_inputs.is_empty()
+            && self.pending_renderer_inputs.can_send(&input)
+        {
             self.renderer_session
                 .as_ref()
                 .ok_or_else(|| "renderer session is unavailable".to_string())
@@ -23,6 +34,7 @@ impl BrowserState {
         };
         match result {
             Ok(None) => {
+                self.pending_renderer_inputs.note_sent(move_key);
                 self.note_renderer_input_activity();
                 true
             }
@@ -72,21 +84,29 @@ impl BrowserState {
                     made_room = true;
                     continue;
                 }
-                tab.renderer_session
+                let move_key = PendingRendererInputs::move_key(&input);
+                let result = tab
+                    .renderer_session
                     .as_ref()
                     .ok_or_else(|| "renderer session is unavailable".to_string())
-                    .and_then(|session| session.try_send_input_retained(input))
+                    .and_then(|session| session.try_send_input_retained(input));
+                (result, move_key)
             };
             match delivery {
-                Ok(None) => made_room = true,
-                Ok(Some(input)) => {
+                (Ok(None), move_key) => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.pending_renderer_inputs.note_sent(move_key);
+                    }
+                    made_room = true;
+                }
+                (Ok(Some(input)), _) => {
                     if let Some(tab) = self.tabs.get_mut(id) {
                         tab.pending_renderer_inputs.restore_front(input);
                         tab.renderer_input_poll_budget = RENDERER_INPUT_POLL_BUDGET;
                     }
                     break;
                 }
-                Err(error) => {
+                (Err(error), _) => {
                     self.contain_page_engine_failure(
                         id,
                         format!("could not deliver document input: {error}"),

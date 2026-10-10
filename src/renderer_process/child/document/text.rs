@@ -292,6 +292,9 @@ fn geometry_bytes(geometry: &TextGeometry) -> usize {
 }
 
 impl TextMeasurer for RendererTextSystem {
+    fn normal_line_height(&mut self, font: &FontSpec) -> f32 {
+        self.measure_text(" ", font).0.1
+    }
     fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32) {
         self.measure_text(text, font).0
     }

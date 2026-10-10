@@ -31,6 +31,7 @@ pub(super) fn viewport_host_call(
                 .as_ref()
                 .and_then(|node| state.scroll_boxes.get(&node.id()).copied());
             if let (Some(node), Some(scroll)) = (&node, scroll) {
+                let zoom = state.effective_zoom(node);
                 let (mut x, mut y) = node.scroll_offset.get();
                 if args.len() > 3 {
                     let requested = args[3]
@@ -38,7 +39,8 @@ pub(super) fn viewport_host_call(
                         .filter(|value| value.is_finite())
                         .unwrap_or(0.0)
                         .clamp(f64::from(f32::MIN), f64::from(f32::MAX))
-                        as f32;
+                        as f32
+                        * zoom;
                     if args[2].as_number() == Some(0.0) {
                         x = requested;
                     } else {
@@ -61,7 +63,7 @@ pub(super) fn viewport_host_call(
                         scroll.port.height,
                     ]
                     .into_iter()
-                    .map(|value| JsValue::from(f64::from(value)))
+                    .map(|value| JsValue::from(f64::from(value / zoom)))
                     .collect(),
                 )
             } else {

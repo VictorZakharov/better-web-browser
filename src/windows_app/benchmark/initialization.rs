@@ -98,6 +98,7 @@ impl BenchmarkRun {
             early_scroll: early_scroll.then(EarlyScrollTrace::six_seconds),
             wheel_trace: Default::default(),
             scroll_surface: None,
+            native_paint: None,
             activity: BenchmarkActivity::default(),
             diagnostic_selectors,
             window_width_dip,

@@ -11,6 +11,7 @@ mod video_codecs;
 mod wake_lock;
 mod worker_packet_delivery;
 mod xhr_document;
+mod zoom_geometry;
 
 pub(super) fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {
     let dom = dom::parse_with_scripting(html, true);

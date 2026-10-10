@@ -14,14 +14,21 @@ impl ComputedStyle {
             float: Float::None,
             clear: Clear::None,
             color: Color::BLACK,
+            appearance: Appearance::Auto,
+            accent_color: AccentColor::Auto,
             background_color: Color::TRANSPARENT,
-            background_image: None,
-            mask_image: None,
+            background_image: super::super::images::BackgroundImages::default(),
+            mask_image: BackgroundImages::default(),
+            mask_layers: BackgroundLayers::default(),
             background_repeat_x: true,
             background_repeat_y: true,
             background_position_x: Length::Percent(0.0),
             background_position_y: Length::Percent(0.0),
             background_size: BackgroundSize::Auto,
+            background_layers: BackgroundLayers::default(),
+            box_shadows: Vec::new(),
+            scrollbar_width: scrollbars::ScrollbarWidth::Auto,
+            scrollbar_color: None,
             object_fit: ObjectFit::Fill,
             object_position: ObjectPosition::default(),
             aspect_ratio: AspectRatio::Auto,
@@ -75,8 +82,11 @@ impl ComputedStyle {
             content_visibility_hidden: false,
             pointer_events: true,
             opacity: 1.0,
+            zoom: 1.0,
+            effective_zoom: 1.0,
             clip_path: clip_path::ClipPath::default(),
             transform: transform::TransformList::default(),
+            translate: Default::default(),
             perspective_non_none: false,
             filter_non_none: false,
             transform_style_preserve_3d: false,
@@ -89,6 +99,7 @@ impl ComputedStyle {
             flex_direction: FlexDirection::Row,
             justify_content: JustifyContent::Start,
             align_items: AlignItems::Stretch,
+            align_self: None,
             align_content: ContentAlignment::default(),
             justify_self: AlignItems::Stretch,
             flex_wrap: false,
@@ -104,13 +115,16 @@ impl ComputedStyle {
             grid_template_columns: String::new(),
             grid_template_rows: String::new(),
             grid_template_areas: String::new(),
+            grid_auto_columns: "auto".into(),
+            grid_auto_rows: "auto".into(),
+            grid_auto_flow: Default::default(),
             grid_column_gap: Length::Px(0.0),
             grid_row_gap: Length::Px(0.0),
             grid_area_name: None,
-            grid_column_start: None,
-            grid_column_end: None,
-            grid_row_start: None,
-            grid_row_end: None,
+            grid_column_start: grid_line::GridLine::Auto,
+            grid_column_end: grid_line::GridLine::Auto,
+            grid_row_start: grid_line::GridLine::Auto,
+            grid_row_end: grid_line::GridLine::Auto,
             custom_properties: Arc::new(HashMap::new()),
         }
     }
@@ -143,6 +157,8 @@ impl ComputedStyle {
             style.list_style_type = parent.list_style_type;
             style.visibility = parent.visibility;
             style.pointer_events = parent.pointer_events;
+            style.scrollbar_color = parent.scrollbar_color;
+            style.accent_color = parent.accent_color.inherited(parent.color);
             style.custom_properties = Arc::clone(&parent.custom_properties);
         }
         style

@@ -60,8 +60,16 @@ fn geometry_stacking_hit_resources_and_other_paint_changes_fail_closed() {
         |style| style.visibility = false,
         |style| style.pointer_events = false,
         |style| style.overflow_hidden = true,
-        |style| style.background_image = Some("https://example.test/image".into()),
-        |style| style.mask_image = Some("https://example.test/mask".into()),
+        |style| {
+            style.background_image = crate::engine::css::images::BackgroundImages(vec![
+                crate::engine::css::images::ImageSource::Url("https://example.test/image".into()),
+            ])
+        },
+        |style| {
+            style.mask_image = crate::engine::css::images::BackgroundImages(vec![
+                crate::engine::css::images::ImageSource::Url("https://example.test/mask".into()),
+            ])
+        },
         |style| style.border_radius = Length::Px(2.0),
         |style| style.border_colors[0] = Some(Color::WHITE),
         |style| style.scroll_margin.top = Length::Px(5.0),

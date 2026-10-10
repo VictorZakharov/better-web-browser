@@ -39,7 +39,7 @@
         return { serialized, channels: [Number(red), Number(green), Number(blue), Number(alpha)] };
     };
 
-    const stateForCanvas = (canvas, forceReset = false) => {
+    const stateForCanvas = (canvas, forceReset = false, snapshotPixels = true) => {
         const [width, height] = canvasOwnedDimensions(canvas);
         let state = canvasPrivateWeakGet(canvasStates, canvas);
         if (!state) {
@@ -63,7 +63,7 @@
             else if (state.context) resetCanvasDrawingState(state.context);
             if (state.mode === '2d') canvasInitializeOutputBitmap(state.context, state.pixels);
         }
-        if (state.mode === 'webgl') synchronizeWebGlCanvas(state);
+        if (snapshotPixels && state.mode === 'webgl') synchronizeWebGlCanvas(state);
         return state;
     };
 

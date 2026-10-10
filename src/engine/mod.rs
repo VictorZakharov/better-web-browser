@@ -20,9 +20,9 @@ pub(crate) use css::media::MediaEnvironment;
 pub use display_list::DisplayListDamage;
 pub use font::WebFont;
 pub use layout::{
-    ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, LayoutOutput, PositionedGlyph,
-    RectF, SelectOption, ShapedText, TextMeasurer, layout_geometry_with_style_viewport,
-    layout_page, layout_page_with_style_viewport,
+    CheckableState, ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, LayoutOutput,
+    PositionedGlyph, RectF, SelectOption, ShapedText, TextMeasurer,
+    layout_geometry_with_style_viewport, layout_page, layout_page_with_style_viewport,
 };
 pub use page::{DecodedImage, Page, PageResource};
 pub use script::network::{ScriptDatabaseAction, ScriptWebSocketAction};

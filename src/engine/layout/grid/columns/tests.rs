@@ -63,3 +63,48 @@ fn fixed_minimum_freezes_before_redistributing_the_flex_fraction() {
     assert_eq!(article.width, 300.0);
     assert_eq!(aside.width, 100.0);
 }
+
+#[test]
+fn explicit_zero_minimum_keeps_overflowing_nested_flex_inside_fractional_tracks() {
+    let (article, aside) = bounds(
+        "<style>*{box-sizing:border-box}body{margin:0}main{display:grid;width:600px;grid-template-columns:2fr 1fr}article,aside{min-width:0;padding:0 20px}aside{display:flex;flex-direction:column}section{width:100%}span{display:block;width:1000px}</style><main><article><span>Wide</span></article><aside><section><span>Wide</span></section></aside></main>",
+    );
+    assert_eq!(article.width, 400.0);
+    assert_eq!(aside.x, 400.0);
+    assert_eq!(aside.width, 200.0);
+    assert_eq!(aside.right(), 600.0);
+}
+
+#[test]
+fn scrollable_auto_minimum_does_not_force_fractional_tracks_to_min_content() {
+    let (article, aside) = bounds(
+        "<style>body{margin:0}main{display:grid;width:400px;grid-template-columns:1fr 1fr}article{overflow:hidden}aside{min-width:0}span{display:block;width:800px}</style><main><article><span>Wide</span></article><aside>Rail</aside></main>",
+    );
+    assert_eq!(article.width, 200.0);
+    assert_eq!(aside.width, 200.0);
+    assert_eq!(aside.right(), 400.0);
+}
+
+#[test]
+fn explicit_minimum_freezes_fraction_without_erasing_min_content_tracks() {
+    let (article, aside) = bounds(
+        "<style>body{margin:0}main{display:grid;width:400px;grid-template-columns:1fr 1fr}article{min-width:250px}aside{min-width:0}</style><main><article>Content</article><aside>Rail</aside></main>",
+    );
+    assert_eq!(article.width, 250.0);
+    assert_eq!(aside.width, 150.0);
+    let (article, aside) = bounds(
+        "<style>body{margin:0}main{display:grid;width:400px;grid-template-columns:min-content 1fr}article{min-width:0}span{display:block;width:300px}</style><main><article><span>Wide</span></article><aside>Rail</aside></main>",
+    );
+    assert_eq!(article.width, 300.0);
+    assert_eq!(aside.width, 100.0);
+}
+
+#[test]
+fn cyclic_percentage_minimum_uses_grid_area_not_whole_container() {
+    let (article, aside) = bounds(
+        "<style>body{margin:0}main{display:grid;width:400px;grid-template-columns:1fr 1fr}article{min-width:75%}aside{min-width:0}</style><main><article>Content</article><aside>Rail</aside></main>",
+    );
+    assert_eq!(article.width, 200.0);
+    assert_eq!(aside.x, 200.0);
+    assert_eq!(aside.width, 200.0);
+}

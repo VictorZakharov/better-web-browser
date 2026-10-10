@@ -22,7 +22,9 @@ mod buffer_upload;
 mod buffers;
 mod command_batch;
 pub(crate) mod numeric_packet;
-pub(crate) use command_batch::{MAX_NUMERIC_VALUES, NumericCommand};
+pub(crate) use command_batch::{
+    MAX_NUMERIC_VALUES, MAX_UNIFORM_FLOATS, NumericCommand, large_float_uniform,
+};
 #[cfg(test)]
 mod canvas_snapshot_tests;
 #[cfg(test)]

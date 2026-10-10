@@ -51,12 +51,20 @@ mod webgl2_uniform_bindings_tests;
 mod webgl2_view_transform_tests;
 #[cfg(all(test, windows))]
 mod webgl_argument_plan_tests;
+#[cfg(test)]
+mod webgl_bitmap_query_tests;
 #[cfg(all(test, windows))]
 mod webgl_buffer_admission_tests;
 #[cfg(all(test, windows))]
 mod webgl_direct_uniform_tests;
 #[cfg(all(test, windows))]
+mod webgl_image_row_tests;
+#[cfg(all(test, windows))]
+mod webgl_large_uniform_tests;
+#[cfg(all(test, windows))]
 mod webgl_numeric_command_tests;
+#[cfg(test)]
+mod webgl_numeric_detachment_tests;
 #[cfg(all(test, windows))]
 mod webgl_owned_copy_tests;
 #[cfg(all(test, windows))]
@@ -65,6 +73,8 @@ mod webgl_owned_typed_copy_tests;
 mod webgl_packet_admission_tests;
 #[cfg(all(test, windows))]
 mod webgl_packet_order_tests;
+#[cfg(test)]
+mod webgl_queued_upload_tests;
 #[cfg(all(test, windows))]
 mod webgl_readback_pixel_tests;
 #[cfg(all(test, windows))]
@@ -207,11 +217,12 @@ impl Context {
         // This is a diagnostic selection, not proof that getters cannot run
         // author code: every call still has its ordinary execution watchdog.
         // Uncaptured replacements remain part of source sampling.
-        let sample = captured.is_none()
+        let sample = (captured.is_none()
             || !matches!(
                 name,
                 "__setCurrentScript" | "__setHistoryMetrics" | "__takeCanvasPresentation"
-            );
+            ))
+            && self.agent.borrow().samples_global(name);
         self.agent
             .borrow_mut()
             .run_with_sampling(sample, |isolate| {

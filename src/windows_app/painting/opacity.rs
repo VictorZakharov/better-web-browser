@@ -115,7 +115,7 @@ impl OpacityLayer {
     }
 }
 
-fn intersection(left: Rect, right: Rect) -> Option<Rect> {
+pub(super) fn intersection(left: Rect, right: Rect) -> Option<Rect> {
     let rect = Rect {
         left: left.left.max(right.left),
         top: left.top.max(right.top),

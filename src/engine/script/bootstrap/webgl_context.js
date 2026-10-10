@@ -116,8 +116,9 @@
     class WebGLRenderingContext {
         constructor(token) { if (token !== webGlToken) throw new TypeError('Illegal constructor'); }
         get canvas() { return webGlState(this).canvas; }
-        get drawingBufferWidth() { const s = webGlState(this); stateForCanvas(s.canvas); return s.lost ? 0 : (webGlCall(this, 'drawingBufferSize')?.[0] ?? 0); }
-        get drawingBufferHeight() { const s = webGlState(this); stateForCanvas(s.canvas); return s.lost ? 0 : (webGlCall(this, 'drawingBufferSize')?.[1] ?? 0); }
+        // Extent queries apply pending attribute resizes but never export pixels.
+        get drawingBufferWidth() { const s = webGlState(this); stateForCanvas(s.canvas, false, false); return s.lost ? 0 : (webGlCall(this, 'drawingBufferSize')?.[0] ?? 0); }
+        get drawingBufferHeight() { const s = webGlState(this); stateForCanvas(s.canvas, false, false); return s.lost ? 0 : (webGlCall(this, 'drawingBufferSize')?.[1] ?? 0); }
         getContextAttributes() { const s = webGlState(this); return s.lost ? null : {...s.attributes}; }
         isContextLost() { return webGlState(this).lost; }
         getSupportedExtensions() {
@@ -172,8 +173,11 @@
         flushWebGlCommands();
         if (native.lost) return;
         const snapshot = host('webglSnapshot', native.id);
-        if (!snapshot || snapshot[2].length !== snapshot[0] * snapshot[1] * 4) return;
-        const pixels = new Uint8ClampedArray(snapshot[2]);
+        if (!snapshot || canvasPrivateCount(snapshot[2]) !== snapshot[0] * snapshot[1] * 4) return;
+        // The host transfers a fresh owned buffer, never an author view. Rebrand
+        // those same bytes instead of copying the entire bitmap again. Captured
+        // intrinsics prevent a replaced constructor/getter from seeing pixels.
+        const pixels = canvasPrivateView(snapshot[2], 0, canvasPrivateCount(snapshot[2]));
         // The native owner returns straight RGBA for bitmap consumers. Raw GL
         // readPixels still sees the original drawing buffer representation.
         // Native allocation can be smaller than the unchanged canvas content

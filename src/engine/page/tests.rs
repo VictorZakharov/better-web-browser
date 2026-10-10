@@ -273,7 +273,8 @@ fn decodes_embedded_css_mask_images_without_networking() {
         .style(800.0)
         .get(&page.dom.elements_named("span").next().unwrap())
         .mask_image
-        .clone()
+        .as_ref()
+        .cloned()
         .unwrap();
     let image = &page.images[&mask];
     assert_eq!((image.width, image.height), (10, 10));

@@ -75,11 +75,23 @@ fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), Protoc
     match item {
         DisplayItem::NodeBoundary { .. }
         | DisplayItem::PaintBoundary { .. }
+        | DisplayItem::CssGradient { .. }
+        | DisplayItem::CssBoxShadow { .. }
+        | DisplayItem::BeginCssMask { .. }
         | DisplayItem::EmbeddedFrame { .. } => {
             return Err(ProtocolError::InvalidPayload("renderer-local paint anchor"));
         }
         DisplayItem::BeginClip { bounds } => {
             writer.u8(9);
+            encode_rect(writer, *bounds);
+        }
+        DisplayItem::BeginMask { bounds, url } => {
+            writer.u8(11);
+            encode_rect(writer, *bounds);
+            writer.string(url)?;
+        }
+        DisplayItem::EndMask { bounds } => {
+            writer.u8(12);
             encode_rect(writer, *bounds);
         }
         DisplayItem::EndClip { bounds } => {
@@ -194,6 +206,13 @@ fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), Protoc
 
 fn decode_item(reader: &mut WireReader<'_>) -> Result<DisplayItem, ProtocolError> {
     match reader.u8()? {
+        11 => Ok(DisplayItem::BeginMask {
+            bounds: decode_rect(reader)?,
+            url: reader.string(MAX_URL_BYTES)?,
+        }),
+        12 => Ok(DisplayItem::EndMask {
+            bounds: decode_rect(reader)?,
+        }),
         9 => Ok(DisplayItem::BeginClip {
             bounds: decode_rect(reader)?,
         }),

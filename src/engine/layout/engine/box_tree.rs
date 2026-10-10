@@ -6,6 +6,7 @@ pub(in crate::engine::layout) struct BoxTree<'a> {
     base: &'a StyleSet,
     children: HashMap<NodeId, Vec<NodeRef>>,
     anonymous: HashMap<NodeId, ComputedStyle>,
+    zoomed: HashMap<NodeId, ComputedStyle>,
     nodes: HashMap<NodeId, NodeRef>,
     parents: HashMap<NodeId, NodeRef>,
 }
@@ -23,9 +24,11 @@ impl<'a> BoxTree<'a> {
             base,
             children: HashMap::new(),
             anonymous: HashMap::new(),
+            zoomed: HashMap::new(),
             nodes: HashMap::new(),
             parents: HashMap::new(),
         };
+        tree.compute_zoomed_styles(root);
         // Iterative postorder keeps malformed/deep documents off the native stack.
         let mut stack = vec![(root.clone(), false)];
         while let Some((node, visited)) = stack.pop() {
@@ -34,12 +37,13 @@ impl<'a> BoxTree<'a> {
             }
             if visited {
                 let children = tree.children(&node);
-                let normalized = tree.normalize(&node, children.clone());
-                if children
-                    .iter()
-                    .map(|n| n.id())
-                    .ne(normalized.iter().map(|n| n.id()))
-                {
+                let had_children = !children.is_empty();
+                let normalized = tree.normalize(&node, children);
+                if had_children || !normalized.is_empty() {
+                    // The box tree owns one immutable layout pass. Reuse ordinary
+                    // composed/pseudo/contents children too, not just table fixup.
+                    // Empty leaves keep their allocation-free fallback; pruned
+                    // nonempty lists must retain an explicit empty cache entry.
                     tree.children.insert(node.id(), normalized);
                 }
             } else {
@@ -54,7 +58,34 @@ impl<'a> BoxTree<'a> {
     pub fn get(&self, node: &NodeRef) -> &ComputedStyle {
         self.anonymous
             .get(&node.id())
+            .or_else(|| self.zoomed.get(&node.id()))
             .unwrap_or_else(|| self.base.get(node))
+    }
+
+    fn compute_zoomed_styles(&mut self, root: &NodeRef) {
+        // A fullscreen/top-layer root can retain zoom from ancestors outside its box tree.
+        let ancestor_scale =
+            std::iter::successors(Node::composed_parent(root), Node::composed_parent)
+                .fold(1.0, |scale, node| {
+                    crate::engine::css::zoom::combine(scale, self.base.get(&node).zoom)
+                });
+        let mut pending = vec![(root.clone(), ancestor_scale)];
+        while let Some((node, parent_scale)) = pending.pop() {
+            let computed = self.base.get(&node);
+            if computed.display == Display::None {
+                continue;
+            }
+            let scale = crate::engine::css::zoom::combine(parent_scale, computed.zoom);
+            if scale != 1.0 {
+                self.zoomed
+                    .insert(node.id(), computed.zoomed_used_style(scale));
+            }
+            pending.extend(
+                raw_children(&node, self.base)
+                    .into_iter()
+                    .map(|child| (child, scale)),
+            );
+        }
     }
 
     pub fn node(&self, id: NodeId) -> Option<NodeRef> {
@@ -212,6 +243,9 @@ impl<'a> BoxTree<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
 
 pub(super) fn raw_children(node: &NodeRef, styles: &StyleSet) -> Vec<NodeRef> {
     let mut children = Vec::new();

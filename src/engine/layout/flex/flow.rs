@@ -3,86 +3,6 @@
 use super::super::*;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
-    pub(super) fn layout_flex_column(
-        &mut self,
-        items: &[FlexItem],
-        x: f32,
-        mut y: f32,
-        width: f32,
-        containing_height: Option<f32>,
-        style: &ComputedStyle,
-    ) -> f32 {
-        let original_y = y;
-        let gap = style
-            .grid_row_gap
-            .resolve(width, style.font_size)
-            .unwrap_or(0.0)
-            .max(0.0);
-        let reverse = style.flex_direction.is_reverse();
-        let ordered = if reverse {
-            items.iter().rev().collect::<Vec<_>>()
-        } else {
-            items.iter().collect::<Vec<_>>()
-        };
-        let output_start = self.output.items.len();
-        for (index, item) in ordered.iter().enumerate() {
-            let item_width = item
-                .node
-                .as_ref()
-                .filter(|node| self.styles.get(node).width != Length::Auto)
-                .map_or(width, |_| item.basis.min(width).max(1.0));
-            let offset_x = match style.align_items {
-                AlignItems::Center => (width - item_width) / 2.0,
-                AlignItems::End => width - item_width,
-                AlignItems::Stretch | AlignItems::Start => 0.0,
-            };
-            y = self
-                .layout_flex_item(
-                    item,
-                    x + offset_x,
-                    y,
-                    item_width,
-                    width,
-                    containing_height,
-                    style,
-                )
-                .bottom;
-            if index + 1 < ordered.len() {
-                y += gap;
-            }
-        }
-        if reverse {
-            let natural_height = y - original_y;
-            let offset_y = containing_height
-                .map(|height| (height - natural_height).max(0.0))
-                .unwrap_or(0.0);
-            if offset_y > 0.0 {
-                let output_end = self.output.items.len();
-                super::translate::translate_display_items(
-                    &mut self.output.items[output_start..output_end],
-                    0.0,
-                    offset_y,
-                );
-                for item in ordered {
-                    if let Some(node) = item.node.as_ref() {
-                        // Slotted content moves with its containing flex item even though its
-                        // light-DOM parent lies outside the item's shadow subtree.
-                        for descendant in Node::composed_descendants(node) {
-                            if let Some(scroll) = self.output.scroll_boxes.get_mut(&descendant.id())
-                            {
-                                scroll.port.y += offset_y;
-                            }
-                            if let Some(rect) = self.output.node_bounds.get_mut(&descendant.id()) {
-                                rect.y += offset_y;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        y
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub(super) fn layout_flex_rows(
         &mut self,
@@ -249,6 +169,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 width,
                 containing_height,
                 style,
+                None,
             );
             let output_end = self.output.items.len();
             let item_height = (metrics.bottom - y).max(0.0);
@@ -267,10 +188,25 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         // A minimum is not a definite percentage-height basis for those items.
         let cross_size = cross.clamp(containing_height.unwrap_or(row_height));
         for (start, end, item_height, node) in painted {
-            let offset_y = match style.align_items {
-                AlignItems::Center => (cross_size - item_height) / 2.0,
-                AlignItems::End => cross_size - item_height,
-                AlignItems::Stretch | AlignItems::Start => 0.0,
+            let item_style = node.as_ref().map(|node| self.styles.get(node));
+            let alignment = item_style
+                .and_then(|s| s.align_self)
+                .unwrap_or(style.align_items);
+            let auto_top = item_style.is_some_and(|s| s.margin.top == Length::Auto);
+            let auto_bottom = item_style.is_some_and(|s| s.margin.bottom == Length::Auto);
+            let offset_y = if auto_top || auto_bottom {
+                let free = (cross_size - item_height).max(0.0);
+                if auto_top {
+                    free / (auto_top as u8 + auto_bottom as u8) as f32
+                } else {
+                    0.0
+                }
+            } else {
+                match alignment {
+                    AlignItems::Center => (cross_size - item_height) / 2.0,
+                    AlignItems::End => cross_size - item_height,
+                    AlignItems::Stretch | AlignItems::Start => 0.0,
+                }
             };
             if offset_y != 0.0 {
                 self.translate_layout_subtree(node.as_ref(), start, end, 0.0, offset_y);

@@ -13,6 +13,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         percentage_basis: f32,
         containing_height: Option<f32>,
         container_style: &ComputedStyle,
+        used_content_height: Option<f32>,
     ) -> BlockMetrics {
         let Some(node) = item.node.as_ref() else {
             // Anonymous flex runs are single inline flushes with an ephemeral
@@ -35,7 +36,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let stretched_sizes = containing_height
             .filter(|_| {
                 container_style.flex_direction.is_row()
-                    && container_style.align_items == AlignItems::Stretch
+                    && original_style
+                        .align_self
+                        .unwrap_or(container_style.align_items)
+                        == AlignItems::Stretch
                     && original_style.height == Length::Auto
                     && original_style.margin.top != Length::Auto
                     && original_style.margin.bottom != Length::Auto
@@ -68,7 +72,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     outer: width,
                     percentage_basis,
                 }),
-                stretched_sizes.map(|(_, content)| content),
+                used_content_height.or_else(|| stretched_sizes.map(|(_, content)| content)),
             );
         }
 
@@ -84,7 +88,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         } else {
             (border_box_width - border.horizontal() - padding.horizontal()).max(1.0)
         });
-        if let Some((border_box, content)) = stretched_sizes {
+        if let Some((border_box, content)) = used_content_height
+            .map(|content| (content + border.vertical() + padding.vertical(), content))
+            .or(stretched_sizes)
+        {
             style.height = Length::Px(if style.box_sizing == BoxSizing::BorderBox {
                 border_box
             } else {

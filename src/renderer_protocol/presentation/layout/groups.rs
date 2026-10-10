@@ -6,6 +6,7 @@ use super::*;
 enum GroupKind {
     Clip,
     Opacity,
+    Mask,
 }
 
 pub(super) fn validate_display_groups(items: &[DisplayItem]) -> Result<(), ProtocolError> {
@@ -21,6 +22,8 @@ pub(super) fn validate_display_groups(items: &[DisplayItem]) -> Result<(), Proto
                 Some((true, GroupKind::Opacity))
             }
             DisplayItem::EndOpacity { .. } => Some((false, GroupKind::Opacity)),
+            DisplayItem::BeginMask { .. } => Some((true, GroupKind::Mask)),
+            DisplayItem::EndMask { .. } => Some((false, GroupKind::Mask)),
             _ => None,
         };
         let Some((begin, kind)) = action else {
@@ -80,6 +83,25 @@ mod tests {
             DisplayItem::EndClip { bounds: bounds() },
             DisplayItem::EndOpacity { bounds: bounds() },
         ];
+        assert!(validate_display_groups(&items).is_err());
+    }
+    #[test]
+    fn masks_cannot_cross_clips_or_exceed_the_group_depth_budget() {
+        let mask = DisplayItem::BeginMask {
+            bounds: bounds(),
+            url: "mask".into(),
+        };
+        assert!(
+            validate_display_groups(&[
+                mask.clone(),
+                DisplayItem::BeginClip { bounds: bounds() },
+                DisplayItem::EndMask { bounds: bounds() },
+                DisplayItem::EndClip { bounds: bounds() }
+            ])
+            .is_err()
+        );
+        let mut items = vec![mask; 257];
+        items.extend(vec![DisplayItem::EndMask { bounds: bounds() }; 257]);
         assert!(validate_display_groups(&items).is_err());
     }
 }

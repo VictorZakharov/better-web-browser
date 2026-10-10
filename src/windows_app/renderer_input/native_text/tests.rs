@@ -3,6 +3,7 @@ use better_web_browser::engine::css::Color;
 
 fn spec() -> better_web_browser::engine::ControlSpec {
     better_web_browser::engine::ControlSpec {
+        checkable: None,
         authored_content: false,
         node_id: NodeId::from_wire((1_u128 << 64) | 1).unwrap(),
         rect: Default::default(),

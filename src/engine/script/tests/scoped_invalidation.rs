@@ -1,5 +1,6 @@
 use super::*;
 use crate::engine::{FontSpec, Page, TextMeasurer, layout_geometry_with_style_viewport};
+mod local_content;
 
 struct Measurer;
 impl TextMeasurer for Measurer {

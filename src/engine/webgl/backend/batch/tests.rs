@@ -22,6 +22,44 @@ fn error(backend: &mut BackendContexts, id: u32) -> Value {
 }
 
 #[test]
+fn inline_packet_records_do_not_leak_scratch_arguments_between_contexts() {
+    session::run_native_test(|| {
+        let mut backend = BackendContexts::default();
+        let first = backend.create(1, 1, "{}").unwrap();
+        let second = backend.create(1, 1, "{}").unwrap();
+        let packet = |id, op, i: &[i64], f: &[f64]| {
+            (
+                id,
+                Entry::Numeric(
+                    NumericCommand::packet(
+                        op,
+                        i.iter().copied().collect(),
+                        f.iter().copied().collect(),
+                    )
+                    .unwrap(),
+                ),
+            )
+        };
+        assert!(
+            backend
+                .execute_batch(vec![
+                    packet(first, "clearColor", &[], &[1., 0., 0., 1.]),
+                    packet(second, "clearColor", &[], &[0., 1., 0., 1.]),
+                    packet(first, "clearColor", &[], &[0., 0., 1., 1.]),
+                    packet(first, "clear", &[gl::COLOR_BUFFER_BIT as i64], &[]),
+                    packet(first, "bridgeError", &[gl::INVALID_ENUM as i64], &[]),
+                    packet(second, "clear", &[gl::COLOR_BUFFER_BIT as i64], &[]),
+                ])
+                .is_empty()
+        );
+        assert_eq!(pixel(&mut backend, first), [0, 0, 255, 255]);
+        assert_eq!(pixel(&mut backend, second), [0, 255, 0, 255]);
+        assert_eq!(error(&mut backend, first), json!(gl::INVALID_ENUM));
+        assert_eq!(error(&mut backend, second), json!(gl::NO_ERROR));
+    });
+}
+
+#[test]
 fn contiguous_numeric_setters_activate_once_without_deduplicating_commands() {
     session::run_native_test(|| {
         let mut backend = BackendContexts::default();
@@ -160,6 +198,30 @@ fn missing_and_poisoned_contexts_retire_only_their_own_remaining_commands() {
         assert!(!backend.contexts.contains_key(&1));
         assert_eq!(pixel(&mut backend, 2), [0, 255, 0, 255]);
         assert_eq!(error(&mut backend, 2), json!(0));
+    });
+}
+
+#[test]
+fn owned_upload_keeps_ordinary_activation_and_ends_the_numeric_binding_proof() {
+    session::run_native_test(|| {
+        let mut backend = BackendContexts::default();
+        backend.contexts.insert(1, version_two());
+        backend.contexts.insert(2, version_two());
+        assert!(
+            backend
+                .execute_batch(vec![
+                    color(1, 1., 0.),
+                    (
+                        2,
+                        Entry::Upload(r#"{"op":"bufferSubData","i":[34962,0]}"#.into(), vec![1; 4])
+                    ),
+                    clear(1),
+                ])
+                .is_empty()
+        );
+        assert_eq!(backend.activation_checks, 3);
+        assert_eq!(pixel(&mut backend, 1), [255, 0, 0, 255]);
+        assert_eq!(error(&mut backend, 2), json!(gl::INVALID_OPERATION));
     });
 }
 

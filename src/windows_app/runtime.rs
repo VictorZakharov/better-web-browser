@@ -207,6 +207,32 @@ pub(super) unsafe fn flush_due_for_message(app: &BrowserApplication, message_win
     }
 }
 
+pub(super) unsafe fn next_window_deadline(app: &BrowserApplication) -> Option<Instant> {
+    app.window_handles()
+        .into_iter()
+        .filter_map(|window| {
+            let state = &*app.state_pointer(window)?;
+            if state.processing_background_tab || state.renderer_clock_pending {
+                return None;
+            }
+            let owner = state
+                .navigation
+                .active_document()
+                .map(|document| (state.tabs.active_id(), document));
+            state.runtime_wakeup.deadline(owner)
+        })
+        .min()
+}
+
+pub(super) unsafe fn flush_due_windows(app: &BrowserApplication) {
+    // Snapshot HWNDs, not state pointers: servicing one may close/replace another.
+    for window in app.window_handles() {
+        if let Some(state) = app.state_pointer(window) {
+            (*state).service_due_script_runtime();
+        }
+    }
+}
+
 fn renderer_wakeup_deadline(now: Instant, delay: Duration) -> Instant {
     // Bound the native opportunity before arithmetic; preserve the renderer's
     // logical timer separately so this bridge never executes a future task early.

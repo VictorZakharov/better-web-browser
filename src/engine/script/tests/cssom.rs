@@ -332,12 +332,14 @@ fn css_supports_uses_the_same_conservative_capability_table_as_feature_queries()
             check('declaration-overload', CSS.supports('display', 'grid'));
             check('condition-overload', CSS.supports('(display: grid) and (opacity: 25%)'));
             check('custom-property', CSS.supports('--theme-accent', 'anything'));
-            check('unsupported-property', !CSS.supports('box-shadow', '0 0 1px black'));
+            check('shadow-paint', CSS.supports('box-shadow', '0 0 1px black'));
+            check('unsupported-property', !CSS.supports('backdrop-filter', 'blur(2px)'));
             check('sticky-position', CSS.supports('position', 'sticky'));
             check('unsupported-value', !CSS.supports('position', 'not-a-position'));
             check('variable-reference', CSS.supports('color', 'var(--test, red)'));
             check('nested-variable-reference', CSS.supports('width', 'calc(var(--space, 1px) * 2)'));
-            check('variable-unsupported-property', !CSS.supports('box-shadow', 'var(--shadow)'));
+            check('variable-shadow', CSS.supports('box-shadow', 'var(--shadow)'));
+            check('variable-unsupported-property', !CSS.supports('backdrop-filter', 'var(--filter)'));
             check('malformed-variable-reference', !CSS.supports('color', 'var(color, red)'));
             let missingArgument = false;
             try { CSS.supports(); } catch (error) { missingArgument = error instanceof TypeError; }

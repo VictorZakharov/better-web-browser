@@ -64,7 +64,7 @@ fn icon_only_buttons_use_mask_descendants_without_accessibility_text() {
     );
     assert!(
         output.items.iter().any(|item| matches!(item,
-            DisplayItem::Image { url, tint: Some(_), .. } if url.starts_with("data:")
+            DisplayItem::BeginCssMask { layers, .. } if layers.iter().any(|layer| matches!(layer, DisplayItem::BackgroundImage { url, .. } if url.starts_with("data:")))
         )),
         "the authored mask descendant must paint"
     );

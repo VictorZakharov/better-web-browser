@@ -74,7 +74,10 @@ fn feature_queries_accept_valid_variable_references_without_resolving_them() {
         "@supports (width: calc(var(--space, var(--fallback)) * 2))"
     ));
     assert!(supports_matches("@supports (color: var(--empty,))"));
-    assert!(!supports_matches("@supports (box-shadow: var(--shadow))"));
+    assert!(supports_matches("@supports (box-shadow: var(--shadow))"));
+    assert!(!supports_matches(
+        "@supports (backdrop-filter: var(--filter))"
+    ));
     assert!(!supports_matches("@supports (color: var(color, red))"));
     assert!(!supports_matches("@supports (color: var())"));
 }

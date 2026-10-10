@@ -56,6 +56,6 @@
                 [state.inputWidth, state.inputHeight] = canvasOwnedDimensions(canvas);
                 return;
             }
-            stateForCanvas(canvas, true);
+            stateForCanvas(canvas, true, false);
         };
     }

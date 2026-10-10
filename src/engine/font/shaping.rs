@@ -2,6 +2,7 @@
 
 mod catalog;
 mod geometry;
+mod presentation;
 mod shape;
 
 pub(crate) use catalog::{FontCatalog, FontInstanceKey, SelectedFont};

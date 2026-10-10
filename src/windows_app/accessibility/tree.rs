@@ -6,7 +6,9 @@ use super::document::AccessibilityDocument;
 use crate::windows_app::tab_state::TabFocus;
 use crate::windows_app::*;
 use accesskit::{Action, Node, NodeId, Rect as AccessRect, Role, Tree, TreeId, TreeUpdate};
-use better_web_browser::renderer_protocol::{DocumentNodeId, SemanticNode, SemanticRole};
+use better_web_browser::renderer_protocol::{
+    DocumentNodeId, SemanticChecked, SemanticNode, SemanticRole,
+};
 
 pub(super) const WINDOW_ID: NodeId = NodeId(1);
 pub(super) const TAB_LIST_ID: NodeId = NodeId(2);
@@ -141,6 +143,13 @@ unsafe fn document_node(
     if semantic.read_only {
         node.set_read_only();
     }
+    if let Some(checked) = semantic.checked {
+        node.set_toggled(match checked {
+            SemanticChecked::False => accesskit::Toggled::False,
+            SemanticChecked::True => accesskit::Toggled::True,
+            SemanticChecked::Mixed => accesskit::Toggled::Mixed,
+        });
+    }
     if semantic.actions.focus {
         node.add_action(Action::Focus);
     }
@@ -249,6 +258,8 @@ fn accesskit_role(role: SemanticRole) -> Role {
         SemanticRole::Footer => Role::Footer,
         SemanticRole::Article => Role::Article,
         SemanticRole::Section => Role::Section,
+        SemanticRole::Checkbox => Role::CheckBox,
+        SemanticRole::Radio => Role::RadioButton,
     }
 }
 

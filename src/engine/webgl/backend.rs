@@ -87,7 +87,7 @@ impl BackendContexts {
         command: Command,
         bytes: Option<std::borrow::Cow<'_, [u8]>>,
     ) -> Value {
-        self.execute_command_bound(id, command, bytes, false)
+        self.execute_command_bound(id, &command, bytes, false)
     }
 
     // Only the synchronous numeric batch coordinator may supply a prior-binding
@@ -95,7 +95,7 @@ impl BackendContexts {
     fn execute_command_bound(
         &mut self,
         id: u32,
-        command: Command,
+        command: &Command,
         bytes: Option<std::borrow::Cow<'_, [u8]>>,
         already_current: bool,
     ) -> Value {
@@ -123,7 +123,7 @@ impl BackendContexts {
             );
             return json!({"lost":true});
         }
-        let result = context.dispatch_data(&command, bytes);
+        let result = context.dispatch_data(command, bytes);
         if matches!(command.op.as_str(), "compileShader" | "linkProgram")
             && let Err(error) = context.progress_program_links(1)
         {

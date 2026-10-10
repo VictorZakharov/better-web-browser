@@ -5,6 +5,8 @@ use crate::limits::{
 };
 use crate::renderer_protocol::wire::{WireReader, WireWriter};
 use std::collections::HashSet;
+#[cfg(test)]
+mod checkable_tests;
 
 pub(super) fn encode(
     writer: &mut WireWriter,
@@ -37,6 +39,14 @@ pub(super) fn encode(
         if let Some(selection) = node.selection {
             writer.u32(selection.start);
             writer.u32(selection.end);
+        }
+        // Only the appended checkable roles carry this byte; older role encodings stay stable.
+        if matches!(node.role, SemanticRole::Checkbox | SemanticRole::Radio) {
+            writer.u8(match node.checked.unwrap() {
+                SemanticChecked::False => 0,
+                SemanticChecked::True => 1,
+                SemanticChecked::Mixed => 2,
+            });
         }
     }
     writer.u32(update.added.len() as u32);
@@ -89,6 +99,16 @@ pub(super) fn decode(reader: &mut WireReader<'_>) -> Result<AccessibilityUpdate,
                 })
             })
             .transpose()?;
+        let checked = if matches!(role, SemanticRole::Checkbox | SemanticRole::Radio) {
+            Some(match reader.u8()? {
+                0 => SemanticChecked::False,
+                1 => SemanticChecked::True,
+                2 if role == SemanticRole::Checkbox => SemanticChecked::Mixed,
+                _ => return Err(ProtocolError::InvalidPayload("accessibility checked state")),
+            })
+        } else {
+            None
+        };
         nodes.push(SemanticNode {
             id,
             role,
@@ -102,6 +122,7 @@ pub(super) fn decode(reader: &mut WireReader<'_>) -> Result<AccessibilityUpdate,
             read_only,
             actions,
             selection,
+            checked,
         });
     }
     let added_count = bounded_count(
@@ -146,6 +167,12 @@ fn validate_update(update: &AccessibilityUpdate) -> Result<(), ProtocolError> {
     let mut edge_count = 0_usize;
     let mut text_bytes = 0_usize;
     for node in &update.nodes {
+        if matches!(node.role, SemanticRole::Checkbox | SemanticRole::Radio)
+            != node.checked.is_some()
+            || (node.role == SemanticRole::Radio && node.checked == Some(SemanticChecked::Mixed))
+        {
+            return Err(ProtocolError::InvalidPayload("accessibility checked state"));
+        }
         if !node_ids.insert(node.id)
             || node.level == Some(0)
             || node
@@ -286,6 +313,8 @@ fn decode_role(tag: u8) -> Result<SemanticRole, ProtocolError> {
         SemanticRole::Footer,
         SemanticRole::Article,
         SemanticRole::Section,
+        SemanticRole::Checkbox,
+        SemanticRole::Radio,
     ];
     tag.checked_sub(1)
         .and_then(|index| ROLES.get(index as usize))

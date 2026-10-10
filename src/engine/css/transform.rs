@@ -1,6 +1,7 @@
 //! Parsing and resolution for the implemented 2D translation transform subset.
 
 use super::*;
+pub(crate) mod individual;
 mod interpolation;
 mod parser;
 pub(crate) use interpolation::interpolate;
@@ -16,6 +17,12 @@ struct TranslateOperation {
 }
 
 impl TransformList {
+    pub(crate) fn apply_zoom(&mut self, scale: f32) {
+        for operation in &mut self.0 {
+            operation.x = values::zoom::length(&operation.x, scale);
+            operation.y = values::zoom::length(&operation.y, scale);
+        }
+    }
     pub(super) fn resolve_root_font_units(&mut self, root_font_size: f32) {
         for operation in &mut self.0 {
             operation.x = operation.x.clone().resolve_root_font_units(root_font_size);

@@ -2,7 +2,7 @@
 //! Deterministic text measurers shared by layout regression tests.
 use super::*;
 
-pub(super) struct FixedMeasurer;
+pub(crate) struct FixedMeasurer;
 
 impl TextMeasurer for FixedMeasurer {
     fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32) {

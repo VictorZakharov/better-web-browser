@@ -132,7 +132,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
         }
         let mut scroll = ScrollBox {
-            thickness: self.page.scrollbar_thickness(),
+            thickness: style
+                .scrollbar_width
+                .thickness(self.page.scrollbar_thickness())
+                * style.effective_zoom,
             port,
             content_width: right - port.x,
             content_height: bottom - port.y,
@@ -150,6 +153,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 || (y == Overflow::Auto && bottom > port.bottom() + 0.01),
             ..Default::default()
         };
+        if scroll.thickness == 0.0 {
+            scroll.bar_x = false;
+            scroll.bar_y = false;
+        }
         (scroll.offset_x, scroll.offset_y) =
             scroll.clamp(node.scroll_offset.get().0, node.scroll_offset.get().1);
         translate::translate_display_items(
@@ -160,7 +167,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         self.output.scroll_boxes.insert(node.id(), scroll);
     }
 
-    pub(super) fn paint_scrollbars(&mut self, node: &NodeRef, _style: &ComputedStyle) {
+    pub(super) fn paint_scrollbars(&mut self, node: &NodeRef, style: &ComputedStyle) {
         if !self.emit_paint {
             return;
         }
@@ -173,12 +180,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             };
             self.output.items.push(DisplayItem::SolidRect {
                 rect: track,
-                color: Color::rgb(241, 241, 241),
+                color: style
+                    .scrollbar_color
+                    .map_or(Color::rgb(241, 241, 241), |colors| colors.1),
                 radius: 0.0,
             });
             self.output.items.push(DisplayItem::SolidRect {
                 rect: thumb,
-                color: Color::rgb(160, 160, 160),
+                color: style
+                    .scrollbar_color
+                    .map_or(Color::rgb(160, 160, 160), |colors| colors.0),
                 radius: 6.0,
             });
         }

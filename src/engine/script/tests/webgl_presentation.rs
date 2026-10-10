@@ -64,3 +64,54 @@ fn webgl_premultiplied_alpha_is_converted_once_for_canvas_paint() {
         assert_eq!(snapshots[0].pixels.as_ref().unwrap(), &[255, 0, 0, 128]);
     }
 }
+
+#[test]
+fn webgl_snapshot_view_uses_private_intrinsics_and_remains_owned_after_later_draws() {
+    let dom =
+        dom::parse_with_scripting("<canvas width=2 height=2></canvas><script></script>", true);
+    let script = dom.elements_named("script").next().unwrap();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.test/");
+    let outcome = runtime.execute_initial(&[input(&script, r#"
+        const canvas=document.querySelector('canvas');
+        const gl=canvas.getContext('webgl2',{preserveDrawingBuffer:true});
+        gl.clearColor(1,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
+        const savedConstructor=Uint8ClampedArray,typed=Object.getPrototypeOf(Uint8Array.prototype);
+        const saved=[];let snapshotLeaks=0;
+        globalThis.Uint8ClampedArray=function(){snapshotLeaks++;throw Error('private pixels leaked');};
+        for(const key of ['length','buffer','byteOffset','byteLength']){
+            const descriptor=Object.getOwnPropertyDescriptor(typed,key);
+            saved[saved.length]=[key,descriptor];
+            Object.defineProperty(typed,key,{configurable:true,get(){snapshotLeaks++;throw Error('private bitmap getter leaked');}});
+        }
+        void 0;
+    "#.into())]);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let first = runtime.take_canvas_presentation().unwrap();
+    assert_eq!(
+        first[0].pixels.as_deref().unwrap(),
+        [255, 0, 0, 255].repeat(4)
+    );
+    let outcome = runtime.execute_additional_with_loader(
+        &[input(
+            &script,
+            r#"
+        Uint8ClampedArray=savedConstructor;
+        for(const [key,descriptor] of saved)Object.defineProperty(typed,key,descriptor);
+        if(snapshotLeaks)throw Error('snapshot exposed native storage');
+        gl.clearColor(0,1,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
+    "#
+            .into(),
+        )],
+        None,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let second = runtime.take_canvas_presentation().unwrap();
+    assert_eq!(
+        second[0].pixels.as_deref().unwrap(),
+        [0, 255, 0, 255].repeat(4)
+    );
+    assert_eq!(
+        first[0].pixels.as_deref().unwrap(),
+        [255, 0, 0, 255].repeat(4)
+    );
+}

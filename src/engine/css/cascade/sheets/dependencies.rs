@@ -5,6 +5,8 @@ use super::*;
 pub(in crate::engine::css::cascade) struct NonlocalDependencies {
     any: bool,
     style_attribute: bool,
+    text_sensitive: bool,
+    graphics_attribute: bool,
 }
 
 impl NonlocalDependencies {
@@ -20,11 +22,19 @@ impl NonlocalDependencies {
         &self,
         impact: crate::engine::invalidation::InvalidationImpact,
     ) -> bool {
-        // CSS declaration writes cannot change tree membership, classes or
-        // control state. Only a relative selector inspecting the style attribute
-        // can change its :has() result from this kind of mutation. Mixed/unknown
-        // invalidations must retain the conservative whole-document refresh.
-        self.any && (!impact.is_style_only() || self.style_attribute)
+        // Evidence describes real mutation categories, never a site or selector
+        // result guess. Unknown attributes, element membership and state changes
+        // retain whole-document refresh; local writes widen for relevant selectors.
+        self.any
+            && if impact.is_style_only() {
+                self.style_attribute
+            } else if impact.is_text_only() {
+                self.text_sensitive
+            } else if impact.is_local_content_only() {
+                self.text_sensitive || self.style_attribute || self.graphics_attribute
+            } else {
+                true
+            }
     }
 
     fn include(&mut self, selector: &Selector) {
@@ -38,14 +48,32 @@ impl NonlocalDependencies {
                 continue;
             }
             for compound in selector.compounds.iter() {
+                // Text-only child replacement cannot change element membership,
+                // but can change :empty, auto directionality and control validity.
+                // Nested :is/:not/nth filters retain the relative dependency context.
+                self.text_sensitive |= compound.requires_has_slotted
+                    || !compound.directions.is_empty()
+                    || relative
+                        && (compound.requires_empty
+                            || !compound.directions.is_empty()
+                            || compound.requires_valid
+                            || compound.requires_invalid
+                            || compound.requires_in_range
+                            || compound.requires_out_of_range);
                 self.style_attribute |= relative
                     && compound
                         .attributes
                         .iter()
                         .any(|attribute| attribute.name.eq_ignore_ascii_case("style"));
+                self.graphics_attribute |= relative
+                    && compound.attributes.iter().any(|attribute| {
+                        crate::engine::invalidation::is_local_graphics_attribute(&attribute.name)
+                    });
                 // Selectors 4 §4.5 allows descendant and later-sibling dependencies.
                 // https://drafts.csswg.org/selectors/#relational
-                self.any |= !compound.has.is_empty() || compound.requires_has_slotted;
+                self.any |= !compound.has.is_empty()
+                    || compound.requires_has_slotted
+                    || !compound.directions.is_empty();
                 // Slot assignment has separate cross-tree rules. Do not infer a
                 // local refresh from the absence of an ordinary [style] selector.
                 self.style_attribute |= compound.requires_has_slotted;

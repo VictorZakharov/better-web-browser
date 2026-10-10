@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use unicode_segmentation::UnicodeSegmentation;
 
-pub(super) fn apply(atoms: &[InlineAtom]) -> Cow<'_, [InlineAtom]> {
+pub(in crate::engine::layout) fn apply(atoms: &[InlineAtom]) -> Cow<'_, [InlineAtom]> {
     if !contains_transformation(atoms) {
         return Cow::Borrowed(atoms);
     }
@@ -112,6 +112,7 @@ mod tests {
             visible: true,
             preserve_space: false,
             line_height: style.line_height,
+            normal_line_height: style.normal_line_height(),
             no_wrap: false,
         }
     }

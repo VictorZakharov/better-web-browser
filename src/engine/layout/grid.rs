@@ -1,6 +1,7 @@
 use super::*;
 mod columns;
 mod limits;
+mod placement;
 mod rows;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
@@ -15,13 +16,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     ) -> f32 {
         let template = parse_grid_template_areas(&style.grid_template_areas);
         let mut column_tracks = parse_grid_tracks(&style.grid_template_columns);
+        zoom_grid_tracks(&mut column_tracks, style, self.viewport);
         if let Some(template) = &template {
             column_tracks.resize(template.column_count.min(MAX_GRID_TRACKS), GridTrack::Auto);
         }
-        if column_tracks.is_empty() {
-            column_tracks.push(GridTrack::Fraction(1.0));
-        }
         let mut row_tracks = parse_grid_tracks(&style.grid_template_rows);
+        zoom_grid_tracks(&mut row_tracks, style, self.viewport);
         if let Some(template) = &template {
             row_tracks.resize(template.row_count.min(MAX_GRID_TRACKS), GridTrack::Auto);
         }
@@ -35,76 +35,31 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             .resolve(width, style.font_size)
             .unwrap_or(0.0)
             .max(0.0);
-        let column_count = column_tracks.len().max(1);
-
-        let mut placements = Vec::new();
-        let mut automatic_index = 0_usize;
-        for child in self.box_children(node).iter() {
-            if child.element().is_none() {
-                continue;
-            }
-            let child_style = self.styles.get(child);
-            if child_style.display == Display::None {
-                continue;
-            }
-            if matches!(child_style.position, Position::Absolute | Position::Fixed) {
-                // Positioned children are installed by layout_block after grid sizing.
-                continue;
-            }
-
-            let named_area = child_style
-                .grid_area_name
-                .as_ref()
-                .and_then(|name| template.as_ref()?.areas.get(name));
-            let explicit_column = named_area.map(|area| area.column).or_else(|| {
-                child_style
-                    .grid_column_start
-                    .map(|line| line.saturating_sub(1))
-            });
-            let explicit_row = named_area.map(|area| area.row).or_else(|| {
-                child_style
-                    .grid_row_start
-                    .map(|line| line.saturating_sub(1))
-            });
-            let mut column = explicit_column.unwrap_or(automatic_index % column_count);
-            let row = explicit_row.unwrap_or_else(|| {
-                if explicit_column.is_some() {
-                    automatic_index / column_count
-                } else {
-                    let automatic_row = automatic_index / column_count;
-                    automatic_index = automatic_index.saturating_add(1);
-                    automatic_row
-                }
-            });
-            if explicit_row.is_some() && explicit_column.is_none() {
-                column = 0;
-            }
-            column = column.min(column_count - 1);
-
-            let column_end = named_area
-                .map(|area| area.column_end)
-                .or_else(|| {
-                    child_style
-                        .grid_column_end
-                        .map(|line| line.saturating_sub(1))
-                })
-                .filter(|end| *end > column)
-                .unwrap_or(column + 1)
-                .min(column_count);
-            let row_end = named_area
-                .map(|area| area.row_end)
-                .or_else(|| child_style.grid_row_end.map(|line| line.saturating_sub(1)))
-                .filter(|end| *end > row)
-                .unwrap_or_else(|| row.saturating_add(1));
-            let (row, row_end) = limits::clamp_area(row, row_end);
-            placements.push(GridItemPlacement {
-                node: child.clone(),
-                column,
-                column_end,
-                row,
-                row_end,
-            });
-        }
+        let placements = self.grid_placements(
+            node,
+            column_tracks.len(),
+            row_tracks.len(),
+            style,
+            template.as_ref(),
+        );
+        let mut auto_columns = parse_grid_tracks(&style.grid_auto_columns);
+        let mut auto_rows = parse_grid_tracks(&style.grid_auto_rows);
+        zoom_grid_tracks(&mut auto_columns, style, self.viewport);
+        zoom_grid_tracks(&mut auto_rows, style, self.viewport);
+        let column_count = placements
+            .iter()
+            .map(|item| item.column_end)
+            .max()
+            .unwrap_or(1)
+            .max(column_tracks.len());
+        let row_count = placements
+            .iter()
+            .map(|item| item.row_end)
+            .max()
+            .unwrap_or(0)
+            .max(row_tracks.len());
+        placement::extend_tracks(&mut column_tracks, &auto_columns, column_count);
+        placement::extend_tracks(&mut row_tracks, &auto_rows, row_count);
 
         let column_widths = self.intrinsic_grid_columns(
             &column_tracks,
@@ -186,7 +141,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     laid_out.push((index, item_x, item_width, used_inline_size, height));
                 }
             }
-            *row_height = if rows::is_fixed(row_tracks.get(row)) {
+            *row_height = if rows::is_fixed(row_tracks.get(row))
+                || (containing_height.is_some() && rows::has_fixed_minimum(row_tracks.get(row)))
+            {
                 track_height
             } else {
                 track_height.max(natural_height)
@@ -213,7 +170,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             let area_height = row_heights[item.row..item.row_end].iter().sum::<f32>()
                 + row_gap * (item.row_end - item.row - 1) as f32;
             let child_style = self.styles.get(&item.node);
-            let stretch = style.align_items == AlignItems::Stretch
+            let alignment = child_style.align_self.unwrap_or(style.align_items);
+            let stretch = alignment == AlignItems::Stretch
                 && child_style.height == Length::Auto
                 && child_style.margin.top != Length::Auto
                 && child_style.margin.bottom != Length::Auto
@@ -237,7 +195,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 (area_height - insets).max(0.0)
             });
             let free = (area_height - natural_height).max(0.0);
-            final_y += match style.align_items {
+            final_y += match alignment {
                 AlignItems::Center => free / 2.0,
                 AlignItems::End => free,
                 _ => 0.0,

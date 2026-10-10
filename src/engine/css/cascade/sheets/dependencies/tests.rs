@@ -10,6 +10,105 @@ fn dependencies(selector: &str) -> NonlocalDependencies {
 }
 
 #[test]
+fn unrelated_has_membership_does_not_widen_proven_text_and_graphics_updates() {
+    let text = MutationKind::TextChildren.impact();
+    let path = MutationKind::Attribute("d").impact();
+    let mixed = text
+        .union(path)
+        .union(MutationKind::Attribute("style").impact());
+    for selector in [
+        "html:has(.active)",
+        "html:has([class])",
+        "html:has(:checked)",
+        "html:has(:nth-child(2 of .active))",
+        ".a:has(+ .b .active)",
+    ] {
+        let deps = dependencies(selector);
+        for impact in [text, path, mixed] {
+            assert!(
+                !deps.needs_document_refresh(impact),
+                "{selector}: {impact:?}"
+            );
+        }
+        for impact in [
+            MutationKind::ChildList.impact(),
+            MutationKind::Attribute("class").impact(),
+            MutationKind::State.impact(),
+            mixed.union(MutationKind::Attribute("data-active").impact()),
+        ] {
+            assert!(
+                deps.needs_document_refresh(impact),
+                "{selector}: {impact:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn text_empty_direction_validity_and_slots_keep_nonlocal_dependencies() {
+    let text = MutationKind::TextChildren.impact();
+    for selector in [
+        "html:has(:empty)",
+        "html:has(:is(:empty))",
+        "html:has(:not(:empty))",
+        "html:has(:nth-child(1 of :empty))",
+        "html:has(:dir(rtl))",
+        "body:dir(rtl)",
+        "html:has(:valid)",
+        "html:has(:invalid)",
+        "html:has(:in-range)",
+        "html:has(:out-of-range)",
+        "slot:has-slotted",
+    ] {
+        assert!(
+            dependencies(selector).needs_document_refresh(text),
+            "{selector}"
+        );
+    }
+}
+
+#[test]
+fn ordinary_validity_rules_retain_bounded_form_aggregation_roots() {
+    for selector in [
+        "form:valid",
+        "fieldset:invalid",
+        ":is(form:invalid, fieldset:valid)",
+    ] {
+        assert!(
+            !dependencies(selector).needs_document_refresh(MutationKind::TextChildren.impact())
+        );
+    }
+}
+
+#[test]
+fn relative_graphics_attributes_and_mixed_declarations_widen_when_relevant() {
+    let text = MutationKind::TextChildren.impact();
+    let graphics = MutationKind::Attribute("d").impact();
+    for selector in [
+        "html:has([d])",
+        "html:has(:not([points]))",
+        "html:has(:is([transform]))",
+        "html:has(:nth-child(1 of [X]))",
+        ".a:has(+ svg [cx])",
+    ] {
+        let deps = dependencies(selector);
+        assert!(deps.needs_document_refresh(graphics), "{selector}");
+        assert!(
+            deps.needs_document_refresh(graphics.union(text)),
+            "{selector}"
+        );
+        assert!(!deps.needs_document_refresh(text), "{selector}");
+    }
+    assert!(
+        dependencies("html:has([style])").needs_document_refresh(
+            graphics
+                .union(text)
+                .union(MutationKind::Attribute("style").impact())
+        )
+    );
+}
+
+#[test]
 fn relative_style_attributes_widen_even_inside_functional_and_nth_filters() {
     for selector in [
         "html:has([style])",

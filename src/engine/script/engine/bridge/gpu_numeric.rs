@@ -2,7 +2,9 @@
 //! Web IDL conversion remains in the bootstrap. This boundary neither coerces
 //! values nor borrows author memory; no HostState borrow spans V8 property reads.
 use super::*;
-use crate::engine::webgl::{MAX_NUMERIC_VALUES, NumericCommand};
+use crate::engine::webgl::{
+    MAX_NUMERIC_VALUES, MAX_UNIFORM_FLOATS, NumericCommand, large_float_uniform,
+};
 
 pub(super) fn dispatch(
     scope: &mut v8::PinScope,
@@ -70,16 +72,22 @@ fn prepare(
     let integer_count = integers.length();
     let float_count = floats.length();
     let count = integer_count as usize + float_count;
-    if count > MAX_NUMERIC_VALUES {
+    let large = large_float_uniform(&op)
+        && matches!(floats, FloatList::Typed(_))
+        && integer_count <= 2
+        && float_count <= MAX_UNIFORM_FLOATS;
+    if count > MAX_NUMERIC_VALUES && !large {
         return Err(invalid());
     }
     let mut integer_values = [0.0; MAX_NUMERIC_VALUES];
-    let mut float_values = [0.0; MAX_NUMERIC_VALUES];
     for index in 0..integer_count {
         let value = integers.get_index(scope, index).ok_or_else(invalid)?;
         integer_values[index as usize] = number(scope, value)?;
     }
-    floats.copy(scope, &mut float_values[..float_count])?;
+    // Large uniforms have the same public 8192-component budget as JSON uploads.
+    // Allocate only after both lengths are frozen; never grow a fixed stack buffer.
+    let mut f = vec![0.0; float_count];
+    floats.copy(scope, &mut f)?;
     if integers.length() != integer_count || floats.length() != float_count {
         return Err(invalid());
     }
@@ -90,7 +98,6 @@ fn prepare(
         }
         i.push(value as i64);
     }
-    let f = float_values[..float_count].to_vec();
     let command = NumericCommand::new(op, i, f).ok_or_else(invalid)?;
     Ok((id as u32, command))
 }
@@ -141,12 +148,19 @@ impl<'s> FloatList<'s> {
                 // Integer getters may have detached the buffer since admission.
                 // No author memory is retained or read by the native GL thread.
                 Self::fixed(scope, *view)?;
-                let mut bytes = [0u8; MAX_NUMERIC_VALUES * 4];
                 let count = out.len() * 4;
-                if view.byte_length() != count || view.copy_contents(&mut bytes[..count]) != count {
+                let mut stack = [0u8; MAX_NUMERIC_VALUES * 4];
+                let mut owned = Vec::new();
+                let bytes = if count <= stack.len() {
+                    &mut stack[..count]
+                } else {
+                    owned.resize(count, 0);
+                    &mut owned[..]
+                };
+                if view.byte_length() != count || view.copy_contents(bytes) != count {
                     return Err(invalid());
                 }
-                for (target, component) in out.iter_mut().zip(bytes[..count].chunks_exact(4)) {
+                for (target, component) in out.iter_mut().zip(bytes.chunks_exact(4)) {
                     *target = f32::from_ne_bytes(component.try_into().unwrap()) as f64;
                 }
             }

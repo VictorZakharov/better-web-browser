@@ -31,6 +31,7 @@ macro_rules! webgl_bootstrap {
     include_str!("bootstrap/webgl_indexed_blend.js"),
     include_str!("bootstrap/webgl2_image_packing.js"),
     include_str!("bootstrap/webgl2_view_pixels.js"),
+    include_str!("bootstrap/webgl2_image_rows.js"),
     include_str!("bootstrap/webgl2_image_sources.js"),
     include_str!("bootstrap/webgl2_pixels.js"),
     include_str!("bootstrap/webgl2_texture2d.js"),

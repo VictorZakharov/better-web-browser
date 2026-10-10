@@ -62,7 +62,8 @@ pub use wake_lock::{WakeLockAction, WakeLockDisposition, WakeLockRequest, WakeLo
 pub use websocket::{WebSocketCommand, WebSocketEvent, WebSocketEventKind, WebSocketOperation};
 
 pub use accessibility::{
-    AccessibilityUpdate, SemanticActions, SemanticNode, SemanticRole, SemanticSelection,
+    AccessibilityUpdate, SemanticActions, SemanticChecked, SemanticNode, SemanticRole,
+    SemanticSelection,
 };
 pub use codec::{FrameReader, FrameWriter, ProtocolError};
 pub use document::{

@@ -59,11 +59,19 @@ fn declaration_value(property: &str, value: &str, preserve_unclassified: bool) -
 }
 
 pub(crate) fn supports_property(property: &str) -> bool {
-    // These declarations currently establish containing blocks only. They do not
-    // implement the visual effect and must not opt authors into 3D/filter branches.
+    // Transform/filter declarations establish containing blocks only; widget
+    // appearance/accent currently cover checkables, not the full control family.
+    // Neither partial contract should opt authors into an unsupported branch.
     // https://drafts.csswg.org/css-transforms-2/#two-dimensional-subset
-    !matches!(property, "perspective" | "transform-style" | "filter")
-        && super::css_wide::supports_css_wide_keyword(property, "initial")
+    !matches!(
+        property,
+        "perspective"
+            | "transform-style"
+            | "filter"
+            | "appearance"
+            | "-webkit-appearance"
+            | "accent-color"
+    ) && super::css_wide::supports_css_wide_keyword(property, "initial")
 }
 
 fn supports_declaration(property: &str, value: &str) -> bool {
@@ -89,7 +97,12 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
     if !preserve_unclassified
         && matches!(
             property.as_str(),
-            "perspective" | "transform-style" | "filter"
+            "perspective"
+                | "transform-style"
+                | "filter"
+                | "appearance"
+                | "-webkit-appearance"
+                | "accent-color"
         )
     {
         return false;
@@ -180,6 +193,11 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
             }
         }
         "color" | "background-color" => parse_color(&value).is_some(),
+        "background" => shorthands::background::valid(&value),
+        "box-shadow" => values::box_shadow::parse(&value).is_some(),
+        "border" | "border-top" | "border-right" | "border-bottom" | "border-left" => {
+            values::borders::shorthand_valid(&value, preserve_unclassified)
+        }
         "border-color" => values::borders::color_values(&value).is_some(),
         "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
             values::borders::color_values(&value).is_some_and(|colors| colors.len() == 1)
@@ -197,15 +215,38 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
             single_component_or_calc(&value)
                 && values::scalars::NumberValue::opacity(&value).is_some()
         }
+        "zoom" => values::zoom::parse(&value).is_some(),
         "transform" => super::transform::parse_transform(&value).is_some(),
+        "translate" => super::transform::individual::IndividualTranslate::parse(&value).is_some(),
         "clip-path" => super::clip_path::ClipPath::parse(&value).is_some(),
-        "background-image" | "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
-            value == "none" || value.starts_with("url(")
+        "background-image" => images::parse(&value, "", false).is_some(),
+        "scrollbar-width" => values::scrollbars::ScrollbarWidth::parse(&value).is_some(),
+        "scrollbar-color" => values::scrollbars::colors(&value).is_some(),
+        "appearance" | "-webkit-appearance" => Appearance::parse(&value).is_some(),
+        "accent-color" => AccentColor::parse(&value).is_some(),
+        "grid-row-start" | "grid-row-end" | "grid-column-start" | "grid-column-end" => {
+            GridLine::parse(&value).is_some()
         }
-        "background-position" => parse_background_position(&value).is_some(),
-        "background-position-x" => parse_background_axis(&value, true).is_some(),
-        "background-position-y" => parse_background_axis(&value, false).is_some(),
-        "background-size" => parse_background_size(&value).is_some(),
+        "mask"
+        | "-webkit-mask"
+        | "mask-image"
+        | "-webkit-mask-image"
+        | "mask-position"
+        | "-webkit-mask-position"
+        | "mask-size"
+        | "-webkit-mask-size"
+        | "mask-repeat"
+        | "-webkit-mask-repeat" => shorthands::background::valid_mask(&property, &value),
+        "background-position" => {
+            shorthands::background::list(&value, parse_background_position).is_some()
+        }
+        "background-position-x" => {
+            shorthands::background::list(&value, |v| parse_background_axis(v, true)).is_some()
+        }
+        "background-position-y" => {
+            shorthands::background::list(&value, |v| parse_background_axis(v, false)).is_some()
+        }
+        "background-size" => shorthands::background::list(&value, parse_background_size).is_some(),
         "object-fit" => ObjectFit::parse(&value).is_some(),
         "object-position" => ObjectPosition::parse(&value).is_some(),
         "text-transform" => TextTransform::parse(&value).is_some(),
@@ -215,12 +256,10 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
             // Admission does not claim those unfinished layout contracts.
             !value.contains('[') && parse_grid_track_list(&value).is_some()
         }
+        "grid-auto-columns" | "grid-auto-rows" => values::grid_auto::tracks_valid(&value),
+        "grid-auto-flow" => values::grid_auto::GridAutoFlow::parse(&value).is_some(),
         "background-repeat" => {
-            let repeats = value.split_ascii_whitespace().collect::<Vec<_>>();
-            (1..=2).contains(&repeats.len())
-                && repeats
-                    .iter()
-                    .all(|repeat| matches!(*repeat, "repeat" | "no-repeat"))
+            shorthands::background::list(&value, shorthands::background::repeat).is_some()
         }
         "font" => super::shorthands::font::parse(&value).is_some(),
         "font-size" => single_component_or_calc(&value) && parse_font_size(&value, 16.0).is_some(),
@@ -285,6 +324,10 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
         "align-items" | "-webkit-align-items" | "-webkit-box-align" => matches!(
             value.as_str(),
             "stretch" | "start" | "flex-start" | "end" | "flex-end" | "center"
+        ),
+        "align-self" => matches!(
+            value.as_str(),
+            "auto" | "normal" | "stretch" | "start" | "flex-start" | "end" | "flex-end" | "center"
         ),
         "justify-self" => matches!(
             value.as_str(),

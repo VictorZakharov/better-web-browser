@@ -50,6 +50,35 @@ fn numeric_command_admission_is_bounded_and_never_accepts_observations() {
 }
 
 #[test]
+fn large_uniform_admission_keeps_the_small_packet_and_other_command_limits() {
+    for op in [
+        "uniform1fv",
+        "uniform4fv",
+        "uniformMatrix4fv",
+        "uniformMatrix2x3fv",
+    ] {
+        assert!(NumericCommand::new(op.into(), vec![1, 0], vec![0.; MAX_UNIFORM_FLOATS]).is_some());
+        assert!(
+            NumericCommand::new(op.into(), vec![1], vec![0.; MAX_UNIFORM_FLOATS + 1]).is_none()
+        );
+        assert!(NumericCommand::new(op.into(), vec![1; 3], vec![0.; 65]).is_none());
+    }
+    for op in [
+        "clearColor",
+        "uniform4f",
+        "uniform4iv",
+        "uniform4uiv",
+        "uniform4fvSuffix",
+    ] {
+        assert!(NumericCommand::new(op.into(), vec![1], vec![0.; 65]).is_none());
+    }
+    assert_eq!(
+        MAX_NUMERIC_VALUES, 64,
+        "the fixed packet format must not grow"
+    );
+}
+
+#[test]
 fn every_bootstrap_numeric_operation_is_admitted_by_the_native_void_policy() {
     let source = include_str!("../script/bootstrap/webgl_private_wire.js");
     let list = source
