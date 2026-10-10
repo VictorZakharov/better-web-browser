@@ -21,6 +21,11 @@
     // The native title report is bounded; keep all intervals in the DOM and
     // publish compact statistics rather than silently truncating a long title.
     document.getElementById('result').setAttribute('data-intervals',JSON.stringify(intervals));
+    // Diagnostic values are bounded to 512 characters. Sixteen raw values fit
+    // without rounding or losing stalls; keep the full array in the DOM too.
+    for(let offset=0;offset<intervals.length;offset+=16)
+      document.getElementById('result').setAttribute('data-intervals-'+offset/16,
+        JSON.stringify(intervals.slice(offset,offset+16)));
     document.title='done cadence count='+intervals.length+';ms='+mean(intervals).toFixed(2)+','+ordered[32].toFixed(2)+','+ordered[0].toFixed(2)+','+ordered[63].toFixed(2)+';active='+mean(active).toFixed(2)+';pixel=0,255,0,255';
   };
   requestAnimationFrame(frame);
