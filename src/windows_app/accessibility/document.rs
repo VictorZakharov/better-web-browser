@@ -235,6 +235,7 @@ mod tests {
             read_only: false,
             actions: SemanticActions::default(),
             selection: None::<SemanticSelection>,
+            checked: None,
         }
     }
 

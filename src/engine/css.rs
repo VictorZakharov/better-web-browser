@@ -6,7 +6,7 @@ mod content;
 mod css_wide;
 pub(crate) mod cssom;
 pub(crate) mod font_family;
-mod fullscreen;
+pub(crate) mod images;
 pub(crate) mod imports;
 mod layers;
 pub(crate) mod media;

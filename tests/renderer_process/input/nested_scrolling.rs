@@ -177,6 +177,7 @@ fn wheel_scrolls_inner_pane_and_clipped_content_receives_hits_at_its_visual_posi
             .unwrap();
     }
     let mut dragged = false;
+    let mut motion_completed = false;
     for _ in 0..30 {
         match session.wait_for_event(Duration::from_secs(5)).unwrap() {
             RendererEvent::Presentation(presentation) => {
@@ -189,11 +190,21 @@ fn wheel_scrolls_inner_pane_and_clipped_content_receives_hits_at_its_visual_posi
             RendererEvent::RuntimeUpdate(update) => {
                 pump_ready_task(&session, initial.document, update.next_timer_micros)
             }
+            RendererEvent::PointerCursor(result) => {
+                assert_eq!(result.document, initial.document);
+                assert_eq!(result.sequence, 4);
+                assert_eq!(result.cursor, PointerCursor::Default);
+                motion_completed = true;
+            }
             RendererEvent::Diagnostic { .. } => {}
             event => panic!("unexpected drag event:{event:?}"),
         }
     }
     assert!(dragged, "dragging the scrollbar thumb must scroll the pane");
+    assert!(
+        motion_completed,
+        "scrollbar drag must release the next queued mousemove"
+    );
 }
 
 #[test]

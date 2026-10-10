@@ -93,6 +93,10 @@ impl Agent {
         self.run_with_sampling(true, work)
     }
 
+    pub(super) fn samples_global(&self, name: &str) -> bool {
+        self.cpu_samples.allows_global(name)
+    }
+
     pub(super) fn run_with_sampling<T>(
         &mut self,
         sample_author_code: bool,

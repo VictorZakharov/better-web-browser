@@ -2,6 +2,7 @@
 
 mod metrics;
 mod painting;
+mod resources;
 mod submission;
 mod video;
 
@@ -161,6 +162,11 @@ impl BrowserState {
             self.scroll_y = 0;
         }
         let presentation_install_started = Instant::now();
+        let mut installation_timing = benchmark::InstallationTiming::start(
+            self.benchmark
+                .as_ref()
+                .is_some_and(|b| b.native_paint.is_some()),
+        );
         self.renderer_revision = presentation.revision;
         self.record_renderer_presentation_incident(&presentation, first_presentation);
 
@@ -190,6 +196,7 @@ impl BrowserState {
             }
         };
 
+        installation_timing.checkpoint(benchmark::InstallationStage::Accessibility);
         let mut next_layout = std::mem::take(&mut presentation.layout).into_layout();
         next_layout.update_scroll_position(
             0.0,
@@ -214,43 +221,13 @@ impl BrowserState {
             self.page_layout.sticky_layers = next_layout.sticky_layers;
         }
         self.sync_retained_control_rects();
+        installation_timing.checkpoint(benchmark::InstallationStage::DisplayList);
         self.page_diagnostics = std::mem::take(&mut presentation.page_diagnostics);
-        if first_presentation {
-            self.presented_images.clear();
-            self.image_bitmaps.clear();
-        }
-        let images_changed =
-            !presentation.images.is_empty() || !presentation.retired_image_keys.is_empty();
-        for key in std::mem::take(&mut presentation.retired_image_keys) {
-            self.image_bitmaps.remove(&key);
-            self.presented_images.remove(&key);
-        }
-        for image in std::mem::take(&mut presentation.images) {
-            if !first_presentation {
-                self.image_bitmaps.remove(&image.url);
-            }
-            self.presented_images.insert(image.url, image.image);
-        }
-        let glyph_epoch_changed =
-            first_presentation || self.glyph_epoch != presentation.glyph_epoch;
-        if glyph_epoch_changed {
-            self.glyph_epoch = presentation.glyph_epoch;
-            self.presented_glyphs.clear();
-            self.glyph_bitmaps.clear();
-        }
-        let glyphs_changed = !presentation.glyphs.is_empty();
-        let glyphs_redefined = presentation
-            .glyphs
-            .iter()
-            .any(|glyph| self.presented_glyphs.contains_key(&glyph.id));
-        if glyphs_redefined {
-            // Resource IDs are immutable within an epoch. A redefinition is contained by
-            // dropping every surface derived from the old pixels before accepting the new batch.
-            self.glyph_bitmaps.clear();
-        }
-        for glyph in std::mem::take(&mut presentation.glyphs) {
-            self.presented_glyphs.insert(glyph.id, glyph);
-        }
+        let images_changed = self.install_image_resources(&mut presentation, first_presentation);
+        installation_timing.checkpoint(benchmark::InstallationStage::Images);
+        let (glyph_epoch_changed, glyphs_changed, glyphs_redefined) =
+            self.install_glyph_resources(&mut presentation, first_presentation);
+        installation_timing.checkpoint(benchmark::InstallationStage::Glyphs);
         self.reader_url = self
             .current_url()
             .unwrap_or(&presentation.final_url)
@@ -343,6 +320,7 @@ impl BrowserState {
             ));
         }
 
+        installation_timing.checkpoint(benchmark::InstallationStage::Metadata);
         self.paint_installed_presentation(
             &accessibility_update,
             damage,
@@ -354,6 +332,7 @@ impl BrowserState {
                 || glyphs_redefined,
             first_presentation,
         );
+        installation_timing.checkpoint(benchmark::InstallationStage::Painting);
         let presentation_install_time = presentation_install_started.elapsed();
         self.paint_benchmark_wheel_presentation(
             presentation.document,
@@ -366,6 +345,8 @@ impl BrowserState {
         }
         let benchmark_completed =
             self.record_renderer_presentation_metrics(&presentation, damage, first_presentation);
+        installation_timing.checkpoint(benchmark::InstallationStage::Metrics);
+        self.record_benchmark_installation(installation_timing);
         self.acknowledge_renderer_presentation(
             presentation.document,
             presentation.revision,

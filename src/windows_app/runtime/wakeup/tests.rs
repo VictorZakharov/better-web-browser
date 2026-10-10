@@ -79,4 +79,26 @@ fn stopping_clears_due_state_even_with_a_queued_native_timer_message() {
     assert!(stopped);
     assert!(!wake.due(Some(owner()), now));
     assert!(!wake.due(None, now));
+    assert_eq!(wake.deadline(Some(owner())), None);
+}
+
+#[test]
+fn message_pump_deadlines_are_document_owned_and_preserve_the_earliest_wake() {
+    let now = Instant::now();
+    let mut wake = RuntimeWakeup::default();
+    assert!(wake.update(request(owner(), now, 16), now, |_| true, || {}));
+    assert_eq!(
+        wake.deadline(Some(owner())),
+        Some(now + Duration::from_millis(16))
+    );
+    assert_eq!(wake.deadline(None), None);
+    assert_eq!(
+        wake.deadline(Some((owner().0, DocumentId::new(2).unwrap()))),
+        None
+    );
+    assert!(wake.update(request(owner(), now, 50), now, |_| unreachable!(), || {}));
+    assert_eq!(
+        wake.deadline(Some(owner())),
+        Some(now + Duration::from_millis(16))
+    );
 }

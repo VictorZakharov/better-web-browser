@@ -1,6 +1,7 @@
 //! WebGL2 uint vectors and non-square matrices retain typed program-generation ownership.
 use super::{ApiVersion, Command, Kind, Result, WebGl, gl};
 use serde_json::Value;
+use smallvec::SmallVec;
 
 pub(super) const UNSIGNED_INT_VEC2: u32 = 0x8dc6;
 pub(super) const UNSIGNED_INT_VEC3: u32 = 0x8dc7;
@@ -78,7 +79,7 @@ impl WebGl {
                 .f
                 .iter()
                 .map(|value| *value as f32)
-                .collect::<Vec<_>>();
+                .collect::<SmallVec<[f32; 16]>>();
             // SAFETY: fixed operation, current-program typed location, initialized
             // values of exactly count*columns*rows; transpose is false in WebGL.
             unsafe {
@@ -98,7 +99,7 @@ impl WebGl {
                 .iter()
                 .skip(1)
                 .map(|value| u32::try_from(*value).map_err(|_| gl::INVALID_VALUE))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<SmallVec<[u32; 4]>>>()?;
             if values.len() < group
                 || !values.len().is_multiple_of(group)
                 || (!command.op.ends_with('v') && values.len() != group)

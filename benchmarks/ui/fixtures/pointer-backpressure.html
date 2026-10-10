@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Pointer workload ready</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#16131b;color:#eee;font:14px Arial}
+#surface{width:720px;height:400px;overflow:auto;display:grid;grid-template-columns:repeat(12,1fr);gap:4px}
+.item{height:40px;border:1px solid #ad9250;background:#292333;pointer-events:none}
+#tooltip{pointer-events:none;position:fixed;left:0;top:420px;padding:12px;background:#18271d;border:1px solid #bda358}
+.cards{display:flex;gap:12px}.cards.stack{flex-direction:column}.card{width:260px;padding:8px}
+</style>
+<div id=surface></div><div id=tooltip>Move over the inventory</div>
+<script>
+// Real content/geometry work per move makes transport backpressure reproducible.
+// No delays or busy loops: the final event must position the actual painted tooltip.
+const surface=document.querySelector('#surface'),tooltip=document.querySelector('#tooltip');
+for(let i=0;i<720;i++){
+ const item=document.createElement('div');item.className='item';item.textContent='Item '+i;surface.append(item);
+}
+let moves=0,first=0;const trail=[];
+surface.addEventListener('mousemove',event=>{
+ if(!moves)first=performance.now();moves++;trail.push(event.clientX);if(trail.length>8)trail.shift();
+ tooltip.innerHTML='<div class="cards">'+[0,1].map(card=>'<section class="card"><h2>Position '+event.clientX+'</h2>'+
+  Array.from({length:8},(_,row)=>'<p>Attribute '+row+': '+(moves+card+row)+'</p>').join('')+'</section>').join('')+'</div>';
+ const cards=tooltip.querySelector('.cards');cards.classList.remove('stack');
+ if(tooltip.offsetWidth>innerWidth-16)cards.classList.add('stack');
+ const width=tooltip.offsetWidth,height=tooltip.offsetHeight;
+ tooltip.style.left=event.clientX+'px';tooltip.style.top='420px';
+ const box=tooltip.getBoundingClientRect();
+ if(width<=0||height<=0||box.x!==event.clientX)throw new Error('Stale pointer tooltip geometry');
+ document.title=JSON.stringify({moves,last:event.clientX,trail,elapsed:Math.round(performance.now()-first)});
+});
+</script>

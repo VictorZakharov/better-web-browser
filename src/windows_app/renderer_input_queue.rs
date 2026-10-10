@@ -1,7 +1,9 @@
 //! Bounded browser-owned input retained while a tab's renderer command channel is busy.
 
 use better_web_browser::limits::MAX_PENDING_RENDERER_INPUTS;
-use better_web_browser::renderer_protocol::{DocumentInput, PointerPhase};
+use better_web_browser::renderer_protocol::{
+    DocumentId, DocumentInput, PointerCursorResult, PointerPhase,
+};
 use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -14,9 +16,41 @@ pub(super) enum QueueResult {
 #[derive(Default)]
 pub(super) struct PendingRendererInputs {
     inputs: VecDeque<DocumentInput>,
+    move_in_flight: Option<(DocumentId, u64)>,
 }
 
 impl PendingRendererInputs {
+    // Coalescing only after a full command channel is too late: its writer may have
+    // already copied many expensive mousemoves into the pipe. Keep one ordinary
+    // move in flight and the latest unsent position, with discrete FIFO barriers.
+    // Pointer Events permits delaying/coalescing movement, not reordering clicks:
+    // https://www.w3.org/TR/pointerevents3/#the-pointermove-event
+    pub(super) fn can_send(&self, input: &DocumentInput) -> bool {
+        Self::move_key(input).is_none() || self.move_in_flight.is_none()
+    }
+
+    pub(super) fn move_key(input: &DocumentInput) -> Option<(DocumentId, u64)> {
+        match input {
+            DocumentInput::Pointer(input) if input.phase == PointerPhase::Move => {
+                Some((input.document, input.sequence))
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn note_sent(&mut self, key: Option<(DocumentId, u64)>) {
+        if let Some(key) = key {
+            debug_assert!(self.move_in_flight.is_none());
+            self.move_in_flight = Some(key);
+        }
+    }
+
+    pub(super) fn acknowledge_move(&mut self, result: PointerCursorResult) {
+        if self.move_in_flight == Some((result.document, result.sequence)) {
+            self.move_in_flight = None;
+        }
+    }
+
     pub(super) fn enqueue(&mut self, input: DocumentInput) -> QueueResult {
         if let (DocumentInput::Pointer(newer), Some(DocumentInput::Pointer(previous))) =
             (&input, self.inputs.back_mut())
@@ -53,7 +87,10 @@ impl PendingRendererInputs {
             }
             if let (DocumentInput::Pointer(newer), DocumentInput::Pointer(older)) =
                 (&input, pending)
-                && (newer.buttons != older.buttons || newer.modifiers != older.modifiers)
+                && (newer.buttons != older.buttons
+                    || newer.modifiers != older.modifiers
+                    || newer.target != older.target
+                    || newer.phase != older.phase)
             {
                 break;
             }
@@ -75,6 +112,9 @@ impl PendingRendererInputs {
     }
 
     pub(super) fn pop_front(&mut self) -> Option<DocumentInput> {
+        if !self.can_send(self.inputs.front()?) {
+            return None;
+        }
         self.inputs.pop_front()
     }
 
@@ -85,6 +125,7 @@ impl PendingRendererInputs {
 
     pub(super) fn clear(&mut self) {
         self.inputs.clear();
+        self.move_in_flight = None;
     }
 
     pub(super) fn discard_native_text_generation(
@@ -120,6 +161,7 @@ fn safely_supersedes(newer: &DocumentInput, pending: &DocumentInput) -> bool {
                 && pending.phase == PointerPhase::Move
                 && newer.buttons == pending.buttons
                 && newer.modifiers == pending.modifiers
+                && newer.target == pending.target
         }
         (DocumentInput::Text(newer), DocumentInput::Text(pending)) => {
             newer.document == pending.document && newer.target == pending.target
@@ -152,6 +194,7 @@ fn can_compact_across(newer: &DocumentInput, pending: &DocumentInput) -> bool {
                 && pending.phase == PointerPhase::Move
                 && newer.buttons == pending.buttons
                 && newer.modifiers == pending.modifiers
+                && newer.target == pending.target
         }
         (DocumentInput::Selection(newer), DocumentInput::Selection(pending)) => {
             newer.document == pending.document && newer.target == pending.target
@@ -161,242 +204,4 @@ fn can_compact_across(newer: &DocumentInput, pending: &DocumentInput) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use better_web_browser::renderer_protocol::{
-        DocumentId, DocumentNodeId, InputModifiers, NativeTextInput, PointerButton, PointerInput,
-        ScrollInput, TextEditIntent, TextInput, TextSelectionDirection, TextSelectionInput,
-    };
-
-    fn document() -> DocumentId {
-        DocumentId::new(7).unwrap()
-    }
-
-    fn scroll(sequence: u64, y: f32) -> DocumentInput {
-        DocumentInput::Scroll(ScrollInput {
-            document: document(),
-            sequence,
-            x: 0.0,
-            y,
-        })
-    }
-
-    fn pointer_move(sequence: u64) -> DocumentInput {
-        DocumentInput::Pointer(PointerInput {
-            document: document(),
-            sequence,
-            phase: PointerPhase::Move,
-            button: PointerButton::None,
-            buttons: 0,
-            x: sequence as f32,
-            y: sequence as f32,
-            modifiers: InputModifiers::default(),
-            target: None,
-        })
-    }
-
-    fn locked_move(sequence: u64, x: f32, y: f32) -> DocumentInput {
-        let target = DocumentNodeId::new((7_u128 << 64) | 2).unwrap();
-        DocumentInput::Pointer(PointerInput {
-            document: document(),
-            sequence,
-            phase: PointerPhase::LockedMove,
-            button: PointerButton::None,
-            buttons: 0,
-            x,
-            y,
-            modifiers: InputModifiers::default(),
-            target: Some(target),
-        })
-    }
-
-    fn selection(sequence: u64, local_node: u64) -> DocumentInput {
-        DocumentInput::Selection(TextSelectionInput {
-            document: document(),
-            sequence,
-            target: DocumentNodeId::new((7_u128 << 64) | u128::from(local_node)).unwrap(),
-            selection_start: 0,
-            selection_end: sequence as u32,
-            direction: TextSelectionDirection::None,
-        })
-    }
-
-    #[test]
-    fn relative_motion_accumulates_without_crossing_a_discrete_event() {
-        let mut pending = PendingRendererInputs::default();
-        assert_eq!(
-            pending.enqueue(locked_move(1, 3.0, -4.0)),
-            QueueResult::Queued
-        );
-        assert_eq!(
-            pending.enqueue(locked_move(2, -2.0, 9.0)),
-            QueueResult::Coalesced
-        );
-        assert_eq!(pending.pop_front(), Some(locked_move(2, 1.0, 5.0)));
-        assert_eq!(
-            pending.enqueue(locked_move(3, 7.0, 0.0)),
-            QueueResult::Queued
-        );
-        assert_eq!(pending.enqueue(activation(4)), QueueResult::Queued);
-        assert_eq!(
-            pending.enqueue(locked_move(5, 8.0, 0.0)),
-            QueueResult::Queued
-        );
-        assert_eq!(pending.pop_front(), Some(locked_move(3, 7.0, 0.0)));
-        assert_eq!(pending.pop_front().unwrap().sequence(), 4);
-        assert_eq!(pending.pop_front(), Some(locked_move(5, 8.0, 0.0)));
-    }
-
-    fn activation(sequence: u64) -> DocumentInput {
-        DocumentInput::Pointer(PointerInput {
-            document: document(),
-            sequence,
-            phase: PointerPhase::Activate,
-            button: PointerButton::Primary,
-            buttons: 0,
-            x: 10.0,
-            y: 20.0,
-            modifiers: InputModifiers::default(),
-            target: None,
-        })
-    }
-
-    #[test]
-    fn canceled_generation_discards_queued_native_edits_without_reordering_other_input() {
-        let target = DocumentNodeId::new((7_u128 << 64) | 1).unwrap();
-        let native = |sequence, generation| {
-            DocumentInput::NativeText(NativeTextInput {
-                text: TextInput {
-                    document: document(),
-                    sequence,
-                    target,
-                    value: format!("edit{sequence}"),
-                    selection_start: 0,
-                    selection_end: 0,
-                },
-                generation,
-                intent: TextEditIntent::InsertText,
-                pre_selection: Some((0, 0)),
-            })
-        };
-        let mut pending = PendingRendererInputs::default();
-        assert_eq!(pending.enqueue(native(1, 0)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(native(2, 0)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(activation(3)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(native(4, 1)), QueueResult::Queued);
-        pending.discard_native_text_generation(document(), 0);
-        assert_eq!(pending.pop_front(), Some(activation(3)));
-        assert_eq!(pending.pop_front(), Some(native(4, 1)));
-        assert!(pending.is_empty());
-    }
-
-    #[test]
-    fn button_state_changes_are_coalescing_barriers_even_across_scrolls() {
-        let motion = |sequence, buttons| {
-            let DocumentInput::Pointer(mut input) = pointer_move(sequence) else {
-                unreachable!()
-            };
-            input.buttons = buttons;
-            DocumentInput::Pointer(input)
-        };
-        let mut pending = PendingRendererInputs::default();
-        assert_eq!(pending.enqueue(motion(1, 1)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(scroll(2, 20.0)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(motion(3, 0)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(motion(4, 1)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(motion(5, 1)), QueueResult::Coalesced);
-        assert_eq!(pending.len(), 4);
-        for expected in [motion(1, 1), scroll(2, 20.0), motion(3, 0), motion(5, 1)] {
-            assert_eq!(pending.pop_front(), Some(expected));
-        }
-    }
-
-    #[test]
-    fn last_value_inputs_coalesce_without_reordering_discrete_input() {
-        let mut pending = PendingRendererInputs::default();
-        assert_eq!(pending.enqueue(scroll(1, 10.0)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(scroll(2, 20.0)), QueueResult::Coalesced);
-        assert_eq!(pending.enqueue(activation(3)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(scroll(4, 30.0)), QueueResult::Queued);
-
-        let target = DocumentNodeId::new((7_u128 << 64) | 1).unwrap();
-        let text = |sequence, value: &str| {
-            DocumentInput::Text(TextInput {
-                document: document(),
-                sequence,
-                target,
-                value: value.into(),
-                selection_start: value.len() as u32,
-                selection_end: value.len() as u32,
-            })
-        };
-        assert_eq!(pending.enqueue(text(5, "a")), QueueResult::Queued);
-        assert_eq!(pending.enqueue(text(6, "final")), QueueResult::Coalesced);
-
-        assert_eq!(pending.len(), 4);
-        assert_eq!(pending.pop_front().unwrap().sequence(), 2);
-        assert_eq!(pending.pop_front().unwrap().sequence(), 3);
-        assert_eq!(pending.pop_front().unwrap().sequence(), 4);
-        assert_eq!(pending.pop_front().unwrap().sequence(), 6);
-    }
-
-    #[test]
-    fn alternating_continuous_updates_leave_capacity_for_activation() {
-        let mut pending = PendingRendererInputs::default();
-        for sequence in 1..=(MAX_PENDING_RENDERER_INPUTS as u64 * 2) {
-            let input = if sequence % 2 == 0 {
-                pointer_move(sequence)
-            } else {
-                scroll(sequence, sequence as f32)
-            };
-            assert_ne!(pending.enqueue(input), QueueResult::Full);
-        }
-
-        let activation_sequence = MAX_PENDING_RENDERER_INPUTS as u64 * 2 + 1;
-        assert_eq!(
-            pending.enqueue(activation(activation_sequence)),
-            QueueResult::Queued
-        );
-        assert!(pending.len() <= 3);
-        assert_eq!(
-            pending.inputs.back().unwrap().sequence(),
-            activation_sequence
-        );
-    }
-
-    #[test]
-    fn selection_supersedes_within_continuous_run_but_not_across_discrete_input() {
-        let mut pending = PendingRendererInputs::default();
-        assert_eq!(pending.enqueue(selection(1, 2)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(scroll(2, 8.0)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(pointer_move(3)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(selection(4, 2)), QueueResult::Coalesced);
-        assert_eq!(pending.enqueue(selection(5, 3)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(activation(6)), QueueResult::Queued);
-        assert_eq!(pending.enqueue(selection(7, 2)), QueueResult::Queued);
-        for expected in [
-            scroll(2, 8.0),
-            pointer_move(3),
-            selection(4, 2),
-            selection(5, 3),
-            activation(6),
-            selection(7, 2),
-        ] {
-            assert_eq!(pending.pop_front(), Some(expected));
-        }
-    }
-
-    #[test]
-    fn discrete_input_queue_stays_bounded_and_preserves_the_retained_front() {
-        let mut pending = PendingRendererInputs::default();
-        for sequence in 1..=MAX_PENDING_RENDERER_INPUTS as u64 {
-            assert_eq!(pending.enqueue(activation(sequence)), QueueResult::Queued);
-        }
-        assert_eq!(pending.enqueue(activation(99)), QueueResult::Full);
-
-        let first = pending.pop_front().unwrap();
-        pending.restore_front(first);
-        assert_eq!(pending.len(), MAX_PENDING_RENDERER_INPUTS);
-        assert_eq!(pending.pop_front().unwrap().sequence(), 1);
-    }
-}
+mod tests;

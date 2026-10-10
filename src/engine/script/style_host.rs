@@ -22,6 +22,12 @@ pub(super) fn style_host_call(
     if operation == "intersectionGeometry" {
         return Ok(Some(intersection::geometry(args, state)));
     }
+    if operation == "effectiveZoom" {
+        let scale = state
+            .node(argument_id(args, 1))
+            .map_or(1.0, |node| state.effective_zoom(&node));
+        return Ok(Some(JsValue::from(f64::from(scale))));
+    }
     if operation == "elementsAtPoint" {
         return Ok(Some(point_query::elements_at(args, state)));
     }
@@ -44,14 +50,15 @@ pub(super) fn style_host_call(
             .filter(|node| state.is_connected(node))
             .and_then(|node| state.resize_boxes.get(&node.id()).copied())
             .unwrap_or_default();
+        let zoom = node.as_ref().map_or(1.0, |node| state.effective_zoom(node));
         return Ok(Some(JsValue::Array(vec![
-            JsValue::from(boxes.content.x as f64),
-            JsValue::from(boxes.content.y as f64),
-            JsValue::from(boxes.content.width as f64),
-            JsValue::from(boxes.content.height as f64),
-            JsValue::from(boxes.border_width as f64),
-            JsValue::from(boxes.border_height as f64),
-            JsValue::from(state.media_environment.resolution_dppx as f64),
+            JsValue::from(f64::from(boxes.content.x / zoom)),
+            JsValue::from(f64::from(boxes.content.y / zoom)),
+            JsValue::from(f64::from(boxes.content.width / zoom)),
+            JsValue::from(f64::from(boxes.content.height / zoom)),
+            JsValue::from(f64::from(boxes.border_width / zoom)),
+            JsValue::from(f64::from(boxes.border_height / zoom)),
+            JsValue::from(f64::from(state.media_environment.resolution_dppx * zoom)),
             JsValue::from(depth),
         ])));
     }
@@ -90,14 +97,16 @@ pub(super) fn style_host_call(
             crate::engine::css::normalize_easing(&value).map_or(JsValue::null(), JsValue::from),
         ));
     }
-    if operation == "interpolateCssTransform" {
+    if operation == "interpolateCssTransform" || operation == "interpolateCssTranslate" {
         let from = argument_string(args, 1)?;
         let to = argument_string(args, 2)?;
         let progress = args.get(3).and_then(JsValue::as_number).unwrap_or(f64::NAN);
-        return Ok(Some(
+        let value = if operation == "interpolateCssTranslate" {
+            crate::engine::css::transform::individual::interpolate(&from, &to, progress)
+        } else {
             crate::engine::css::transform::interpolate(&from, &to, progress)
-                .map_or(JsValue::null(), JsValue::from),
-        ));
+        };
+        return Ok(Some(value.map_or(JsValue::null(), JsValue::from)));
     }
     if operation == "computedStyleBatch" {
         let Some(JsValue::Array(properties)) = args.get(2) else {

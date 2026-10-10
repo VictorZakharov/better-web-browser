@@ -3,6 +3,39 @@ use crate::engine::dom::ShadowRootMode;
 use crate::engine::invalidation::RenderInvalidation;
 use crate::engine::layout::test_support::FixedMeasurer;
 
+#[test]
+fn individual_translate_moves_subtree_pixels_and_geometry_but_not_normal_flow() {
+    let page = Page::parse(
+        "<style>body{margin:0}</style><div id=box style='width:100px;height:60px;background:red;translate:-50% 20px;transform:translateX(10px)'><div id=child style='width:20px;height:10px;background:blue'></div></div><div id=after style='height:10px'></div>",
+        "https://example.test/",
+    );
+    let layout = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let box_id = identified(&page, "box");
+    let child = identified(&page, "child");
+    let after = identified(&page, "after");
+    assert_eq!(
+        (layout.node_bounds[&box_id].x, layout.node_bounds[&box_id].y),
+        (-40.0, 20.0)
+    );
+    assert_eq!(
+        (layout.node_bounds[&child].x, layout.node_bounds[&child].y),
+        (-40.0, 20.0)
+    );
+    assert_eq!(layout.node_bounds[&after].y, 60.0);
+    assert!(
+        layout
+            .items
+            .iter()
+            .any(|item| matches!(item,DisplayItem::SolidRect{rect,color,..}
+        if *color == Color::rgb(255,0,0) && *rect == layout.node_bounds[&box_id]))
+    );
+    assert_eq!(
+        layout_geometry_with_style_viewport(&page, 800.0, 600.0, 800.0, &mut FixedMeasurer)
+            .node_bounds,
+        layout.node_bounds
+    );
+}
+
 fn slotted_page(shadow_markup: &str) -> Page {
     let page = Page::parse(
         r#"<style>body{margin:0}x-host{display:block}</style>

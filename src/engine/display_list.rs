@@ -78,13 +78,18 @@ fn item_bounds(item: &DisplayItem) -> RectF {
         DisplayItem::BeginClip { bounds }
         | DisplayItem::EndClip { bounds }
         | DisplayItem::BeginOpacity { bounds, .. }
+        | DisplayItem::BeginMask { bounds, .. }
+        | DisplayItem::BeginCssMask { bounds, .. }
+        | DisplayItem::EndMask { bounds }
         | DisplayItem::EndOpacity { bounds } => *bounds,
         DisplayItem::EmbeddedFrame { rect, .. }
         | DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. } => *rect,
         DisplayItem::Image { rect, clip, .. } => clip.unwrap_or(*rect),
-        DisplayItem::BackgroundImage { clip_rect, .. } => *clip_rect,
+        DisplayItem::BackgroundImage { clip_rect, .. }
+        | DisplayItem::CssGradient { clip_rect, .. } => *clip_rect,
+        DisplayItem::CssBoxShadow { bounds, .. } => *bounds,
         DisplayItem::Control(spec) => spec.rect,
     }
 }

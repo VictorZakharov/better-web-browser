@@ -310,7 +310,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 && style.border_width == Edges::ZERO
                 && style.background_color.alpha == 0
                 && style.background_image.is_none()
-                && style.mask_image.is_none();
+                && style.mask_image.0.is_empty();
             if boxless_inline
                 && children
                     .iter()

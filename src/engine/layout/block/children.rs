@@ -37,6 +37,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 visible: style.visibility,
                 preserve_space: false,
                 line_height: style.line_height,
+                normal_line_height: style.normal_line_height(),
                 no_wrap: false,
             });
         }

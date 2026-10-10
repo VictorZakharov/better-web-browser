@@ -39,10 +39,7 @@ impl Page {
             for style in styles.styles.values().filter(|style| {
                 style.display != super::super::css::Display::None && style.visibility
             }) {
-                for url in [style.background_image.as_ref(), style.mask_image.as_ref()]
-                    .into_iter()
-                    .flatten()
-                {
+                for url in style.background_image.urls().chain(style.mask_image.urls()) {
                     blockers.insert(PageResource::Image { url: url.clone() });
                 }
             }

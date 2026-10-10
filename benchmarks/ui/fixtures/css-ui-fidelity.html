@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CSS UI fidelity</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#36304a;font:16px Arial,sans-serif}
+main{display:grid;width:900px;height:440px;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:minmax(0,1fr);gap:16px}
+.panel{zoom:.75;background:linear-gradient(90deg,#080709f0,#080709d6);border:1px solid #dcb45f;border-radius:6px;box-shadow:inset 0 0 18px #0008,0 6px 12px #0008}
+.left{width:240px;align-self:start;padding:16px;display:flex;flex-direction:column;gap:10px}
+.right{width:200px;display:grid;grid-template-rows:auto minmax(0,1fr);padding:10px}
+.page{grid-area:2/1;min-height:0;display:flex;flex-direction:column}
+.inactive{visibility:hidden}.header{height:30px;color:#dcb45f}
+.equipment{display:grid;grid-template-columns:repeat(3,40px);grid-template-rows:40px 40px 40px;gap:6px;grid-template-areas:"a b c" "d e f" ".g."}
+.equipment b{background:radial-gradient(circle,#36304a,#111);box-shadow:inset 0 0 0 1px #dcb45f;color:white}
+.equipment b:nth-child(1){grid-area:a}.equipment b:nth-child(2){grid-area:b}.equipment b:nth-child(3){grid-area:c}
+.equipment b:nth-child(4){grid-area:d}.equipment b:nth-child(5){grid-area:e}.equipment b:nth-child(6){grid-area:f}.equipment b:nth-child(7){grid-area:g}
+.inventory{display:grid;grid-template-columns:repeat(5,1fr);align-content:start;gap:4px;min-height:0;flex:auto;overflow:auto;scrollbar-width:thin;scrollbar-color:#dcb45f transparent;mask-image:linear-gradient(black 75%,transparent)}
+.inventory i{aspect-ratio:1;background:radial-gradient(circle,#36304a,#111);box-shadow:inset 0 0 0 1px #dcb45f}
+.label{display:flex;justify-content:space-between;align-items:center;gap:10px;color:#dcb45f}.label span{text-transform:uppercase;font-size:11px;letter-spacing:1.5px}
+.links{display:flex;gap:6px;justify-content:space-between;font-size:11px;color:white}
+.bottom{position:absolute;left:400px;top:400px;display:flex;flex-direction:column;align-items:center;zoom:.75;background:#080709cc;border-radius:6px;padding:8px 12px}
+.bottom small{font-size:13px;line-height:normal;color:white}.symbols{font:20px Arial;color:#dcb45f}
+.corners{height:60px;border:2px solid #dcb45f;border-radius:12px;background:linear-gradient(#dcb45f,#dcb45f) left top/24px 3px no-repeat,linear-gradient(#dcb45f,#dcb45f) right bottom/3px 24px no-repeat,linear-gradient(90deg,#080709f0,#36304a)}
+</style>
+<main id=board>
+ <section class="panel left"><div class=corners></div><div class=label><span>Starting wave</span><b>Wave 1</b></div><div class=symbols>⚔ ✦ ⟳ ⛁</div><div class=links><a>How to play</a><a>Reset profile</a></div></section>
+ <div></div>
+ <section class="panel right"><div class=header>Equipment</div><div class=page><div class=equipment><b>A</b><b>B</b><b>C</b><b>D</b><b>E</b><b>F</b><b>G</b></div><div class=inventory></div></div><div class="page inactive"><div style="height:900px">Hidden overlapping tab</div></div></section>
+</main>
+<div class=bottom><small>Hide the lobby to practice</small></div>
+<script>
+for(let i=0;i<60;i++)document.querySelector('.inventory').append(document.createElement('i'));
+addEventListener('load',()=>{
+ const facts=[];
+ for(const selector of ['.left','.right','.page','.equipment','.inventory','.bottom','.label span','.links a']){
+  const node=document.querySelector(selector),r=node.getBoundingClientRect();
+  facts.push([selector,...[r.x,r.y,r.width,r.height].map(v=>Math.round(v*100)/100)]);
+ }
+ document.title=JSON.stringify(facts);
+});
+</script>

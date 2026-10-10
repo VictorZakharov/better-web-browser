@@ -189,8 +189,5 @@ fn serialization_queries_and_paint_invalidation_use_all_four_edges() {
     ] {
         assert_eq!(supports::supports_matches(query), expected, "{query}");
     }
-    assert_eq!(
-        after.painted_border_colors(Color::WHITE)[1],
-        Color::TRANSPARENT
-    );
+    assert_eq!(after.resolved_border_colors()[1], Color::TRANSPARENT);
 }

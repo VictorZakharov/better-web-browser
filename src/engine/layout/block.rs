@@ -123,12 +123,18 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             .copied()
             .unwrap_or_default();
         let gutter_right = if bar_y {
-            self.page.scrollbar_thickness()
+            style
+                .scrollbar_width
+                .thickness(self.page.scrollbar_thickness())
+                * style.effective_zoom
         } else {
             0.0
         };
         let gutter_bottom = if bar_x {
-            self.page.scrollbar_thickness()
+            style
+                .scrollbar_width
+                .thickness(self.page.scrollbar_thickness())
+                * style.effective_zoom
         } else {
             0.0
         };
@@ -309,7 +315,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             resize.border_height += gutter_bottom;
             self.output.resize_boxes.insert(node_id(node), resize);
         }
-        let positioning_box = if style.position != Position::Static || !style.transform.is_none() {
+        let positioning_box = if style.position != Position::Static || style.has_transform() {
             RectF {
                 x: x + borders.left,
                 y: border_y + borders.top,
@@ -382,6 +388,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             padding,
             authored_button,
         );
+        self.wrap_mask(&style, rect, item_start);
         self.wrap_clip_path(node, &style, rect, item_start);
         if node.is_generated_pseudo() {
             self.apply_generated_transform(&style, rect, item_start);

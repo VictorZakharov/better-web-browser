@@ -231,6 +231,7 @@ impl BrowserState {
                 "  \"presentation_decode_ms\": {:.3},\n",
                 "  \"presentation_install_ms\": {:.3},\n",
                 "  \"paint_ms\": {:.3},\n",
+                "  \"native_paint_trace\": {},\n",
                 "  \"scroll_paint_samples\": {},\n",
                 "  \"average_scroll_paint_ms\": {:.3},\n",
                 "  \"maximum_scroll_paint_ms\": {:.3},\n",
@@ -320,6 +321,10 @@ impl BrowserState {
             benchmark.presentation_decode_time.as_secs_f64() * 1_000.0,
             benchmark.presentation_install_time.as_secs_f64() * 1_000.0,
             benchmark.paint_time.as_secs_f64() * 1_000.0,
+            benchmark
+                .native_paint
+                .as_ref()
+                .map_or_else(|| "null".into(), native_paint::NativePaintTrace::to_json,),
             scroll_paint.samples,
             scroll_paint.average.as_secs_f64() * 1_000.0,
             scroll_paint.maximum.as_secs_f64() * 1_000.0,

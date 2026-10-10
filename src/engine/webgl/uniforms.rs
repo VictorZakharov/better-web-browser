@@ -1,6 +1,7 @@
 //! Uniform names retain both their owning program and its link generation.
 use super::{Command, Kind, Result, WebGl, gl, json};
 use serde_json::Value;
+use smallvec::SmallVec;
 
 impl WebGl {
     pub(super) fn uniform_command(&mut self, c: &Command) -> Result<Value> {
@@ -40,12 +41,12 @@ impl WebGl {
             c.f.iter()
                 .enumerate()
                 .map(|(index, _)| c.float(index))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<SmallVec<[f32; 16]>>>()?;
         let integers =
             c.i.iter()
                 .skip(1)
                 .map(|value| i32::try_from(*value).map_err(|_| gl::INVALID_VALUE))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<SmallVec<[i32; 4]>>>()?;
         let matrix = c.op.starts_with("uniformMatrix");
         let columns =
             c.op.as_bytes()

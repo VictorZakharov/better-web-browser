@@ -1,6 +1,117 @@
 use super::*;
+pub(super) mod shadows;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    pub(super) fn background_paint_item(
+        &self,
+        style: &ComputedStyle,
+        image: &ImageSource,
+        layer: usize,
+        rect: RectF,
+        radius: f32,
+    ) -> Option<DisplayItem> {
+        // CSS Backgrounds 3: the initial positioning area is the padding box;
+        // the initial painting area still extends underneath the border.
+        let border = style.border_width.resolve(rect.width, style.font_size);
+        let area = RectF {
+            x: rect.x + border.left,
+            y: rect.y + border.top,
+            width: (rect.width - border.horizontal()).max(0.0),
+            height: (rect.height - border.vertical()).max(0.0),
+        };
+        self.image_layer_item(style, image, layer, rect, area, radius, false)
+    }
+    pub(super) fn mask_paint_item(
+        &self,
+        style: &ComputedStyle,
+        image: &ImageSource,
+        layer: usize,
+        rect: RectF,
+    ) -> Option<DisplayItem> {
+        // Initial mask-origin/mask-clip are border-box, unlike backgrounds.
+        self.image_layer_item(style, image, layer, rect, rect, 0.0, true)
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn image_layer_item(
+        &self,
+        style: &ComputedStyle,
+        image: &ImageSource,
+        layer: usize,
+        rect: RectF,
+        area: RectF,
+        radius: f32,
+        mask: bool,
+    ) -> Option<DisplayItem> {
+        let natural = match image {
+            ImageSource::None => return None,
+            ImageSource::Url(url) => {
+                let image = self.page.images.get(url)?;
+                (
+                    image.width as f32 * style.effective_zoom,
+                    image.height as f32 * style.effective_zoom,
+                )
+            }
+            ImageSource::Gradient(_) => (area.width, area.height),
+        };
+        let (size, x, y, repeats) = if mask {
+            style.mask_layers.at(layer)
+        } else if layer == 0 {
+            (
+                style.background_size.clone(),
+                style.background_position_x.clone(),
+                style.background_position_y.clone(),
+                (style.background_repeat_x, style.background_repeat_y),
+            )
+        } else {
+            style.background_layers.at(layer)
+        };
+        let (width, height) = resolve_background_size(
+            size,
+            area,
+            natural.0,
+            natural.1,
+            style.font_size,
+            self.viewport,
+        )?;
+        let tile_rect = RectF {
+            x: area.x
+                + resolve_background_position(x, area.width, width, style.font_size, self.viewport),
+            y: area.y
+                + resolve_background_position(
+                    y,
+                    area.height,
+                    height,
+                    style.font_size,
+                    self.viewport,
+                ),
+            width,
+            height,
+        };
+        Some(match image {
+            ImageSource::Url(url) => DisplayItem::BackgroundImage {
+                clip_rect: rect,
+                tile_rect,
+                url: url.clone(),
+                repeat_x: repeats.0,
+                repeat_y: repeats.1,
+            },
+            ImageSource::Gradient(gradient) => DisplayItem::CssGradient {
+                clip_rect: rect,
+                tile_rect,
+                gradient: gradient.resolve(
+                    width,
+                    height,
+                    style.font_size,
+                    style.effective_zoom,
+                    style.color,
+                )?,
+                radius,
+                repeat_x: repeats.0,
+                repeat_y: repeats.1,
+            },
+            ImageSource::None => return None,
+        })
+    }
     pub(super) fn control_background_color(
         &self,
         node: &NodeRef,
@@ -53,8 +164,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let (width, height) = resolve_background_size(
             style.background_size.clone(),
             clip_rect,
-            image.width as f32,
-            image.height as f32,
+            image.width as f32 * style.effective_zoom,
+            image.height as f32 * style.effective_zoom,
             style.font_size,
             self.viewport,
         )?;
@@ -100,7 +211,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 height,
             },
         )?;
-        Some((style.background_image.clone()?, tile.width, tile.height))
+        Some((
+            style.background_image.as_ref()?.clone(),
+            tile.width,
+            tile.height,
+        ))
     }
 }
 

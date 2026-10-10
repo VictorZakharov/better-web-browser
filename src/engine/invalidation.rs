@@ -11,6 +11,13 @@ pub struct InvalidationImpact(u8);
 // Evidence, not an impact: only inline/animation-style writes may take an exact
 // post-cascade equality proof. Mixing any other kind clears that evidence.
 const STYLE_ONLY: u8 = 1 << 4;
+// Proven replacement of text/comment children only, not element tree membership.
+const TEXT_ONLY: u8 = 1 << 5;
+// Coalesced declarations, proven text children, and known graphics attributes.
+// Arbitrary attributes, element insertion, state and unknown work clear this proof.
+const LOCAL_CONTENT_ONLY: u8 = 1 << 6;
+mod attributes;
+pub(crate) use attributes::is_local_graphics_attribute;
 
 impl InvalidationImpact {
     pub const STYLE: Self = Self(1 << 0);
@@ -22,11 +29,30 @@ impl InvalidationImpact {
         let only_style = (self.is_style_only() || other.is_style_only())
             && (self.0 == 0 || self.is_style_only())
             && (other.0 == 0 || other.is_style_only());
-        Self(((self.0 | other.0) & !STYLE_ONLY) | if only_style { STYLE_ONLY } else { 0 })
+        let only_text = (self.is_text_only() || other.is_text_only())
+            && (self.0 == 0 || self.is_text_only())
+            && (other.0 == 0 || other.is_text_only());
+        let only_local = (self.is_local_content_only() || other.is_local_content_only())
+            && (self.0 == 0 || self.is_local_content_only())
+            && (other.0 == 0 || other.is_local_content_only());
+        Self(
+            ((self.0 | other.0) & !(STYLE_ONLY | TEXT_ONLY | LOCAL_CONTENT_ONLY))
+                | if only_style { STYLE_ONLY } else { 0 }
+                | if only_text { TEXT_ONLY } else { 0 }
+                | if only_local { LOCAL_CONTENT_ONLY } else { 0 },
+        )
     }
 
     pub(crate) const fn is_style_only(self) -> bool {
         self.0 & STYLE_ONLY != 0
+    }
+
+    pub(crate) const fn is_text_only(self) -> bool {
+        self.0 & TEXT_ONLY != 0
+    }
+
+    pub(crate) const fn is_local_content_only(self) -> bool {
+        self.0 & LOCAL_CONTENT_ONLY != 0
     }
 
     pub const fn affects_style(self) -> bool {
@@ -72,6 +98,8 @@ pub enum MutationKind<'a> {
     Attribute(&'a str),
     CharacterData,
     ChildList,
+    /// Proven HTML text-only child replacement; new text-node identity still needs style.
+    TextChildren,
     Stylesheet,
     Viewport,
     /// User-agent state (for example pointer designation), not an attribute mutation.
@@ -90,14 +118,20 @@ impl MutationKind<'_> {
                 InvalidationImpact::STYLE.0
                     | InvalidationImpact::LAYOUT.0
                     | InvalidationImpact::PAINT.0
-                    | STYLE_ONLY,
+                    | STYLE_ONLY
+                    | LOCAL_CONTENT_ONLY,
             ),
             Self::Attribute(name) => {
                 let base = InvalidationImpact::STYLE
                     .union(InvalidationImpact::LAYOUT)
                     .union(InvalidationImpact::PAINT);
+                let base = if is_local_graphics_attribute(name) {
+                    InvalidationImpact(base.0 | LOCAL_CONTENT_ONLY)
+                } else {
+                    base
+                };
                 if name.eq_ignore_ascii_case("style") {
-                    InvalidationImpact(base.0 | STYLE_ONLY)
+                    InvalidationImpact(base.0 | STYLE_ONLY | LOCAL_CONTENT_ONLY)
                 } else if matches!(
                     name.to_ascii_lowercase().as_str(),
                     "src" | "srcset" | "sizes" | "width" | "height" | "value"
@@ -110,6 +144,14 @@ impl MutationKind<'_> {
             Self::CharacterData => InvalidationImpact::LAYOUT
                 .union(InvalidationImpact::INTRINSIC_SIZE)
                 .union(InvalidationImpact::PAINT),
+            Self::TextChildren => InvalidationImpact(
+                InvalidationImpact::STYLE.0
+                    | InvalidationImpact::LAYOUT.0
+                    | InvalidationImpact::INTRINSIC_SIZE.0
+                    | InvalidationImpact::PAINT.0
+                    | TEXT_ONLY
+                    | LOCAL_CONTENT_ONLY,
+            ),
             Self::ChildList | Self::Stylesheet => InvalidationImpact::STYLE
                 .union(InvalidationImpact::LAYOUT)
                 .union(InvalidationImpact::INTRINSIC_SIZE)
@@ -248,6 +290,8 @@ pub(crate) fn is_validation_attribute(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod local_content;
+    mod removals;
     mod style_only;
     use crate::engine::dom::parse;
 
@@ -325,35 +369,5 @@ mod tests {
         assert_eq!(invalidation.mutation_count, 3);
         assert_eq!(invalidation.removed_nodes, vec![left, right]);
         assert!(!invalidation.removals_are_local);
-    }
-
-    #[test]
-    fn local_removal_evidence_survives_additions_but_not_unknown_removals() {
-        let document = NodeId::from_wire((1_u128 << 64) | 1).unwrap();
-        let child = NodeId::from_wire((1_u128 << 64) | 2).unwrap();
-        let addition = RenderInvalidation {
-            roots: vec![document],
-            ..RenderInvalidation::default()
-        };
-        let local = RenderInvalidation {
-            roots: vec![document],
-            removed_nodes: vec![child],
-            removals_are_local: true,
-            ..RenderInvalidation::default()
-        };
-        let mut combined = addition.clone();
-        combined.merge_conservatively(local, document);
-        assert!(combined.removals_are_local);
-        combined.merge_conservatively(addition, document);
-        assert!(combined.removals_are_local);
-        combined.merge_conservatively(
-            RenderInvalidation {
-                roots: vec![document],
-                removed_nodes: vec![child],
-                ..RenderInvalidation::default()
-            },
-            document,
-        );
-        assert!(!combined.removals_are_local);
     }
 }

@@ -4,6 +4,11 @@ use crate::engine::css::values::scalars::NumberValue;
 
 pub(super) fn apply(style: &mut ComputedStyle, name: &str, value: &str) -> bool {
     match name {
+        "zoom" => {
+            if let Some(value) = values::zoom::parse(value) {
+                value.assign(&mut style.zoom, &mut style.scalar_calculations.zoom);
+            }
+        }
         "aspect-ratio" => {
             if let Some(value) = values::scalars::RatioValue::parse(value) {
                 if let Some(fixed) = value.context_free() {

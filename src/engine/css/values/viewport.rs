@@ -17,8 +17,25 @@ impl ComputedStyle {
                 .resolve_root_font_units(root_font_size)
                 .resolve_viewport_units(width, height)
         };
+        for image in self
+            .background_image
+            .0
+            .iter_mut()
+            .chain(&mut self.mask_image.0)
+        {
+            if let ImageSource::Gradient(gradient) = image {
+                Arc::make_mut(gradient).resolve_relative_units(width, height, root_font_size);
+            }
+        }
         self.background_position_x = resolve(self.background_position_x.clone());
         self.background_position_y = resolve(self.background_position_y.clone());
+        self.background_layers
+            .map_lengths(|length| resolve(length.clone()));
+        self.mask_layers
+            .map_lengths(|length| resolve(length.clone()));
+        for shadow in &mut self.box_shadows {
+            shadow.map_lengths(|length| resolve(length.clone()));
+        }
         self.object_position =
             self.object_position
                 .clone()
@@ -71,5 +88,6 @@ impl ComputedStyle {
         self.clip_path
             .resolve_relative_units(width, height, root_font_size);
         self.transform.resolve_root_font_units(root_font_size);
+        self.translate.map_lengths(resolve);
     }
 }

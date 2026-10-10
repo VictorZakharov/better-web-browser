@@ -9,6 +9,7 @@ internal static class Program
     private static async Task<int> Main(string[] arguments)
     {
         NativeWheelTests.Run();
+        ControlKeyTests.Run();
         if (arguments.SequenceEqual(new[] { "--wheel-timing-only" })) return 0;
         ProcessTreeTests.Run();
         ProcessMemoryTests.Run();

@@ -14,6 +14,14 @@ pub(super) struct BlockImage {
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn block_image(&self, node: &NodeRef) -> Option<BlockImage> {
+        let mut image = self.unzoomed_block_image(node)?;
+        let scale = self.styles.get(node).effective_zoom;
+        image.intrinsic_width *= scale;
+        image.intrinsic_height *= scale;
+        Some(image)
+    }
+
+    fn unzoomed_block_image(&self, node: &NodeRef) -> Option<BlockImage> {
         let image_input = node.tag_name() == Some("input")
             && node
                 .attr("type")
@@ -114,14 +122,14 @@ impl BlockImage {
             "width",
             style.width.clone(),
             Some(percentage_basis),
-            style.font_size,
+            style,
         );
         let specified_height = self.resolve_length(
             node,
             "height",
             style.height.clone(),
             percentage_height_basis,
-            style.font_size,
+            style,
         );
         let content_width = specified_width
             .or_else(|| {
@@ -183,7 +191,7 @@ impl BlockImage {
             "height",
             style.height.clone(),
             percentage_basis,
-            style.font_size,
+            style,
         )
         .unwrap_or(scaled_height)
     }
@@ -194,13 +202,21 @@ impl BlockImage {
         attribute: &str,
         css: Length,
         percentage_basis: Option<f32>,
-        font_size: f32,
+        style: &ComputedStyle,
     ) -> Option<f32> {
-        if node.tag_name() == Some("svg") {
-            resolve_svg_replaced_length(node, attribute, css, percentage_basis, font_size)
+        let from_attribute = css == Length::Auto;
+        let resolved = if node.tag_name() == Some("svg") {
+            resolve_svg_replaced_length(node, attribute, css, percentage_basis, style.font_size)
         } else {
-            resolve_replaced_length(node, attribute, css, percentage_basis, font_size)
-        }
+            resolve_replaced_length(node, attribute, css, percentage_basis, style.font_size)
+        };
+        resolved.map(|v| {
+            if from_attribute {
+                v * style.effective_zoom
+            } else {
+                v
+            }
+        })
     }
 
     pub(super) fn paint(

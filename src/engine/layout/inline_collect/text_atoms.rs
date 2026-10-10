@@ -118,6 +118,7 @@ pub(super) fn text_atom(
         visible: style.visibility,
         preserve_space: style.white_space.preserves_spaces(),
         line_height: style.line_height,
+        normal_line_height: style.normal_line_height(),
         no_wrap: !style.white_space.wraps(),
     }
 }

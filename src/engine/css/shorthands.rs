@@ -3,143 +3,16 @@
 use super::values::LineHeight;
 use super::*;
 pub(in crate::engine::css) mod font;
-use crate::navigation::resolve_resource_url;
 pub(super) use font::apply_font_shorthand;
+pub(in crate::engine::css) mod background;
 mod background_size;
 pub(in crate::engine::css) mod flex;
 pub(super) use background_size::parse as parse_background_size;
 pub(super) use flex::assign as assign_flex;
 
-pub(super) fn apply_background_shorthand(style: &mut ComputedStyle, value: &str, base_url: &str) {
-    style.background_color = Color::TRANSPARENT;
-    style.background_image = parse_background_image(value, base_url);
-    style.background_repeat_x = true;
-    style.background_repeat_y = true;
-    style.background_position_x = Length::Percent(0.0);
-    style.background_position_y = Length::Percent(0.0);
-    style.background_size = BackgroundSize::Auto;
+pub(super) use background::shorthand as apply_background_shorthand;
 
-    let first_layer = split_css_top_level(value, ',')
-        .next()
-        .unwrap_or(value)
-        .trim();
-    assign_background_repeat(style, first_layer);
-    let (position, size) = split_css_once(first_layer, '/')
-        .map(|(position, size)| (position, Some(size)))
-        .unwrap_or((first_layer, None));
-    if let Some((x, y)) = parse_background_position(position) {
-        style.background_position_x = x;
-        style.background_position_y = y;
-    }
-    if let Some(size) = size.and_then(background_size::shorthand) {
-        style.background_size = size;
-    }
-    if let Some(color) = value.split_ascii_whitespace().find_map(parse_color) {
-        style.background_color = color;
-    }
-}
-
-pub(super) fn parse_background_image(value: &str, base_url: &str) -> Option<String> {
-    let first_layer = split_css_top_level(value, ',').next()?.trim();
-    if first_layer.eq_ignore_ascii_case("none") {
-        return None;
-    }
-    let mut parser_input = ParserInput::new(first_layer);
-    let mut parser = Parser::new(&mut parser_input);
-    while !parser.is_exhausted() {
-        if let Ok(url) = parser.try_parse(|input| input.expect_url()) {
-            let url = url.trim();
-            if url.is_empty() || url.starts_with('#') {
-                return None;
-            }
-            if base_url.is_empty() {
-                return Some(url.to_string());
-            }
-            return resolve_resource_url(base_url, url);
-        }
-        if parser.next_including_whitespace_and_comments().is_err() {
-            break;
-        }
-    }
-    None
-}
-
-pub(super) fn assign_background_repeat(style: &mut ComputedStyle, value: &str) {
-    let repeat = value
-        .split_ascii_whitespace()
-        .find(|token| matches!(*token, "repeat" | "no-repeat" | "repeat-x" | "repeat-y"));
-    match repeat {
-        Some("no-repeat") => {
-            style.background_repeat_x = false;
-            style.background_repeat_y = false;
-        }
-        Some("repeat-x") => {
-            style.background_repeat_x = true;
-            style.background_repeat_y = false;
-        }
-        Some("repeat-y") => {
-            style.background_repeat_x = false;
-            style.background_repeat_y = true;
-        }
-        Some("repeat") => {
-            style.background_repeat_x = true;
-            style.background_repeat_y = true;
-        }
-        _ => {}
-    }
-}
-
-pub(super) fn parse_background_position(value: &str) -> Option<(Length, Length)> {
-    let first_layer = split_css_top_level(value, ',').next()?.trim();
-    let position = split_css_once(first_layer, '/')
-        .map(|(position, _)| position)
-        .unwrap_or(first_layer);
-    let mut horizontal = None;
-    let mut vertical = None;
-    let mut found = false;
-    for token in position.split_ascii_whitespace() {
-        match token {
-            "left" => {
-                horizontal = Some(Length::Percent(0.0));
-                found = true;
-            }
-            "right" => {
-                horizontal = Some(Length::Percent(100.0));
-                found = true;
-            }
-            "top" => {
-                vertical = Some(Length::Percent(0.0));
-                found = true;
-            }
-            "bottom" => {
-                vertical = Some(Length::Percent(100.0));
-                found = true;
-            }
-            "center" => {
-                if horizontal.is_none() {
-                    horizontal = Some(Length::Percent(50.0));
-                } else if vertical.is_none() {
-                    vertical = Some(Length::Percent(50.0));
-                }
-                found = true;
-            }
-            _ => {
-                if let Some(length) = parse_length(token) {
-                    if horizontal.is_none() {
-                        horizontal = Some(length);
-                    } else if vertical.is_none() {
-                        vertical = Some(length);
-                    }
-                    found = true;
-                }
-            }
-        }
-    }
-    found.then_some((
-        horizontal.unwrap_or(Length::Percent(50.0)),
-        vertical.unwrap_or(Length::Percent(50.0)),
-    ))
-}
+pub(super) use background::position as parse_background_position;
 
 pub(super) fn parse_background_axis(value: &str, horizontal: bool) -> Option<Length> {
     let token = split_css_top_level(value, ',').next()?.trim();
@@ -149,7 +22,7 @@ pub(super) fn parse_background_axis(value: &str, horizontal: bool) -> Option<Len
         "right" if horizontal => Some(Length::Percent(100.0)),
         "top" if !horizontal => Some(Length::Percent(0.0)),
         "bottom" if !horizontal => Some(Length::Percent(100.0)),
-        _ => parse_length(token),
+        _ => parse_length(token).filter(|value| *value != Length::Auto),
     }
 }
 
@@ -170,10 +43,21 @@ pub(super) fn assign_grid_gap(style: &mut ComputedStyle, value: &str) {
     }
 }
 
-pub(super) fn assign_grid_axis(start: &mut Option<usize>, end: &mut Option<usize>, value: &str) {
-    let mut parts = value.split('/').map(str::trim);
-    *start = parts.next().and_then(parse_grid_line);
-    *end = parts.next().and_then(parse_grid_line);
+pub(super) fn assign_grid_axis(start: &mut GridLine, end: &mut GridLine, value: &str) {
+    let parts = value.split('/').map(str::trim).collect::<Vec<_>>();
+    if !(1..=2).contains(&parts.len()) {
+        return;
+    }
+    let Some(first) = GridLine::parse(parts[0]) else {
+        return;
+    };
+    let Some(last) = parts
+        .get(1)
+        .map_or(Some(GridLine::Auto), |value| GridLine::parse(value))
+    else {
+        return;
+    };
+    (*start, *end) = (first, last);
 }
 
 pub(super) fn assign_grid_template(style: &mut ComputedStyle, value: &str) {
@@ -195,28 +79,30 @@ pub(super) fn assign_grid_template(style: &mut ComputedStyle, value: &str) {
 
 pub(super) fn assign_grid_area(style: &mut ComputedStyle, value: &str) {
     let parts = value.split('/').map(str::trim).collect::<Vec<_>>();
-    style.grid_area_name = None;
-    style.grid_row_start = None;
-    style.grid_column_start = None;
-    style.grid_row_end = None;
-    style.grid_column_end = None;
-    if parts.len() == 1 && parse_grid_line(parts[0]).is_none() && parts[0] != "auto" {
+    if parts.len() == 1 && ident(parts[0]).is_some() && GridLine::parse(parts[0]).is_none() {
         style.grid_area_name = Some(parts[0].to_string());
+        style.grid_row_start = GridLine::Auto;
+        style.grid_column_start = GridLine::Auto;
+        style.grid_row_end = GridLine::Auto;
+        style.grid_column_end = GridLine::Auto;
         return;
     }
-    if parts.len() == 4 {
-        style.grid_row_start = parse_grid_line(parts[0]);
-        style.grid_column_start = parse_grid_line(parts[1]);
-        style.grid_row_end = parse_grid_line(parts[2]);
-        style.grid_column_end = parse_grid_line(parts[3]);
+    if !(1..=4).contains(&parts.len()) {
+        return;
     }
-}
-
-pub(super) fn parse_grid_line(value: &str) -> Option<usize> {
-    value
-        .split_ascii_whitespace()
-        .find_map(|part| part.parse::<usize>().ok())
-        .filter(|line| *line > 0)
+    let Some(mut lines) = parts
+        .into_iter()
+        .map(GridLine::parse)
+        .collect::<Option<Vec<_>>>()
+    else {
+        return;
+    };
+    lines.resize(4, GridLine::Auto);
+    style.grid_area_name = None;
+    style.grid_row_start = lines[0];
+    style.grid_column_start = lines[1];
+    style.grid_row_end = lines[2];
+    style.grid_column_end = lines[3];
 }
 
 pub(super) fn parse_font_size(value: &str, inherited_size: f32) -> Option<f32> {

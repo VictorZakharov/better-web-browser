@@ -1,5 +1,6 @@
 //! Bounded native input priority without discarding or compacting window messages.
 use super::*;
+mod deadline;
 
 const MAX_PREFERRED_INPUTS: u8 = 8;
 const PM_REMOVE: u32 = 0x0001;
@@ -55,7 +56,12 @@ impl InputFirstPolicy {
 
 pub(super) unsafe fn run(app: &BrowserApplication) -> Result<(), String> {
     let mut policy = InputFirstPolicy::default();
-    while let Some(message) = policy.next(peek_input, read_ordinary, posted_character_is_waiting)? {
+    let timer = deadline::DeadlineTimer::new();
+    while let Some(message) = policy.next(
+        peek_input,
+        || read_with_deadline(app, timer.as_ref()),
+        posted_character_is_waiting,
+    )? {
         // PeekMessage can retrieve WM_QUIT too; it must never be dispatched.
         if message.message == WM_QUIT {
             break;
@@ -80,6 +86,38 @@ pub(super) unsafe fn run(app: &BrowserApplication) -> Result<(), String> {
         video_presentation::flush_for_message(app, message.hwnd);
     }
     Ok(())
+}
+
+unsafe fn read_with_deadline(
+    app: &BrowserApplication,
+    timer: Option<&deadline::DeadlineTimer>,
+) -> Result<Option<Msg>, String> {
+    let Some(timer) = timer else {
+        return read_ordinary();
+    };
+    loop {
+        let mut message = std::mem::zeroed();
+        // Drain ordinary FIFO work first. PeekMessage also dispatches sent work;
+        // no BrowserState pointer or application RefCell borrow spans this call.
+        if PeekMessageW(&mut message, null_mut(), 0, 0, PM_REMOVE) != 0 {
+            return Ok(Some(message));
+        }
+        let Some(due) = runtime::next_window_deadline(app) else {
+            return read_ordinary();
+        };
+        let now = Instant::now();
+        if due <= now {
+            runtime::flush_due_windows(app);
+            continue;
+        }
+        // The ordinary WM_TIMER remains installed for native modal loops and
+        // platforms lacking high-resolution timers. No periodic worker/spin or
+        // process/global timeBeginPeriod setting is required.
+        if !timer.arm(due.saturating_duration_since(now)) {
+            return read_ordinary();
+        }
+        timer.wait_for_messages()?;
+    }
 }
 
 fn posted_character_is_waiting() -> bool {

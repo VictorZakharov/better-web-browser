@@ -10,7 +10,8 @@ use std::time::{Duration, Instant};
 
 const DYNAMIC_SCRIPT_HTML: &str = r#"<!doctype html>
 <title>dynamic scripts pending</title>
-<style>html, body { margin: 0; background: rgb(220, 20, 20); }</style>
+<style>html, body { margin: 0; background: rgb(220, 20, 20); }
+body { min-height: 100vh; }</style>
 <script>
   window.dynamicScriptsLoaded = 0;
   window.markDynamicScriptLoaded = () => {
@@ -29,7 +30,8 @@ const DYNAMIC_SCRIPT_HTML: &str = r#"<!doctype html>
 
 const FETCH_CALLBACK_DYNAMIC_SCRIPT_HTML: &str = r#"<!doctype html>
 <title>Fetch callback dynamic scripts pending</title>
-<style>html, body { margin: 0; background: rgb(220, 20, 20); }</style>
+<style>html, body { margin: 0; background: rgb(220, 20, 20); }
+body { min-height: 100vh; }</style>
 <script>
   window.dynamicScriptsLoaded = 0;
   window.markDynamicScriptLoaded = () => {

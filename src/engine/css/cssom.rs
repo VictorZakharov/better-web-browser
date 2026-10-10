@@ -3,6 +3,7 @@
 use super::values::LineHeight;
 use super::*;
 
+mod backgrounds;
 pub(crate) mod declarations;
 pub(super) mod lengths;
 pub(super) use lengths::serialize_length;
@@ -38,6 +39,20 @@ pub(crate) fn diagnostic_custom_properties(style: &ComputedStyle) -> (u64, Vec<(
 }
 
 pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> Option<String> {
+    if matches!(property, "appearance" | "-webkit-appearance") {
+        return Some(style.appearance.as_css().into());
+    }
+    if property == "accent-color" {
+        return Some(
+            style
+                .accent_color
+                .resolve(style.color)
+                .map_or_else(|| "auto".into(), serialize_color),
+        );
+    }
+    if let Some(value) = backgrounds::property(style, property) {
+        return Some(value);
+    }
     let serialize_length = |value| lengths::serialize_computed_length(value, style.font_size);
     if let Some(value) = style.animation.property_value(property) {
         return Some(value);
@@ -47,6 +62,39 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         return super::variables::substitute_variables(value, &style.custom_properties);
     }
     let value = match property {
+        "box-shadow" => {
+            if style.box_shadows.is_empty() {
+                "none".into()
+            } else {
+                style
+                    .box_shadows
+                    .iter()
+                    .map(|shadow| shadow.css_text(style))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+        }
+        "scrollbar-width" => style.scrollbar_width.css_text().into(),
+        "scrollbar-color" => style.scrollbar_color.map_or_else(
+            || "auto".into(),
+            |(thumb, track)| format!("{} {}", serialize_color(thumb), serialize_color(track)),
+        ),
+        "grid-row-start" => style.grid_row_start.css_text(),
+        "grid-row-end" => style.grid_row_end.css_text(),
+        "grid-column-start" => style.grid_column_start.css_text(),
+        "grid-column-end" => style.grid_column_end.css_text(),
+        "zoom" => style.zoom.to_string(),
+        "grid-auto-columns" => style.grid_auto_columns.clone(),
+        "grid-auto-rows" => style.grid_auto_rows.clone(),
+        "grid-auto-flow" => style.grid_auto_flow.css_text().into(),
+        "align-self" => match style.align_self {
+            None => "auto",
+            Some(AlignItems::Stretch) => "stretch",
+            Some(AlignItems::Start) => "start",
+            Some(AlignItems::End) => "end",
+            Some(AlignItems::Center) => "center",
+        }
+        .into(),
         "direction" => style.direction.css_text().into(),
         "text-align" => style.text_align.css_text().into(),
         "transition-property" => style.transition.properties.join(", "),
@@ -56,6 +104,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "align-content" => style.align_content.css_text(),
         "vertical-align" => style.vertical_align.css_keyword().to_string(),
         "background-color" => serialize_color(style.background_color),
+        "background-image" => style.background_image.css_text(),
         "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
             serialize_color(style.resolved_border_colors()[values::borders::color_side(property)?])
         }
@@ -205,6 +254,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         }
         .to_string(),
         "transform" => super::transform::serialize_transform(&style.transform),
+        "translate" => style.translate.css_text(),
         "pointer-events" => if style.pointer_events { "auto" } else { "none" }.to_string(),
         "clip-path" => style.clip_path.clone().serialize(style.font_size),
         "transform-style" => if style.transform_style_preserve_3d {
@@ -221,7 +271,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
     Some(value)
 }
 
-fn serialize_color(color: Color) -> String {
+pub(in crate::engine::css) fn serialize_color(color: Color) -> String {
     if color.alpha == u8::MAX {
         format!("rgb({}, {}, {})", color.red, color.green, color.blue)
     } else {
@@ -287,108 +337,4 @@ fn serialize_number(value: f32) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn serializes_supported_flex_values() {
-        let mut style = ComputedStyle::initial();
-        style.flex_direction = FlexDirection::Column;
-        style.flex_grow = 2.5;
-        style.flex_shrink = 0.75;
-        style.flex_wrap = true;
-
-        assert_eq!(
-            resolved_property_value(&style, "flex-direction").as_deref(),
-            Some("column")
-        );
-        assert_eq!(
-            resolved_property_value(&style, "flex-grow").as_deref(),
-            Some("2.5")
-        );
-        assert_eq!(
-            resolved_property_value(&style, "flex-shrink").as_deref(),
-            Some("0.75")
-        );
-        assert_eq!(
-            resolved_property_value(&style, "flex-wrap").as_deref(),
-            Some("wrap")
-        );
-    }
-
-    #[test]
-    fn serializes_computed_box_values_used_by_transitions() {
-        let mut style = ComputedStyle::initial();
-        style.border_radius = Length::Px(8.0);
-        style.margin.top = Length::Px(3.0);
-        style.margin.right = Length::Percent(10.0);
-        style.margin.bottom = Length::Px(5.0);
-        style.margin.left = Length::Auto;
-
-        assert_eq!(
-            resolved_property_value(&style, "border-radius").as_deref(),
-            Some("8px")
-        );
-        assert_eq!(
-            resolved_property_value(&style, "margin-top").as_deref(),
-            Some("3px")
-        );
-        assert_eq!(
-            resolved_property_value(&style, "margin-right").as_deref(),
-            Some("10%")
-        );
-        assert_eq!(
-            resolved_property_value(&style, "margin-bottom").as_deref(),
-            Some("5px")
-        );
-        assert_eq!(
-            resolved_property_value(&style, "margin-left").as_deref(),
-            Some("auto")
-        );
-    }
-
-    #[test]
-    fn serializes_computed_float_keywords() {
-        let mut style = ComputedStyle::initial();
-        style.float = Float::Right;
-
-        assert_eq!(
-            resolved_property_value(&style, "float").as_deref(),
-            Some("right")
-        );
-    }
-
-    #[test]
-    fn serializes_integer_and_auto_z_index() {
-        let mut style = ComputedStyle::initial();
-        assert_eq!(
-            resolved_property_value(&style, "z-index").as_deref(),
-            Some("auto")
-        );
-
-        style.z_index = Some(-7);
-        assert_eq!(
-            resolved_property_value(&style, "z-index").as_deref(),
-            Some("-7")
-        );
-    }
-
-    #[test]
-    fn resolves_inherited_case_sensitive_custom_properties_for_cssom() {
-        let mut style = ComputedStyle::initial();
-        Arc::make_mut(&mut style.custom_properties)
-            .insert("--Accent".into(), "rgb(1, 2, 3)".into());
-        Arc::make_mut(&mut style.custom_properties)
-            .insert("--alias".into(), "var(--Accent)".into());
-
-        assert_eq!(
-            resolved_property_value(&style, "--Accent").as_deref(),
-            Some("rgb(1, 2, 3)")
-        );
-        assert_eq!(
-            resolved_property_value(&style, "--alias").as_deref(),
-            Some("rgb(1, 2, 3)")
-        );
-        assert_eq!(resolved_property_value(&style, "--accent"), None);
-    }
-}
+mod tests;

@@ -1,8 +1,7 @@
 # Long-term 3D acceptance target: gd-clone
 
 The sibling `gd-clone` project (Last Stand) is a real application target for
-Breeze's standards work. This is a dependency roadmap, not a claim that the game
-currently runs. The inspection on 2026-10-03 found Three.js **0.185.1** and an
+Breeze's standards work. This is a dependency roadmap and dated acceptance record, not a claim that reaching a rendering milestone establishes full game compatibility. The user reported playable single-player gameplay on October 10; automated checks below separately identify what was actually verified. The inspection on 2026-10-03 found Three.js **0.185.1** and an
 explicit `webgl2` check in `src/ui/loading.ts`. Do not downgrade its library,
 replace its renderer, spoof WebGL 2, or change the game to conceal browser gaps.
 The inspected sibling HEAD was `9669c02b2db12630dae184f684486a996c3e32bf`;
@@ -346,6 +345,8 @@ slow. Interactive movement, a complete wave and sustained frame cadence are
 not verified by this capture. Smaller checked command workloads remain the
 optimization target; its 1,656.881-ms harness page-ready field is explicitly
 not time-to-arena.
+
+The October 10 audit found that this historical eight-file fixture omitted the production WebP icons. A complete unchanged 30-file asset set renders them; the earlier missing-icon observation must not be used as a decoder-failure diagnosis. The subsequent [CSS UI fidelity batch](css-ui-fidelity.md) targets the remaining browser-side panel sizing, grid placement, font and paint differences against Chrome, without altering the application.
 
 The default renderer Job stays 1 GiB. This replay selects the persisted
 **2 GiB (3D workloads)** option, with bounded 1-GiB context/owner GPU-storage

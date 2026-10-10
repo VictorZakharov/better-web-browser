@@ -224,44 +224,24 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         let radius =
             resolve_border_radius(style.border_radius.clone(), border_rect, style.font_size);
-        if self.emit_paint
-            && style.visibility
-            && style.background_color.alpha > 0
-            && style.mask_image.is_none()
-        {
+        self.paint_inline_shadows(style, border_rect, radius, metrics.border, false);
+        if self.emit_paint && style.visibility && style.background_color.alpha > 0 {
             self.output.items.push(DisplayItem::SolidRect {
                 rect: border_rect,
-                color: style
-                    .background_color
-                    .composite_over(self.output.background),
+                color: style.background_color,
                 radius,
             });
         }
-        if self.emit_paint
-            && style.visibility
-            && let Some(tile_rect) = self.background_tile_rect(style, border_rect)
-            && let Some(url) = style.background_image.as_ref()
-        {
-            self.output.items.push(DisplayItem::BackgroundImage {
-                clip_rect: border_rect,
-                tile_rect,
-                url: url.clone(),
-                repeat_x: style.background_repeat_x,
-                repeat_y: style.background_repeat_y,
-            });
+        if self.emit_paint && style.visibility {
+            for (layer, image) in style.background_image.0.iter().enumerate().rev() {
+                if let Some(item) =
+                    self.background_paint_item(style, image, layer, border_rect, radius)
+                {
+                    self.output.items.push(item);
+                }
+            }
         }
-        if self.emit_paint
-            && style.visibility
-            && let Some(url) = style.mask_image.as_ref()
-        {
-            self.output.items.push(DisplayItem::Image {
-                clip: None,
-                rect: border_rect,
-                url: url.clone(),
-                alt: String::new(),
-                tint: Some(style.background_color),
-            });
-        }
+        self.paint_inline_shadows(style, border_rect, radius, metrics.border, true);
         if self.emit_paint
             && style.visibility
             && style.resolved_border_colors().iter().any(|c| c.alpha > 0)
@@ -275,11 +255,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     metrics.border.bottom,
                     metrics.border.left,
                 ],
-                colors: style.painted_border_colors(
-                    style
-                        .background_color
-                        .composite_over(self.output.background),
-                ),
+                colors: style.resolved_border_colors(),
                 radius,
             });
         }
@@ -322,6 +298,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             );
             child_x += measured.width;
         }
+        self.wrap_mask(style, border_rect, item_start);
         if let Some(node_id) = node_id {
             self.apply_transform(node_id, style, border_rect, item_start);
         } else {

@@ -1,5 +1,6 @@
 //! One outstanding void batch per realm, plus one bounded caller-side list.
-//! Commands remain owned and FIFO; queries, uploads and task boundaries drain both.
+//! Commands remain owned and FIFO; queries and task boundaries drain both.
+//! Small owned uploads join that FIFO instead of forcing a thread round trip.
 use super::*;
 
 pub(super) struct Flight {

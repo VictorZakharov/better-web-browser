@@ -36,7 +36,7 @@ fn centers_a_fit_content_grid_item_across_its_spanned_area() {
 }
 
 #[test]
-fn paints_css_masks_with_the_elements_background_color() {
+fn masks_the_elements_background_instead_of_tinting_the_image() {
     let page = Page::parse(
         r#"<style>
             body { margin: 0 }
@@ -49,10 +49,9 @@ fn paints_css_masks_with_the_elements_background_color() {
     let output = layout_page(&page, 300.0, 200.0, &mut measurer);
 
     assert!(output.items.iter().any(|item| {
-        matches!(item, DisplayItem::Image { url, tint: Some(color), .. }
-            if url == "https://example.com/menu.svg" && *color == Color::rgb(51, 102, 204))
+        matches!(item, DisplayItem::BeginCssMask { layers, .. } if layers.is_empty())
     }));
-    assert!(!output.items.iter().any(|item| {
+    assert!(output.items.iter().any(|item| {
         matches!(item, DisplayItem::SolidRect { color, .. }
             if *color == Color::rgb(51, 102, 204))
     }));

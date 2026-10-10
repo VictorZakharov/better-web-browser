@@ -184,6 +184,43 @@ fn webgl_numeric_uniform_snapshot_never_exposes_private_lists_to_author_intrinsi
 }
 
 #[test]
+fn webgl_numeric_packet_float_ranges_are_private_owned_and_capacity_ordered() {
+    both(&format!(
+        r#"{PROGRAM}
+        const data=new Float32Array([99,.25,.5,.75,1,98]);
+        const values=new Float32Array([99,1,2,3,4,5,6,98]);
+        const typed=Object.getPrototypeOf(Float32Array.prototype);
+        const savedSet=typed.set,saved64=globalThis.Float64Array;
+        const transfer=structuredClone,buffer=data.buffer,matrixBuffer=values.buffer;
+        let hooks=0,actual,matrixActual;
+        const fail=()=>{{hooks++;throw Error('packet exposed private storage')}};
+        for(const view of [data,values])Object.defineProperties(view,{{
+            length:{{get:fail}},buffer:{{get:fail}},byteOffset:{{get:fail}},
+            constructor:{{get:fail}},[Symbol.iterator]:{{value:fail}}
+        }});
+        typed.set=fail;globalThis.Float64Array=fail;
+        try {{
+            // Cross both capacity boundaries, alternate shapes, then detach
+            // the author sources before the observation flushes pending work.
+            for(let i=0;i<129;i++){{
+                data[1]=i/256;
+                gl.uniform4fv(color,data,1,4);
+                gl.uniformMatrix2x3fv(matrix,false,values,1,6);
+            }}
+            data[1]=99;values[1]=99;
+            transfer(buffer,{{transfer:[buffer]}});
+            transfer(matrixBuffer,{{transfer:[matrixBuffer]}});
+            actual=gl.getUniform(p,color);matrixActual=gl.getUniform(p,matrix);
+        }} finally {{typed.set=savedSet;globalThis.Float64Array=saved64}}
+        assert(!hooks&&String(actual)==='0.5,0.5,0.75,1','ordered owned vector');
+        assert(String(matrixActual)==='1,2,3,4,5,6','owned rectangle');
+        assert(gl.getError()===0,'packet validation');
+        void 0;
+    "#
+    ));
+}
+
+#[test]
 fn webgl_numeric_public_uploads_snapshot_typed_ranges_and_preserve_special_values() {
     both(&format!(
         r#"{PROGRAM}
@@ -261,7 +298,7 @@ fn webgl_numeric_whole_and_offset_views_copy_internal_ranges_without_author_read
 }
 
 #[test]
-fn webgl_numeric_large_uniform_lists_use_the_bounded_ordinary_transport() {
+fn webgl_numeric_large_uniform_lists_preserve_all_matrix_array_components() {
     both(
         r#"
         const gl=new OffscreenCanvas(2,2).getContext('webgl2');
@@ -282,6 +319,35 @@ fn webgl_numeric_large_uniform_lists_use_the_bounded_ordinary_transport() {
             for(let j=0;j<16;j++)if(actual[j]!==(i*16+j)/4)throw Error('fallback list component');
         }
         if(gl.getError()!==0)throw Error('large valid numeric fallback');
+    "#,
+    );
+}
+
+#[test]
+fn webgl_numeric_large_uniform_private_admission_is_typed_and_bounded() {
+    let (mut context, _host, id) = raw();
+    check(&mut context, &format!("const id={id};"));
+    check(
+        &mut context,
+        r#"
+        const rejected=(op,integers,values)=>{
+            let threw=false;
+            try{__hostCall('webglCommandValues',id,op,integers,values)}catch(e){threw=e instanceof TypeError}
+            if(!threw)throw Error('invalid large numeric uniform accepted');
+        };
+        rejected('uniform4fv',[1],new Float32Array(8193));
+        rejected('uniform4fv',[1],new Array(65).fill(0));
+        rejected('uniform4fv',[1,0,0],new Float32Array(65));
+        rejected('uniform4iv',[1],new Float32Array(65));
+        rejected('clearColor',[],new Float32Array(65));
+        rejected('uniform4fvSuffix',[1],new Float32Array(65));
+        rejected('uniform4fv',[1],new Float32Array(new SharedArrayBuffer(1024)));
+        rejected('uniform4fv',[1],new Float32Array(new ArrayBuffer(1024,{maxByteLength:2048})));
+        rejected('uniform4fv',[1],new Proxy(new Float32Array(256),{}));
+        const values=new Float32Array(256),integers=[];
+        Object.defineProperty(integers,0,{get(){values.buffer.transfer();return 1}});
+        rejected('uniform4fv',integers,values);
+        if(__hostCall('webglCommand',id,'{"op":"getError"}')!=='0')throw Error('rejected large upload changed GL errors');
     "#,
     );
 }

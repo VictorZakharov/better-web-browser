@@ -25,13 +25,15 @@ pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)
         .attr("type")
         .unwrap_or_else(|| "text".into())
         .to_ascii_lowercase();
-    if matches!(input_type.as_str(), "hidden" | "checkbox" | "radio") {
+    if input_type == "hidden" {
         return None;
     }
     if input_type == "image" && node.attr("src").is_some_and(|src| !src.trim().is_empty()) {
         return None;
     }
     let kind = match input_type.as_str() {
+        "checkbox" => ControlKind::Checkbox,
+        "radio" => ControlKind::Radio,
         "file" => ControlKind::File,
         "password" => ControlKind::Password,
         "search" => ControlKind::Search,
@@ -55,6 +57,20 @@ pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)
         node.input_display_value()
     };
     Some((kind, value))
+}
+
+pub(super) fn checkable_state(
+    node: &NodeRef,
+    style: &ComputedStyle,
+    kind: ControlKind,
+) -> Option<CheckableState> {
+    kind.is_checkable().then(|| CheckableState {
+        checked: node.checked(),
+        indeterminate: kind == ControlKind::Checkbox && node.indeterminate(),
+        disabled: crate::engine::css::selector_match::is_disabled(node),
+        appearance: style.appearance != Appearance::None,
+        accent: style.accent_color.resolve(style.color),
+    })
 }
 
 /// Invalid-and-reported feedback for a control, for native presentation.
@@ -112,6 +128,7 @@ pub(super) fn default_control_content_height(
     style: &ComputedStyle,
 ) -> f32 {
     match kind {
+        ControlKind::Checkbox | ControlKind::Radio => 13.0,
         ControlKind::Select => style.line_height + 10.0,
         ControlKind::Submit | ControlKind::Button | ControlKind::Reset | ControlKind::File => 30.0,
         ControlKind::TextArea => {

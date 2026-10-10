@@ -3,7 +3,7 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `c61e00fbcf96a45bb60c758fbb3886b16868a5aa537b43ebf2d0fec1846cd1ee`
+- Cargo.lock SHA-256: `ef964a9e332cbcdc0ca5e2cde5596738bed8f49cdaf6689591c597b8f9349eae`
 - Third-party packages: 309
 
 | Package | Version | License expression | Source |

@@ -10,6 +10,12 @@ impl BackendContexts {
     ) -> Vec<u32> {
         let mut lost = HashSet::new();
         let mut current = None;
+        let mut converted = Command {
+            op: String::with_capacity(64),
+            i: Vec::with_capacity(8),
+            f: Vec::with_capacity(16),
+            text: String::new(),
+        };
         for (id, entry) in commands {
             if lost.contains(&id) {
                 continue;
@@ -19,12 +25,9 @@ impl BackendContexts {
                     // NumericCommand admits only converted, reply-free setters.
                     // Their dispatcher does not create, replace or destroy EGL
                     // contexts. No peer runs on this thread during the loop.
-                    let result = self.execute_command_bound(
-                        id,
-                        command.into_command(),
-                        None,
-                        current == Some(id),
-                    );
+                    command.write_command(&mut converted);
+                    let result =
+                        self.execute_command_bound(id, &converted, None, current == Some(id));
                     current = Some(id);
                     result
                 }
@@ -34,6 +37,10 @@ impl BackendContexts {
                     // and activation path, even for a canonical setter.
                     current = None;
                     self.execute(id, &source, None)
+                }
+                Entry::Upload(source, bytes) => {
+                    current = None;
+                    self.execute_owned(id, &source, Some(bytes))
                 }
             };
             if value.get("lost") == Some(&json!(true)) {

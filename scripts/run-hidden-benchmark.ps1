@@ -18,6 +18,7 @@ param(
     [ValidateRange(0, 120)]
     [int] $ScrollSamples = 0,
     [switch] $EarlyScrollTrace,
+    [switch] $NativePaintTrace,
     [ValidateRange(320, 7680)]
     [int] $WindowWidth = 1280,
     [ValidateRange(240, 4320)]
@@ -151,6 +152,9 @@ if ($ScrollSamples -gt 0) {
 }
 if ($EarlyScrollTrace) {
     $arguments.Add('--early-scroll-trace')
+}
+if ($NativePaintTrace) {
+    $arguments.Add('--native-paint-trace')
 }
 if (-not [string]::IsNullOrWhiteSpace($Screenshot)) {
     $arguments.Add('--screenshot')

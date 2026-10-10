@@ -16,6 +16,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     ) -> BlockMetrics {
         let axes = self.styles.get(node).overflow_axes();
         if matches!(node.tag_name(), Some("html" | "body"))
+            || self
+                .styles
+                .get(node)
+                .scrollbar_width
+                .thickness(self.page.scrollbar_thickness())
+                == 0.0
             || ![axes.0, axes.1]
                 .iter()
                 .any(|axis| matches!(axis, Overflow::Auto | Overflow::Scroll))

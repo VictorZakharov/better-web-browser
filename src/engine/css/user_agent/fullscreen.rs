@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(super) fn apply_fullscreen_ua_style(
+pub(in crate::engine::css) fn apply_fullscreen_ua_style(
     node: &NodeRef,
     style: &mut ComputedStyle,
     viewport_width: f32,

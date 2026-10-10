@@ -3,7 +3,7 @@
 use crate::engine::dom::{NodeData, NodeRef};
 use crate::engine::{ControlKind, ControlSpec, Page};
 use crate::limits::MAX_ACCESSIBILITY_NODE_TEXT_BYTES;
-use crate::renderer_protocol::{SemanticActions, SemanticRole};
+use crate::renderer_protocol::{SemanticActions, SemanticChecked, SemanticRole};
 
 pub(super) fn role_for(node: &NodeRef, control: Option<&ControlSpec>) -> Option<SemanticRole> {
     if matches!(node.data, NodeData::Document) {
@@ -31,12 +31,28 @@ pub(super) fn role_for(node: &NodeRef, control: Option<&ControlSpec>) -> Option<
             ControlKind::Password => SemanticRole::PasswordInput,
             ControlKind::Search => SemanticRole::SearchInput,
             ControlKind::Select => SemanticRole::ComboBox,
+            ControlKind::Checkbox => SemanticRole::Checkbox,
+            ControlKind::Radio => SemanticRole::Radio,
             ControlKind::Submit | ControlKind::Button | ControlKind::Reset | ControlKind::File => {
                 SemanticRole::Button
             }
         });
     }
     match node.tag_name()? {
+        "input"
+            if node
+                .attr("type")
+                .is_some_and(|value| value.eq_ignore_ascii_case("checkbox")) =>
+        {
+            Some(SemanticRole::Checkbox)
+        }
+        "input"
+            if node
+                .attr("type")
+                .is_some_and(|value| value.eq_ignore_ascii_case("radio")) =>
+        {
+            Some(SemanticRole::Radio)
+        }
         "p" => Some(SemanticRole::Paragraph),
         "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => Some(SemanticRole::Heading),
         "a" if node.attr("href").is_some() => Some(SemanticRole::Link),
@@ -65,6 +81,8 @@ fn aria_role(role: &str) -> Option<SemanticRole> {
         "heading" => Some(SemanticRole::Heading),
         "link" => Some(SemanticRole::Link),
         "button" => Some(SemanticRole::Button),
+        "checkbox" => Some(SemanticRole::Checkbox),
+        "radio" => Some(SemanticRole::Radio),
         "list" => Some(SemanticRole::List),
         "listitem" => Some(SemanticRole::ListItem),
         "table" | "grid" => Some(SemanticRole::Table),
@@ -92,6 +110,9 @@ pub(super) fn accessible_text(
 ) -> (String, String) {
     if role == SemanticRole::RootWebArea {
         return (bounded_text(&page.title), String::new());
+    }
+    if matches!(role, SemanticRole::Checkbox | SemanticRole::Radio) {
+        return (super::checkables::name(node, page), String::new());
     }
     if let Some(control) = control {
         let name = node
@@ -147,14 +168,26 @@ pub(super) fn actions_for(
             | SemanticRole::ComboBox
     );
     SemanticActions {
-        focus: !disabled && (control.is_some() || role == SemanticRole::Link),
-        invoke: !disabled && matches!(role, SemanticRole::Link | SemanticRole::Button),
+        focus: !disabled
+            && (control.is_some()
+                || matches!(
+                    role,
+                    SemanticRole::Link | SemanticRole::Checkbox | SemanticRole::Radio
+                )),
+        invoke: !disabled
+            && matches!(
+                role,
+                SemanticRole::Link
+                    | SemanticRole::Button
+                    | SemanticRole::Checkbox
+                    | SemanticRole::Radio
+            ),
         set_value: !disabled && editable && !is_read_only(node),
     }
 }
 
 pub(super) fn is_disabled(node: &NodeRef) -> bool {
-    node.attr("disabled").is_some()
+    crate::engine::css::selector_match::is_disabled(node)
         || node
             .attr("aria-disabled")
             .is_some_and(|value| value.eq_ignore_ascii_case("true"))
@@ -165,6 +198,10 @@ pub(super) fn is_read_only(node: &NodeRef) -> bool {
         || node
             .attr("aria-readonly")
             .is_some_and(|value| value.eq_ignore_ascii_case("true"))
+}
+
+pub(super) fn checked_state(node: &NodeRef, role: SemanticRole) -> Option<SemanticChecked> {
+    super::checkables::checked_state(node, role)
 }
 
 pub(super) fn heading_level(node: &NodeRef) -> Option<u32> {

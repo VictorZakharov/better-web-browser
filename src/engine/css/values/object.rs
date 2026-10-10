@@ -106,6 +106,16 @@ impl Default for ObjectPosition {
 }
 
 impl ObjectPosition {
+    pub(crate) fn apply_zoom(&mut self, scale: f32) {
+        for axis in [&mut self.horizontal, &mut self.vertical] {
+            match axis {
+                PositionAxis::Value(value) | PositionAxis::EdgeOffset { offset: value, .. } => {
+                    *value = super::zoom::length(value, scale);
+                }
+            }
+        }
+    }
+
     pub(crate) fn parse(value: &str) -> Option<Self> {
         let tokens = position_tokens(value)?;
         match tokens.as_slice() {

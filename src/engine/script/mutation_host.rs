@@ -4,6 +4,7 @@ use super::binding_helpers::{append_html_fragment, argument_id, argument_string,
 use super::*;
 use crate::limits::MAX_DOM_TREE_MUTATIONS_PER_TASK;
 mod scripts;
+mod text;
 
 pub(super) fn mutation_host_call(
     operation: &str,
@@ -23,7 +24,7 @@ pub(super) fn mutation_host_call(
         "removeChild" => remove_child(args, state),
         "remove" => remove(args, state),
         "adoptNode" => adopt_node(args, state),
-        "textSet" => set_text(args, state)?,
+        "textSet" => text::set(args, state)?,
         "attrSet" => super::attribute_host::set_attribute(args, state)?,
         "attrSetNs" => super::attribute_host::set_attribute_ns(args, state, false)?,
         "attrReplaceNs" => super::attribute_host::set_attribute_ns(args, state, true)?,
@@ -235,73 +236,6 @@ fn adopt_node(args: &[JsValue], state: &mut HostState) -> JsValue {
     }
     state.adopt_subtree(&owner, &node);
     JsValue::from(state.id_for(&node))
-}
-
-fn set_text(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
-    let contents = argument_string(args, 2)?;
-    let node = state.node(argument_id(args, 1));
-    let mut kind = node.as_ref().map_or(MutationKind::CharacterData, |node| {
-        if matches!(
-            &node.data,
-            NodeData::Text(_)
-                | NodeData::Cdata(_)
-                | NodeData::Comment(_)
-                | NodeData::ProcessingInstruction { .. }
-        ) {
-            MutationKind::CharacterData
-        } else {
-            // Element.textContent replaces its child list, including the identity of any text
-            // node. Treating that as character data would leave the new node without style state.
-            MutationKind::ChildList
-        }
-    });
-    let removed = node
-        .as_ref()
-        .filter(|node| {
-            !matches!(
-                &node.data,
-                NodeData::Text(_)
-                    | NodeData::Cdata(_)
-                    | NodeData::Comment(_)
-                    | NodeData::ProcessingInstruction { .. }
-            )
-        })
-        .map(|node| node.children.borrow().clone())
-        .unwrap_or_default();
-    if removed.iter().any(subtree_contains_style) {
-        kind = MutationKind::Stylesheet;
-    }
-    if matches!(kind, MutationKind::ChildList | MutationKind::Stylesheet) {
-        enforce_tree_budget(state)?;
-    }
-    if !contents.is_empty()
-        && node.as_ref().is_some_and(|node| {
-            !matches!(
-                &node.data,
-                NodeData::Text(_)
-                    | NodeData::Cdata(_)
-                    | NodeData::Comment(_)
-                    | NodeData::ProcessingInstruction { .. }
-            )
-        })
-    {
-        state.ensure_node_capacity(1)?;
-    }
-    let changed = node.as_ref().is_some_and(|node| {
-        Node::set_text_content(node, &contents);
-        state.register_subtree(node);
-        true
-    });
-    if changed {
-        for removed in &removed {
-            state.record_removed_subtree(removed);
-        }
-        state.record_mutation(node.as_ref(), kind);
-        if let Some(node) = node {
-            state.diagnose(format!("set textContent on {}", node_label(&node)));
-        }
-    }
-    Ok(JsValue::from(changed))
 }
 
 fn set_inner_html(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {

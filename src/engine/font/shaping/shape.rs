@@ -91,7 +91,11 @@ impl TextShaper {
         options: &ShapeOptions,
     ) -> ShapeOutput {
         let size = spec.size.clamp(1.0, 768.0);
-        let height = (size * 1.2).max(size);
+        let mut height = catalog
+            .select(&spec.family, spec, Script::Latin, " ")
+            .map_or(size * 1.2, |font| {
+                super::geometry::font_metrics(&font, size).normal_height()
+            });
         let mut output = ShapeOutput {
             pending_clusters: Vec::new(),
             geometry: TextGeometry {
@@ -119,6 +123,7 @@ impl TextShaper {
                 }
             }),
         );
+        let mut selected_runs = Vec::new();
         for paragraph in &bidi.paragraphs {
             let (_, visual_runs) = bidi.visual_runs(paragraph, paragraph.range.clone());
             for visual_run in visual_runs {
@@ -129,12 +134,19 @@ impl TextShaper {
                 if rtl {
                     font_runs.reverse();
                 }
-                for run in font_runs {
-                    let shape_started = Instant::now();
-                    self.shape_font_run(text, &utf16_offsets, spec, height, run, &mut output);
-                    output.open_type_time += shape_started.elapsed();
+                for run in &font_runs {
+                    height =
+                        height.max(super::geometry::font_metrics(&run.font, size).normal_height());
                 }
+                selected_runs.extend(font_runs);
             }
+        }
+        output.height = height;
+        output.geometry.layout_height = height;
+        for run in selected_runs {
+            let shape_started = Instant::now();
+            self.shape_font_run(text, &utf16_offsets, spec, height, run, &mut output);
+            output.open_type_time += shape_started.elapsed();
         }
         output.geometry.clusters = std::mem::take(&mut output.pending_clusters).into();
         output
@@ -371,12 +383,6 @@ fn is_specific_script(script: Script) -> bool {
 }
 
 fn font_baseline(font: &SelectedFont, size: f32, line_height: f32) -> f32 {
-    let Some(swash_font) =
-        swash::FontRef::from_index(font.font.blob.as_ref(), font.font.index as usize)
-    else {
-        return line_height * 0.8;
-    };
-    let metrics = swash_font.metrics(&[]);
-    let ascent = metrics.ascent / metrics.units_per_em.max(1) as f32 * size;
-    (line_height - size).max(0.0) * 0.5 + ascent
+    let metrics = super::geometry::font_metrics(font, size);
+    (line_height - metrics.ascent - metrics.descent) * 0.5 + metrics.ascent
 }

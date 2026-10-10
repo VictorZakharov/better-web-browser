@@ -5,42 +5,22 @@
 // Observations and task boundaries drain earlier commands regardless of size.
 const MAX_COMMANDS: usize = 128;
 const MAX_COMMAND_BYTES: usize = 1024;
-pub(crate) const MAX_NUMERIC_VALUES: usize = 64;
-
-/// Converted numeric setters only: no names, source strings, bytes or replies.
-/// The ordinary native dispatcher still validates every operation's GL shape.
-pub(crate) struct NumericCommand(super::Command);
-
-impl NumericCommand {
-    pub(crate) fn new(op: String, i: Vec<i64>, f: Vec<f64>) -> Option<Self> {
-        if !Pending::operation(&op)
-            || i.len().checked_add(f.len())? > MAX_NUMERIC_VALUES
-            || i.iter()
-                .any(|value| value.unsigned_abs() > 9_007_199_254_740_991)
-        {
-            return None;
-        }
-        Some(Self(super::Command {
-            op,
-            i,
-            f,
-            text: String::new(),
-        }))
-    }
-
-    pub(super) fn into_command(self) -> super::Command {
-        self.0
-    }
-}
+mod numeric;
+mod uploads;
+pub(crate) use numeric::{
+    MAX_NUMERIC_VALUES, MAX_UNIFORM_FLOATS, NumericCommand, large_float_uniform,
+};
 
 pub(super) enum Entry {
     Json(String),
     Numeric(NumericCommand),
+    Upload(String, Vec<u8>),
 }
 
 #[derive(Default)]
 pub(super) struct Pending {
     commands: Vec<(u32, Entry)>,
+    upload_bytes: usize,
 }
 
 impl Pending {
@@ -195,15 +175,25 @@ impl Pending {
     }
 
     pub(super) fn take(&mut self) -> Vec<(u32, Entry)> {
+        self.upload_bytes = 0;
         std::mem::take(&mut self.commands)
     }
 
     pub(super) fn remove(&mut self, id: u32) {
         self.commands.retain(|(context, _)| *context != id);
+        self.upload_bytes = self
+            .commands
+            .iter()
+            .map(|(_, entry)| match entry {
+                Entry::Upload(_, bytes) => bytes.len(),
+                _ => 0,
+            })
+            .sum();
     }
 
     pub(super) fn clear(&mut self) {
         self.commands.clear();
+        self.upload_bytes = 0;
     }
 }
 

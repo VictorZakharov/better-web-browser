@@ -5,6 +5,7 @@
 
 mod alpha;
 mod avif;
+mod premultiply;
 pub(crate) use alpha::unpremultiply_rgba;
 pub(crate) use avif::decoder::VideoAv1Decoder;
 mod color;
@@ -113,20 +114,7 @@ impl RasterImage {
     }
 
     pub fn into_premultiplied_bgra(mut self) -> crate::engine::page::DecodedImage {
-        for pixel in self.rgba.as_chunks_mut::<4>().0 {
-            let [red, green, blue, alpha] = *pixel;
-            // Most large Canvas snapshots are transparent or opaque. Preserve
-            // the exact scalar equation without three divisions in those cases.
-            *pixel = match alpha {
-                0 => [0; 4],
-                255 => [blue, green, red, 255],
-                alpha => {
-                    let multiply =
-                        |channel: u8| ((u16::from(channel) * u16::from(alpha) + 127) / 255) as u8;
-                    [multiply(blue), multiply(green), multiply(red), alpha]
-                }
-            };
-        }
+        premultiply::rgba_to_bgra(&mut self.rgba);
         crate::engine::page::DecodedImage {
             width: self.width,
             height: self.height,

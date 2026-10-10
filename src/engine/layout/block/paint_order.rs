@@ -14,8 +14,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if !self.emit_paint {
             return;
         }
-        let effect_context =
-            style.opacity < 1.0 || !style.transform.is_none() || !style.clip_path.clone().is_none();
+        let effect_context = style.opacity < 1.0
+            || style.has_transform()
+            || !style.clip_path.clone().is_none()
+            || !style.mask_image.0.is_empty();
         let positioned = style.position != Position::Static;
         let root = matches!(node.tag_name(), Some("body" | "html"));
         let isolates = root
@@ -113,6 +115,7 @@ fn parse(items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
             }
             | DisplayItem::EndClip { .. }
             | DisplayItem::EndOpacity { .. }
+            | DisplayItem::EndMask { .. }
             | DisplayItem::NodeBoundary {
                 entering: false, ..
             } => break,
@@ -162,6 +165,14 @@ fn parse(items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
                     child.content.items.push(DisplayItem::EndClip { bounds });
                     chunks.push(child);
                 }
+            }
+            DisplayItem::BeginCssMask { bounds, layers } => {
+                let mut content = order_context(parse(items));
+                content
+                    .items
+                    .insert(0, DisplayItem::BeginCssMask { bounds, layers });
+                content.items.push(DisplayItem::EndMask { bounds });
+                chunks.push(Chunk::new(Phase::Content, content));
             }
             DisplayItem::BeginOpacity { bounds, opacity } => {
                 let mut content = order_context(parse(items));

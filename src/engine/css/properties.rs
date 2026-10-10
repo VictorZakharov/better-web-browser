@@ -5,6 +5,7 @@ use super::values::{BoxOrient, LineClamp, TextOverflow};
 use super::*;
 mod flex;
 mod helpers;
+mod paint;
 mod scalars;
 pub(super) mod table_spacing;
 mod text;
@@ -59,7 +60,11 @@ pub(super) fn apply_declaration(
         values::transitions::apply(&mut style.transition, name, value);
         return;
     }
-    if scalars::apply(style, name, value) || flex::apply(style, name, value) {
+    if scalars::apply(style, name, value)
+        || flex::apply(style, name, value)
+        || shorthands::background::apply_longhand(style, name, value)
+        || paint::apply(style, name, value)
+    {
         return;
     }
     match name {
@@ -139,35 +144,17 @@ pub(super) fn apply_declaration(
                 style.background_color = color;
             }
         }
-        "background-image" => style.background_image = parse_background_image(value, base_url),
+        "background-image" => {
+            if let Some(images) = images::parse(value, base_url, false) {
+                style.background_image = images;
+            }
+        }
         "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
-            style.mask_image = parse_background_image(value, base_url)
+            shorthands::background::apply_mask(style, name, value, base_url);
         }
         "clip-path" => {
             if let Some(clip_path) = clip_path::ClipPath::parse(value) {
                 style.clip_path = clip_path;
-            }
-        }
-        "background-repeat" => assign_background_repeat(style, value),
-        "background-position" => {
-            if let Some((x, y)) = parse_background_position(value) {
-                style.background_position_x = x;
-                style.background_position_y = y;
-            }
-        }
-        "background-position-x" => {
-            if let Some(position) = parse_background_axis(value, true) {
-                style.background_position_x = position;
-            }
-        }
-        "background-position-y" => {
-            if let Some(position) = parse_background_axis(value, false) {
-                style.background_position_y = position;
-            }
-        }
-        "background-size" => {
-            if let Some(size) = parse_background_size(value) {
-                style.background_size = size;
             }
         }
         "object-fit" => {
@@ -268,6 +255,12 @@ pub(super) fn apply_declaration(
         "perspective" => {
             style.perspective_non_none = value != "none" && parse_length(value).is_some();
         }
+        "translate" => {
+            if let Some(translate) = super::transform::individual::IndividualTranslate::parse(value)
+            {
+                style.translate = translate;
+            }
+        }
         "filter" => {
             style.filter_non_none = value != "none" && value.contains('(') && value.ends_with(')');
         }
@@ -355,13 +348,40 @@ pub(super) fn apply_declaration(
         }
         "grid-template-areas" => style.grid_template_areas = value.to_string(),
         "grid-template" => assign_grid_template(style, value),
+        "grid-auto-columns" if values::grid_auto::tracks_valid(value) => {
+            style.grid_auto_columns = value.into()
+        }
+        "grid-auto-rows" if values::grid_auto::tracks_valid(value) => {
+            style.grid_auto_rows = value.into()
+        }
+        "grid-auto-flow" => {
+            if let Some(flow) = values::grid_auto::GridAutoFlow::parse(value) {
+                style.grid_auto_flow = flow;
+            }
+        }
         "column-gap" | "grid-column-gap" => assign_length(&mut style.grid_column_gap, value),
         "row-gap" | "grid-row-gap" => assign_length(&mut style.grid_row_gap, value),
         "gap" | "grid-gap" => assign_grid_gap(style, value),
-        "grid-column-start" | "-ms-grid-column" => style.grid_column_start = parse_grid_line(value),
-        "grid-column-end" => style.grid_column_end = parse_grid_line(value),
-        "grid-row-start" | "-ms-grid-row" => style.grid_row_start = parse_grid_line(value),
-        "grid-row-end" => style.grid_row_end = parse_grid_line(value),
+        "grid-column-start" | "-ms-grid-column" => {
+            if let Some(line) = GridLine::parse(value) {
+                style.grid_column_start = line;
+            }
+        }
+        "grid-column-end" => {
+            if let Some(line) = GridLine::parse(value) {
+                style.grid_column_end = line;
+            }
+        }
+        "grid-row-start" | "-ms-grid-row" => {
+            if let Some(line) = GridLine::parse(value) {
+                style.grid_row_start = line;
+            }
+        }
+        "grid-row-end" => {
+            if let Some(line) = GridLine::parse(value) {
+                style.grid_row_end = line;
+            }
+        }
         "grid-column" => assign_grid_axis(
             &mut style.grid_column_start,
             &mut style.grid_column_end,

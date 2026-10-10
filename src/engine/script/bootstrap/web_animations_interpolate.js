@@ -113,6 +113,10 @@
             const transform = interpolateAnimationTransform(from, to, progress);
             if (transform !== null) return transform;
         }
+        if (property === 'translate') {
+            const value = host('interpolateCssTranslate', from, to, progress);
+            if (value !== null) return value;
+        }
         const first = animationNumber.exec(String(from).trim());
         const last = animationNumber.exec(String(to).trim());
         if (first && last && first[2] === last[2]) {

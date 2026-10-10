@@ -6,6 +6,10 @@ pub(super) fn is_fixed(track: Option<&GridTrack>) -> bool {
     matches!(track, Some(GridTrack::Fixed(_)))
 }
 
+pub(super) fn has_fixed_minimum(track: Option<&GridTrack>) -> bool {
+    matches!(track, Some(GridTrack::MinMax(minimum, _)) if matches!(**minimum, GridTrack::Fixed(_)))
+}
+
 fn fraction(track: Option<&GridTrack>) -> f32 {
     match track {
         Some(GridTrack::Fraction(value)) => *value,
@@ -59,19 +63,39 @@ pub(super) fn resolve(
             flex_size.max((height - nonflex - gap * (end - start - 1) as f32) / factors.max(1.0));
     }
     if let Some(available) = available {
-        let factors: f32 = (0..heights.len()).map(|i| fraction(tracks.get(i))).sum();
         let nonflex: f32 = heights
             .iter()
             .enumerate()
             .filter(|(i, _)| fraction(tracks.get(*i)) == 0.0)
             .map(|(_, h)| h)
             .sum();
-        if factors > 0.0 {
-            flex_size = flex_size.max(
-                (available - nonflex - gap * heights.len().saturating_sub(1) as f32)
-                    / factors.max(1.0),
-            );
+        let mut free = available - nonflex - gap * heights.len().saturating_sub(1) as f32;
+        let mut pending = (0..heights.len())
+            .filter(|&i| fraction(tracks.get(i)) > 0.0)
+            .collect::<Vec<_>>();
+        // CSS Grid §12.7: a definite container's flex fraction is determined by
+        // its remaining space, not by unbounded max-content contributions.
+        loop {
+            let factors: f32 = pending.iter().map(|&i| fraction(tracks.get(i))).sum();
+            let unit = free.max(0.0) / factors.max(1.0);
+            let mut froze = false;
+            pending.retain(|&i| {
+                if heights[i] > fraction(tracks.get(i)) * unit {
+                    free -= heights[i];
+                    froze = true;
+                    false
+                } else {
+                    true
+                }
+            });
+            if !froze {
+                for i in pending {
+                    heights[i] = fraction(tracks.get(i)) * unit;
+                }
+                break;
+            }
         }
+        return;
     }
     for (i, height) in heights.iter_mut().enumerate() {
         let factor = fraction(tracks.get(i));

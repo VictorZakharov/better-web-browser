@@ -6,6 +6,7 @@ mod database;
 mod fetch;
 mod file_picker;
 mod geolocation;
+mod interaction;
 mod media;
 mod media_capture;
 mod media_devices;

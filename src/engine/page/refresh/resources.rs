@@ -26,10 +26,7 @@ impl Page {
             if style.display == Display::None || !style.visibility {
                 continue;
             }
-            for url in [&style.background_image, &style.mask_image]
-                .into_iter()
-                .flatten()
-            {
+            for url in style.background_image.urls().chain(style.mask_image.urls()) {
                 if discovered_style_images < MAX_STYLE_IMAGES && known_images.insert(url.clone()) {
                     self.resources
                         .push(PageResource::Image { url: url.clone() });

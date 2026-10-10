@@ -45,6 +45,11 @@ internal static class BrowserActions
             nextId = await DispatchClickAsync(cdp, click.X, click.Y, timeout, nextId);
         }
         nextId = await FormNavigationActions.RunAsync(cdp, options, timeout, nextId);
+        if (options.KeyAfterReady is { } key)
+        {
+            await Task.Delay(options.NextActionDelayMs());
+            nextId = await key.DispatchAsync(cdp, timeout, nextId);
+        }
         return nextId;
     }
 

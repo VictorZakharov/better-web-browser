@@ -17,6 +17,10 @@
              (document.compatMode === 'BackCompat' && element === document.body));
     }
 
+    function effectiveZoom(element) {
+        return host('effectiveZoom', nodeId(element)) || 1;
+    }
+
     function computedBorderWidth(element, side) {
         return Number.parseFloat(getComputedStyle(element)[`border${side}Width`]) || 0;
     }
@@ -38,8 +42,9 @@
         if (Array.isArray(scroll)) return scroll[4];
         const rect = layoutRect(element);
         if (!rect.hasBox) return 0;
-        if (hasTableWrapper(element)) return rect.width;
-        let width = rect.width - computedBorderWidth(element, 'Left') -
+        const widthWithoutZoom = rect.width / effectiveZoom(element);
+        if (hasTableWrapper(element)) return widthWithoutZoom;
+        let width = widthWithoutZoom - computedBorderWidth(element, 'Left') -
             computedBorderWidth(element, 'Right');
         if (element.localName === 'input') {
             width -= computedPaddingWidth(element, 'Left') + computedPaddingWidth(element, 'Right');
@@ -53,12 +58,17 @@
         if (Array.isArray(scroll)) return scroll[5];
         const rect = layoutRect(element);
         if (!rect.hasBox) return 0;
-        if (hasTableWrapper(element)) return rect.height;
-        return Math.max(0, rect.height - computedBorderWidth(element, 'Top') -
+        const heightWithoutZoom = rect.height / effectiveZoom(element);
+        if (hasTableWrapper(element)) return heightWithoutZoom;
+        return Math.max(0, heightWithoutZoom - computedBorderWidth(element, 'Top') -
             computedBorderWidth(element, 'Bottom'));
     }
 
     Object.defineProperties(Element.prototype, {
+        currentCSSZoom: {
+            configurable: true, enumerable: true,
+            get() { return layoutRect(this).hasBox ? effectiveZoom(this) : 1; }
+        },
         __layoutRect: {
             configurable: true,
             value() { return layoutRect(this); }
@@ -96,11 +106,11 @@
     Object.defineProperties(HTMLElement.prototype, {
         offsetWidth: {
             configurable: true,
-            get() { return Math.round(layoutRect(this).width); }
+            get() { return Math.round(layoutRect(this).width / effectiveZoom(this)); }
         },
         offsetHeight: {
             configurable: true,
-            get() { return Math.round(layoutRect(this).height); }
+            get() { return Math.round(layoutRect(this).height / effectiveZoom(this)); }
         },
         offsetParent: {
             configurable: true,
@@ -111,10 +121,11 @@
             get() {
                 const rect = layoutRect(this);
                 const parent = this.offsetParent;
-                if (!parent) return Math.round(rect.x);
+                const zoom = effectiveZoom(this);
+                if (!parent) return Math.round(rect.x / zoom);
                 const parentRect = layoutRect(parent);
                 const border = computedBorderWidth(parent, 'Left');
-                return Math.round(rect.x - parentRect.x - border);
+                return Math.round((rect.x - parentRect.x - border * effectiveZoom(parent)) / zoom);
             }
         },
         offsetTop: {
@@ -122,10 +133,11 @@
             get() {
                 const rect = layoutRect(this);
                 const parent = this.offsetParent;
-                if (!parent) return Math.round(rect.y);
+                const zoom = effectiveZoom(this);
+                if (!parent) return Math.round(rect.y / zoom);
                 const parentRect = layoutRect(parent);
                 const border = computedBorderWidth(parent, 'Top');
-                return Math.round(rect.y - parentRect.y - border);
+                return Math.round((rect.y - parentRect.y - border * effectiveZoom(parent)) / zoom);
             }
         }
     });

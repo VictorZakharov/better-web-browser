@@ -118,7 +118,7 @@ impl FontCatalog {
             return Some(cached.clone());
         }
         let mut families = Vec::with_capacity(4);
-        if cluster_looks_like_emoji(cluster) {
+        if super::presentation::prefers_emoji(cluster) {
             families.push(QueryFamily::Generic(GenericFamily::Emoji));
         }
         use crate::engine::css::font_family::{self, Family};
@@ -134,6 +134,11 @@ impl FontCatalog {
             }
         }
         families.push(QueryFamily::Generic(GenericFamily::SansSerif));
+        // Common-script characters do not have a representative script fallback
+        // in Fontique. Try the platform symbol face only after authored families.
+        families.push(QueryFamily::Named("Segoe UI Symbol"));
+        families.push(QueryFamily::Generic(GenericFamily::Math));
+        families.push(QueryFamily::Generic(GenericFamily::Emoji));
 
         let attributes = Attributes::new(
             FontWidth::NORMAL,
@@ -223,15 +228,6 @@ fn coverage_ignorable(ch: char) -> bool {
     )
 }
 
-fn cluster_looks_like_emoji(cluster: &str) -> bool {
-    cluster.chars().any(|ch| {
-        matches!(
-            ch as u32,
-            0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0xFE0F
-        )
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,5 +262,33 @@ mod tests {
         assert_eq!(catalog.selections.len(), 2);
         catalog.select(&spec.family, &spec, UnicodeScript::Latin, "B");
         assert_eq!(catalog.selections.len(), 3);
+    }
+    #[test]
+    fn common_script_symbols_find_real_glyphs_in_the_platform_fallback_faces() {
+        let mut catalog = FontCatalog::new();
+        let mut spec = crate::engine::css::ComputedStyle::initial();
+        spec.font_family = "Arial".into();
+        let spec = FontSpec {
+            family: spec.font_family,
+            size: 16.0,
+            weight: 400,
+            italic: false,
+            underline: false,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
+            rtl: false,
+            kerning: true,
+            features: Default::default(),
+            variants: Default::default(),
+        };
+        for cluster in ["⚔", "✦", "⟳", "⛁"] {
+            let font = catalog
+                .select(&spec.family, &spec, UnicodeScript::Common, cluster)
+                .unwrap();
+            assert!(
+                cluster_has_coverage(cluster, &font.font.charmap().unwrap()),
+                "{cluster}"
+            );
+        }
     }
 }

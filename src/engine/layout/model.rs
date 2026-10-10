@@ -1,5 +1,7 @@
+mod controls;
 mod resize;
 mod text;
+pub use controls::{CheckableState, ControlKind, ControlSpec, FormSpec, SelectOption};
 pub use text::{FontSpec, PositionedGlyph, ShapedText, TextMeasurer};
 pub(super) mod fragments;
 use super::*;
@@ -33,63 +35,6 @@ impl RectF {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ControlKind {
-    Text,
-    TextArea,
-    Password,
-    Search,
-    File,
-    Select,
-    Submit,
-    Button,
-    Reset,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SelectOption {
-    pub value: String,
-    pub label: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ControlSpec {
-    /// The retained descendants paint this control; no native child may cover them.
-    pub authored_content: bool,
-    pub node_id: NodeId,
-    pub rect: RectF,
-    pub kind: ControlKind,
-    pub name: String,
-    pub value: String,
-    pub label: String,
-    pub options: Vec<SelectOption>,
-    pub selected_index: i64,
-    pub placeholder: String,
-    pub form_id: Option<NodeId>,
-    pub background_color: Color,
-    pub text_color: Color,
-    pub placeholder_color: Color,
-    pub border_colors: [Color; 4],
-    pub border_width: [f32; 4],
-    pub border_radius: f32,
-    pub padding: [f32; 4],
-    pub font: FontSpec,
-    pub icon_url: Option<String>,
-    pub icon_width: f32,
-    pub icon_height: f32,
-    /// Interactively reported invalid state with its message for feedback.
-    pub invalid: bool,
-    pub validation_message: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FormSpec {
-    pub node_id: NodeId,
-    pub action: String,
-    pub method: String,
-    pub hidden_fields: Vec<(String, String)>,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum DisplayItem {
     /// Renderer-local CSS paint-phase ownership; consumed by layout before presentation.
@@ -116,6 +61,18 @@ pub enum DisplayItem {
         opacity: f32,
     },
     EndOpacity {
+        bounds: RectF,
+    },
+    /// Renderer-local mask image layers, resolved before bounded IPC publication.
+    BeginCssMask {
+        bounds: RectF,
+        layers: Vec<DisplayItem>,
+    },
+    BeginMask {
+        bounds: RectF,
+        url: String,
+    },
+    EndMask {
         bounds: RectF,
     },
     SolidRect {
@@ -159,6 +116,26 @@ pub enum DisplayItem {
         url: String,
         repeat_x: bool,
         repeat_y: bool,
+    },
+    /// Renderer-local generated CSS image; rasterized through the existing image pipeline.
+    CssGradient {
+        clip_rect: RectF,
+        tile_rect: RectF,
+        gradient: crate::engine::css::images::gradient::geometry::ResolvedGradient,
+        radius: f32,
+        repeat_x: bool,
+        repeat_y: bool,
+    },
+    /// Renderer-local ink only. It never changes scrollable overflow or hit boxes.
+    CssBoxShadow {
+        bounds: RectF,
+        edge: RectF,
+        offset: [f32; 2],
+        blur: f32,
+        spread: f32,
+        radius: f32,
+        color: Color,
+        inset: bool,
     },
     Control(Box<ControlSpec>),
 }
@@ -206,6 +183,7 @@ pub(super) enum InlineAtom {
         visible: bool,
         preserve_space: bool,
         line_height: f32,
+        normal_line_height: bool,
         no_wrap: bool,
     },
     Image {

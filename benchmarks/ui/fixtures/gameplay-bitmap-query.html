@@ -1,0 +1,21 @@
+<!doctype html><meta charset="utf-8"><title>pending bitmap extent query</title>
+<canvas id="result" width="1024" height="1024"></canvas>
+<script>
+(async()=>{
+  const gl=document.querySelector('canvas').getContext('webgl2',{antialias:false,preserveDrawingBuffer:true});
+  if(!gl)throw Error('WebGL 2 unavailable');
+  const samples=[];
+  for(let i=0;i<20;i++){
+    // Mark the surface dirty and complete the GPU work outside the query clock.
+    gl.clearColor(0,1,0,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.finish();
+    const started=performance.now(),width=gl.drawingBufferWidth,height=gl.drawingBufferHeight;
+    const elapsed=(performance.now()-started)*1000;
+    if(width!==1024||height!==1024)throw Error('wrong extent');
+    if(i>=4)samples.push(elapsed);
+    await new Promise(resolve=>setTimeout(resolve,0));
+  }
+  const actual=new Uint8Array(4);gl.readPixels(512,512,1,1,gl.RGBA,gl.UNSIGNED_BYTE,actual);
+  if(actual.join()!=='0,255,0,255'||gl.getError()!==0)throw Error('query changed pixels or GL errors');
+  document.title='done extent-query us='+samples.map(value=>value.toFixed(1)).join(',')+';pixel=0,255,0,255';
+})().catch(error=>{document.title='failed '+error.message;throw error});
+</script>

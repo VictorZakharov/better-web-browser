@@ -222,6 +222,7 @@ impl DocumentRuntime {
             &mut *text,
         );
         drop(text);
+        self.page.prepare_css_images(&mut self.layout);
         self.compose_embedded_frames();
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.finish_frame_layout_attempt();

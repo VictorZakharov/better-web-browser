@@ -77,6 +77,7 @@ fn resolve(
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct ScalarCalculations {
+    pub(crate) zoom: Option<NumberValue>,
     pub(crate) opacity: Option<NumberValue>,
     pub(crate) grow: Option<NumberValue>,
     pub(crate) shrink: Option<NumberValue>,
@@ -87,6 +88,7 @@ pub(crate) struct ScalarCalculations {
 impl ScalarCalculations {
     pub(in crate::engine::css) fn copy_property(&mut self, source: &Self, property: &str) {
         match property {
+            "zoom" => self.zoom.clone_from(&source.zoom),
             "opacity" => self.opacity.clone_from(&source.opacity),
             "z-index" => self.z_index.clone_from(&source.z_index),
             "aspect-ratio" => self.ratio.clone_from(&source.ratio),
@@ -110,6 +112,9 @@ impl ComputedStyle {
         // Clear authored trees after computing: explicit inheritance copies the
         // parent's computed number, not an expression re-evaluated in the child.
         let pending = std::mem::take(&mut self.scalar_calculations);
+        if let Some(value) = pending.zoom {
+            self.zoom = value.resolve(self.font_size, root, width, height).max(0.0);
+        }
         if let Some(value) = pending.ratio {
             self.aspect_ratio = value.resolve(self.font_size, root, width, height);
         }

@@ -36,6 +36,15 @@ pub enum SemanticRole {
     Footer,
     Article,
     Section,
+    Checkbox,
+    Radio,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SemanticChecked {
+    False,
+    True,
+    Mixed,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -67,6 +76,7 @@ pub struct SemanticNode {
     pub read_only: bool,
     pub actions: SemanticActions,
     pub selection: Option<SemanticSelection>,
+    pub checked: Option<SemanticChecked>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -100,6 +110,7 @@ impl AccessibilityUpdate {
                 read_only: false,
                 actions: SemanticActions::default(),
                 selection: None,
+                checked: None,
             }],
             added: Vec::new(),
             removed: Vec::new(),
@@ -234,6 +245,7 @@ mod tests {
             read_only: false,
             actions: SemanticActions::default(),
             selection: None,
+            checked: None,
         }
     }
 

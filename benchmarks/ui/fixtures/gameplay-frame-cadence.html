@@ -1,0 +1,28 @@
+<!doctype html><meta charset="utf-8"><title>pending gameplay cadence</title>
+<canvas id="result" width="128" height="128"></canvas>
+<script>
+(() => {
+  const gl=document.getElementById('result').getContext('webgl2',{antialias:false,preserveDrawingBuffer:true});
+  if(!gl)throw Error('WebGL 2 unavailable');
+  const intervals=[],active=[],timestamps=[];
+  let previous=null;
+  const frame=timestamp=>{
+    const started=performance.now();
+    if(previous!==null)intervals.push(started-previous);
+    previous=started;timestamps.push(timestamp);
+    gl.clearColor(0,1,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
+    active.push(performance.now()-started);
+    if(active.length<65){requestAnimationFrame(frame);return;}
+    const pixels=new Uint8Array(4);gl.readPixels(64,64,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+    if(pixels.join(',')!=='0,255,0,255'||gl.getError()!==0)throw Error('frame result mismatch');
+    if(timestamps.some((value,index)=>index&&value<=timestamps[index-1]))throw Error('non-increasing frame timestamps');
+    const ordered=intervals.slice().sort((a,b)=>a-b);
+    const mean=values=>values.reduce((sum,value)=>sum+value,0)/values.length;
+    // The native title report is bounded; keep all intervals in the DOM and
+    // publish compact statistics rather than silently truncating a long title.
+    document.getElementById('result').setAttribute('data-intervals',JSON.stringify(intervals));
+    document.title='done cadence count='+intervals.length+';ms='+mean(intervals).toFixed(2)+','+ordered[32].toFixed(2)+','+ordered[0].toFixed(2)+','+ordered[63].toFixed(2)+';active='+mean(active).toFixed(2)+';pixel=0,255,0,255';
+  };
+  requestAnimationFrame(frame);
+})()
+</script>

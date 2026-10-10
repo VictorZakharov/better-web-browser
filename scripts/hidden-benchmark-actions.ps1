@@ -4,7 +4,7 @@ function Get-HiddenBenchmarkActionArguments {
     $result = [System.Collections.Generic.List[string]]::new()
     foreach ($action in $ActionSequence) {
         if ([string]::IsNullOrWhiteSpace($action) -or $action -notmatch '^([a-z]+):(.*)$') {
-            throw '-ActionSequence values require move:x,y, wheel:x,y,delta, scroll:y, or pause:milliseconds.'
+            throw '-ActionSequence values require move:x,y, wheel:x,y,delta, scroll:y, pause:milliseconds, key:key,code, or activate:selector.'
         }
         $kind, $value = $Matches[1], $Matches[2]
         $option = switch ($kind) {
@@ -48,6 +48,18 @@ function Get-HiddenBenchmarkActionArguments {
                     throw 'Ordered pause requires integer milliseconds from 0 to 60000.'
                 }
                 '--pause-after-ready'
+            }
+            'key' {
+                if ($value -notmatch '^[^,]+,[^,]+$' -or $value.Length -gt 256 -or $value.Contains([char]0)) {
+                    throw 'Ordered key requires a bounded key,code pair without NUL.'
+                }
+                '--key-after-ready'
+            }
+            'activate' {
+                if ([string]::IsNullOrWhiteSpace($value) -or $value.Length -gt 4096 -or $value.Contains([char]0)) {
+                    throw 'Ordered activation requires a non-empty bounded selector without NUL.'
+                }
+                '--activate-selector-after-ready'
             }
             default { throw "Unsupported ordered hidden action: $kind" }
         }

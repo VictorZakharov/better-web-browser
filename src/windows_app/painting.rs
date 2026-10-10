@@ -1,11 +1,18 @@
 mod backbuffer;
+mod background;
 mod clip;
+mod controls;
 mod crash;
+mod groups;
+mod images;
+mod masking;
 mod opacity;
+pub(in crate::windows_app) mod profile;
+mod solid;
 
 use super::paint_primitives::{
     draw_text_in_rect, fill_color_rect, fill_color_shape, intersects, paint_alpha_bitmap,
-    paint_alpha_bitmap_from_dc, paint_alpha_bitmap_size, paint_alpha_image, paint_background_image,
+    paint_alpha_bitmap_from_dc, paint_alpha_bitmap_size, paint_background_image,
     paint_border_colors, screen_rect,
 };
 use super::platform::*;
@@ -13,7 +20,7 @@ use super::{BrowserState, Surface, rgb, wide_without_null, window_text};
 use better_web_browser::engine::{ControlKind, DisplayItem};
 use clip::ClipStack;
 use crash::paint_crash_page;
-use opacity::{OpacityLayer, OpacityLayerStart};
+use groups::PaintGroups;
 use std::ptr::null_mut;
 use std::time::Instant;
 
@@ -55,52 +62,35 @@ impl BrowserState {
                 let dirty_content_bottom = (dirty.bottom - toolbar_height).max(0);
                 let visible_top = (tab.scroll_y + dirty_content_top) as f32 / scale;
                 let visible_bottom = (tab.scroll_y + dirty_content_bottom) as f32 / scale;
-                let mut opacity_layers = Vec::new();
+                let mut paint_groups = PaintGroups::default();
                 let mut clip_stack = ClipStack::default();
-                let mut skipped_opacity_depth = 0_usize;
                 for range in tab.paint_index.visible_ranges(visible_top, visible_bottom) {
                     for item in &tab.page_layout.items[range] {
-                        if skipped_opacity_depth > 0 {
-                            match item {
-                                DisplayItem::BeginOpacity { .. } => skipped_opacity_depth += 1,
-                                DisplayItem::EndOpacity { .. } => skipped_opacity_depth -= 1,
-                                _ => {}
-                            }
+                        let _timing = profile::ItemTiming::start(item);
+                        if paint_groups.handle(
+                            item,
+                            dc,
+                            &tab.presented_images,
+                            tab.scroll_y,
+                            toolbar_height,
+                            scale,
+                            &content,
+                            dirty,
+                        ) {
                             continue;
                         }
-                        let item_dc = opacity_layers
-                            .iter()
-                            .rev()
-                            .find_map(OpacityLayer::dc)
-                            .unwrap_or(dc);
+                        let item_dc = paint_groups.dc(dc);
                         match item {
                             DisplayItem::NodeBoundary { .. }
                             | DisplayItem::PaintBoundary { .. }
+                            | DisplayItem::CssGradient { .. }
+                            | DisplayItem::CssBoxShadow { .. }
+                            | DisplayItem::BeginCssMask { .. }
                             | DisplayItem::EmbeddedFrame { .. } => continue,
-                            DisplayItem::BeginOpacity { bounds, opacity } => {
-                                if *opacity <= 0.0 {
-                                    skipped_opacity_depth = 1;
-                                    continue;
-                                }
-                                match OpacityLayer::begin(
-                                    item_dc,
-                                    *bounds,
-                                    *opacity,
-                                    tab.scroll_y,
-                                    toolbar_height,
-                                    scale,
-                                    &content,
-                                    dirty,
-                                ) {
-                                    OpacityLayerStart::Hidden => skipped_opacity_depth = 1,
-                                    OpacityLayerStart::Layer(layer) => opacity_layers.push(layer),
-                                }
-                            }
-                            DisplayItem::EndOpacity { .. } => {
-                                if let Some(layer) = opacity_layers.pop() {
-                                    layer.finish();
-                                }
-                            }
+                            DisplayItem::BeginOpacity { .. }
+                            | DisplayItem::EndOpacity { .. }
+                            | DisplayItem::BeginMask { .. }
+                            | DisplayItem::EndMask { .. } => unreachable!("handled paint group"),
                             DisplayItem::BeginClip { .. } | DisplayItem::EndClip { .. } => {
                                 clip_stack.handle(
                                     item,
@@ -115,16 +105,17 @@ impl BrowserState {
                                 color,
                                 radius,
                             } => {
-                                let rectangle =
-                                    screen_rect(*rect, tab.scroll_y, toolbar_height, scale);
-                                if intersects(&rectangle, &content) {
-                                    fill_color_shape(
-                                        item_dc,
-                                        &rectangle,
-                                        color.to_colorref(),
-                                        *radius * scale,
-                                    );
-                                }
+                                solid::paint(
+                                    item_dc,
+                                    *rect,
+                                    *color,
+                                    *radius,
+                                    tab.scroll_y,
+                                    toolbar_height,
+                                    scale,
+                                    &content,
+                                    dirty,
+                                );
                             }
                             DisplayItem::BorderRect {
                                 rect,
@@ -265,187 +256,39 @@ impl BrowserState {
                                     }
                                 }
                             }
-                            DisplayItem::Image {
-                                rect,
-                                clip,
-                                url,
-                                alt,
-                                tint,
-                            } => {
-                                let visible = clip.unwrap_or(*rect);
-                                let screen_y =
-                                    toolbar_height + (rect.y * scale).round() as i32 - tab.scroll_y;
-                                if !intersects(
-                                    &screen_rect(visible, tab.scroll_y, toolbar_height, scale),
-                                    &content,
-                                ) {
-                                    continue;
-                                }
-                                let saved = clip.map(|bounds| {
-                                    let saved = SaveDC(item_dc);
-                                    if saved != 0 {
-                                        let region = screen_rect(
-                                            bounds,
-                                            tab.scroll_y,
-                                            toolbar_height,
-                                            scale,
-                                        );
-                                        IntersectClipRect(
-                                            item_dc,
-                                            region.left,
-                                            region.top,
-                                            region.right,
-                                            region.bottom,
-                                        );
-                                    }
-                                    saved
-                                });
-                                if let Some(image) = tab.presented_images.get(url) {
-                                    let bitmap = if let Some(color) = tint {
-                                        tab.image_bitmaps.get_or_create_tinted(
-                                            url,
-                                            image,
-                                            [color.red, color.green, color.blue, color.alpha],
-                                            item_dc,
-                                        )
-                                    } else {
-                                        tab.image_bitmaps.get_or_create(url, image, item_dc)
-                                    };
-                                    if !bitmap.is_null() {
-                                        paint_alpha_image(
-                                            item_dc, bitmap, image, *rect, screen_y, scale,
-                                        );
-                                    }
-                                } else if !alt.is_empty()
-                                    && let Some(fonts) = fonts
-                                {
-                                    SelectObject(item_dc, fonts.body);
-                                    SetTextColor(item_dc, rgb(70, 70, 70));
-                                    let alt = wide_without_null(alt);
-                                    TextOutW(
-                                        item_dc,
-                                        (rect.x * scale).round() as i32,
-                                        screen_y,
-                                        alt.as_ptr(),
-                                        alt.len() as i32,
-                                    );
-                                }
-                                if let Some(saved) = saved
-                                    && saved != 0
-                                {
-                                    RestoreDC(item_dc, saved);
-                                }
-                            }
-                            DisplayItem::BackgroundImage {
-                                clip_rect,
-                                tile_rect,
-                                url,
-                                repeat_x,
-                                repeat_y,
-                            } => {
-                                let clip =
-                                    screen_rect(*clip_rect, tab.scroll_y, toolbar_height, scale);
-                                if !intersects(&clip, &content)
-                                    || tile_rect.width <= 0.0
-                                    || tile_rect.height <= 0.0
-                                {
-                                    continue;
-                                }
-                                if let Some(image) = tab.presented_images.get(url) {
-                                    let bitmap =
-                                        tab.image_bitmaps.get_or_create(url, image, item_dc);
-                                    if !bitmap.is_null() {
-                                        paint_background_image(
-                                            item_dc,
-                                            bitmap,
-                                            image,
-                                            *clip_rect,
-                                            *tile_rect,
-                                            *repeat_x,
-                                            *repeat_y,
-                                            tab.scroll_y,
-                                            toolbar_height,
-                                            scale,
-                                        );
-                                    }
-                                }
-                            }
-                            DisplayItem::Control(spec) => {
-                                if benchmark_mode && !spec.authored_content {
-                                    let mut rectangle =
-                                        screen_rect(spec.rect, tab.scroll_y, toolbar_height, scale);
-                                    if !intersects(&rectangle, &content) {
-                                        continue;
-                                    }
-                                    let is_button = matches!(
-                                        spec.kind,
-                                        ControlKind::Submit
-                                            | ControlKind::Button
-                                            | ControlKind::Reset
-                                            | ControlKind::File
-                                    );
-                                    if !is_button {
-                                        let [border_top, border_right, border_bottom, border_left] =
-                                            spec.border_width
-                                                .map(|width| (width * scale).ceil() as i32);
-                                        let [
-                                            padding_top,
-                                            padding_right,
-                                            padding_bottom,
-                                            padding_left,
-                                        ] = spec.padding.map(|width| (width * scale).ceil() as i32);
-                                        rectangle.left += border_left + padding_left;
-                                        rectangle.top += border_top + padding_top;
-                                        rectangle.right -= border_right + padding_right;
-                                        rectangle.bottom -= border_bottom + padding_bottom;
-                                    }
-                                    let font = tab.dynamic_fonts.get_or_create(&spec.font, dpi);
-                                    SelectObject(item_dc, font);
-                                    SetTextColor(
-                                        item_dc,
-                                        if spec.text_color.alpha == 0 {
-                                            CHROME_THEME.text
-                                        } else {
-                                            spec.text_color.to_colorref()
-                                        },
-                                    );
-                                    let value = tab
-                                        .page_controls
-                                        .iter()
-                                        .find(|control| control.spec.node_id == spec.node_id)
-                                        .map(|control| window_text(control.window))
-                                        .unwrap_or_else(|| spec.value.clone());
-                                    if value.is_empty()
-                                        && !is_button
-                                        && spec.kind != ControlKind::Select
-                                    {
-                                        SetTextColor(item_dc, spec.placeholder_color.to_colorref());
-                                    }
-                                    let text = if spec.kind == ControlKind::Password
-                                        && !value.is_empty()
-                                    {
-                                        "•".repeat(value.chars().count())
-                                    } else if value.is_empty() {
-                                        if spec.kind == ControlKind::Select || is_button {
-                                            spec.label.clone()
-                                        } else {
-                                            spec.placeholder.clone()
-                                        }
-                                    } else {
-                                        value
-                                    };
-                                    draw_text_in_rect(
-                                        item_dc,
-                                        &text,
-                                        &mut rectangle,
-                                        DT_VCENTER
-                                            | DT_SINGLELINE
-                                            | DT_END_ELLIPSIS
-                                            | DT_NOPREFIX
-                                            | if is_button { DT_CENTER } else { 0 },
-                                    );
-                                }
-                            }
+                            DisplayItem::Image { .. } => images::paint(
+                                item,
+                                item_dc,
+                                &tab.presented_images,
+                                &mut tab.image_bitmaps,
+                                tab.scroll_y,
+                                toolbar_height,
+                                scale,
+                                &content,
+                                fonts,
+                            ),
+                            DisplayItem::BackgroundImage { .. } => background::paint(
+                                item,
+                                item_dc,
+                                &tab.presented_images,
+                                &mut tab.image_bitmaps,
+                                tab.scroll_y,
+                                toolbar_height,
+                                scale,
+                                &content,
+                            ),
+                            DisplayItem::Control(spec) => controls::paint(
+                                spec,
+                                &mut tab.dynamic_fonts,
+                                &tab.page_controls,
+                                tab.scroll_y,
+                                item_dc,
+                                dpi,
+                                toolbar_height,
+                                scale,
+                                &content,
+                                benchmark_mode,
+                            ),
                         }
                     }
                 }

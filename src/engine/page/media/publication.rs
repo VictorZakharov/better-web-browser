@@ -5,7 +5,9 @@ use std::collections::HashSet;
 impl Page {
     /// Canvas and inline SVG can change without acquiring a new resource URL.
     pub(crate) fn is_dynamic_image_key(key: &str) -> bool {
-        Self::is_canvas_image_key(key) || key.starts_with("inline-svg:")
+        Self::is_canvas_image_key(key)
+            || key.starts_with("inline-svg:")
+            || key.starts_with("breeze-css-paint:")
     }
 
     pub(crate) fn take_image_updates(&mut self) -> HashSet<String> {

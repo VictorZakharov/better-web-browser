@@ -5,6 +5,9 @@ use better_web_browser::renderer_protocol::{PointerCursor, PointerCursorResult};
 
 impl BrowserState {
     pub(super) unsafe fn apply_renderer_pointer_cursor(&mut self, result: PointerCursorResult) {
+        // A newer queued position makes this cursor visually stale, but the exact
+        // completed move still releases transport backpressure for that position.
+        self.pending_renderer_inputs.acknowledge_move(result);
         if !cursor_result_is_current(
             self.navigation.active_document(),
             self.pointer_cursor_request,

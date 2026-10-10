@@ -53,6 +53,8 @@ kurbo = "=0.13.1"
 # Already locked through resvg/usvg; reuse its MIT/Apache-2.0 SVG path lexer.
 svgtypes = "=0.16.1"
 sha2 = "0.10.9"
+# Already locked/vetted MIT/Apache-2.0 inline storage for owned GPU command arguments.
+smallvec = "=1.15.2"
 # MPL-2.0 bounded audio demux/decode; only the admitted container/codec pairs are exposed.
 symphonia = { version = "=0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "mkv", "ogg", "vorbis", "flac"] }
 # Reuse the already-locked, vetted OpusHead parser; no second header parser.
@@ -83,6 +85,8 @@ fontique = { version = "0.11.1", default-features = false, features = ["system"]
 harfrust = "0.5.2"
 swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"] }
 unicode-script = "0.5.8"
+# Reuse the ICU4X property data already locked through URL parsing (Unicode-3.0).
+icu_properties = "=2.0.2"
 windows = { version = "0.62.2", features = [
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",

@@ -11,6 +11,11 @@ pub(crate) enum ClipPath {
 }
 
 impl ClipPath {
+    pub(crate) fn apply_zoom(&mut self, scale: f32) {
+        if let Self::Inset(edges) = self {
+            *edges = super::values::zoom::edges(edges, scale);
+        }
+    }
     pub(crate) fn parse(value: &str) -> Option<Self> {
         let value = value.trim().to_ascii_lowercase();
         if value == "none" {

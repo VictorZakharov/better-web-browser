@@ -1,5 +1,6 @@
 //! Renderer-owned semantic tree construction and revision-to-revision deltas.
 
+mod checkables;
 mod semantics;
 
 use self::semantics::{
@@ -278,6 +279,7 @@ fn build_nodes(
         read_only: is_read_only(node),
         actions,
         selection,
+        checked: semantics::checked_state(node, role),
     };
     if output.insert(id, semantic).is_some() {
         return Err("duplicate accessibility node identity".into());

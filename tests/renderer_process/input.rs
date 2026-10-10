@@ -14,6 +14,8 @@ mod fragment_navigation;
 mod helpers;
 #[path = "input/hit_testing.rs"]
 mod hit_testing;
+#[path = "input/motion_completion.rs"]
+mod motion_completion;
 #[path = "input/native_text.rs"]
 mod native_text;
 #[path = "input/nested_scrolling.rs"]

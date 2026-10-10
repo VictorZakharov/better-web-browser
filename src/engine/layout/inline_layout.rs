@@ -2,7 +2,7 @@ use super::*;
 mod boundaries;
 mod fragment_collection;
 pub(super) mod geometry;
-mod text_transform;
+pub(super) mod text_transform;
 #[cfg(test)]
 mod whitespace_tests;
 mod wrapping;
@@ -29,7 +29,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         self.begin_inline_measurement_context();
         let policy = TruncationPolicy::for_style(style);
         let align = style.text_align.physical(style.direction);
-        let default_line_height = style.line_height;
+        let default_line_height = self.used_line_height(style);
         let mut ephemeral = ClampState::fresh(&policy);
         let slot: &mut Option<ClampState> = if clamp.is_some() {
             &mut *clamp
@@ -81,7 +81,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 );
             }
             let should_wrap = !line.is_empty()
-                && line_width + run_width > available
+                && line_width + run_width > available + 1.0 / 64.0
                 && self.inline_break_before(atoms, index);
             if should_wrap {
                 // The wrapping atom itself is still pending, so more content
@@ -195,6 +195,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 text,
                 font,
                 line_height,
+                normal_line_height,
                 no_wrap,
                 preserve_space,
                 ..
@@ -212,7 +213,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     atom,
                     text: Some(text),
                     width,
-                    height: *line_height,
+                    height: if *normal_line_height {
+                        content_height
+                    } else {
+                        *line_height
+                    },
                     content_height,
                     no_wrap: *no_wrap,
                     break_before,

@@ -23,8 +23,12 @@ impl PaintIndex {
         let mut depth = 0_usize;
         for (index, item) in items.iter().enumerate() {
             match item {
-                DisplayItem::BeginClip { .. } | DisplayItem::BeginOpacity { .. } => depth += 1,
-                DisplayItem::EndClip { .. } | DisplayItem::EndOpacity { .. } => {
+                DisplayItem::BeginClip { .. }
+                | DisplayItem::BeginOpacity { .. }
+                | DisplayItem::BeginMask { .. } => depth += 1,
+                DisplayItem::EndClip { .. }
+                | DisplayItem::EndOpacity { .. }
+                | DisplayItem::EndMask { .. } => {
                     depth = depth.saturating_sub(1);
                 }
                 _ => {}
@@ -69,13 +73,18 @@ fn vertical_bounds(item: &DisplayItem) -> (f32, f32) {
         DisplayItem::BeginClip { bounds }
         | DisplayItem::EndClip { bounds }
         | DisplayItem::BeginOpacity { bounds, .. }
+        | DisplayItem::BeginMask { bounds, .. }
+        | DisplayItem::BeginCssMask { bounds, .. }
+        | DisplayItem::EndMask { bounds }
         | DisplayItem::EndOpacity { bounds } => *bounds,
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. }
         | DisplayItem::EmbeddedFrame { rect, .. } => *rect,
         DisplayItem::Image { rect, clip, .. } => clip.unwrap_or(*rect),
-        DisplayItem::BackgroundImage { clip_rect, .. } => *clip_rect,
+        DisplayItem::BackgroundImage { clip_rect, .. }
+        | DisplayItem::CssGradient { clip_rect, .. } => *clip_rect,
+        DisplayItem::CssBoxShadow { bounds, .. } => *bounds,
         DisplayItem::Control(spec) => spec.rect,
     };
     let top = rect.y.min(rect.bottom());

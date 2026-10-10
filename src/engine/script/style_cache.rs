@@ -110,9 +110,10 @@ impl HostState {
             if target.display == crate::engine::css::Display::None {
                 return None;
             }
-            let mut ancestor = node.parent();
+            let mut relative_zoom = crate::engine::css::zoom::factor(target.zoom);
+            let mut ancestor = Node::composed_parent(node);
             while let Some(candidate) = ancestor {
-                ancestor = candidate.parent();
+                ancestor = Node::composed_parent(&candidate);
                 if candidate.element().is_none() {
                     continue;
                 }
@@ -120,6 +121,10 @@ impl HostState {
                 if style.display == crate::engine::css::Display::None {
                     return None;
                 }
+                if relative_zoom != 1.0 {
+                    return Some(candidate);
+                }
+                relative_zoom *= crate::engine::css::zoom::factor(style.zoom);
                 let fixed_containing_block = style.establishes_fixed_position_containing_block();
                 if target.position == crate::engine::css::Position::Fixed {
                     if fixed_containing_block {
@@ -150,6 +155,16 @@ impl HostState {
         property: &str,
     ) -> Option<String> {
         self.computed_style_property_for(node, property, None)
+    }
+
+    pub(super) fn effective_zoom(&mut self, node: &NodeRef) -> f32 {
+        let (version, mut styles) = self.take_computed_styles();
+        // Hydration cascades the flat-tree ancestor chain once; subsequent reads reuse it.
+        let scale = styles
+            .computed_style_for_node(node)
+            .map_or(1.0, |style| style.effective_zoom);
+        self.computed_styles = Some((version, styles));
+        scale
     }
 
     pub(super) fn computed_style_properties(

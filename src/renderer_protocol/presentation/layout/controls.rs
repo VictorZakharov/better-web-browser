@@ -37,6 +37,24 @@ pub(super) fn encode_control(
     writer.f32(spec.icon_width);
     writer.f32(spec.icon_height);
     writer.bool(spec.authored_content);
+    if spec.kind.is_checkable() {
+        let state = spec
+            .checkable
+            .ok_or(ProtocolError::InvalidPayload("checkable state"))?;
+        if spec.kind == ControlKind::Radio && state.indeterminate {
+            return Err(ProtocolError::InvalidPayload("radio indeterminate state"));
+        }
+        writer.bool(state.checked);
+        writer.bool(state.indeterminate);
+        writer.bool(state.disabled);
+        writer.bool(state.appearance);
+        writer.bool(state.accent.is_some());
+        if let Some(accent) = state.accent {
+            encode_color(writer, accent);
+        }
+    } else if spec.checkable.is_some() {
+        return Err(ProtocolError::InvalidPayload("non-checkable state"));
+    }
     Ok(())
 }
 
@@ -64,7 +82,7 @@ pub(super) fn decode_control(reader: &mut WireReader<'_>) -> Result<ControlSpec,
     }
     let placeholder = reader.string(MAX_CONTROL_TEXT_BYTES)?;
     let form_id = reader.bool()?.then(|| decode_node_id(reader)).transpose()?;
-    Ok(ControlSpec {
+    let spec = ControlSpec {
         node_id,
         rect,
         kind,
@@ -109,7 +127,22 @@ pub(super) fn decode_control(reader: &mut WireReader<'_>) -> Result<ControlSpec,
             "control icon height",
         )?,
         authored_content: reader.bool()?,
-    })
+        checkable: if kind.is_checkable() {
+            Some(crate::engine::CheckableState {
+                checked: reader.bool()?,
+                indeterminate: reader.bool()?,
+                disabled: reader.bool()?,
+                appearance: reader.bool()?,
+                accent: reader.bool()?.then(|| decode_color(reader)).transpose()?,
+            })
+        } else {
+            None
+        },
+    };
+    if spec.kind == ControlKind::Radio && spec.checkable.is_some_and(|state| state.indeterminate) {
+        return Err(ProtocolError::InvalidPayload("radio indeterminate state"));
+    }
+    Ok(spec)
 }
 
 pub(super) fn encode_form(writer: &mut WireWriter, form: &FormSpec) -> Result<(), ProtocolError> {
@@ -155,6 +188,8 @@ fn control_kind_tag(kind: ControlKind) -> u8 {
         ControlKind::Button => 7,
         ControlKind::Reset => 8,
         ControlKind::File => 9,
+        ControlKind::Checkbox => 10,
+        ControlKind::Radio => 11,
     }
 }
 
@@ -169,6 +204,8 @@ fn decode_control_kind(tag: u8) -> Result<ControlKind, ProtocolError> {
         7 => Ok(ControlKind::Button),
         8 => Ok(ControlKind::Reset),
         9 => Ok(ControlKind::File),
+        10 => Ok(ControlKind::Checkbox),
+        11 => Ok(ControlKind::Radio),
         _ => Err(ProtocolError::InvalidPayload("control kind")),
     }
 }
@@ -176,15 +213,16 @@ fn decode_control_kind(tag: u8) -> Result<ControlKind, ProtocolError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod checkables;
 
     #[test]
     fn file_control_kind_round_trips_without_changing_existing_tags() {
         assert_eq!(control_kind_tag(ControlKind::File), 9);
         assert_eq!(decode_control_kind(9).unwrap(), ControlKind::File);
-        for tag in 1..=9 {
+        for tag in 1..=11 {
             let kind = decode_control_kind(tag).unwrap();
             assert_eq!(control_kind_tag(kind), tag);
         }
-        assert!(decode_control_kind(10).is_err());
+        assert!(decode_control_kind(12).is_err());
     }
 }

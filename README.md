@@ -1394,6 +1394,10 @@ video frame cadence, layout fidelity, and memory use are not an accepted browser
 Passing media fixtures does not establish usable live-site playback. Wikipedia has dedicated
 layout and scrolling regressions, but passing those pages is not a guarantee for every article.
 
+### October 10: game UI fidelity through general CSS contracts
+
+The user reports that Last Stand is playable. Hidden comparisons with Chrome now use the complete unchanged production asset set; missing ability icons in the earlier eight-file capture came from omitted fixture assets. This batch implements used CSS zoom and related geometry, bounded column-flex/grid layout, ordered background layers and gradients, inset/outer shadows, antialiased rounded/translucent paint, assembled alpha-mask groups, font-based normal line height, and Unicode-aware symbol fallback. These are shared engine fixes, not game-specific styles. See [the UI contract and local screenshot record](docs/css-ui-fidelity.md) for replay details and remaining limitations. No HTML5test score gain, full visual parity, or Chrome startup-speed match is claimed by this visual batch; CI remains smoke-only.
+
 ## License
 
 Breeze is available under the MIT License. Locked third-party dependencies and their license

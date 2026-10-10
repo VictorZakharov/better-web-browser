@@ -123,6 +123,34 @@ fn translated_keyframes_interpolate_and_return_to_the_underlying_transform() {
 }
 
 #[test]
+fn individual_translate_keyframes_interpolate_and_restore_cssom_values() {
+    let (dom, outcome) = execute_html(
+        r#"<body><div id=target style='translate:10px 20px'></div><script>
+        const target = document.getElementById('target');
+        const animation = target.animate([
+            {translate: '10px 20px'}, {translate: '110px 60px'}
+        ], {duration: 1000, fill: 'both'});
+        animation.pause(); animation.currentTime = 500;
+        const middle = getComputedStyle(target).translate;
+        animation.cancel();
+        const restored = getComputedStyle(target).translate;
+        document.body.setAttribute('data-result', [middle, restored,
+            CSS.supports('translate', '-50% -50%'),
+            CSS.supports('translate', '1px 2px 3px')].join(':'));
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-result")
+            .as_deref(),
+        Some("60px 40px:10px 20px:true:false")
+    );
+}
+
+#[test]
 fn animation_finishes_on_render_frames_and_dispatches_playback_event() {
     let (dom, outcome) = execute_html(
         r#"<body><div id=target></div><script>

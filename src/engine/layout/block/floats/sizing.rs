@@ -148,6 +148,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         basis: impl Into<Option<f32>>,
     ) -> (f32, f32) {
         let basis = basis.into();
+        let transformed = crate::engine::layout::inline_layout::text_transform::apply(atoms);
+        let atoms = transformed.as_ref();
         self.begin_inline_measurement_context();
         let mut minimum = 0.0_f32;
         let mut preferred = 0.0_f32;

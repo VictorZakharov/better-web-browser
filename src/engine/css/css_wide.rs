@@ -1,6 +1,7 @@
 //! CSS-wide keyword resolution over the engine's supported computed properties.
 
 use super::*;
+mod backgrounds;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CssWideKeyword {
@@ -58,6 +59,7 @@ fn is_inherited_property(property: &str) -> bool {
     matches!(
         property,
         "color"
+            | "scrollbar-color"
             | "direction"
             | "border-collapse"
             | "border-spacing"
@@ -82,6 +84,7 @@ fn is_inherited_property(property: &str) -> bool {
             | "pointer-events"
             | "white-space"
             | "word-spacing"
+            | "accent-color"
     )
 }
 
@@ -92,6 +95,9 @@ fn is_supported_property(property: &str) -> bool {
 }
 
 fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &str) -> bool {
+    if backgrounds::copy(style, source, property) {
+        return true;
+    }
     if style.transition.copy_property(&source.transition, property) {
         return true;
     }
@@ -107,6 +113,12 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         return true;
     }
     match property {
+        "appearance" | "-webkit-appearance" => style.appearance = source.appearance,
+        "accent-color" => style.accent_color = source.accent_color.inherited(source.color),
+        "box-shadow" => style.box_shadows.clone_from(&source.box_shadows),
+        "scrollbar-color" => style.scrollbar_color = source.scrollbar_color,
+        "scrollbar-width" => style.scrollbar_width = source.scrollbar_width,
+        "zoom" => style.zoom = source.zoom,
         "all" => {
             let custom_properties = Arc::clone(&style.custom_properties);
             // The all shorthand excludes direction, unicode-bidi and custom properties.
@@ -128,36 +140,6 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "float" => style.float = source.float,
         "clear" => style.clear = source.clear,
         "color" => style.color = source.color,
-        "background" => {
-            style.background_color = source.background_color;
-            style.background_image.clone_from(&source.background_image);
-            style.background_repeat_x = source.background_repeat_x;
-            style.background_repeat_y = source.background_repeat_y;
-            style.background_position_x = source.background_position_x.clone();
-            style.background_position_y = source.background_position_y.clone();
-            style.background_size = source.background_size.clone();
-        }
-        "background-color" => style.background_color = source.background_color,
-        "background-image" => style.background_image.clone_from(&source.background_image),
-        "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
-            style.mask_image.clone_from(&source.mask_image)
-        }
-        "clip-path" => style.clip_path.clone_from(&source.clip_path),
-        "background-repeat" => {
-            style.background_repeat_x = source.background_repeat_x;
-            style.background_repeat_y = source.background_repeat_y;
-        }
-        "background-position" => {
-            style.background_position_x = source.background_position_x.clone();
-            style.background_position_y = source.background_position_y.clone();
-        }
-        "background-position-x" => {
-            style.background_position_x = source.background_position_x.clone()
-        }
-        "background-position-y" => {
-            style.background_position_y = source.background_position_y.clone()
-        }
-        "background-size" => style.background_size = source.background_size.clone(),
         "object-fit" => style.object_fit = source.object_fit,
         "object-position" => style.object_position = source.object_position.clone(),
         "aspect-ratio" => style.aspect_ratio = source.aspect_ratio,
@@ -278,6 +260,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "pointer-events" => style.pointer_events = source.pointer_events,
         "opacity" => style.opacity = source.opacity,
         "transform" => style.transform.clone_from(&source.transform),
+        "translate" => style.translate.clone_from(&source.translate),
         "perspective" => style.perspective_non_none = source.perspective_non_none,
         "filter" => style.filter_non_none = source.filter_non_none,
         "transform-style" => style.transform_style_preserve_3d = source.transform_style_preserve_3d,
@@ -294,6 +277,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         }
         "align-content" => style.align_content = source.align_content,
         "justify-self" => style.justify_self = source.justify_self,
+        "align-self" => style.align_self = source.align_self,
         "flex-direction" | "-webkit-flex-direction" | "-moz-flex-direction" => {
             style.flex_direction = source.flex_direction
         }
@@ -338,6 +322,11 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
                 .grid_template_areas
                 .clone_from(&source.grid_template_areas);
         }
+        "grid-auto-columns" => style
+            .grid_auto_columns
+            .clone_from(&source.grid_auto_columns),
+        "grid-auto-rows" => style.grid_auto_rows.clone_from(&source.grid_auto_rows),
+        "grid-auto-flow" => style.grid_auto_flow = source.grid_auto_flow,
         "column-gap" | "grid-column-gap" => style.grid_column_gap = source.grid_column_gap.clone(),
         "row-gap" | "grid-row-gap" => style.grid_row_gap = source.grid_row_gap.clone(),
         "gap" | "grid-gap" => {

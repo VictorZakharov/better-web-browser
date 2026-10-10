@@ -12,13 +12,18 @@ $expected = @('--scroll-after-ready', '5000', '--move-after-ready', '500,5300', 
 $actual = @(Get-HiddenBenchmarkActionArguments -ActionSequence $actions)
 if (($actual -join '|') -ne ($expected -join '|')) { throw 'Ordered actions lost their original order or values.' }
 if (@(Get-HiddenBenchmarkActionArguments).Count -ne 0) { throw 'Empty ordered actions invented an argument.' }
+if ((@(Get-HiddenBenchmarkActionArguments @('key:Escape,Escape', 'pause:500', 'activate:#options input', 'key:Escape,Escape')) -join '|') -ne
+    '--key-after-ready|Escape,Escape|--pause-after-ready|500|--activate-selector-after-ready|#options input|--key-after-ready|Escape,Escape') {
+    throw 'Ordered keyboard and selector actions lost order or selector whitespace.'
+}
 foreach ($action in @('move:0,0', 'move:2147483647,2147483647', 'wheel:7680,4320,-10000', 'scroll:2147483647', 'pause:60000')) {
     if (@(Get-HiddenBenchmarkActionArguments -ActionSequence @($action)).Count -ne 2) { throw "Valid action rejected: $action" }
 }
 foreach ($action in @('', ' ', 'move:', 'move:-1,0', 'move:1,2,3', 'move:2147483648,0',
     'wheel:7681,0,1', 'wheel:0,4321,1', 'wheel:1,2,10001', 'wheel:1,2,-2147483648', 'wheel:1,2,NaN',
     'scroll:-1', 'scroll:2147483648', 'pause:-1', 'pause:60001', 'pause:1.5', 'pause:1e3', 'unknown:1',
-    'pause:1;--task-manager', 'move:1,2 --screenshot')) {
+    'pause:1;--task-manager', 'move:1,2 --screenshot', 'key:', 'key:Escape', 'key:a,b,c', 'activate:', 'activate:   ',
+    ('key:' + ('a' * 257) + ',KeyA'), ('activate:' + ('#' * 4097)), "key:a,KeyA$([char]0)", "activate:#a$([char]0)")) {
     $rejected = $false
     try { [void] (Get-HiddenBenchmarkActionArguments -ActionSequence @($action)) } catch { $rejected = $true }
     if (-not $rejected) { throw "Malformed ordered action accepted: $action" }
