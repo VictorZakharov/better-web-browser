@@ -78,22 +78,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 image_height,
                 relative_offset,
                 transform,
-                transform_font_size,
                 opacity,
                 tint,
                 ..
             } => {
                 let item_start = self.output.items.len();
-                let mut rect = RectF {
+                let rect = RectF {
                     x: x + inset_x + relative_offset.0,
                     y: atom_y + inset_y + relative_offset.1,
                     width: *image_width,
                     height: *image_height,
                 };
-                let (offset_x, offset_y) =
-                    transform.resolve(rect.width, rect.height, *transform_font_size);
-                rect.x += offset_x;
-                rect.y += offset_y;
                 self.output.node_bounds.insert(*node_id, rect);
                 self.output.resize_boxes.insert(*node_id, *resize_box);
                 if self.emit_paint && *visible {
@@ -128,6 +123,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             tint: *tint,
                         });
                     }
+                }
+                use crate::engine::affine::Affine2D;
+                let matrix = Affine2D::translate(f64::from(rect.x), f64::from(rect.y))
+                    .then_local(*transform)
+                    .then_local(Affine2D::translate(-f64::from(rect.x), -f64::from(rect.y)));
+                if let Some((x, y)) = matrix.translation() {
+                    if let Some(node) = self.styles.node(*node_id) {
+                        let end = self.output.items.len();
+                        self.translate_layout_subtree(Some(&node), item_start, end, x, y);
+                    }
+                } else {
+                    if let Some(node) = self.styles.node(*node_id) {
+                        self.transform_geometry(&node, matrix);
+                    }
+                    self.wrap_transform(item_start, matrix);
                 }
                 self.wrap_opacity(item_start, *opacity);
             }
@@ -204,7 +214,24 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         clip: None,
                     });
                 }
+                let node_id = spec.node_id;
+                let content_rect = rect
+                    .inset(edges(spec.border_width))
+                    .inset(edges(spec.padding));
                 self.output.items.push(DisplayItem::Control(Box::new(spec)));
+                if let Some(node) = self.styles.node(node_id) {
+                    let style = self.styles.get(&node);
+                    let reference = if style.transform_box.uses_content() {
+                        content_rect
+                    } else {
+                        rect
+                    };
+                    self.apply_transform_matrix(
+                        node.id(),
+                        style.transform_from_reference(reference),
+                        item_start,
+                    );
+                }
                 self.wrap_opacity(item_start, *opacity);
             }
             InlineAtom::InlineBox {

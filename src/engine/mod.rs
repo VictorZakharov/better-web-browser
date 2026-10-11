@@ -1,3 +1,4 @@
+pub mod affine;
 pub mod css;
 pub mod display_list;
 pub mod dom;

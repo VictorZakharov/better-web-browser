@@ -5,8 +5,8 @@
     let viewportScrollX = 0;
     let viewportScrollY = 0;
 
-    function layoutRect(element) {
-        const value = host('layoutRect', nodeId(element));
+    function layoutRect(element, logical = false) {
+        const value = host(logical ? 'layoutBoxRect' : 'layoutRect', nodeId(element));
         const [x = 0, y = 0, width = 0, height = 0] = Array.isArray(value) ? value : [];
         return { x, y, width, height, hasBox: Array.isArray(value) };
     }
@@ -40,7 +40,7 @@
         if (isViewportElement(element)) return layoutViewportWidth;
         const scroll = host('elementScroll', nodeId(element));
         if (Array.isArray(scroll)) return scroll[4];
-        const rect = layoutRect(element);
+        const rect = layoutRect(element, true);
         if (!rect.hasBox) return 0;
         const widthWithoutZoom = rect.width / effectiveZoom(element);
         if (hasTableWrapper(element)) return widthWithoutZoom;
@@ -56,7 +56,7 @@
         if (isViewportElement(element)) return layoutViewportHeight;
         const scroll = host('elementScroll', nodeId(element));
         if (Array.isArray(scroll)) return scroll[5];
-        const rect = layoutRect(element);
+        const rect = layoutRect(element, true);
         if (!rect.hasBox) return 0;
         const heightWithoutZoom = rect.height / effectiveZoom(element);
         if (hasTableWrapper(element)) return heightWithoutZoom;
@@ -106,11 +106,11 @@
     Object.defineProperties(HTMLElement.prototype, {
         offsetWidth: {
             configurable: true,
-            get() { return Math.round(layoutRect(this).width / effectiveZoom(this)); }
+            get() { return Math.round(layoutRect(this, true).width / effectiveZoom(this)); }
         },
         offsetHeight: {
             configurable: true,
-            get() { return Math.round(layoutRect(this).height / effectiveZoom(this)); }
+            get() { return Math.round(layoutRect(this, true).height / effectiveZoom(this)); }
         },
         offsetParent: {
             configurable: true,
@@ -119,11 +119,11 @@
         offsetLeft: {
             configurable: true,
             get() {
-                const rect = layoutRect(this);
+                const rect = layoutRect(this, true);
                 const parent = this.offsetParent;
                 const zoom = effectiveZoom(this);
                 if (!parent) return Math.round(rect.x / zoom);
-                const parentRect = layoutRect(parent);
+                const parentRect = layoutRect(parent, true);
                 const border = computedBorderWidth(parent, 'Left');
                 return Math.round((rect.x - parentRect.x - border * effectiveZoom(parent)) / zoom);
             }
@@ -131,11 +131,11 @@
         offsetTop: {
             configurable: true,
             get() {
-                const rect = layoutRect(this);
+                const rect = layoutRect(this, true);
                 const parent = this.offsetParent;
                 const zoom = effectiveZoom(this);
                 if (!parent) return Math.round(rect.y / zoom);
-                const parentRect = layoutRect(parent);
+                const parentRect = layoutRect(parent, true);
                 const border = computedBorderWidth(parent, 'Top');
                 return Math.round((rect.y - parentRect.y - border * effectiveZoom(parent)) / zoom);
             }

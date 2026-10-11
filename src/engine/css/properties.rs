@@ -64,6 +64,7 @@ pub(super) fn apply_declaration(
         || flex::apply(style, name, value)
         || shorthands::background::apply_longhand(style, name, value)
         || paint::apply(style, name, value)
+        || super::transform::properties::apply(style, name, value)
     {
         return;
     }
@@ -247,19 +248,8 @@ pub(super) fn apply_declaration(
                 style.pointer_events = value == "auto";
             }
         }
-        "transform" => {
-            if let Some(transform) = super::transform::parse_transform(value) {
-                style.transform = transform;
-            }
-        }
         "perspective" => {
             style.perspective_non_none = value != "none" && parse_length(value).is_some();
-        }
-        "translate" => {
-            if let Some(translate) = super::transform::individual::IndividualTranslate::parse(value)
-            {
-                style.translate = translate;
-            }
         }
         "filter" => {
             style.filter_non_none = value != "none" && value.contains('(') && value.ends_with(')');
@@ -272,10 +262,12 @@ pub(super) fn apply_declaration(
                     .any(|token| matches!(token, "layout" | "paint"));
         }
         "will-change" => {
-            style.will_change_containing_block = value
-                .split(',')
-                .map(str::trim)
-                .any(|token| matches!(token, "transform" | "perspective" | "filter"));
+            style.will_change_containing_block = value.split(',').map(str::trim).any(|token| {
+                matches!(
+                    token,
+                    "transform" | "translate" | "rotate" | "scale" | "perspective" | "filter"
+                )
+            });
         }
         "overflow" | "overflow-x" | "overflow-y" => style.apply_overflow(name, value),
         "align-content" => {

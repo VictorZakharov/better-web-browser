@@ -1,0 +1,28 @@
+<!doctype html><meta charset="utf-8"><title>pending translucent working set</title>
+<style>
+body{margin:0;background:#222;color:white;font:16px Arial}
+#stage{position:relative;width:1120px;height:720px}
+#back{position:absolute;inset:0;width:1120px;height:720px}
+#sprites{position:absolute;inset:0;display:grid;grid-template-columns:repeat(8,140px);grid-template-rows:repeat(8,90px)}
+#sprites svg{width:130px;height:85px}
+</style>
+<div id="stage"><canvas id="back" width="1120" height="720"></canvas><div id="sprites"></div></div><output id="result"></output>
+<script>
+(async()=>{
+  const holder=document.getElementById('sprites');
+  holder.innerHTML=Array.from({length:64},(_,i)=>`<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect x="4" y="4" width="88" height="88" rx="${i%8}" fill="rgb(${128+i},40,90)" opacity=".5"/></svg>`).join('');
+  const context=document.getElementById('back').getContext('2d'),samples=[];
+  let previous;
+  for(let frame=0;frame<32;frame++){
+    const now=await new Promise(resolve=>requestAnimationFrame(resolve));
+    if(previous!==undefined)samples.push(now-previous);previous=now;
+    context.fillStyle=frame%2?'#304060':'#203050';context.fillRect(0,0,1120,720);
+  }
+  const value=context.getImageData(0,0,1,1).data;
+  if(value.join(',')!=='48,64,96,255')throw Error('backdrop pixels');
+  document.getElementById('result').setAttribute('data-frame-intervals',JSON.stringify(samples));
+  document.getElementById('result').textContent='PASS: 64 independent SVG images, unchanged native resampling over a changing Canvas backdrop';
+  document.title='done translucent working-set frames='+samples.length+';mean='+(samples.reduce((a,b)=>a+b)/samples.length).toFixed(3);
+  document.documentElement.dataset.fixtureReady='true';
+})().catch(error=>{document.title='failed '+error.message;throw error});
+</script>

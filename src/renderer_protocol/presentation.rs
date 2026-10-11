@@ -157,6 +157,7 @@ impl PresentedLayout {
 
     pub fn into_layout(self) -> LayoutOutput {
         LayoutOutput {
+            transformed: Default::default(),
             sticky_offsets: Default::default(),
             sticky_layers: self.sticky_layers,
             scroll_boxes: Default::default(),

@@ -5,6 +5,33 @@ pub(crate) mod fonts;
 
 pub(crate) const MAX_CSSOM_VALUE_BYTES: usize = 64 * 1024;
 
+/// Filter decoder-owned declaration lists without losing unknown SVG paint
+/// properties, custom tokens, priorities, or semicolons inside strings/functions.
+pub(crate) fn without_properties(source: &str, excluded: &[&str]) -> String {
+    let (source, _) =
+        crate::limits::bounded_utf8_prefix(source, crate::limits::MAX_CSS_SOURCE_BYTES);
+    let mut result = String::new();
+    for declaration in parse_declarations(source) {
+        let mut input = ParserInput::new(&declaration.name);
+        let mut parser = Parser::new(&mut input);
+        let excluded = parser.expect_ident().is_ok_and(|name| {
+            excluded
+                .iter()
+                .any(|excluded| name.eq_ignore_ascii_case(excluded))
+        });
+        if !excluded {
+            result.push_str(&declaration.name);
+            result.push(':');
+            result.push_str(&declaration.value);
+            if declaration.important {
+                result.push_str("!important");
+            }
+            result.push(';');
+        }
+    }
+    result
+}
+
 pub(crate) fn value(property: &str, input: &str) -> Option<String> {
     if input.len() > MAX_CSSOM_VALUE_BYTES
         || property.len() > 128

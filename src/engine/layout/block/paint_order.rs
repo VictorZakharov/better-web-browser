@@ -115,6 +115,7 @@ fn parse(items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
             }
             | DisplayItem::EndClip { .. }
             | DisplayItem::EndOpacity { .. }
+            | DisplayItem::EndTransform { .. }
             | DisplayItem::EndMask { .. }
             | DisplayItem::NodeBoundary {
                 entering: false, ..
@@ -180,6 +181,14 @@ fn parse(items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
                     .items
                     .insert(0, DisplayItem::BeginOpacity { bounds, opacity });
                 content.items.push(DisplayItem::EndOpacity { bounds });
+                chunks.push(Chunk::new(Phase::Content, content));
+            }
+            DisplayItem::BeginTransform { bounds, matrix } => {
+                let mut content = order_context(parse(items));
+                content
+                    .items
+                    .insert(0, DisplayItem::BeginTransform { bounds, matrix });
+                content.items.push(DisplayItem::EndTransform { bounds });
                 chunks.push(Chunk::new(Phase::Content, content));
             }
             DisplayItem::NodeBoundary {

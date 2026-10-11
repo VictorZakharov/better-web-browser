@@ -126,8 +126,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 image_width: width,
                 image_height: height,
                 relative_offset: relative_replaced_offset(style, containing_block),
-                transform: style.translation_transform(),
-                transform_font_size: style.font_size,
+                transform: style.transform_from_reference(if style.transform_box.uses_content() {
+                    RectF {
+                        x: 0.0,
+                        y: 0.0,
+                        width,
+                        height,
+                    }
+                } else {
+                    RectF {
+                        x: -padding.left - border.left,
+                        y: -padding.top - border.top,
+                        width: width + padding.horizontal() + border.horizontal(),
+                        height: height + padding.vertical() + border.vertical(),
+                    }
+                }),
                 opacity: style.opacity,
             });
         } else {
@@ -187,8 +200,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 image_width: width,
                 image_height: height,
                 relative_offset: relative_replaced_offset(style, containing_block),
-                transform: style.translation_transform(),
-                transform_font_size: style.font_size,
+                transform: style.transform_from_reference(if style.transform_box.uses_content() {
+                    RectF {
+                        x: 0.0,
+                        y: 0.0,
+                        width,
+                        height,
+                    }
+                } else {
+                    RectF {
+                        x: -padding.left - border.left,
+                        y: -padding.top - border.top,
+                        width: width + padding.horizontal() + border.horizontal(),
+                        height: height + padding.vertical() + border.vertical(),
+                    }
+                }),
                 opacity: style.opacity,
             });
         } else {

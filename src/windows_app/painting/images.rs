@@ -39,10 +39,15 @@ pub(super) unsafe fn paint(
         let saved = SaveDC(dc);
         if saved != 0 {
             let region = screen_rect(bounds, scroll_y, toolbar_height, scale);
-            IntersectClipRect(dc, region.left, region.top, region.right, region.bottom);
+            if !super::affine::clip_rect(dc, region) {
+                IntersectClipRect(dc, 0, 0, 0, 0);
+            }
         }
         saved
     });
+    if saved == Some(0) {
+        return;
+    }
     if let Some(image) = images.get(url) {
         let bitmap = if let Some(color) = tint {
             bitmaps.get_or_create_tinted(

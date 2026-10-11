@@ -1,0 +1,38 @@
+# Loading animation primitives
+
+This slice repairs the browser primitives used by an SVG title that becomes a WebGL particle field and gathers into a smaller lobby title. It changes no application source, assets, quality settings, watchdog thresholds, or remembered preferences. A gradual progress bar is the same general CSS transform problem, not a special loading-bar implementation.
+
+## Geometry and painting
+
+The retained display list now carries finite 2D affine boundaries for translation, scale, rotation, skew and matrix transforms. Nested matrices compose before deriving visual bounds, and hit tests invert the local rectangle rather than accepting the empty corners of a rotated bounding box. Logical client/offset/ResizeObserver sizes remain untransformed. Scroll displacements follow the container's transformed axes, not the child's axes. See the [CSS Transforms rendering model](https://www.w3.org/TR/css-transforms-1/#transform-rendering).
+
+CSS `transform-origin`, `transform-box`, and two-dimensional individual `scale`/`rotate` properties share declaration, CSSOM and feature-query parsing. Transform-list animation pads identities, interpolates compatible primitives, and decomposes absolute matrix tails. An authored identity transform still creates the containing block. Three-dimensional transforms and mixed relative matrix-tail interpolation are not implemented; unsupported interpolation remains discrete instead of inventing a zero percentage basis. SVG descendant transforms remain the existing SVG backend's responsibility.
+
+Inset clip-path animation uses the existing length-expression resolver, retaining percentage and negative edges until box dimensions are known. Other shapes and rounded insets are outside this slice. The Windows painter applies the retained world matrix to local drawing and clips, with balanced ownership through nested opacity/mask groups. Singular transforms do not paint. IPC admission bounds coefficients and nesting and rejects mismatched group boundaries.
+
+An inline SVG root's CSS-owned transform, opacity and supported inset clip are excluded from its raster effects. Root transform/origin and SVG opacity presentation attributes enter the existing author-presentation cascade; the root's resolved transform and opacity are neutralized in the decoder, including SVG-local stylesheet rules. Attributes remain visible to descendant selectors. Legacy SVG transform syntax uses the already-locked svgtypes lexer, preserves single-angle interpolation, and maps three-value rotation pivots to the specified matrix interpolation path; see [SVG transform mapping](https://www.w3.org/TR/css-transforms-1/#svg-transform-functions) and the [outer SVG transform model](https://www.w3.org/TR/SVG2/coords.html#ViewBoxAttribute). These effects are composed exactly once by the retained painter, allowing the metal outline image to remain cached while its inline-style wipe and glow animation change. SVG URL clips/masks and descendant presentation attributes remain in the raster input.
+
+## SVG pixel snapshots
+
+`SVGSVGElement.viewBox` exposes stable live `SVGAnimatedRect`/`SVGRect` objects, including distinct read-only `animVal`, finite float setters and attribute synchronization. This retains the interoperable legacy API observed in Chrome rather than replacing it with `DOMRect`; see [SVG 1.1 rectangle interfaces](https://www.w3.org/TR/SVG11/types.html#InterfaceSVGAnimatedRect). Other SVG viewBox mixins and SMIL-driven rectangle animation are not included.
+
+Detached Blob images resolve through the realm's private object-URL store and private immutable Blob bytes, then use the existing image decoder. They enforce `img-src`, independently of `connect-src`, without calling an HTTP/file resolver or author-replaced Blob accessors. Superseding source selection cancels the old decode; revocation before selection fails, while a selected decoded image retains its pixels after revocation. See the [File API Blob URL model](https://www.w3.org/TR/FileAPI/#url). This does not add public Fetch Blob support or replace the separate connected-image loader.
+
+SVG image documents admit embedded data-URL fonts through the existing CSS Fonts descriptor parser, validated WOFF/WOFF2/SFNT decoder and usvg/resvg outline renderer. They do not fetch ambient font URLs or resolve local font candidates. Admission is bounded to 64 faces, the existing per-font size limit, and 32 MiB aggregate encoded/decoded font bytes. No new dependency or copied library source is introduced. The outline fixture reuses the repository's existing CC0 Ahem font.
+
+## Measured image command
+
+The native scaled-image cache retains its 64 MiB bitmap cap but allows a bounded larger working set and admission history. A cyclic set of 64 sprites previously exceeded the 32-key pending history, so none reached its second-use admission. Keys over 4 KiB decline optional cache admission so large data URLs cannot inflate metadata independently of the bitmap cap. Tests compare every native destination pixel with the old policy, verify actual cache reuse and enforce entry/history/key/byte limits. Nonidentity scale/rotation/shear matrices decline local resampling because it changes native sampling pixels; translation-only draws retain the cache path.
+
+Four alternating reference/candidate rounds of the ignored `benchmark_cyclic_translucent_native_scaling` test retained twelve samples per policy per round (48 per policy), with no overlapping build or heavy suite. Each sample includes 64 warmed native translucent draws and `GdiFlush`; allocation/admission warmup is outside the clock. The old 32-entry/history policy measured 5.79–6.18 ms and the new policy 4.51–4.87 ms. The Rust test control path was a debug build; these are completed native-command elapsed timings on a shared machine, not isolated CPU costs, browser loading times or gameplay FPS.
+
+## Reproducible fixtures
+
+- `loading-primitives.html` checks visual widths at 4/25/50/75/100%, real partial transition samples and unchanged logical box sizes.
+- `svg-particle-snapshot.html` checks SVG viewBox, serialization, embedded font outline coverage, Blob Image decoding, Canvas drawing and readable pixels. Breeze and Chrome produced 12,480 and 12,610 covered pixels respectively; edge antialiasing is not claimed identical.
+- `svg-root-effects.html` checks the root presentation cascade, CSS overrides, attribute grammar, transform origins, and resulting visual geometry against Chrome.
+- `particle-commands.html` checks a 160,000-point normalized-color WebGL2 field, noise/Bezier displacement, texel-fetch gather, blending, completed GPU commands and real start/end pixels. The existing GPU path was already fast; this slice does not claim an improved shader command time.
+- `particle-presentation.html` combines an animated inset wipe with the particle field and retains every callback interval, including stalls.
+- `alpha-scale-working-set.html` checks a changing Canvas beside 64 repeated scaled SVG images, with real Canvas pixel assertions.
+
+The unchanged Last Stand was captured in both browsers with fresh isolated profiles, a 1280×721 CSS viewport and device scale factor 1. The Breeze capture used the existing opt-in graphics renderer budget. Filmstrips show a partially filled progress bar, the dissolving title, particles travelling toward the lobby corner, and the completed title handoff. Reduced motion, Low quality, remembered disablement or the application's slow-frame watchdog can legitimately choose its fallback; the browser does not force these gates. Captures and individual timing samples remain on G: outside commits. Native hidden captures do not measure DWM presentation or high-refresh gameplay parity.

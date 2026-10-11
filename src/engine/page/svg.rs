@@ -5,9 +5,12 @@ use crate::limits::MAX_SVG_SOURCE_BYTES;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 mod admission;
+#[cfg(test)]
+mod compositing_tests;
 mod decoder;
 #[cfg(test)]
 mod deferred_tests;
+mod embedded_fonts;
 mod expansion;
 mod fonts;
 #[cfg(test)]
@@ -206,8 +209,10 @@ fn decode_svg_with_fonts(
     }
     let source = decoder::payload(source)?;
     let mut options = decoder::options(limits);
-    self::fonts::configure(&mut options, fonts);
     let document = admission::document(&source)?;
+    let embedded = embedded_fonts::collect(&document);
+    let fonts = fonts.iter().chain(&embedded).cloned().collect::<Vec<_>>();
+    self::fonts::configure(&mut options, &fonts);
     let tree = resvg::usvg::Tree::from_xmltree(&document, &options)
         .map_err(|error| format!("parse {description}: {error}"))?;
     let size = tree.size().to_int_size();

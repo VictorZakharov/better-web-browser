@@ -97,14 +97,35 @@ pub(super) fn style_host_call(
             crate::engine::css::normalize_easing(&value).map_or(JsValue::null(), JsValue::from),
         ));
     }
-    if operation == "interpolateCssTransform" || operation == "interpolateCssTranslate" {
+    if matches!(
+        operation,
+        "interpolateCssTransform"
+            | "interpolateCssTranslate"
+            | "interpolateCssScale"
+            | "interpolateCssRotate"
+            | "interpolateCssClipPath"
+    ) {
         let from = argument_string(args, 1)?;
         let to = argument_string(args, 2)?;
         let progress = args.get(3).and_then(JsValue::as_number).unwrap_or(f64::NAN);
-        let value = if operation == "interpolateCssTranslate" {
-            crate::engine::css::transform::individual::interpolate(&from, &to, progress)
-        } else {
-            crate::engine::css::transform::interpolate(&from, &to, progress)
+        let value = match operation {
+            "interpolateCssClipPath" => {
+                crate::engine::css::clip_path::interpolate(&from, &to, progress)
+            }
+            "interpolateCssTranslate" => {
+                crate::engine::css::transform::individual::interpolate(&from, &to, progress)
+            }
+            "interpolateCssScale" => {
+                crate::engine::css::transform::individual_linear::interpolate_scale(
+                    &from, &to, progress,
+                )
+            }
+            "interpolateCssRotate" => {
+                crate::engine::css::transform::individual_linear::interpolate_rotate(
+                    &from, &to, progress,
+                )
+            }
+            _ => crate::engine::css::transform::interpolate(&from, &to, progress),
         };
         return Ok(Some(value.map_or(JsValue::null(), JsValue::from)));
     }

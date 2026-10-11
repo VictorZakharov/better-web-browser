@@ -4,7 +4,7 @@
     // path. No inline style or author stylesheet is rewritten.
     // https://drafts.csswg.org/css-transitions-1/#starting
     const transitionProperties = [
-        'opacity', 'color', 'background-color', 'transform', 'width', 'height',
+        'opacity', 'color', 'background-color', 'transform', 'translate', 'rotate', 'scale', 'clip-path', 'width', 'height',
         'top', 'right', 'bottom', 'left', 'font-size', 'letter-spacing', 'word-spacing',
         'border-radius', 'border-top-width', 'border-right-width',
         'border-bottom-width', 'border-left-width', 'border-top-color',
@@ -97,6 +97,11 @@
     };
     const transitionInterpolable = (property, from, to) => {
         if (property === 'transform') return interpolateAnimationTransform(from, to, 0.5) !== null;
+        if (['translate', 'rotate', 'scale', 'clip-path'].includes(property)) {
+            const operation = {'translate':'interpolateCssTranslate', 'rotate':'interpolateCssRotate',
+                'scale':'interpolateCssScale', 'clip-path':'interpolateCssClipPath'}[property];
+            return host(operation, from, to, 0.5) !== null;
+        }
         const a = animationNumber.exec(from), b = animationNumber.exec(to);
         if (a && b && a[2] === b[2]) return true;
         return (property.includes('color') || property === 'color') &&

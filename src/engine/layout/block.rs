@@ -1,6 +1,7 @@
 mod children;
 mod control;
 mod decoration;
+mod effects;
 pub(super) mod floats;
 pub(super) mod margins;
 pub(super) mod paint_order;
@@ -315,23 +316,22 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             resize.border_height += gutter_bottom;
             self.output.resize_boxes.insert(node_id(node), resize);
         }
-        let positioning_box = if style.position != Position::Static || style.has_transform() {
-            RectF {
-                x: x + borders.left,
-                y: border_y + borders.top,
-                width: (border_box_width - borders.horizontal() - gutter_right).max(0.0),
-                height: padding.top + content_height + padding.bottom,
-            }
-        } else {
-            // A static box does not establish an absolute-position containing block. Preserve
-            // the context selected by its nearest positioned ancestor (or the initial block).
+        let padding_rect = RectF {
+            x: x + borders.left,
+            y: border_y + borders.top,
+            width: (border_box_width - borders.horizontal() - gutter_right).max(0.0),
+            height: padding.top + content_height + padding.bottom,
+        };
+        let positioning_box = positioned::containing_box(
+            &style,
+            padding_rect,
             RectF {
                 x: containing_x,
                 y,
                 width: containing_width,
                 height: containing_height.unwrap_or(self.viewport.height),
-            }
-        };
+            },
+        );
         self.layout_positioned_children(
             node,
             positioning_box,
@@ -339,26 +339,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             in_flow_paint_start,
             in_flow_node_start,
         );
-        self.finish_scroll_container(
-            node,
-            &style,
-            RectF {
-                x: x + borders.left,
-                y: border_y + borders.top,
-                width: (border_box_width - borders.horizontal() - gutter_right).max(0.0),
-                height: padding.top + content_height + padding.bottom,
-            },
-            in_flow_paint_start,
-        );
-        self.finish_overflow_clip(
-            overflow_clip,
-            RectF {
-                x: x + borders.left,
-                y: border_y + borders.top,
-                width: (border_box_width - borders.horizontal() - gutter_right).max(0.0),
-                height: padding.top + content_height + padding.bottom,
-            },
-        );
+        self.finish_scroll_container(node, &style, padding_rect, in_flow_paint_start);
+        self.finish_overflow_clip(overflow_clip, padding_rect);
         if style.visibility {
             self.paint_scrollbars(node, &style);
         }
@@ -388,27 +370,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             padding,
             authored_button,
         );
-        self.wrap_mask(&style, rect, item_start);
-        self.wrap_clip_path(node, &style, rect, item_start);
-        if node.is_generated_pseudo() {
-            self.apply_generated_transform(&style, rect, item_start);
-        } else {
-            self.apply_transform(node.id(), &style, rect, item_start);
-        }
-        self.wrap_opacity(item_start, style.opacity);
-        if self.emit_paint && style.position == Position::Sticky {
-            self.output.items.insert(
-                item_start,
-                DisplayItem::NodeBoundary {
-                    node_id: node.id(),
-                    entering: true,
-                },
-            );
-            self.output.items.push(DisplayItem::NodeBoundary {
-                node_id: node.id(),
-                entering: false,
-            });
-        }
+        self.finish_block_effects(node, &style, rect, (borders, padding), item_start);
         self.wrap_block_paint(node, &style, item_start);
         self.finish_positioned_flow_scope(node.id(), &style, item_start, node_start);
 

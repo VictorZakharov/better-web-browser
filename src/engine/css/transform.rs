@@ -1,14 +1,28 @@
-//! Parsing and resolution for the implemented 2D translation transform subset.
+//! Deferred CSS 2D transforms. Layout supplies the reference box before matrix composition.
 
 use super::*;
 pub(crate) mod individual;
+pub(crate) mod individual_linear;
 mod interpolation;
+pub(crate) mod origin;
 mod parser;
+pub(super) mod properties;
+mod serialization;
+pub(in crate::engine::css) mod svg_attribute;
 pub(crate) use interpolation::interpolate;
 pub(super) use parser::parse_transform;
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub(crate) struct TransformList(Vec<TranslateOperation>);
+pub(crate) struct TransformList(Vec<Operation>);
+
+#[derive(Debug, Clone, PartialEq)]
+enum Operation {
+    Translate(TranslateOperation),
+    Scale([f32; 2]),
+    Rotate(f32),
+    Skew([f32; 2]),
+    Matrix(crate::engine::affine::Affine2D),
+}
 
 #[derive(Debug, Clone, PartialEq)]
 struct TranslateOperation {
@@ -19,23 +33,69 @@ struct TranslateOperation {
 impl TransformList {
     pub(crate) fn apply_zoom(&mut self, scale: f32) {
         for operation in &mut self.0 {
-            operation.x = values::zoom::length(&operation.x, scale);
-            operation.y = values::zoom::length(&operation.y, scale);
+            match operation {
+                Operation::Translate(v) => {
+                    v.x = values::zoom::length(&v.x, scale);
+                    v.y = values::zoom::length(&v.y, scale);
+                }
+                Operation::Matrix(v) => {
+                    v.0[4] *= f64::from(scale);
+                    v.0[5] *= f64::from(scale);
+                }
+                _ => {}
+            }
         }
     }
     pub(super) fn resolve_root_font_units(&mut self, root_font_size: f32) {
         for operation in &mut self.0 {
-            operation.x = operation.x.clone().resolve_root_font_units(root_font_size);
-            operation.y = operation.y.clone().resolve_root_font_units(root_font_size);
+            if let Operation::Translate(v) = operation {
+                v.x = v.x.clone().resolve_root_font_units(root_font_size);
+                v.y = v.y.clone().resolve_root_font_units(root_font_size);
+            }
         }
     }
 
+    pub(crate) fn resolve_viewport_units(&mut self, width: f32, height: f32) {
+        for operation in &mut self.0 {
+            if let Operation::Translate(v) = operation {
+                v.x = v.x.clone().resolve_viewport_units(width, height);
+                v.y = v.y.clone().resolve_viewport_units(width, height);
+            }
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn resolve(&self, width: f32, height: f32, font_size: f32) -> (f32, f32) {
-        self.0.iter().fold((0.0, 0.0), |(x, y), operation| {
-            (
-                x + operation.x.resolve(width, font_size).unwrap_or(0.0),
-                y + operation.y.resolve(height, font_size).unwrap_or(0.0),
-            )
+        let matrix = self.matrix(width, height, font_size);
+        (matrix.0[4] as f32, matrix.0[5] as f32)
+    }
+
+    pub(crate) fn matrix(
+        &self,
+        width: f32,
+        height: f32,
+        font: f32,
+    ) -> crate::engine::affine::Affine2D {
+        use crate::engine::affine::Affine2D;
+        self.0.iter().fold(Affine2D::IDENTITY, |matrix, operation| {
+            let next = match operation {
+                Operation::Translate(v) => Affine2D::translate(
+                    f64::from(v.x.resolve(width, font).unwrap_or(0.0)),
+                    f64::from(v.y.resolve(height, font).unwrap_or(0.0)),
+                ),
+                Operation::Scale([x, y]) => {
+                    Affine2D([f64::from(*x), 0.0, 0.0, f64::from(*y), 0.0, 0.0])
+                }
+                Operation::Rotate(angle) => {
+                    let (sin, cos) = f64::from(*angle).sin_cos();
+                    Affine2D([cos, sin, -sin, cos, 0.0, 0.0])
+                }
+                Operation::Skew([x, y]) => {
+                    Affine2D([1.0, f64::from(*y).tan(), f64::from(*x).tan(), 1.0, 0.0, 0.0])
+                }
+                Operation::Matrix(v) => *v,
+            };
+            matrix.then_local(next)
         })
     }
 
@@ -44,23 +104,7 @@ impl TransformList {
     }
 }
 
-pub(super) fn serialize_transform(transform: &TransformList) -> String {
-    if transform.is_none() {
-        return "none".into();
-    }
-    transform
-        .0
-        .iter()
-        .map(|operation| {
-            format!(
-                "translate({}, {})",
-                serialize_length(operation.x.clone()),
-                serialize_length(operation.y.clone())
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
+pub(super) use serialization::serialize_transform;
 
 fn serialize_length(length: Length) -> String {
     match length {
@@ -128,7 +172,7 @@ mod tests {
             serialize_transform(&calculated),
             "translate(calc(10px - 25%), 2em)"
         );
-        assert!(parse_transform("rotate(10deg)").is_none());
-        assert!(parse_transform("matrix(2, 0, 0, 2, 0, 0)").is_none());
+        assert!(parse_transform("rotate(10deg)").is_some());
+        assert!(parse_transform("matrix(2, 0, 0, 2, 0, 0)").is_some());
     }
 }

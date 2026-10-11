@@ -278,6 +278,10 @@ pub struct ComputedStyle {
     pub(crate) clip_path: clip_path::ClipPath,
     pub(crate) transform: transform::TransformList,
     pub(crate) translate: transform::individual::IndividualTranslate,
+    pub(crate) rotate: transform::individual_linear::IndividualRotate,
+    pub(crate) scale: transform::individual_linear::IndividualScale,
+    pub(crate) transform_origin: transform::origin::TransformOrigin,
+    pub(crate) transform_box: transform::origin::TransformBox,
     pub(crate) perspective_non_none: bool,
     pub(crate) filter_non_none: bool,
     pub(crate) transform_style_preserve_3d: bool,
@@ -322,6 +326,7 @@ pub struct ComputedStyle {
 
 mod computed_defaults;
 pub(crate) mod grid_line;
+pub(crate) mod length_interpolation;
 pub(crate) mod scrollbars;
 pub(crate) mod zoom;
 

@@ -23,7 +23,10 @@ impl ClipStack {
                     return;
                 }
                 let clip = screen_rect(*bounds, scroll_y, content_top, scale);
-                IntersectClipRect(dc, clip.left, clip.top, clip.right, clip.bottom);
+                if !super::affine::clip_rect(dc, clip) {
+                    // A failed transformed clip cannot expose unclipped descendants.
+                    IntersectClipRect(dc, 0, 0, 0, 0);
+                }
                 self.states.push((dc, saved));
             }
             DisplayItem::EndClip { .. } => {

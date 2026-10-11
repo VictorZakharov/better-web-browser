@@ -25,9 +25,11 @@ impl PaintIndex {
             match item {
                 DisplayItem::BeginClip { .. }
                 | DisplayItem::BeginOpacity { .. }
+                | DisplayItem::BeginTransform { .. }
                 | DisplayItem::BeginMask { .. } => depth += 1,
                 DisplayItem::EndClip { .. }
                 | DisplayItem::EndOpacity { .. }
+                | DisplayItem::EndTransform { .. }
                 | DisplayItem::EndMask { .. } => {
                     depth = depth.saturating_sub(1);
                 }
@@ -47,10 +49,19 @@ impl PaintIndex {
     fn push_chunk(&mut self, items: &[DisplayItem], range: Range<usize>) {
         let mut top = f32::INFINITY;
         let mut bottom = f32::NEG_INFINITY;
+        let mut matrix = better_web_browser::engine::affine::Affine2D::IDENTITY;
+        let mut transforms = Vec::new();
         for item in &items[range.clone()] {
-            let (item_top, item_bottom) = vertical_bounds(item);
+            if matches!(item, DisplayItem::EndTransform { .. }) {
+                matrix = transforms.pop().unwrap_or_default();
+            }
+            let (item_top, item_bottom) = transformed_vertical_bounds(item, matrix);
             top = top.min(item_top);
             bottom = bottom.max(item_bottom);
+            if let DisplayItem::BeginTransform { matrix: local, .. } = item {
+                transforms.push(matrix);
+                matrix = matrix.then_local(*local);
+            }
         }
         self.chunks.push(PaintChunk { range, top, bottom });
     }
@@ -67,7 +78,10 @@ impl PaintIndex {
     }
 }
 
-fn vertical_bounds(item: &DisplayItem) -> (f32, f32) {
+fn transformed_vertical_bounds(
+    item: &DisplayItem,
+    matrix: better_web_browser::engine::affine::Affine2D,
+) -> (f32, f32) {
     let rect = match item {
         DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. } => return (0.0, 0.0),
         DisplayItem::BeginClip { bounds }
@@ -77,6 +91,9 @@ fn vertical_bounds(item: &DisplayItem) -> (f32, f32) {
         | DisplayItem::BeginCssMask { bounds, .. }
         | DisplayItem::EndMask { bounds }
         | DisplayItem::EndOpacity { bounds } => *bounds,
+        DisplayItem::BeginTransform { bounds, .. } | DisplayItem::EndTransform { bounds } => {
+            *bounds
+        }
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. }
@@ -87,6 +104,7 @@ fn vertical_bounds(item: &DisplayItem) -> (f32, f32) {
         DisplayItem::CssBoxShadow { bounds, .. } => *bounds,
         DisplayItem::Control(spec) => spec.rect,
     };
+    let rect = matrix.bounds(rect);
     let top = rect.y.min(rect.bottom());
     let bottom = rect.y.max(rect.bottom());
     if top.is_finite() && bottom.is_finite() {
@@ -183,6 +201,43 @@ mod tests {
         assert_eq!(
             index.visible_ranges(1_000.0, 1_100.0).collect::<Vec<_>>(),
             vec![0..302]
+        );
+    }
+
+    #[test]
+    fn transformed_chunks_are_balanced_and_indexed_at_their_visual_location() {
+        use better_web_browser::engine::affine::Affine2D;
+        let matrix = Affine2D([0.0, 1.0, -1.0, 0.0, 4000.0, 1000.0]);
+        let local = RectF {
+            x: 0.0,
+            y: 0.0,
+            width: 3000.0,
+            height: 100.0,
+        };
+        let bounds = matrix.bounds(local);
+        let mut items = vec![DisplayItem::BeginTransform { bounds, matrix }];
+        items.extend((0..300).map(|n| DisplayItem::SolidRect {
+            rect: RectF {
+                x: n as f32 * 10.0,
+                y: 0.0,
+                width: 8.0,
+                height: 100.0,
+            },
+            color: Color::BLACK,
+            radius: 0.0,
+        }));
+        items.push(DisplayItem::EndTransform { bounds });
+        items.extend((0..128).map(|n| item(6000.0 + n as f32 * 10.0, 8.0)));
+        let mut index = PaintIndex::default();
+        index.rebuild(&items);
+        assert_eq!(
+            index.visible_ranges(2000.0, 2100.0).collect::<Vec<_>>(),
+            vec![0..302]
+        );
+        assert!(index.visible_ranges(0.0, 100.0).next().is_none());
+        assert_eq!(
+            index.visible_ranges(6000.0, 6100.0).collect::<Vec<_>>(),
+            vec![302..430]
         );
     }
 }

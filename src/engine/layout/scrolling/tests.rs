@@ -123,7 +123,7 @@ fn classic_gutters_reserve_space_and_one_axis_can_induce_the_other() {
 }
 
 #[test]
-fn transformed_scrollport_moves_with_its_paint_and_hit_geometry() {
+fn transformed_scrollport_keeps_logical_extents_and_moves_its_hit_geometry() {
     let page = Page::parse(
         "<style>body{margin:0}main{transform:translate(30px,40px);width:200px;height:100px;overflow:auto}div{height:400px}</style><main><div></div></main>",
         "https://example.test/",
@@ -131,5 +131,9 @@ fn transformed_scrollport_moves_with_its_paint_and_hit_geometry() {
     let node = page.dom.elements_named("main").next().unwrap();
     let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
     let scroll = output.scroll_boxes[&node.id()];
-    assert_eq!((scroll.port.x, scroll.port.y), (30.0, 40.0));
+    assert_eq!((scroll.port.x, scroll.port.y), (0.0, 0.0));
+    assert_eq!((scroll.port.width, scroll.port.height), (185.0, 100.0));
+    let child = page.dom.elements_named("div").next().unwrap();
+    assert!(output.point_in_scroll_clips(&child, 35.0, 45.0));
+    assert!(!output.point_in_scroll_clips(&child, 5.0, 5.0));
 }

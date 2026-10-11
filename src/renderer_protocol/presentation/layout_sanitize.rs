@@ -3,13 +3,32 @@
 use super::PresentedLayout;
 use crate::engine::{ControlSpec, DisplayItem, FontSpec, LayoutOutput, PositionedGlyph, RectF};
 use crate::limits::{MAX_PRESENTATION_COORDINATE, MAX_URL_BYTES};
+#[cfg(test)]
+mod affine_tests;
 
 pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
     let mut offsets = Vec::with_capacity(layout.items.len() + 1);
     let mut items = Vec::with_capacity(layout.items.len());
     let mut dropped_paint = false;
+    let mut invalid_transform_depth = 0usize;
     for item in layout.items {
         offsets.push(items.len());
+        if invalid_transform_depth > 0 {
+            match item {
+                DisplayItem::BeginTransform { .. } => invalid_transform_depth += 1,
+                DisplayItem::EndTransform { .. } => invalid_transform_depth -= 1,
+                _ => {}
+            }
+            dropped_paint = true;
+            continue;
+        }
+        if let DisplayItem::BeginTransform { bounds, matrix } = &item
+            && (!super::layout::affine::valid(*matrix) || sanitize_rect(*bounds).is_none())
+        {
+            invalid_transform_depth = 1;
+            dropped_paint = true;
+            continue;
+        }
         let local = matches!(
             item,
             DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. }
@@ -75,6 +94,13 @@ fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
             opacity: finite_or(opacity, 1.0).clamp(0.0, 1.0),
         },
         DisplayItem::EndOpacity { bounds } => DisplayItem::EndOpacity {
+            bounds: sanitize_rect(bounds)?,
+        },
+        DisplayItem::BeginTransform { bounds, matrix } => DisplayItem::BeginTransform {
+            bounds: sanitize_rect(bounds)?,
+            matrix,
+        },
+        DisplayItem::EndTransform { bounds } => DisplayItem::EndTransform {
             bounds: sanitize_rect(bounds)?,
         },
         DisplayItem::BeginMask { bounds, url } => DisplayItem::BeginMask {
@@ -229,6 +255,9 @@ fn item_rect(item: &DisplayItem) -> Option<RectF> {
         | DisplayItem::BeginCssMask { bounds, .. }
         | DisplayItem::EndMask { bounds }
         | DisplayItem::EndOpacity { bounds } => Some(*bounds),
+        DisplayItem::BeginTransform { bounds, .. } | DisplayItem::EndTransform { bounds } => {
+            Some(*bounds)
+        }
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. } => Some(*rect),
@@ -251,6 +280,8 @@ fn retain_balanced_display_groups(items: &mut Vec<DisplayItem>) {
             DisplayItem::EndOpacity { .. } => Some((false, 2)),
             DisplayItem::BeginMask { .. } => Some((true, 3)),
             DisplayItem::EndMask { .. } => Some((false, 3)),
+            DisplayItem::BeginTransform { .. } => Some((true, 4)),
+            DisplayItem::EndTransform { .. } => Some((false, 4)),
             _ => None,
         };
         if let Some((begin, kind)) = action {

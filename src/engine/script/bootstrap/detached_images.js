@@ -35,12 +35,24 @@
             }
             // The decoder only receives bytes visible to this realm. Opaque
             // Fetch responses must not become readable Canvas pixels.
-            fetch(url, {
+            const bytesForImage = url.startsWith('blob:') ? Promise.resolve().then(() => {
+                // File API blob URLs resolve in this realm's private URL store,
+                // not through HTTP Fetch. Revocation before resource selection
+                // fails; once selected, the immutable snapshot owns its bytes.
+                if (!host('localImageAllowed', url)) throw imageDecodeError();
+                const blob = objectUrlValue(url.split('#', 1)[0]);
+                const bytes = readImageBitmapBlob(blob);
+                if (!bytes) throw imageDecodeError();
+                return bytes;
+            }) : fetch(url, {
                 mode: 'no-cors', credentials: 'include',
                 referrerPolicy: 'no-referrer-when-downgrade', signal: controller.signal
             }).then(async response => {
                 if (!response.ok && response.type !== 'opaque') throw imageDecodeError();
-                const bytes = new Uint8Array(await response.arrayBuffer());
+                return new Uint8Array(await response.arrayBuffer());
+            });
+            bytesForImage.then(bytes => {
+                if (detachedImageLoads.get(element) !== state) throw imageDecodeError();
                 const decoded = host('canvasDecode', bytes, false, false, true);
                 if (!decoded) throw imageDecodeError();
                 return decoded;

@@ -30,12 +30,39 @@ fn invalid_coordinate_invalidates_the_entire_declaration() {
         "translateX(10px, 20px)",
         "translate(10px junk",
         "matrix(1, 0, 0, 1, 10%, 0)",
-        "matrix(1, 0.000001, 0, 1, 0, 0)",
         "matrix(1,0,0,1,calc(10px),0)",
-        "rotate(0deg)",
+        "rotate(1)",
+        "scale(1px)",
+        "scale(1 2)",
+        "skew(10%)",
+        "matrix(1,0,0,1,0,NaN)",
+        "rotateX(20deg)",
     ] {
         assert!(parse_transform(value).is_none(), "{value}");
     }
+}
+
+#[test]
+fn scale_rotation_and_skew_admit_real_nonidentity_2d_matrices() {
+    let parsed = parse_transform("translate(10px, 20px) scaleX(25%) scaleY(-2)").unwrap();
+    assert_eq!(
+        parsed.matrix(100.0, 80.0, 16.0).0,
+        [0.25, 0.0, 0.0, -2.0, 10.0, 20.0]
+    );
+    assert_eq!(
+        parse_transform("scale(0)")
+            .unwrap()
+            .matrix(100.0, 80.0, 16.0)
+            .0,
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    );
+    assert!(parse_transform("matrix(1, 0.000001, 0, 1, 0, 0)").is_some());
+    let rotation = parse_transform("rotate(.25turn)")
+        .unwrap()
+        .matrix(100.0, 80.0, 16.0);
+    let (x, y) = rotation.point(10.0, 0.0);
+    assert!(x.abs() < 0.00001 && (y - 10.0).abs() < 0.00001);
+    assert!(parse_transform("skewX(calc(45deg))").is_some());
 }
 
 #[test]

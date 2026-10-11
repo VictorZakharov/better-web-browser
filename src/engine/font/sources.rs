@@ -15,7 +15,11 @@ pub(crate) enum FontSource {
 /// Keep syntactically valid local names, even though loading local aliases is
 /// not implemented yet. They remain valid FontFace sources, not SyntaxErrors.
 pub(crate) fn parse(value: &str) -> Option<Vec<FontSource>> {
-    if value.len() > MAX_SOURCE_BYTES {
+    parse_with_limit(value, MAX_SOURCE_BYTES)
+}
+
+pub(super) fn parse_with_limit(value: &str, max_bytes: usize) -> Option<Vec<FontSource>> {
+    if value.len() > max_bytes {
         return None;
     }
     let mut input = ParserInput::new(value);

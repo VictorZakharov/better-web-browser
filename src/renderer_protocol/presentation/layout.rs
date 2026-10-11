@@ -9,6 +9,7 @@ use crate::limits::{
     MAX_DOM_NODES, MAX_PRESENTATION_COORDINATE, MAX_RENDERED_TEXT_BYTES, MAX_URL_BYTES,
 };
 
+pub(super) mod affine;
 mod controls;
 mod groups;
 pub(super) mod sticky;
@@ -105,6 +106,15 @@ fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), Protoc
         }
         DisplayItem::EndOpacity { bounds } => {
             writer.u8(8);
+            encode_rect(writer, *bounds);
+        }
+        DisplayItem::BeginTransform { bounds, matrix } => {
+            writer.u8(13);
+            encode_rect(writer, *bounds);
+            affine::encode(writer, *matrix)?;
+        }
+        DisplayItem::EndTransform { bounds } => {
+            writer.u8(14);
             encode_rect(writer, *bounds);
         }
         DisplayItem::SolidRect {
@@ -206,6 +216,13 @@ fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), Protoc
 
 fn decode_item(reader: &mut WireReader<'_>) -> Result<DisplayItem, ProtocolError> {
     match reader.u8()? {
+        13 => Ok(DisplayItem::BeginTransform {
+            bounds: decode_rect(reader)?,
+            matrix: affine::decode(reader)?,
+        }),
+        14 => Ok(DisplayItem::EndTransform {
+            bounds: decode_rect(reader)?,
+        }),
         11 => Ok(DisplayItem::BeginMask {
             bounds: decode_rect(reader)?,
             url: reader.string(MAX_URL_BYTES)?,

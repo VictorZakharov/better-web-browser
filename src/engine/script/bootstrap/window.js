@@ -33,6 +33,7 @@
     windowObject.SVGAnimatedString = SVGAnimatedString;
     windowObject.SVGElement = SVGElement;
     windowObject.SVGSVGElement = SVGSVGElement;
+    Object.assign(windowObject, {SVGRect, SVGAnimatedRect});
     windowObject.SVGAnimatedEnumeration = SVGAnimatedEnumeration;
     windowObject.SVGNumber = SVGNumber;
     windowObject.SVGNumberList = SVGNumberList;

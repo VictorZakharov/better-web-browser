@@ -26,10 +26,11 @@ mod table;
 pub(crate) mod test_support;
 mod tests;
 mod tracks;
+mod transforms;
 mod translate;
 mod truncation;
 use self::{forms::*, model::*, sizing::*, tracks::*, truncation::*};
-pub use self::{scrolling::ScrollBox, sticky::StickyLayer};
+pub use self::{hit_test::HitTestSnapshot, scrolling::ScrollBox, sticky::StickyLayer};
 use super::css::*;
 use super::dom::{Node, NodeData, NodeId, NodeRef};
 use super::page::{Page, inline_svg_key};
@@ -38,7 +39,6 @@ use engine::{BlockMetrics, LayoutEngine, UsedInlineSize};
 pub use engine::{
     layout_geometry_with_style_viewport, layout_page, layout_page_with_style_viewport,
 };
-pub use hit_test::HitTestSnapshot;
 pub use model::{
     CheckableState, ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, FragmentGeometry,
     LayoutOutput, PositionedGlyph, RectF, ResizeBox, SelectOption, ShapedText, TextCluster,

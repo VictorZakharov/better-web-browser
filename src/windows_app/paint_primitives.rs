@@ -86,7 +86,13 @@ pub(super) unsafe fn paint_background_image(
     }
     let clip = screen_rect(clip_rect, scroll_y, content_top, scale);
     let saved = SaveDC(destination);
-    IntersectClipRect(destination, clip.left, clip.top, clip.right, clip.bottom);
+    if saved == 0 {
+        return;
+    }
+    if !super::painting::affine::clip_rect(destination, clip) {
+        RestoreDC(destination, saved);
+        return;
+    }
 
     let start_x = if repeat_x {
         tile_rect.x + ((clip_rect.x - tile_rect.x) / tile_rect.width).floor() * tile_rect.width

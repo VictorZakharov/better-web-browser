@@ -1,0 +1,35 @@
+<!doctype html><meta charset="utf-8"><title>pending SVG particle snapshot</title>
+<svg id="source" xmlns="http://www.w3.org/2000/svg" width="300" height="120" viewBox="0 0 300 120">
+<defs><linearGradient id="metal"><stop stop-color="#fff"/><stop offset="1" stop-color="#888"/></linearGradient></defs>
+<text x="10" y="80" font-family="SnapshotAlias" font-size="64" fill="url(#metal)">ABC</text></svg>
+<canvas id="snapshot" width="300" height="120"></canvas><output id="result"></output>
+<script>
+(async()=>{
+  const source=document.getElementById('source');
+  const view=source.viewBox.baseVal;
+  if(view.width!==300||view.height!==120)throw Error('SVG viewBox missing');
+  const font=await(await fetch('../../../tests/canvas/fonts/ahem.ttf')).arrayBuffer();
+  let binary='';for(const byte of new Uint8Array(font))binary+=String.fromCharCode(byte);
+  const style=document.createElementNS('http://www.w3.org/2000/svg','style');
+  style.textContent="@font-face{font-family:SnapshotAlias;src:url(data:font/ttf;base64,"+btoa(binary)+")}";
+  source.insertBefore(style,source.firstChild);
+  const svg=new XMLSerializer().serializeToString(source);
+  const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
+  try{
+    const image=new Image();image.src=url;await image.decode();
+    const canvas=document.getElementById('snapshot'),ctx=canvas.getContext('2d',{willReadFrequently:true});
+    ctx.drawImage(image,0,0,300,120);
+    const pixels=ctx.getImageData(0,0,300,120).data;
+    let lit=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i])lit++;
+    // Ahem's three square glyphs have deterministic outline coverage. This
+    // checks actual image pixels, not just a successful decode promise.
+    if(lit<11000||lit>13000)throw Error('embedded outline coverage '+lit);
+    const inside=ctx.getImageData(15,40,1,1).data;
+    const outside=ctx.getImageData(290,110,1,1).data;
+    if(inside[3]!==255||outside[3]!==0)throw Error('SVG snapshot pixels');
+    document.getElementById('result').textContent='PASS: embedded font, SVG blob, drawImage, getImageData; points='+lit;
+    document.title='done SVG snapshot points='+lit;
+    document.documentElement.dataset.fixtureReady='true';
+  }finally{URL.revokeObjectURL(url);}
+})().catch(error=>{document.title='failed '+error.message;throw error;});
+</script>

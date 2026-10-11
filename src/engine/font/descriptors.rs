@@ -17,7 +17,9 @@ enum Descriptor {
     Features(crate::engine::css::FontFeatures),
 }
 
-struct Descriptors;
+struct Descriptors {
+    embedded: bool,
+}
 
 impl<'i> DeclarationParser<'i> for Descriptors {
     type Declaration = Descriptor;
@@ -47,7 +49,12 @@ impl<'i> DeclarationParser<'i> for Descriptors {
                     _ => None,
                 }
             }),
-            "src" => sources::parse(value).map(Descriptor::Sources),
+            "src" => if self.embedded {
+                sources::parse_with_limit(value, crate::limits::MAX_CSS_SOURCE_BYTES)
+            } else {
+                sources::parse(value)
+            }
+            .map(Descriptor::Sources),
             "font-weight" => weight(value).map(|(a, b)| Descriptor::Weight(a, b)),
             "font-style" => style(value).map(Descriptor::Italic),
             "unicode-range" => UnicodeRanges::parse(value).map(Descriptor::Ranges),
@@ -79,6 +86,16 @@ impl<'i> RuleBodyItemParser<'i, Descriptor, ()> for Descriptors {
 }
 
 pub(crate) fn parse(body: &str, base: &str) -> Option<WebFontFace> {
+    parse_mode(body, base, false)
+}
+
+/// SVG image documents may decode data fonts, but have no network/file authority.
+/// Keep navigation URL admission and ordinary stylesheet source-list limits intact.
+pub(crate) fn parse_embedded(body: &str) -> Option<WebFontFace> {
+    parse_mode(body, "about:blank", true)
+}
+
+fn parse_mode(body: &str, base: &str, embedded: bool) -> Option<WebFontFace> {
     let mut input = ParserInput::new(body);
     let mut parser = Parser::new(&mut input);
     let mut family = None;
@@ -87,7 +104,7 @@ pub(crate) fn parse(body: &str, base: &str) -> Option<WebFontFace> {
     let mut italic = false;
     let mut ranges = UnicodeRanges::default();
     let mut features = crate::engine::css::FontFeatures::default();
-    for descriptor in RuleBodyParser::new(&mut parser, &mut Descriptors)
+    for descriptor in RuleBodyParser::new(&mut parser, &mut Descriptors { embedded })
         .take(crate::limits::MAX_CSS_DECLARATIONS_PER_RULE)
         .flatten()
     {
@@ -103,7 +120,17 @@ pub(crate) fn parse(body: &str, base: &str) -> Option<WebFontFace> {
     let mut urls = sources?
         .into_iter()
         .filter_map(|source| match source {
-            sources::FontSource::Url(url) => resolve_url(base, &url),
+            sources::FontSource::Url(url) => {
+                if embedded {
+                    // Data URL processing and the bounded native font decoder perform
+                    // validation later; this stage only resolves source ownership.
+                    url.get(..5)
+                        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:"))
+                        .then_some(url)
+                } else {
+                    resolve_url(base, &url)
+                }
+            }
             // Local aliases are not loaded until installed-font alias ownership exists.
             sources::FontSource::Local(_) => None,
         })

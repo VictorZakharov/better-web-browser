@@ -148,6 +148,7 @@ fn layout_page_for_output<M: TextMeasurer>(
             height: viewport_height.max(1.0),
         },
         output: LayoutOutput {
+            transformed: Default::default(),
             fragments: Default::default(),
             sticky_offsets: HashMap::new(),
             sticky_layers: Vec::new(),

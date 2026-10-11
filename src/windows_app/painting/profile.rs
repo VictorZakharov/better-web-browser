@@ -83,6 +83,7 @@ impl ItemTiming {
             | DisplayItem::EndOpacity { .. }
             | DisplayItem::BeginMask { .. }
             | DisplayItem::EndMask { .. } => 5,
+            DisplayItem::BeginTransform { .. } | DisplayItem::EndTransform { .. } => 5,
             DisplayItem::BeginClip { .. } | DisplayItem::EndClip { .. } => 6,
             _ => 7,
         };

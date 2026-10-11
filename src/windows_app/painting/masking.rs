@@ -15,6 +15,7 @@ pub(super) struct MaskLayer {
     rect: Rect,
     full: Rect,
     mask: DecodedImage,
+    matrix: better_web_browser::engine::affine::Affine2D,
 }
 
 impl MaskLayer {
@@ -30,7 +31,8 @@ impl MaskLayer {
         dirty: &Rect,
     ) -> Option<Self> {
         let full = screen_rect(bounds, scroll_y, toolbar, scale);
-        let rect = super::opacity::intersection(full, *content)
+        let matrix = super::affine::matrix(destination);
+        let rect = super::opacity::intersection(super::affine::bounds(matrix, full), *content)
             .and_then(|r| super::opacity::intersection(r, *dirty))?;
         let bytes = rect.width() as usize * rect.height() as usize * 4;
         if bytes > 64 * 1024 * 1024
@@ -60,18 +62,27 @@ impl MaskLayer {
         let previous = SelectObject(source, bitmap);
         SetViewportOrgEx(source, -rect.left, -rect.top, null_mut());
         IntersectClipRect(source, rect.left, rect.top, rect.right, rect.bottom);
-        if BitBlt(
-            source,
-            rect.left,
-            rect.top,
-            rect.width(),
-            rect.height(),
-            destination,
-            rect.left,
-            rect.top,
-            SRCCOPY,
-        ) == 0
+        let identity = super::affine::IdentityScope::new(destination);
+        if identity.is_none()
+            || BitBlt(
+                source,
+                rect.left,
+                rect.top,
+                rect.width(),
+                rect.height(),
+                destination,
+                rect.left,
+                rect.top,
+                SRCCOPY,
+            ) == 0
         {
+            SelectObject(source, previous);
+            DeleteObject(bitmap);
+            DeleteDC(source);
+            return None;
+        }
+        drop(identity);
+        if !super::affine::set(source, matrix) {
             SelectObject(source, previous);
             DeleteObject(bitmap);
             DeleteDC(source);
@@ -86,6 +97,7 @@ impl MaskLayer {
             rect,
             full,
             mask: mask.clone(),
+            matrix,
         })
     }
 
@@ -100,25 +112,35 @@ impl MaskLayer {
                 self.pixels,
                 self.rect.width() as usize * self.rect.height() as usize * 4,
             );
-            apply_mask(pixels, self.rect, self.full, &self.mask);
-            AlphaBlend(
-                self.destination,
-                self.rect.left,
-                self.rect.top,
-                self.rect.width(),
-                self.rect.height(),
-                self.source,
-                self.rect.left,
-                self.rect.top,
-                self.rect.width(),
-                self.rect.height(),
-                BlendFunction {
-                    operation: 0,
-                    flags: 0,
-                    source_constant_alpha: 255,
-                    alpha_format: 1,
-                },
-            );
+            if self.matrix == better_web_browser::engine::affine::Affine2D::IDENTITY {
+                apply_mask(pixels, self.rect, self.full, &self.mask);
+            } else {
+                sampling::apply_affine(pixels, self.rect, self.full, &self.mask, self.matrix);
+            }
+            let destination_identity = super::affine::IdentityScope::new(self.destination);
+            let source_identity = super::affine::IdentityScope::new(self.source);
+            if destination_identity.is_some() && source_identity.is_some() {
+                AlphaBlend(
+                    self.destination,
+                    self.rect.left,
+                    self.rect.top,
+                    self.rect.width(),
+                    self.rect.height(),
+                    self.source,
+                    self.rect.left,
+                    self.rect.top,
+                    self.rect.width(),
+                    self.rect.height(),
+                    BlendFunction {
+                        operation: 0,
+                        flags: 0,
+                        source_constant_alpha: 255,
+                        alpha_format: 1,
+                    },
+                );
+            }
+            drop(source_identity);
+            drop(destination_identity);
         }
         SelectObject(self.source, self.previous);
         DeleteObject(self.bitmap);

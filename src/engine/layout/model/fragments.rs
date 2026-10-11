@@ -41,16 +41,36 @@ pub(crate) struct TextFragment {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FragmentGeometry {
+    layout_boxes: HashMap<NodeId, RectF>,
+    transforms: HashMap<NodeId, crate::engine::affine::Affine2D>,
     pub(crate) elements: HashMap<NodeId, Vec<InlineFragment>>,
     pub(crate) text: HashMap<NodeId, Vec<TextFragment>>,
     pub(crate) next_line: u64,
 }
 
 impl FragmentGeometry {
+    pub(in crate::engine::layout) fn extend_transforms(&mut self, other: &Self) {
+        self.layout_boxes
+            .extend(other.layout_boxes.iter().map(|(&id, &rect)| (id, rect)));
+        self.transforms
+            .extend(other.transforms.iter().map(|(&id, &matrix)| (id, matrix)));
+    }
+
+    pub(crate) fn layout_rect(&self, id: NodeId) -> Option<RectF> {
+        self.layout_boxes.get(&id).copied()
+    }
+
+    pub(in crate::engine::layout) fn retain_layout_rect(&mut self, id: NodeId, rect: RectF) {
+        self.layout_boxes.entry(id).or_insert(rect);
+    }
+
     pub(crate) fn element(&self, id: NodeId) -> Option<Vec<RectF>> {
-        self.elements
-            .get(&id)
-            .map(|fragments| fragments.iter().map(|f| f.rect).collect())
+        self.elements.get(&id).map(|fragments| {
+            fragments
+                .iter()
+                .map(|f| self.transformed_rect(id, f.rect))
+                .collect()
+        })
     }
 
     pub(crate) fn push_inline(&mut self, id: NodeId, line: u64, rect: RectF) {
@@ -63,6 +83,18 @@ impl FragmentGeometry {
     }
 
     pub(crate) fn translate(&mut self, id: NodeId, dx: f32, dy: f32) {
+        if let Some(rect) = self.layout_boxes.get_mut(&id) {
+            rect.x += dx;
+            rect.y += dy;
+        }
+        if let Some(matrix) = self.transforms.get_mut(&id) {
+            *matrix = crate::engine::affine::Affine2D::translate(f64::from(dx), f64::from(dy))
+                .then_local(*matrix)
+                .then_local(crate::engine::affine::Affine2D::translate(
+                    -f64::from(dx),
+                    -f64::from(dy),
+                ));
+        }
         if let Some(fragments) = self.elements.get_mut(&id) {
             for fragment in fragments {
                 fragment.rect.x += dx;
@@ -80,6 +112,8 @@ impl FragmentGeometry {
     }
 
     pub(crate) fn remove(&mut self, id: NodeId) {
+        self.layout_boxes.remove(&id);
+        self.transforms.remove(&id);
         self.elements.remove(&id);
         self.text.remove(&id);
     }
@@ -119,7 +153,21 @@ impl FragmentGeometry {
                 }
             }
         }
-        result.into_iter().map(|(_, rect)| rect).collect()
+        result
+            .into_iter()
+            .map(|(_, rect)| self.transformed_rect(id, rect))
+            .collect()
+    }
+
+    pub(crate) fn transform(&mut self, id: NodeId, matrix: crate::engine::affine::Affine2D) {
+        let previous = self.transforms.entry(id).or_default();
+        *previous = matrix.then_local(*previous);
+    }
+
+    fn transformed_rect(&self, id: NodeId, rect: RectF) -> RectF {
+        self.transforms
+            .get(&id)
+            .map_or(rect, |matrix| matrix.bounds(rect))
     }
 }
 

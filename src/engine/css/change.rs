@@ -64,6 +64,10 @@ impl ComputedStyle {
             && self.left == other.left
             && self.transform == other.transform
             && self.translate == other.translate
+            && self.rotate == other.rotate
+            && self.scale == other.scale
+            && self.transform_origin == other.transform_origin
+            && self.transform_box == other.transform_box
             // Retained paint and native hit regions depend on the basic-shape clip.
             && self.clip_path == other.clip_path
             && self.mask_image == other.mask_image

@@ -1,6 +1,6 @@
     // CSS Transforms §11: interpolate compatible transform functions, padding
-    // `none` with identity operations. The current painter implements only 2D
-    // translation, so unsupported rotation/scale lists keep discrete behavior.
+    // `none` with identity operations. Simple translations stay in this fast
+    // path; the native parser handles the complete admitted 2D transform list.
     // https://www.w3.org/TR/css-transforms-1/#interpolation-of-transforms
     const parseAnimationTransform = source => {
         const text = String(source).trim();

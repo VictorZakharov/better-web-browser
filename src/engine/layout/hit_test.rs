@@ -38,6 +38,7 @@ impl HitTestSnapshot {
             .collect();
         Self {
             layout: LayoutOutput {
+                transformed: layout.transformed.clone(),
                 fragments: layout.fragments.clone(),
                 node_bounds: layout.node_bounds.clone(),
                 sticky_offsets: layout.sticky_offsets.clone(),
@@ -70,6 +71,7 @@ impl HitTestSnapshot {
                             && y < rect.bottom()
                     })
                     && self.layout.point_in_scroll_clips(node, x, y)
+                    && self.layout.point_in_transformed_box(node, x, y)
             })
             .cloned()
             .collect::<Vec<_>>();
@@ -80,6 +82,7 @@ impl HitTestSnapshot {
         for node in self.inline_nodes.iter().rev() {
             if self.layout.hit_excluded.contains(&node.id())
                 || !self.layout.point_in_scroll_clips(node, x, y)
+                || !self.layout.point_in_transformed_box(node, x, y)
             {
                 continue;
             }

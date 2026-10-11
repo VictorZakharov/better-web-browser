@@ -7,6 +7,7 @@ enum GroupKind {
     Clip,
     Opacity,
     Mask,
+    Transform,
 }
 
 pub(super) fn validate_display_groups(items: &[DisplayItem]) -> Result<(), ProtocolError> {
@@ -24,6 +25,13 @@ pub(super) fn validate_display_groups(items: &[DisplayItem]) -> Result<(), Proto
             DisplayItem::EndOpacity { .. } => Some((false, GroupKind::Opacity)),
             DisplayItem::BeginMask { .. } => Some((true, GroupKind::Mask)),
             DisplayItem::EndMask { .. } => Some((false, GroupKind::Mask)),
+            DisplayItem::BeginTransform { matrix, .. } => {
+                if !super::affine::valid(*matrix) {
+                    return Err(ProtocolError::InvalidPayload("affine matrix"));
+                }
+                Some((true, GroupKind::Transform))
+            }
+            DisplayItem::EndTransform { .. } => Some((false, GroupKind::Transform)),
             _ => None,
         };
         let Some((begin, kind)) = action else {
@@ -70,6 +78,30 @@ mod tests {
             DisplayItem::EndClip { bounds: bounds() },
         ];
         assert!(validate_display_groups(&items).is_ok());
+    }
+
+    #[test]
+    fn affine_groups_preserve_mixed_nesting_and_enforce_balance_and_depth() {
+        let begin = DisplayItem::BeginTransform {
+            bounds: bounds(),
+            matrix: crate::engine::affine::Affine2D::IDENTITY,
+        };
+        let end = DisplayItem::EndTransform { bounds: bounds() };
+        let clip = DisplayItem::BeginClip { bounds: bounds() };
+        let unclip = DisplayItem::EndClip { bounds: bounds() };
+        assert!(
+            validate_display_groups(&[begin.clone(), clip.clone(), unclip.clone(), end.clone()])
+                .is_ok()
+        );
+        assert!(validate_display_groups(&[begin.clone(), clip, end.clone(), unclip]).is_err());
+        assert!(validate_display_groups(std::slice::from_ref(&begin)).is_err());
+        assert!(validate_display_groups(std::slice::from_ref(&end)).is_err());
+        let mut nested = vec![begin.clone(); 256];
+        nested.extend(vec![end.clone(); 256]);
+        assert!(validate_display_groups(&nested).is_ok());
+        nested.insert(0, begin);
+        nested.push(end);
+        assert!(validate_display_groups(&nested).is_err());
     }
 
     #[test]

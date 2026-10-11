@@ -5,7 +5,7 @@ use crate::windows_app::paint_primitives::{
 };
 use windows_sys::Win32::Graphics::Gdi::SelectClipRgn;
 
-fn patterned(width: u32, height: u32) -> DecodedImage {
+pub(super) fn patterned(width: u32, height: u32) -> DecodedImage {
     let mut result = image(width, height, [0; 4]);
     result.bgra = (0..width * height)
         .flat_map(|index| {

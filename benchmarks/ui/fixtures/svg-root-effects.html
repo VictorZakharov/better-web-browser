@@ -1,0 +1,27 @@
+<!doctype html><meta charset="utf-8"><title>pending SVG root effects</title>
+<style>
+body{margin:0;background:white;color:black;font:16px Arial}
+svg{position:absolute;left:16px;width:100px;height:60px}
+.override{transform:none}.sheet{transform:scale(.5);transform-origin:0 0}
+svg[opacity][transform] rect{fill:red}
+#result{position:absolute;left:300px;top:16px}
+</style>
+<svg id="legacy" width="100" height="60" style="top:16px" transform="translate (10 20) scale(2)" transform-origin="0 0" opacity=".5"><rect width="100" height="60"/></svg>
+<svg id="override" class="override" width="100" height="60" style="top:176px" transform="scale(.5)" opacity=".5"><rect width="100" height="60"/></svg>
+<svg id="sheet" class="sheet" width="100" height="60" style="top:256px"><style>#sheet{opacity:.5}</style><rect width="100" height="60" fill="red"/></svg>
+<svg id="invalid" width="100" height="60" style="top:336px" transform="scaleX(.5)"><rect width="100" height="60" fill="blue"/></svg>
+<svg id="origin" width="100" height="60" style="left:180px;top:176px" transform="scale(.5)" transform-origin="100% 100%"><rect width="100" height="60" fill="green"/></svg>
+<output id="result"></output>
+<script>
+(()=>{
+  const values={};
+  for(const [id,expected]of Object.entries({legacy:[26,36,200,120],override:[16,176,100,60],sheet:[16,256,50,30],invalid:[16,336,100,60],origin:[230,206,50,30]})){
+    const svg=document.getElementById(id),r=svg.getBoundingClientRect();
+    values[id]=[r.x,r.y,r.width,r.height];
+    if(values[id].some((value,i)=>Math.abs(value-expected[i])>.05))throw Error(id+' '+values[id]);
+  }
+  document.getElementById('result').setAttribute('data-rects',JSON.stringify(values));
+  document.getElementById('result').textContent='PASS: SVG root cascade, origin and geometry';
+  document.title='done SVG root effects';document.documentElement.dataset.fixtureReady='true';
+})()
+</script>
