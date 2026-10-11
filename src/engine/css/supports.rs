@@ -4,6 +4,7 @@ use super::values::{BoxOrient, LineClamp, TextOverflow};
 use super::*;
 mod condition;
 mod selector;
+pub(super) use condition::property_value as normalized_property_tokens;
 #[cfg(test)]
 mod tests;
 
@@ -59,10 +60,8 @@ fn declaration_value(property: &str, value: &str, preserve_unclassified: bool) -
 }
 
 pub(crate) fn supports_property(property: &str) -> bool {
-    // Transform/filter declarations establish containing blocks only; widget
-    // appearance/accent currently cover checkables, not the full control family.
-    // Neither partial contract should opt authors into an unsupported branch.
-    // https://drafts.csswg.org/css-transforms-2/#two-dimensional-subset
+    // 2D transforms render; perspective/filter and the full native-control
+    // appearance contract remain incomplete and must not select author branches.
     !matches!(
         property,
         "perspective"
@@ -193,6 +192,7 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
             }
         }
         "color" | "background-color" => parse_color(&value).is_some(),
+        "fill" | "stroke" => values::svg_paint::SvgPaint::parse(&value).is_some(),
         "background" => shorthands::background::valid(&value),
         "box-shadow" => values::box_shadow::parse(&value).is_some(),
         "border" | "border-top" | "border-right" | "border-bottom" | "border-left" => {
@@ -216,8 +216,9 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
                 && values::scalars::NumberValue::opacity(&value).is_some()
         }
         "zoom" => values::zoom::parse(&value).is_some(),
-        "transform" => super::transform::parse_transform(&value).is_some(),
-        "translate" => super::transform::individual::IndividualTranslate::parse(&value).is_some(),
+        "transform" | "translate" | "scale" | "rotate" | "transform-origin" | "transform-box" => {
+            super::transform::properties::valid(&property, &value)
+        }
         "clip-path" => super::clip_path::ClipPath::parse(&value).is_some(),
         "background-image" => images::parse(&value, "", false).is_some(),
         "scrollbar-width" => values::scrollbars::ScrollbarWidth::parse(&value).is_some(),

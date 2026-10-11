@@ -1,5 +1,5 @@
 use super::*;
-use std::cell::Cell;
+use std::cell::RefCell;
 
 #[test]
 fn unchanged_attributes_still_deliver_custom_element_reactions() {
@@ -31,8 +31,16 @@ fn unchanged_attributes_still_deliver_custom_element_reactions() {
 
 #[test]
 fn unchanged_attribute_writes_notify_observers_without_reflushing_geometry() {
+    for (css, target_scope) in [("", true), ("[style]{color:red}", false)] {
+        assert_unchanged_attribute_scope(css, target_scope);
+    }
+}
+
+fn assert_unchanged_attribute_scope(css: &str, target_scope: bool) {
     let dom = crate::engine::dom::parse_with_scripting(
-        r#"<body class=unchanged><section><div id=target class=a style='width:100px'></div></section><script>
+        &format!(
+            "<style>{css}</style>{}",
+            r#"<body class=unchanged><section><div id=target class=a style='width:100px'></div></section><script>
         const target = document.getElementById('target');
         target.getBoundingClientRect();
         const observer = new MutationObserver(() => {});
@@ -48,23 +56,19 @@ fn unchanged_attribute_writes_notify_observers_without_reflushing_geometry() {
         target.getBoundingClientRect();
         document.body.dataset.result = records.length + ':' + records.every(r =>
             r.oldValue === (r.attributeName === 'class' ? 'a' : 'width:100px'));
-    </script></body>"#,
+    </script></body>"#
+        ),
         true,
     );
     let script = dom.elements_named("script").next().unwrap();
-    let calls = Rc::new(Cell::new(0));
-    let observed = Rc::clone(&calls);
+    let roots = Rc::new(RefCell::new(Vec::new()));
+    let observed = Rc::clone(&roots);
     let section_id = dom.elements_named("section").next().unwrap().id();
+    let target_id = dom.elements_named("div").next().unwrap().id();
     let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
     runtime.set_layout_flush_callback(Box::new(move |invalidation, _| {
-        if observed.get() == 1 {
-            assert_eq!(
-                invalidation.roots,
-                vec![section_id],
-                "no-op ancestor writes must not widen the real dirty subtree"
-            );
-        }
-        observed.set(observed.get() + 1);
+        // Keep assertions outside the native callback, which cannot unwind.
+        observed.borrow_mut().push(invalidation.roots.clone());
         Some(HashMap::new())
     }));
     let outcome = runtime.execute_initial(&[ScriptInput {
@@ -76,7 +80,12 @@ fn unchanged_attribute_writes_notify_observers_without_reflushing_geometry() {
         finish_lifecycle: true,
     }]);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(calls.get(), 2);
+    assert_eq!(roots.borrow().len(), 2);
+    assert_eq!(
+        roots.borrow()[1],
+        vec![if target_scope { target_id } else { section_id }],
+        "no-op ancestor writes must not widen the real dirty subtree; CSS={css:?}"
+    );
     assert_eq!(
         dom.elements_named("body")
             .next()

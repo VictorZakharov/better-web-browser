@@ -43,7 +43,11 @@ bidi, text-path, baseline and font-feature limitations still apply. Complex
 textLength ranges combining relative shifts or multiple absolute-positioned
 chunks require further browser-reference coverage.
 
-Only these three original Rust files are changed. Other imported Rust files and
+## Containing CSS viewport
+
+`src/parser/mod.rs` adds `Tree::from_xmltree_with_viewport`; `src/parser/converter.rs` accepts that explicit initial size before resolving the root viewBox, percentages and preserveAspectRatio. Ordinary image-document parsing still takes the original path. The override is a conversion argument, not a rewritten XML attribute or inherited option, so descendant attribute selectors remain intact and nested image documents keep their independent viewports. This follows https://www.w3.org/TR/SVG2/coords.html#SVGViewport. Breeze performs device-density rasterization afterward and retains the previous natural-size metadata separately for layout and CSSOM snapshots.
+
+These five original Rust files are changed. Other imported Rust files and
 the package manifest remain upstream-equivalent apart from line endings.
 Remove the path override when an upstream release provides equivalent behavior
 and passes Breeze's unchanged regression suite.

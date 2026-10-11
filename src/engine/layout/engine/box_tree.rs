@@ -131,6 +131,10 @@ impl<'a> BoxTree<'a> {
     }
 
     pub fn remove_anonymous_geometry(&self, output: &mut LayoutOutput) {
+        for &id in self.anonymous.keys() {
+            output.transformed.remove(id);
+            std::sync::Arc::make_mut(&mut output.fragments).remove(id);
+        }
         output
             .node_bounds
             .retain(|id, _| !self.anonymous.contains_key(id));

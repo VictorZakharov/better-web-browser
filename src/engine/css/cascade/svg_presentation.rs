@@ -1,4 +1,4 @@
-//! SVG font attributes are author presentation values, not declaration lists.
+//! SVG presentation attributes are author values, not declaration lists.
 //! Resolve after custom properties but before all author sheets (including layers).
 //! https://svgwg.org/svg2-draft/styling.html#PresentationAttributes
 use super::*;
@@ -9,20 +9,36 @@ pub(super) fn apply(node: &NodeRef, style: &mut ComputedStyle, context: Declarat
         return;
     }
     for name in [
+        "color",
+        "fill",
+        "stroke",
         "font-family",
         "font-size",
         "font-weight",
         "font-style",
         "letter-spacing",
         "word-spacing",
+        "opacity",
+        "transform",
+        "transform-origin",
     ] {
+        // Inline SVG roots have CSS layout boxes. Descendant SVG transforms
+        // remain owned by the existing SVG rasterizer, not the HTML painter.
+        if matches!(name, "transform" | "transform-origin") && node.tag_name() != Some("svg") {
+            continue;
+        }
         let Some(value) = node.attr(name) else {
             continue;
         };
-        let Some(value) =
-            super::super::variables::substitute_variables(&value, &style.custom_properties)
-        else {
-            continue;
+        let value = if name == "transform" {
+            value
+        } else {
+            let Some(value) =
+                super::super::variables::substitute_variables(&value, &style.custom_properties)
+            else {
+                continue;
+            };
+            value
         };
         let Some(value) = value_for_property(name, &value) else {
             continue;
@@ -49,6 +65,9 @@ pub(super) fn apply(node: &NodeRef, style: &mut ComputedStyle, context: Declarat
 fn value_for_property(name: &str, value: &str) -> Option<String> {
     if value.len() > crate::limits::MAX_CSS_SOURCE_BYTES {
         return None;
+    }
+    if name == "transform" {
+        return super::super::transform::svg_attribute::css_value(value);
     }
     let mut input = ParserInput::new(value);
     let mut parser = Parser::new(&mut input);
@@ -79,6 +98,48 @@ mod tests {
             .find(|node| node.attr("id").as_deref() == Some(id))
             .unwrap();
         StyleSet::from_dom(&dom, &[], 800.0).get(&node).clone()
+    }
+
+    #[test]
+    fn svg_opacity_attributes_have_author_presentation_priority_and_do_not_inherit() {
+        let html = "<style>svg.rule{opacity:.8}@layer first{svg.layer{opacity:.6}}</style><svg id=a opacity=.5><g id=g /></svg><svg id=r class=rule opacity=.5></svg><svg id=l class=layer opacity=.5></svg><svg id=bad opacity='.5; color:red'></svg><div id=html opacity=.5></div>";
+        for (id, opacity) in [
+            ("a", 0.5),
+            ("g", 1.0),
+            ("r", 0.8),
+            ("l", 0.6),
+            ("bad", 1.0),
+            ("html", 1.0),
+        ] {
+            assert_eq!(style(html, id).opacity, opacity, "{id}");
+        }
+    }
+
+    #[test]
+    fn svg_root_transform_attributes_enter_the_author_cascade_with_legacy_syntax() {
+        let html = "<style>.rule{transform:none}@layer base{.layer{transform:translate(4px,5px)}}</style><svg id=a transform='translate(10 20) scale(2)' transform-origin='0 0'></svg><svg id=r class=rule transform='scale(.5)'></svg><svg id=l class=layer transform='scale(.5)'></svg><svg id=bad transform='scaleX(2)'></svg><svg><g id=g transform='scale(2)' /></svg><div id=html transform='scale(2)'></div>";
+        let attribute = style(html, "a");
+        assert_eq!(
+            attribute
+                .transform
+                .matrix(100.0, 100.0, 16.0)
+                .point(1.0, 1.0),
+            (12.0, 22.0)
+        );
+        assert_eq!(
+            attribute.transform_origin.resolve(100.0, 100.0, 16.0),
+            (0.0, 0.0)
+        );
+        assert_eq!(
+            style(html, "l")
+                .transform
+                .matrix(100.0, 100.0, 16.0)
+                .point(0.0, 0.0),
+            (4.0, 5.0)
+        );
+        for id in ["r", "bad", "g", "html"] {
+            assert!(style(html, id).transform.is_none(), "{id}");
+        }
     }
 
     #[test]

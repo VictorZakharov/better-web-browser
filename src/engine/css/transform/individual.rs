@@ -57,18 +57,27 @@ mod tests;
 
 impl ComputedStyle {
     pub(crate) fn has_transform(&self) -> bool {
-        self.translate.0.is_some() || !self.transform.is_none()
+        self.translate.0.is_some()
+            || self.rotate.0.is_some()
+            || self.scale.0.is_some()
+            || !self.transform.is_none()
     }
 
-    pub(crate) fn translation_transform(&self) -> TransformList {
+    pub(crate) fn combined_transform(&self) -> TransformList {
         let mut result = self.transform.clone();
+        if let Some(value) = self.scale.0 {
+            result.0.insert(0, Operation::Scale(value));
+        }
+        if let Some(value) = self.rotate.0 {
+            result.0.insert(0, Operation::Rotate(value));
+        }
         if let Some([x, y]) = &self.translate.0 {
             result.0.insert(
                 0,
-                TranslateOperation {
+                Operation::Translate(TranslateOperation {
                     x: x.clone(),
                     y: y.clone(),
-                },
+                }),
             );
         }
         result
@@ -92,7 +101,7 @@ pub(crate) fn interpolate(from: &str, to: &str, progress: f64) -> Option<String>
     };
     let result = super::interpolate(&as_transform(&first), &as_transform(&last), progress)?;
     let transform = parser::parse_transform(&result)?;
-    let Some(operation) = transform.0.first() else {
+    let Some(Operation::Translate(operation)) = transform.0.first() else {
         return Some("none".into());
     };
     Some(IndividualTranslate(Some([operation.x.clone(), operation.y.clone()])).css_text())

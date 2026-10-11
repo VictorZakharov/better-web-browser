@@ -117,6 +117,14 @@
             const value = host('interpolateCssTranslate', from, to, progress);
             if (value !== null) return value;
         }
+        if (property === 'scale' || property === 'rotate') {
+            const value = host(property === 'scale' ? 'interpolateCssScale' : 'interpolateCssRotate', from, to, progress);
+            if (value !== null) return value;
+        }
+        if (property === 'clip-path') {
+            const value = host('interpolateCssClipPath', from, to, progress);
+            if (value !== null) return value;
+        }
         const first = animationNumber.exec(String(from).trim());
         const last = animationNumber.exec(String(to).trim());
         if (first && last && first[2] === last[2]) {

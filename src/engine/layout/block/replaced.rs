@@ -50,9 +50,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         if node.tag_name() == Some("svg") {
             let url = inline_svg_key(node);
-            let image = self.page.images.get(&url);
-            let (intrinsic_width, intrinsic_height) = image
-                .map(|image| (image.width as f32, image.height as f32))
+            let dimensions = self.page.layout_image_dimensions(&url);
+            let (intrinsic_width, intrinsic_height) = dimensions
+                .map(|(width, height)| (width as f32, height as f32))
                 .unwrap_or((300.0, 150.0));
             return Some(BlockImage {
                 url,
@@ -60,7 +60,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 intrinsic_height,
                 tint: None,
                 alt: node.attr("aria-label").unwrap_or_default(),
-                available: image.is_some(),
+                available: dimensions.is_some(),
                 embedded_frame: false,
             });
         }

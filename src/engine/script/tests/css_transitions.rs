@@ -1,5 +1,6 @@
 use super::*;
 mod advanced;
+mod affine;
 
 #[test]
 fn class_change_interpolates_computed_color_transform_and_width() {

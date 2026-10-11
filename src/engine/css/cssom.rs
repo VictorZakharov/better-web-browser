@@ -147,6 +147,8 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         }
         .to_string(),
         "color" => serialize_color(style.color),
+        "fill" => style.svg_fill.css_text(style.color),
+        "stroke" => style.svg_stroke.css_text(style.color),
         "clear" => style.clear.css_keyword().to_string(),
         "content" => style.generated_content.css_text(),
         "display" => style.display.css_keyword().to_string(),
@@ -255,6 +257,10 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         .to_string(),
         "transform" => super::transform::serialize_transform(&style.transform),
         "translate" => style.translate.css_text(),
+        "scale" => style.scale.css_text(),
+        "rotate" => style.rotate.css_text(),
+        "transform-origin" => style.transform_origin.css_text(style.font_size),
+        "transform-box" => style.transform_box.css_text().into(),
         "pointer-events" => if style.pointer_events { "auto" } else { "none" }.to_string(),
         "clip-path" => style.clip_path.clone().serialize(style.font_size),
         "transform-style" => if style.transform_style_preserve_3d {

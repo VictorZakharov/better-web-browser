@@ -39,10 +39,15 @@ pub(super) unsafe fn paint(
         let saved = SaveDC(dc);
         if saved != 0 {
             let region = screen_rect(bounds, scroll_y, toolbar_height, scale);
-            IntersectClipRect(dc, region.left, region.top, region.right, region.bottom);
+            if !super::affine::clip_rect(dc, region) {
+                IntersectClipRect(dc, 0, 0, 0, 0);
+            }
         }
         saved
     });
+    if saved == Some(0) {
+        return;
+    }
     if let Some(image) = images.get(url) {
         let bitmap = if let Some(color) = tint {
             bitmaps.get_or_create_tinted(
@@ -57,6 +62,12 @@ pub(super) unsafe fn paint(
         if !bitmap.is_null() {
             let opaque = tint.is_none() && bitmaps.is_opaque(url);
             let destination = image_rect(*rect, screen_y, scale);
+            let device_sampling = (tint.is_none() && !opaque)
+                .then(|| super::affine::ScaledDestination::new(dc, destination))
+                .flatten();
+            let destination = device_sampling
+                .as_ref()
+                .map_or(destination, |plan| plan.rect());
             let _timing = profile::ImageTiming::start(
                 [image.width, image.height],
                 [destination.width() as u32, destination.height() as u32],
@@ -97,16 +108,7 @@ pub(super) unsafe fn paint(
                     );
                 }
             } else {
-                paint_alpha_image(
-                    dc,
-                    bitmap,
-                    image,
-                    *rect,
-                    screen_y,
-                    scale,
-                    opaque,
-                    coverage.as_deref(),
-                );
+                paint_alpha_image(dc, bitmap, image, &destination, opaque, coverage.as_deref());
             }
         }
     } else if !alt.is_empty()

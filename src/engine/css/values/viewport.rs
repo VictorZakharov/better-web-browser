@@ -88,6 +88,9 @@ impl ComputedStyle {
         self.clip_path
             .resolve_relative_units(width, height, root_font_size);
         self.transform.resolve_root_font_units(root_font_size);
+        self.transform.resolve_viewport_units(width, height);
+        self.transform_origin
+            .resolve_relative_units(width, height, root_font_size);
         self.translate.map_lengths(resolve);
     }
 }

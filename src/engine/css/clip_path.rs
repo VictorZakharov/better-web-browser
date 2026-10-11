@@ -10,6 +10,26 @@ pub(crate) enum ClipPath {
     Inset(Edges),
 }
 
+pub(crate) fn interpolate(from: &str, to: &str, progress: f64) -> Option<String> {
+    if !progress.is_finite() || progress.abs() > f64::from(f32::MAX) {
+        return None;
+    }
+    let (ClipPath::Inset(a), ClipPath::Inset(b)) = (ClipPath::parse(from)?, ClipPath::parse(to)?)
+    else {
+        return None;
+    };
+    let parts = [
+        (a.top, b.top),
+        (a.right, b.right),
+        (a.bottom, b.bottom),
+        (a.left, b.left),
+    ]
+    .map(|(a, b)| {
+        super::cssom::serialize_length(super::values::length_interpolation::blend(&a, &b, progress))
+    });
+    Some(format!("inset({})", parts.join(" ")))
+}
+
 impl ClipPath {
     pub(crate) fn apply_zoom(&mut self, scale: f32) {
         if let Self::Inset(edges) = self {
@@ -78,6 +98,27 @@ impl ClipPath {
 mod tests {
     use super::*;
     use crate::engine::{css::StyleSet, dom};
+
+    #[test]
+    fn inset_interpolation_keeps_negative_percentage_edges_and_real_box_bases() {
+        let value = interpolate(
+            "inset(-50% -10% -50% -50%)",
+            "inset(-50% 150% -50% -50%)",
+            0.25,
+        )
+        .unwrap();
+        let clip = ClipPath::parse(&value)
+            .unwrap()
+            .inset(200.0, 100.0, 16.0)
+            .unwrap();
+        assert_eq!(
+            (clip.top, clip.right, clip.bottom, clip.left),
+            (-50.0, 60.0, -50.0, -100.0)
+        );
+        assert!(interpolate("none", "inset(0)", 0.5).is_none());
+        assert!(interpolate("circle(40%)", "circle(10%)", 0.5).is_none());
+        assert!(interpolate("inset(0)", "inset(20%)", f64::NAN).is_none());
+    }
 
     #[test]
     fn inset_shorthand_parses_units_and_rejects_unsupported_shapes() {

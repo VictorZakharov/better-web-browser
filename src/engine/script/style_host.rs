@@ -97,14 +97,35 @@ pub(super) fn style_host_call(
             crate::engine::css::normalize_easing(&value).map_or(JsValue::null(), JsValue::from),
         ));
     }
-    if operation == "interpolateCssTransform" || operation == "interpolateCssTranslate" {
+    if matches!(
+        operation,
+        "interpolateCssTransform"
+            | "interpolateCssTranslate"
+            | "interpolateCssScale"
+            | "interpolateCssRotate"
+            | "interpolateCssClipPath"
+    ) {
         let from = argument_string(args, 1)?;
         let to = argument_string(args, 2)?;
         let progress = args.get(3).and_then(JsValue::as_number).unwrap_or(f64::NAN);
-        let value = if operation == "interpolateCssTranslate" {
-            crate::engine::css::transform::individual::interpolate(&from, &to, progress)
-        } else {
-            crate::engine::css::transform::interpolate(&from, &to, progress)
+        let value = match operation {
+            "interpolateCssClipPath" => {
+                crate::engine::css::clip_path::interpolate(&from, &to, progress)
+            }
+            "interpolateCssTranslate" => {
+                crate::engine::css::transform::individual::interpolate(&from, &to, progress)
+            }
+            "interpolateCssScale" => {
+                crate::engine::css::transform::individual_linear::interpolate_scale(
+                    &from, &to, progress,
+                )
+            }
+            "interpolateCssRotate" => {
+                crate::engine::css::transform::individual_linear::interpolate_rotate(
+                    &from, &to, progress,
+                )
+            }
+            _ => crate::engine::css::transform::interpolate(&from, &to, progress),
         };
         return Ok(Some(value.map_or(JsValue::null(), JsValue::from)));
     }
@@ -141,6 +162,7 @@ pub(super) fn style_host_call(
         }))));
     }
     if matches!(operation, "setAnimationStyle" | "setTransitionStyle") {
+        let before = state.document.document_mutation_version();
         let node = state.node(argument_id(args, 1));
         let declarations = argument_string(args, 2)?;
         if declarations.len() > 8 * 1024 {
@@ -155,6 +177,7 @@ pub(super) fn style_host_call(
                 node.set_animation_style(&declarations)
             }
         {
+            state.effect_style_changed(&node, before);
             let revision = state.css_animation_revision;
             state.record_mutation(Some(&node), MutationKind::StyleOverlay);
             // Presentation samples do not change the authored animation list.

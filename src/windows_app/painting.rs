@@ -1,3 +1,4 @@
+pub(in crate::windows_app) mod affine;
 mod backbuffer;
 mod background;
 mod clip;
@@ -88,6 +89,8 @@ impl BrowserState {
                             | DisplayItem::BeginCssMask { .. }
                             | DisplayItem::EmbeddedFrame { .. } => continue,
                             DisplayItem::BeginOpacity { .. }
+                            | DisplayItem::BeginTransform { .. }
+                            | DisplayItem::EndTransform { .. }
                             | DisplayItem::EndOpacity { .. }
                             | DisplayItem::BeginMask { .. }
                             | DisplayItem::EndMask { .. } => unreachable!("handled paint group"),
@@ -125,7 +128,8 @@ impl BrowserState {
                             } => {
                                 let rectangle =
                                     screen_rect(*rect, tab.scroll_y, toolbar_height, scale);
-                                if intersects(&rectangle, &content) {
+                                if intersects(&affine::device_bounds(item_dc, rectangle), &content)
+                                {
                                     paint_border_colors(
                                         item_dc,
                                         &rectangle,
@@ -146,9 +150,13 @@ impl BrowserState {
                             } => {
                                 let screen_y =
                                     toolbar_height + (rect.y * scale).round() as i32 - tab.scroll_y;
-                                if screen_y + ((rect.height * scale).ceil() as i32) < content.top
-                                    || screen_y > content.bottom
-                                {
+                                if !intersects(
+                                    &affine::device_bounds(
+                                        item_dc,
+                                        screen_rect(*rect, tab.scroll_y, toolbar_height, scale),
+                                    ),
+                                    &content,
+                                ) {
                                     continue;
                                 }
                                 // The built-in `browser.local` document is trusted browser UI and
@@ -183,7 +191,10 @@ impl BrowserState {
                                         toolbar_height,
                                         scale,
                                     );
-                                    if intersects(&destination, &content) {
+                                    if intersects(
+                                        &affine::device_bounds(item_dc, destination),
+                                        &content,
+                                    ) {
                                         if glyph_source_dc.is_null() {
                                             paint_alpha_bitmap_size(
                                                 item_dc,
@@ -225,7 +236,10 @@ impl BrowserState {
                                         toolbar_height,
                                         scale,
                                     );
-                                    if !intersects(&destination, &content) {
+                                    if !intersects(
+                                        &affine::device_bounds(item_dc, destination),
+                                        &content,
+                                    ) {
                                         continue;
                                     }
                                     let tint = (!resource.color).then_some(tint);
@@ -264,7 +278,7 @@ impl BrowserState {
                                 tab.scroll_y,
                                 toolbar_height,
                                 scale,
-                                &content,
+                                &affine::local_content(item_dc, content),
                                 fonts,
                             ),
                             DisplayItem::BackgroundImage { .. } => background::paint(
@@ -275,7 +289,7 @@ impl BrowserState {
                                 tab.scroll_y,
                                 toolbar_height,
                                 scale,
-                                &content,
+                                &affine::local_content(item_dc, content),
                             ),
                             DisplayItem::Control(spec) => controls::paint(
                                 spec,
@@ -286,7 +300,7 @@ impl BrowserState {
                                 dpi,
                                 toolbar_height,
                                 scale,
-                                &content,
+                                &affine::local_content(item_dc, content),
                                 benchmark_mode,
                             ),
                         }

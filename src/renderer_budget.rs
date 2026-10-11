@@ -51,6 +51,16 @@ impl RendererBudget {
             Self::Graphics => 1024 * 1024 * 1024,
         }
     }
+
+    /// Decoded DOM, CSS, SVG and Canvas snapshots share this document allowance.
+    /// HiDPI graphics surfaces can coexist during an author-created transition;
+    /// the opt-in graphics profile must budget those pixels as well as GPU data.
+    pub(crate) const fn decoded_image_bytes(self) -> usize {
+        match self {
+            Self::Standard => crate::limits::MAX_PAGE_DECODED_IMAGE_BYTES,
+            Self::Graphics => 128 * 1024 * 1024,
+        }
+    }
 }
 
 static RENDERER_BUDGET: OnceLock<RendererBudget> = OnceLock::new();
@@ -78,11 +88,20 @@ mod tests {
             assert_eq!(RendererBudget::parse(mode.setting()), Some(mode));
             assert!(mode.gpu_context_bytes() <= mode.gpu_owner_bytes());
             assert!(mode.gpu_owner_bytes() < mode.bytes());
+            assert!(mode.decoded_image_bytes() < mode.bytes());
         }
         for invalid in ["", "0", "unlimited", "4294967296", "Graphics", "graphics\0"] {
             assert_eq!(RendererBudget::parse(invalid), None);
         }
         assert_eq!(RendererBudget::Standard.bytes(), 1024 * 1024 * 1024);
         assert_eq!(RendererBudget::Graphics.bytes(), 2 * 1024 * 1024 * 1024);
+        assert_eq!(
+            RendererBudget::Standard.decoded_image_bytes(),
+            64 * 1024 * 1024
+        );
+        assert_eq!(
+            RendererBudget::Graphics.decoded_image_bytes(),
+            128 * 1024 * 1024
+        );
     }
 }

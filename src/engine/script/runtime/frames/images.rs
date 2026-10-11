@@ -5,10 +5,7 @@ use crate::engine::Page;
 use crate::engine::dom::Node;
 use crate::engine::page::PageResource;
 use crate::fetch::{FetchRequest, FetchResponse, RequestDestination};
-use crate::limits::{
-    MAX_IMAGE_SOURCE_BYTES, MAX_PAGE_DECODED_IMAGE_BYTES, MAX_PAGE_IMAGES, MAX_STYLE_IMAGES,
-    MAX_URL_BYTES,
-};
+use crate::limits::{MAX_IMAGE_SOURCE_BYTES, MAX_PAGE_IMAGES, MAX_STYLE_IMAGES, MAX_URL_BYTES};
 
 #[derive(Default)]
 pub(super) struct FrameImages {
@@ -158,7 +155,7 @@ impl ScriptRuntime {
         let mut result = response
             .ok_or_else(|| "image response failed".to_string())
             .and_then(|response| {
-                if total_decoded >= MAX_PAGE_DECODED_IMAGE_BYTES {
+                if total_decoded >= crate::renderer_budget::current().decoded_image_bytes() {
                     return Err("child image memory budget exhausted".into());
                 }
                 if !response.is_success() {
@@ -174,7 +171,8 @@ impl ScriptRuntime {
             });
         if result.is_ok()
             && page.images.get(&url).is_some_and(|image| {
-                total_decoded.saturating_add(image.bgra.len()) > MAX_PAGE_DECODED_IMAGE_BYTES
+                total_decoded.saturating_add(image.bgra.len())
+                    > crate::renderer_budget::current().decoded_image_bytes()
             })
         {
             result = Err("child image memory budget exhausted".into());

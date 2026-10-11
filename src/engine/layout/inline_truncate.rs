@@ -299,10 +299,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             child_x += measured.width;
         }
         self.wrap_mask(style, border_rect, item_start);
-        if let Some(node_id) = node_id {
-            self.apply_transform(node_id, style, border_rect, item_start);
+        let reference = if style.transform_box.uses_content() {
+            border_rect.inset(metrics.border).inset(metrics.padding)
         } else {
-            self.apply_generated_transform(style, border_rect, item_start);
+            border_rect
+        };
+        let matrix = style.transform_from_reference(reference);
+        if let Some(node_id) = node_id {
+            self.apply_transform_matrix(node_id, matrix, item_start);
+        } else {
+            self.apply_generated_matrix(matrix, item_start);
         }
         self.wrap_opacity(item_start, style.opacity);
     }

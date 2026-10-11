@@ -36,25 +36,21 @@ pub(super) fn bitmap_info(image: &DecodedImage) -> BitmapInfo {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) unsafe fn paint_alpha_image(
     destination: Hdc,
     bitmap: Hbitmap,
     image: &DecodedImage,
-    rect: RectF,
-    screen_y: i32,
-    scale: f32,
+    destination_rect: &Rect,
     opaque: bool,
     coverage: Option<&[Rect]>,
 ) {
-    let destination_rect = image_rect(rect, screen_y, scale);
     if let Some(coverage) = coverage
-        && sparse::paint(destination, bitmap, &destination_rect, coverage)
+        && sparse::paint(destination, bitmap, destination_rect, coverage)
     {
         return;
     }
-    if !opaque || !opaque::paint(destination, bitmap, image, &destination_rect) {
-        paint_alpha_bitmap(destination, bitmap, image, &destination_rect);
+    if !opaque || !opaque::paint(destination, bitmap, image, destination_rect) {
+        paint_alpha_bitmap(destination, bitmap, image, destination_rect);
     }
 }
 
@@ -86,7 +82,13 @@ pub(super) unsafe fn paint_background_image(
     }
     let clip = screen_rect(clip_rect, scroll_y, content_top, scale);
     let saved = SaveDC(destination);
-    IntersectClipRect(destination, clip.left, clip.top, clip.right, clip.bottom);
+    if saved == 0 {
+        return;
+    }
+    if !super::painting::affine::clip_rect(destination, clip) {
+        RestoreDC(destination, saved);
+        return;
+    }
 
     let start_x = if repeat_x {
         tile_rect.x + ((clip_rect.x - tile_rect.x) / tile_rect.width).floor() * tile_rect.width

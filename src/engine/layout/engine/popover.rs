@@ -61,6 +61,7 @@ pub(super) fn append_top_layer<M: TextMeasurer>(
         tree.remove_anonymous_geometry(&mut engine.output);
         let layer = engine.output;
         let fragments = std::sync::Arc::make_mut(&mut output.fragments);
+        fragments.extend_transforms(&layer.fragments);
         let line_offset = fragments.next_line;
         for (&id, value) in &layer.fragments.elements {
             let mut value = value.clone();
@@ -77,6 +78,7 @@ pub(super) fn append_top_layer<M: TextMeasurer>(
             fragments.text.insert(id, value);
         }
         fragments.next_line += layer.fragments.next_line;
+        output.transformed.extend(layer.transformed);
         output.sticky_offsets.extend(layer.sticky_offsets);
         output.sticky_layers.extend(layer.sticky_layers);
         output.scroll_boxes.extend(layer.scroll_boxes);

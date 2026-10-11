@@ -45,7 +45,14 @@ fn intrinsic_probes_request_glyphs_only_for_final_painted_text() {
         );
         measurer.glyph_requests = 0;
         // Exercise the internal no-paint path directly, without the external MetricsOnly adapter.
-        let geometry = layout_page_for_output(&page, 800.0, 600.0, 800.0, &mut measurer, false);
+        let geometry = layout_page_for_output(
+            &page,
+            800.0,
+            600.0,
+            800.0,
+            &mut measurer,
+            fixed_layers::OutputRequest::geometry(),
+        );
         assert_eq!(measurer.glyph_requests, 0, "{markup}");
         assert_eq!(geometry.node_bounds, painted.node_bounds, "{markup}");
         assert_eq!(geometry.content_height, painted.content_height, "{markup}");

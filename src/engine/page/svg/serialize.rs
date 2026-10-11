@@ -1,11 +1,20 @@
 //! Bounded decoder input, including referenced definitions from sibling SVGs.
-use super::references::References;
+use super::references::{IndexCache, References};
 use crate::engine::css::StyleSet;
 use crate::engine::dom::{NodeData, NodeRef};
 use crate::limits::{MAX_DOM_NODES, MAX_SVG_SOURCE_BYTES};
 
+#[cfg(test)]
 pub(super) fn source(node: &NodeRef, styles: Option<&StyleSet>) -> Result<String, String> {
-    let references = References::collect(node)?;
+    source_with_index(node, styles, &mut IndexCache::default())
+}
+
+pub(super) fn source_with_index(
+    node: &NodeRef,
+    styles: Option<&StyleSet>,
+    cache: &mut IndexCache,
+) -> Result<String, String> {
+    let references = References::collect_with_index(node, cache)?;
     let mut writer = Writer {
         output: String::new(),
         nodes: 0,
@@ -110,6 +119,35 @@ impl Writer<'_> {
                 if let Some(color) = color {
                     self.push(" style=\"")?;
                     if let Some(style) = node.attr("style") {
+                        // The outer CSS box paints these effects exactly once.
+                        // Keep its SVG raster local and reusable while transforms,
+                        // opacity and inset wipes change from frame to frame.
+                        let filtered;
+                        let style = if root {
+                            let mut excluded = vec![
+                                "opacity",
+                                "transform",
+                                "translate",
+                                "rotate",
+                                "scale",
+                                "transform-origin",
+                                "transform-box",
+                            ];
+                            // URL clips/masks still belong to the SVG decoder;
+                            // native CSS clipping currently owns inset shapes.
+                            if styles
+                                .and_then(|styles| styles.styles.get(&node.id()))
+                                .is_some_and(|style| !style.clip_path.is_none())
+                            {
+                                excluded.push("clip-path");
+                            }
+                            filtered = crate::engine::css::cssom::declarations::without_properties(
+                                &style, &excluded,
+                            );
+                            filtered.as_str()
+                        } else {
+                            style.as_str()
+                        };
                         let style = style.trim_end_matches([';', ' ', '\t', '\r', '\n', '\u{c}']);
                         if !style.is_empty() {
                             self.escape(&super::urls::paint(style)?)?;
@@ -120,6 +158,30 @@ impl Writer<'_> {
                         "color:#{:02x}{:02x}{:02x}{:02x}!important",
                         color.red, color.green, color.blue, color.alpha
                     ))?;
+                    if root {
+                        // Root effects, including presentation attributes and
+                        // SVG-local rules, are composed once by the CSS painter.
+                        // Preserve attributes for descendant selectors and use
+                        // a matrix accepted by both CSS and the SVG decoder.
+                        self.push(";opacity:1!important;transform:matrix(1,0,0,1,0,0)!important")?;
+                    }
+                    // The document cascade can match ancestors and rules outside
+                    // this SVG. Preserve instance inheritance in definitions:
+                    // the isolated backend resolves their use/marker context.
+                    if !std::iter::successors(Some(node.clone()), |node| node.parent())
+                        .any(|node| matches!(node.tag_name(), Some("defs" | "symbol" | "marker")))
+                        && let Some(style) = styles.and_then(|styles| styles.styles.get(&node.id()))
+                    {
+                        for (name, paint) in
+                            [("fill", &style.svg_fill), ("stroke", &style.svg_stroke)]
+                        {
+                            self.push(";")?;
+                            self.push(name)?;
+                            self.push(":")?;
+                            self.escape(&super::urls::paint(&paint.css_text(style.color))?)?;
+                            self.push("!important")?;
+                        }
+                    }
                     if (root || matches!(tag, "text" | "tspan" | "textPath"))
                         && !std::iter::successors(node.parent(), |parent| parent.parent())
                             .any(|parent| matches!(parent.tag_name(), Some("defs" | "symbol")))

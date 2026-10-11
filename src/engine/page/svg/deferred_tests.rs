@@ -24,11 +24,11 @@ fn live_dom_construction_defers_rasters_until_the_real_presentation_cascade() {
     let svgs = page.dom.elements_named("svg").collect::<Vec<_>>();
     let hidden = inline_svg_key(&svgs[0]);
     let visible = inline_svg_key(&svgs[1]);
-    assert!(page.inline_svg_versions.is_empty());
+    assert!(page.inline_svgs.versions.is_empty());
     assert!(!page.images.contains_key(&hidden) && !page.images.contains_key(&visible));
     refresh(&mut page);
     assert!(!page.images.contains_key(&hidden));
-    assert!(!page.inline_svg_versions.contains_key(&svgs[0].id()));
+    assert!(!page.inline_svgs.versions.contains_key(&svgs[0].id()));
     assert_eq!(&page.images[&visible].bgra[20..24], &[255, 0, 0, 255]);
     assert!(page.has_image_update(&visible));
     // Standalone full-page parse preserves the eager image metadata contract
@@ -74,7 +74,7 @@ fn hidden_mutations_are_not_stamped_and_reveal_uses_current_dimensions_and_pixel
     let rect = element(&page, "rect");
     let key = inline_svg_key(&svg);
     let old = page.images[&key].bgra.clone();
-    let stamp = page.inline_svg_versions[&svg.id()];
+    let stamp = page.inline_svgs.versions[&svg.id()];
     page.acknowledge_image_updates(std::slice::from_ref(&key));
     section.set_attr("style", "display:none");
     svg.set_attr("width", "20");
@@ -82,7 +82,7 @@ fn hidden_mutations_are_not_stamped_and_reveal_uses_current_dimensions_and_pixel
     rect.set_attr("fill", "blue");
     refresh(&mut page);
     assert!(Arc::ptr_eq(&old, &page.images[&key].bgra));
-    assert_eq!(page.inline_svg_versions[&svg.id()], stamp);
+    assert_eq!(page.inline_svgs.versions[&svg.id()], stamp);
     assert!(!page.has_image_update(&key));
     section.set_attr("style", "display:block");
     refresh(&mut page);
@@ -158,7 +158,7 @@ fn hidden_removal_retires_old_raster_and_publication_state() {
     assert!(Node::remove_child(&section, &svg));
     refresh(&mut page);
     assert!(!page.images.contains_key(&key));
-    assert!(!page.inline_svg_versions.contains_key(&svg.id()));
+    assert!(!page.inline_svgs.versions.contains_key(&svg.id()));
     assert!(!page.has_image_update(&key));
     assert!(Node::append_child(&section, svg.clone()));
     refresh(&mut page);
@@ -178,7 +178,7 @@ fn hidden_invalid_source_is_admitted_or_rejected_only_when_raster_work_is_needed
     let key = inline_svg_key(&svg);
     Node::set_text_content(&element(&page, "text"), &"x".repeat(16_385));
     refresh(&mut page);
-    assert!(!page.inline_svg_versions.contains_key(&svg.id()));
+    assert!(!page.inline_svgs.versions.contains_key(&svg.id()));
     assert!(
         !page
             .diagnostics
@@ -188,7 +188,7 @@ fn hidden_invalid_source_is_admitted_or_rejected_only_when_raster_work_is_needed
     element(&page, "section").set_attr("style", "display:block");
     refresh(&mut page);
     assert!(!page.images.contains_key(&key));
-    assert!(page.inline_svg_versions.contains_key(&svg.id()));
+    assert!(page.inline_svgs.versions.contains_key(&svg.id()));
     let errors = page
         .diagnostics
         .iter()

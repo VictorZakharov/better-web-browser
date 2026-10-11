@@ -11,7 +11,14 @@ fn parse_page(markup: &str) -> Page {
 
 fn assert_parity(page: &Page) -> LayoutOutput {
     let retained = layout_page_with_style_viewport(page, 800.0, 600.0, 815.0, &mut FixedMeasurer);
-    let geometry = layout_page_for_output(page, 800.0, 600.0, 815.0, &mut FixedMeasurer, false);
+    let geometry = layout_page_for_output(
+        page,
+        800.0,
+        600.0,
+        815.0,
+        &mut FixedMeasurer,
+        fixed_layers::OutputRequest::geometry(),
+    );
     assert_eq!(geometry.node_bounds, retained.node_bounds);
     assert_eq!(
         geometry.resize_boxes, retained.resize_boxes,

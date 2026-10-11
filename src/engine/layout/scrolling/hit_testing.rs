@@ -17,8 +17,15 @@ impl LayoutOutput {
                 rect.y += y;
             }
             if let Some(scroll) = self.scroll_boxes.get(&parent.id()) {
-                rect.x -= scroll.offset_x;
-                rect.y -= scroll.offset_y;
+                // Scroll offsets are layout-space distances. Only the scroll
+                // container and its ancestors transform this displacement;
+                // a child's own transform must not rotate its parent's scroll.
+                let (x, y) =
+                    self.transformed
+                        .ports
+                        .vector(parent.id(), scroll.offset_x, scroll.offset_y);
+                rect.x -= x;
+                rect.y -= y;
             }
             // The top-layer root has the viewport as its containing block; its DOM
             // ancestors cannot scroll or clip its visual geometry.
@@ -38,17 +45,29 @@ impl LayoutOutput {
                 let Some(visual) = self.visual_rect(&parent) else {
                     continue;
                 };
-                let visual_clip = RectF {
-                    x: clip.x + visual.x - raw.x,
-                    y: clip.y + visual.y - raw.y,
-                    ..*clip
-                };
-                if x < visual_clip.x
-                    || x >= visual_clip.right()
-                    || y < visual_clip.y
-                    || y >= visual_clip.bottom()
-                {
-                    return false;
+                if let Some(inside) = self.transformed.clips.contains(
+                    parent.id(),
+                    x - visual.x + raw.x,
+                    y - visual.y + raw.y,
+                    true,
+                    true,
+                ) {
+                    if !inside {
+                        return false;
+                    }
+                } else {
+                    let visual_clip = RectF {
+                        x: clip.x + visual.x - raw.x,
+                        y: clip.y + visual.y - raw.y,
+                        ..*clip
+                    };
+                    if x < visual_clip.x
+                        || x >= visual_clip.right()
+                        || y < visual_clip.y
+                        || y >= visual_clip.bottom()
+                    {
+                        return false;
+                    }
                 }
             }
             if parent.id() == node.id() {
@@ -64,15 +83,27 @@ impl LayoutOutput {
                 let Some(visual) = self.visual_rect(&parent) else {
                     continue;
                 };
-                let port = RectF {
-                    x: scroll.port.x + visual.x - raw.x,
-                    y: scroll.port.y + visual.y - raw.y,
-                    ..scroll.port
-                };
-                if (scroll.clip_x && (x < port.x || x >= port.right()))
-                    || (scroll.clip_y && (y < port.y || y >= port.bottom()))
-                {
-                    return false;
+                if let Some(inside) = self.transformed.ports.contains(
+                    parent.id(),
+                    x - visual.x + raw.x,
+                    y - visual.y + raw.y,
+                    scroll.clip_x,
+                    scroll.clip_y,
+                ) {
+                    if !inside {
+                        return false;
+                    }
+                } else {
+                    let port = RectF {
+                        x: scroll.port.x + visual.x - raw.x,
+                        y: scroll.port.y + visual.y - raw.y,
+                        ..scroll.port
+                    };
+                    if (scroll.clip_x && (x < port.x || x >= port.right()))
+                        || (scroll.clip_y && (y < port.y || y >= port.bottom()))
+                    {
+                        return false;
+                    }
                 }
             }
             if parent.is_popover_open() {

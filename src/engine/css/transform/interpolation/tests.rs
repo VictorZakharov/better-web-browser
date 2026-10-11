@@ -61,12 +61,27 @@ fn endpoints_and_finite_overshoot_preserve_animation_semantics() {
 #[test]
 fn unsupported_transforms_do_not_acquire_a_fake_matrix_fallback() {
     for value in [
-        "rotate(10deg)",
-        "scale(2)",
+        "rotateX(10deg)",
+        "scaleZ(2)",
         "translateX(calc(1s))",
         "translate(1px, auto)",
     ] {
         assert!(interpolate(value, "none", 0.5).is_none(), "{value}");
         assert!(interpolate("none", value, 0.5).is_none(), "{value}");
     }
+}
+
+#[test]
+fn primitive_animation_preserves_multiple_turns_and_scale_identity_padding() {
+    let value = interpolate("none", "scaleX(.25)", 0.5).unwrap();
+    assert_eq!(
+        parse_transform(&value).unwrap().matrix(100.0, 80.0, 16.0).0,
+        [0.625, 0.0, 0.0, 1.0, 0.0, 0.0]
+    );
+    let value = interpolate("rotate(0deg)", "rotate(720deg)", 0.25).unwrap();
+    let (x, y) = parse_transform(&value)
+        .unwrap()
+        .matrix(0.0, 0.0, 16.0)
+        .point(10.0, 0.0);
+    assert!((x + 10.0).abs() < 0.00001 && y.abs() < 0.00001);
 }

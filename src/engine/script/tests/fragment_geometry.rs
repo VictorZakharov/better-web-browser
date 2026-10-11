@@ -194,3 +194,17 @@ fn fragment_unions_have_stable_subpixel_coordinates_after_fractional_leading() {
     "#,
     );
 }
+
+#[test]
+fn client_and_offset_geometry_ignore_nested_transforms_while_rectangles_include_them() {
+    check(
+        "<div id=p style='display:flow-root;position:relative;width:100px;height:100px;transform-origin:0 0;transform:scale(2)'><div id=c style='margin:10px;width:40px;height:20px;transform-origin:0 0;transform:translateX(5px) scale(.5)'></div></div>",
+        r#"
+        const p=document.getElementById('p'),c=document.getElementById('c'),r=c.getBoundingClientRect();
+        const values=[p.offsetWidth,p.clientWidth,c.offsetWidth,c.clientWidth,c.offsetLeft,c.offsetTop,r.x,r.width,r.height];
+        const expected=[100,100,40,40,10,10,30,40,20];
+        if(JSON.stringify(values)!==JSON.stringify(expected))throw Error(JSON.stringify(values));
+        document.body.dataset.result='true';
+        "#,
+    );
+}

@@ -59,6 +59,8 @@ fn is_inherited_property(property: &str) -> bool {
     matches!(
         property,
         "color"
+            | "fill"
+            | "stroke"
             | "scrollbar-color"
             | "direction"
             | "border-collapse"
@@ -140,6 +142,8 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "float" => style.float = source.float,
         "clear" => style.clear = source.clear,
         "color" => style.color = source.color,
+        "fill" => style.svg_fill.clone_from(&source.svg_fill),
+        "stroke" => style.svg_stroke.clone_from(&source.svg_stroke),
         "object-fit" => style.object_fit = source.object_fit,
         "object-position" => style.object_position = source.object_position.clone(),
         "aspect-ratio" => style.aspect_ratio = source.aspect_ratio,
@@ -261,6 +265,10 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "opacity" => style.opacity = source.opacity,
         "transform" => style.transform.clone_from(&source.transform),
         "translate" => style.translate.clone_from(&source.translate),
+        "scale" => style.scale.clone_from(&source.scale),
+        "rotate" => style.rotate.clone_from(&source.rotate),
+        "transform-origin" => style.transform_origin.clone_from(&source.transform_origin),
+        "transform-box" => style.transform_box = source.transform_box,
         "perspective" => style.perspective_non_none = source.perspective_non_none,
         "filter" => style.filter_non_none = source.filter_non_none,
         "transform-style" => style.transform_style_preserve_3d = source.transform_style_preserve_3d,

@@ -11,10 +11,26 @@ pub(crate) fn collect(
     base_url: &str,
     environment: MediaEnvironment,
 ) -> Vec<WebFontFace> {
+    collect_mode(source, base_url, environment, false)
+}
+
+pub(crate) fn collect_for_svg_image(
+    source: &str,
+    environment: MediaEnvironment,
+) -> Vec<WebFontFace> {
+    collect_mode(source, "about:blank", environment, true)
+}
+
+fn collect_mode(
+    source: &str,
+    base_url: &str,
+    environment: MediaEnvironment,
+    embedded: bool,
+) -> Vec<WebFontFace> {
     let (source, _) = bounded_utf8_prefix(source, MAX_CSS_SOURCE_BYTES);
     let source = strip_comments(source);
     let mut faces = Vec::new();
-    rules(&source, base_url, environment, 0, &mut faces);
+    rules(&source, base_url, environment, embedded, 0, &mut faces);
     faces
 }
 
@@ -22,6 +38,7 @@ fn rules(
     source: &str,
     base_url: &str,
     environment: MediaEnvironment,
+    embedded: bool,
     depth: usize,
     faces: &mut Vec<WebFontFace>,
 ) {
@@ -41,7 +58,11 @@ fn rules(
             continue;
         };
         if at_rule_prelude(prelude, "font-face").is_some_and(str::is_empty) {
-            faces.extend(crate::engine::font::descriptors::parse(body, base_url));
+            faces.extend(if embedded {
+                crate::engine::font::descriptors::parse_embedded(body)
+            } else {
+                crate::engine::font::descriptors::parse(body, base_url)
+            });
         } else {
             let active = if at_rule_prelude(prelude, "media").is_some() {
                 media::media_matches_for_environment(prelude, environment)
@@ -55,7 +76,7 @@ fn rules(
                 false
             };
             if active {
-                rules(body, base_url, environment, depth + 1, faces);
+                rules(body, base_url, environment, embedded, depth + 1, faces);
             }
         }
     }

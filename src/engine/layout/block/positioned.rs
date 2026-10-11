@@ -2,6 +2,15 @@
 
 use super::super::*;
 
+pub(super) fn containing_box(style: &ComputedStyle, padding_box: RectF, inherited: RectF) -> RectF {
+    if style.position != Position::Static || style.has_transform() {
+        padding_box
+    } else {
+        // Static boxes without a transform do not establish a containing block.
+        inherited
+    }
+}
+
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn finish_positioned_flow_scope(
         &mut self,

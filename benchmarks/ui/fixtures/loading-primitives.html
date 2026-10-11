@@ -1,0 +1,41 @@
+<!doctype html><meta charset="utf-8"><title>pending loading primitives</title>
+<style>
+body{margin:0;background:#171b23;color:white;font:16px Arial}
+main{margin:32px;width:400px} .track{height:12px;background:#222;margin:22px 0;position:relative}
+.fill{position:absolute;inset:0;background:#20d070;transform-origin:left;transform:scaleX(var(--p,.04))}
+#live{transition:transform .4s linear} .badge{width:24px;height:24px;background:#dc9b39;rotate:45deg;margin:22px}
+.reflected{width:80px;height:16px;background:linear-gradient(to right,red,blue);scale:-1 1;transform-origin:left}
+</style>
+<main><p>4%, 25%, 50%, 75%, 100% fills (normal layout width remains 400px)</p>
+<div class="track"><div class="fill" id="f04" style="--p:.04"></div></div>
+<div class="track"><div class="fill" id="f25" style="--p:.25"></div></div>
+<div class="track"><div class="fill" id="f50" style="--p:.5"></div></div>
+<div class="track"><div class="fill" id="f75" style="--p:.75"></div></div>
+<div class="track"><div class="fill" id="f100" style="--p:1"></div></div>
+<div class="badge"></div><p>Animated fill, sampled using real geometry</p>
+<div class="track"><div class="fill" id="live"></div></div><output id="result"></output></main>
+<script>
+(async()=>{
+  const ids=['f04','f25','f50','f75','f100'];
+  for(const [i,p]of [.04,.25,.5,.75,1].entries()){
+    const fill=document.getElementById(ids[i]);
+    if(Math.abs(fill.getBoundingClientRect().width-400*p)>.05)throw Error('width '+ids[i]);
+    if(fill.offsetWidth!==400||fill.clientWidth!==400)throw Error('logical width '+ids[i]);
+  }
+  const live=document.getElementById('live');
+  await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+  live.style.setProperty('--p','1');
+  const samples=[];
+  const start=performance.now();
+  while(performance.now()-start<500){
+    await new Promise(resolve=>requestAnimationFrame(resolve));
+    samples.push(live.getBoundingClientRect().width);
+  }
+  if(!samples.some(value=>value>25&&value<380))throw Error('no gradual fill '+samples);
+  if(samples.some((value,i)=>i>0&&value<samples[i-1]-.1))throw Error('reversed fill');
+  document.getElementById('result').setAttribute('data-widths',JSON.stringify(samples));
+  document.getElementById('result').textContent='PASS: gradual fill and transformed geometry';
+  document.title='done loading primitives samples='+samples.length;
+  document.documentElement.dataset.fixtureReady='true';
+})().catch(error=>{document.title='failed '+error.message;throw error;});
+</script>

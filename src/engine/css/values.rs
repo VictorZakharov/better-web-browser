@@ -39,6 +39,7 @@ pub use vertical_align::VerticalAlign;
 use super::*;
 mod color;
 pub use color::Color;
+pub(crate) mod svg_paint;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Length {
@@ -272,12 +273,18 @@ pub struct ComputedStyle {
     pub(crate) content_visibility_hidden: bool,
     pub pointer_events: bool,
     pub opacity: f32,
+    pub(crate) svg_fill: svg_paint::SvgPaint,
+    pub(crate) svg_stroke: svg_paint::SvgPaint,
     /// Computed, non-inherited CSS zoom. Layout applies ancestor products separately.
     pub zoom: f32,
     pub(crate) effective_zoom: f32,
     pub(crate) clip_path: clip_path::ClipPath,
     pub(crate) transform: transform::TransformList,
     pub(crate) translate: transform::individual::IndividualTranslate,
+    pub(crate) rotate: transform::individual_linear::IndividualRotate,
+    pub(crate) scale: transform::individual_linear::IndividualScale,
+    pub(crate) transform_origin: transform::origin::TransformOrigin,
+    pub(crate) transform_box: transform::origin::TransformBox,
     pub(crate) perspective_non_none: bool,
     pub(crate) filter_non_none: bool,
     pub(crate) transform_style_preserve_3d: bool,
@@ -322,6 +329,7 @@ pub struct ComputedStyle {
 
 mod computed_defaults;
 pub(crate) mod grid_line;
+pub(crate) mod length_interpolation;
 pub(crate) mod scrollbars;
 pub(crate) mod zoom;
 

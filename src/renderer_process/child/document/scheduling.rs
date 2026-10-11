@@ -328,7 +328,10 @@ impl DocumentRuntime {
                 "rebuilding layout for {}",
                 self.page.source_url
             ))?;
-            self.rebuild_layout();
+            let independent_styles = self.can_reuse_fixed_layout(resources_changed, &style);
+            self.rebuild_layout_for_invalidation(
+                independent_styles.then_some(&outcome.invalidation),
+            );
         }
         needs_present |= self.deliver_geometry_observers(&mut outcome, connection)?;
         let layout_time = layout_started.elapsed();

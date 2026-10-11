@@ -13,6 +13,18 @@ pub(crate) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, 
             | DisplayItem::BeginMask { bounds, .. }
             | DisplayItem::EndMask { bounds }
             | DisplayItem::EndOpacity { bounds } => bounds,
+            DisplayItem::BeginTransform { bounds, matrix } => {
+                use crate::engine::affine::Affine2D;
+                // Moving an already transformed range also moves its coordinate origin.
+                *matrix = Affine2D::translate(f64::from(offset_x), f64::from(offset_y))
+                    .then_local(*matrix)
+                    .then_local(Affine2D::translate(
+                        -f64::from(offset_x),
+                        -f64::from(offset_y),
+                    ));
+                bounds
+            }
+            DisplayItem::EndTransform { bounds } => bounds,
             DisplayItem::SolidRect { rect, .. }
             | DisplayItem::BorderRect { rect, .. }
             | DisplayItem::Text { rect, .. }
@@ -59,19 +71,17 @@ pub(crate) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, 
 }
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
-    pub(super) fn apply_generated_transform(
+    pub(super) fn apply_generated_matrix(
         &mut self,
-        style: &ComputedStyle,
-        border_box: RectF,
+        matrix: crate::engine::affine::Affine2D,
         item_start: usize,
     ) {
-        let (offset_x, offset_y) = style.translation_transform().resolve(
-            border_box.width,
-            border_box.height,
-            style.font_size,
-        );
-        if offset_x.abs() > f32::EPSILON || offset_y.abs() > f32::EPSILON {
-            translate_display_items(&mut self.output.items[item_start..], offset_x, offset_y);
+        if let Some((x, y)) = matrix.translation() {
+            if x != 0.0 || y != 0.0 {
+                translate_display_items(&mut self.output.items[item_start..], x, y);
+            }
+        } else {
+            self.wrap_transform(item_start, matrix);
         }
     }
 
@@ -95,6 +105,18 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         // Translate their CSSOM bounds with the paint range while excluding unassigned/fallback
         // content that does not participate in these boxes.
         for descendant in self.styles.descendants(node) {
+            self.output
+                .transformed
+                .boxes
+                .translate(descendant.id(), offset_x, offset_y);
+            self.output
+                .transformed
+                .clips
+                .translate(descendant.id(), offset_x, offset_y);
+            self.output
+                .transformed
+                .ports
+                .translate(descendant.id(), offset_x, offset_y);
             std::sync::Arc::make_mut(&mut self.output.fragments).translate(
                 descendant.id(),
                 offset_x,
@@ -115,25 +137,25 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
     }
 
-    pub(super) fn apply_transform(
+    pub(super) fn apply_transform_matrix(
         &mut self,
         node_id: NodeId,
-        style: &ComputedStyle,
-        border_box: RectF,
+        matrix: crate::engine::affine::Affine2D,
         item_start: usize,
     ) {
-        let (offset_x, offset_y) = style.translation_transform().resolve(
-            border_box.width,
-            border_box.height,
-            style.font_size,
-        );
-        if offset_x.abs() <= f32::EPSILON && offset_y.abs() <= f32::EPSILON {
-            return;
-        }
         let Some(node) = self.styles.node(node_id) else {
             return;
         };
-        let item_end = self.output.items.len();
-        self.translate_layout_subtree(Some(&node), item_start, item_end, offset_x, offset_y);
+        if matrix == crate::engine::affine::Affine2D::IDENTITY {
+            return;
+        }
+        self.transform_geometry(&node, matrix);
+        if let Some((offset_x, offset_y)) = matrix.translation() {
+            // Preserve the inexpensive translated display list, but do not move
+            // the logical boxes used by offset/client geometry a second time.
+            translate_display_items(&mut self.output.items[item_start..], offset_x, offset_y);
+        } else {
+            self.wrap_transform(item_start, matrix);
+        }
     }
 }

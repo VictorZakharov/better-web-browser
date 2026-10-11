@@ -29,6 +29,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/attribute_node.js"),
     include_str!("bootstrap/node_equality.js"),
     include_str!("bootstrap/elements.js"),
+    include_str!("bootstrap/svg_viewbox.js"),
     include_str!("bootstrap/svg_filter_interfaces.js"),
     include_str!("bootstrap/svg_filter_lengths.js"),
     include_str!("bootstrap/svg_filter_primitives.js"),

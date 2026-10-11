@@ -1,0 +1,26 @@
+<!doctype html><meta charset="utf-8"><title>pending SVG CSS viewport</title>
+<style>
+body{margin:0;background:white;font:16px Arial}
+svg{display:block;width:200px;height:100px;position:absolute;left:16px;background:#ddd}
+#meet{top:16px}#stretch{top:136px}#units{top:256px}#result{position:absolute;left:240px;top:16px;width:360px}
+svg[width="100"] .paint{fill:red}
+</style>
+<svg id="meet" width="100" height="100" viewBox="0 0 100 100"><rect class="paint" width="100" height="100"/></svg>
+<svg id="stretch" width="100" height="100" viewBox="0 0 100 100" preserveAspectRatio="none"><rect class="paint" width="100" height="100"/></svg>
+<svg id="units" width="100" height="50"><rect class="paint" width="50%" height="50%"/><rect x="150" y="75" width="25" height="10" fill="blue"/></svg>
+<output id="result"></output>
+<script>
+(()=>{
+  const values={};
+  for(const id of ['meet','stretch','units']){
+    const node=document.getElementById(id),r=node.getBoundingClientRect();
+    values[id]=[r.x,r.y,r.width,r.height];
+    if(r.width!==200||r.height!==100)throw Error(id+' incorrect CSS viewport: '+values[id]);
+    if(getComputedStyle(node.querySelector('.paint')).fill!=='rgb(255, 0, 0)')throw Error(id+' lost root attribute selector');
+  }
+  const output=document.getElementById('result');
+  output.dataset.rects=JSON.stringify(values);
+  output.textContent='PASS: CSS viewports, aspect-ratio mapping, CSS-pixel user units, percentages and original-attribute selectors';
+  document.title='done SVG CSS viewport';document.documentElement.dataset.fixtureReady='true';
+})()
+</script>

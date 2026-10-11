@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><title>pending point presentation</title>
+<style>
+body{margin:0;background:#18202c;color:#fff;font:16px Arial}
+#stage{position:relative;width:640px;height:360px}
+#field{position:absolute;inset:0;z-index:1}
+#logo{position:absolute;left:180px;top:100px;width:280px;height:120px}
+</style>
+<div id="stage"><svg id="logo" width="280" height="120" viewBox="0 0 280 120">
+<defs><linearGradient id="shine"><stop stop-color="white"/><stop offset="1" stop-color="#555"/></linearGradient></defs>
+<text x="20" y="85" font-size="64" font-family="Arial" font-weight="bold" fill="url(#shine)">ABC</text></svg>
+<canvas id="field" width="640" height="360" data-animation-frames="32"></canvas></div>
+<output id="result"></output><script src="particle-commands.js"></script>

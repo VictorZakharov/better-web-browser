@@ -7,6 +7,7 @@ pub(in crate::engine::css::cascade) struct NonlocalDependencies {
     style_attribute: bool,
     text_sensitive: bool,
     graphics_attribute: bool,
+    any_style_attribute: bool,
 }
 
 impl NonlocalDependencies {
@@ -48,6 +49,10 @@ impl NonlocalDependencies {
                 continue;
             }
             for compound in selector.compounds.iter() {
+                self.any_style_attribute |= compound
+                    .attributes
+                    .iter()
+                    .any(|attribute| attribute.name.eq_ignore_ascii_case("style"));
                 // Text-only child replacement cannot change element membership,
                 // but can change :empty, auto directionality and control validity.
                 // Nested :is/:not/nth filters retain the relative dependency context.
@@ -107,6 +112,14 @@ pub(super) fn cross_tree_or_scoped(rules: &[Rule]) -> bool {
 }
 
 impl StyleSet {
+    pub(crate) fn can_scope_inline_style_to_target(&self) -> bool {
+        // A declaration can affect inherited descendants and geometry, but
+        // only attribute selectors can observe the authored style text. Scope,
+        // host, part and slot graphs retain their existing conservative roots.
+        !self.compiled.cross_tree_or_scoped
+            && !self.compiled.nonlocal_dependencies.any_style_attribute
+    }
+
     pub(crate) fn can_prove_unchanged_presentation_styles(&self) -> bool {
         // Shadow parts and scoped cascades keep their existing refresh policy.
         // Do not widen every shadow edit into an eager document recomputation,
@@ -115,5 +128,7 @@ impl StyleSet {
     }
 }
 
+#[cfg(test)]
+mod style_scope_tests;
 #[cfg(test)]
 mod tests;

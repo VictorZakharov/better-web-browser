@@ -108,6 +108,7 @@ impl ComputedStyle {
             };
         }
         used.transform.apply_zoom(scale);
+        used.transform_origin.apply_zoom(scale);
         used.translate.map_lengths(|v| length(&v, scale));
         for shadow in &mut used.box_shadows {
             shadow.map_lengths(|value| length(value, scale));

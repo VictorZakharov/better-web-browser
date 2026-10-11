@@ -63,6 +63,14 @@ pub enum DisplayItem {
     EndOpacity {
         bounds: RectF,
     },
+    /// A retained 2D coordinate system. Bounds describe transformed ink, not normal flow.
+    BeginTransform {
+        bounds: RectF,
+        matrix: crate::engine::affine::Affine2D,
+    },
+    EndTransform {
+        bounds: RectF,
+    },
     /// Renderer-local mask image layers, resolved before bounded IPC publication.
     BeginCssMask {
         bounds: RectF,
@@ -142,6 +150,10 @@ pub enum DisplayItem {
 
 #[derive(Debug, Clone, Default)]
 pub struct LayoutOutput {
+    /// Bounded renderer-local ownership for independent viewport-fixed paint ranges.
+    pub(crate) fixed_layers: super::engine::fixed_layers::FixedLayers,
+    /// Exact local boxes and matrices for nested transformed geometry and hit tests.
+    pub(crate) transformed: super::transforms::Geometry,
     /// Immutable when published to script; never serialized to the browser process.
     pub fragments: std::sync::Arc<FragmentGeometry>,
     pub(crate) sticky_offsets: HashMap<NodeId, (f32, f32)>,
@@ -200,8 +212,7 @@ pub(super) enum InlineAtom {
         image_width: f32,
         image_height: f32,
         relative_offset: (f32, f32),
-        transform: crate::engine::css::transform::TransformList,
-        transform_font_size: f32,
+        transform: crate::engine::affine::Affine2D,
         opacity: f32,
     },
     Control {

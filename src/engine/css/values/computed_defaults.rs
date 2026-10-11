@@ -14,6 +14,8 @@ impl ComputedStyle {
             float: Float::None,
             clear: Clear::None,
             color: Color::BLACK,
+            svg_fill: svg_paint::SvgPaint::Color(Color::BLACK),
+            svg_stroke: svg_paint::SvgPaint::None,
             appearance: Appearance::Auto,
             accent_color: AccentColor::Auto,
             background_color: Color::TRANSPARENT,
@@ -87,6 +89,10 @@ impl ComputedStyle {
             clip_path: clip_path::ClipPath::default(),
             transform: transform::TransformList::default(),
             translate: Default::default(),
+            rotate: Default::default(),
+            scale: Default::default(),
+            transform_origin: Default::default(),
+            transform_box: Default::default(),
             perspective_non_none: false,
             filter_non_none: false,
             transform_style_preserve_3d: false,
@@ -133,6 +139,8 @@ impl ComputedStyle {
         let mut style = Self::initial();
         if let Some(parent) = parent {
             style.color = parent.color;
+            style.svg_fill.clone_from(&parent.svg_fill);
+            style.svg_stroke.clone_from(&parent.svg_stroke);
             style.font_size = parent.font_size;
             style.root_font_size = parent.root_font_size;
             style.font_weight = parent.font_weight;

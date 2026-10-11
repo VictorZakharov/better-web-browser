@@ -39,7 +39,7 @@ fn translation_composes_with_transform_and_zoom_without_double_scaling_percentag
     style.transform = parse_transform("translate(10px, 5px)").unwrap();
     let used = style.zoomed_used_style(2.0);
     assert_eq!(
-        used.translation_transform()
+        used.combined_transform()
             .resolve(200.0, 100.0, used.font_size),
         (-80.0, 74.0)
     );
@@ -53,7 +53,7 @@ fn individual_translate_interpolation_keeps_length_bases_deferred() {
     let mut style = ComputedStyle::initial();
     style.translate = result;
     assert_eq!(
-        style.translation_transform().resolve(200.0, 100.0, 20.0),
+        style.combined_transform().resolve(200.0, 100.0, 20.0),
         (50.0, 20.0)
     );
     assert_eq!(interpolate("none", "none", 0.5).as_deref(), Some("none"));

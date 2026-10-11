@@ -126,8 +126,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 image_width: width,
                 image_height: height,
                 relative_offset: relative_replaced_offset(style, containing_block),
-                transform: style.translation_transform(),
-                transform_font_size: style.font_size,
+                transform: style.transform_from_reference(if style.transform_box.uses_content() {
+                    RectF {
+                        x: 0.0,
+                        y: 0.0,
+                        width,
+                        height,
+                    }
+                } else {
+                    RectF {
+                        x: -padding.left - border.left,
+                        y: -padding.top - border.top,
+                        width: width + padding.horizontal() + border.horizontal(),
+                        height: height + padding.vertical() + border.vertical(),
+                    }
+                }),
                 opacity: style.opacity,
             });
         } else {
@@ -150,11 +163,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         containing_block: InlineContainingBlock,
     ) {
         let key = inline_svg_key(node);
-        let (intrinsic_width, intrinsic_height) = self
-            .page
-            .images
-            .get(&key)
-            .map(|image| (image.width as f32, image.height as f32))
+        let dimensions = self.page.layout_image_dimensions(&key);
+        let (intrinsic_width, intrinsic_height) = dimensions
+            .map(|(width, height)| (width as f32, height as f32))
             .unwrap_or((300.0, 150.0));
         let (width, height) = resolve_svg_replaced_size(
             node,
@@ -163,7 +174,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             intrinsic_width,
             intrinsic_height,
         );
-        if self.page.images.contains_key(&key) {
+        if dimensions.is_some() {
             let margin = style
                 .margin
                 .resolve(containing_block.width, style.font_size);
@@ -187,8 +198,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 image_width: width,
                 image_height: height,
                 relative_offset: relative_replaced_offset(style, containing_block),
-                transform: style.translation_transform(),
-                transform_font_size: style.font_size,
+                transform: style.transform_from_reference(if style.transform_box.uses_content() {
+                    RectF {
+                        x: 0.0,
+                        y: 0.0,
+                        width,
+                        height,
+                    }
+                } else {
+                    RectF {
+                        x: -padding.left - border.left,
+                        y: -padding.top - border.top,
+                        width: width + padding.horizontal() + border.horizontal(),
+                        height: height + padding.vertical() + border.vertical(),
+                    }
+                }),
                 opacity: style.opacity,
             });
         } else {

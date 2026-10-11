@@ -82,6 +82,9 @@ fn item_bounds(item: &DisplayItem) -> RectF {
         | DisplayItem::BeginCssMask { bounds, .. }
         | DisplayItem::EndMask { bounds }
         | DisplayItem::EndOpacity { bounds } => *bounds,
+        DisplayItem::BeginTransform { bounds, .. } | DisplayItem::EndTransform { bounds } => {
+            *bounds
+        }
         DisplayItem::EmbeddedFrame { rect, .. }
         | DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
@@ -118,6 +121,8 @@ mod tests {
 
     fn output(items: Vec<DisplayItem>) -> LayoutOutput {
         LayoutOutput {
+            fixed_layers: Default::default(),
+            transformed: Default::default(),
             fragments: Default::default(),
             sticky_offsets: Default::default(),
             sticky_layers: Default::default(),

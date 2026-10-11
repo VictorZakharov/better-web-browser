@@ -379,9 +379,18 @@ impl SvgColorExt for svgtypes::Color {
 ///
 /// - If `Document` doesn't have an SVG node - returns an empty tree.
 /// - If `Document` doesn't have a valid size - returns `Error::InvalidSize`.
-pub(crate) fn convert_doc(svg_doc: &svgtree::Document, opt: &Options) -> Result<Tree, Error> {
+// Breeze: a containing CSS box can establish an inline SVG's initial viewport.
+// Keep this separate from XML attributes and nested image-document viewports.
+pub(crate) fn convert_doc(
+    svg_doc: &svgtree::Document,
+    opt: &Options,
+    viewport: Option<Size>,
+) -> Result<Tree, Error> {
     let svg = svg_doc.root_element();
-    let (size, restore_viewbox) = resolve_svg_size(&svg, opt);
+    let (size, restore_viewbox) = match viewport {
+        Some(size) => (Ok(size), false),
+        None => resolve_svg_size(&svg, opt),
+    };
     let size = size?;
     let view_box = ViewBox {
         rect: svg

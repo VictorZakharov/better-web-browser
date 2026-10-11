@@ -4,7 +4,14 @@ use super::*;
 use std::collections::VecDeque;
 
 const MAX_BYTES: usize = 64 * 1024 * 1024;
-const MAX_ENTRIES: usize = 32;
+// The byte limit remains the primary bound. A 32-entry admission history
+// continually forgot images in even a modest 64-sprite repeated frame, so no
+// image ever reached its second request and native scaling repeated forever.
+const MAX_ENTRIES: usize = 512;
+const MAX_PENDING: usize = 1024;
+// Data-image URLs can contain megabytes. Optional cache metadata must not copy
+// that payload hundreds of times; oversized keys retain direct native painting.
+const MAX_SOURCE_KEY_BYTES: usize = 4096;
 const MIN_BYTES: usize = 16 * 1024;
 
 pub(in crate::windows_app) struct ScaledImage {
@@ -44,6 +51,8 @@ pub(super) struct Cache {
     pending: VecDeque<Key>,
     bytes: usize,
     byte_limit: usize,
+    entry_limit: usize,
+    pending_limit: usize,
 }
 
 impl Default for Cache {
@@ -53,6 +62,8 @@ impl Default for Cache {
             pending: VecDeque::new(),
             bytes: 0,
             byte_limit: MAX_BYTES,
+            entry_limit: MAX_ENTRIES,
+            pending_limit: MAX_PENDING,
         }
     }
 }
@@ -70,6 +81,8 @@ impl Cache {
         let height = destination.height();
         if source.is_null()
             || !valid(image)
+            || key.len() > MAX_SOURCE_KEY_BYTES
+            || !unsafe { local_resampling_matches_device(dc) }
             || width <= 0
             || height <= 0
             || (width == image.width as i32 && height == image.height as i32)
@@ -99,7 +112,7 @@ impl Cache {
             .iter()
             .position(|v| v.matches(key, width, height))
         else {
-            if self.pending.len() == MAX_ENTRIES {
+            if self.pending.len() == self.pending_limit {
                 self.pending.pop_front();
             }
             self.pending.push_back(Key {
@@ -111,7 +124,7 @@ impl Cache {
         };
         let pending = self.pending.remove(index)?;
         while self.bytes.saturating_add(bytes) > self.byte_limit
-            || self.entries.len() >= MAX_ENTRIES
+            || self.entries.len() >= self.entry_limit
         {
             let retired = self.entries.pop_front()?;
             self.bytes -= retired.bitmap.bytes;
@@ -137,6 +150,22 @@ impl Cache {
         self.pending.clear();
         self.bytes = 0;
     }
+}
+
+unsafe fn local_resampling_matches_device(dc: Hdc) -> bool {
+    use windows_sys::Win32::Graphics::Gdi::{GetWorldTransform, XFORM};
+    if dc.is_null() {
+        return true;
+    }
+    let mut matrix: XFORM = unsafe { std::mem::zeroed() };
+    // An affine CSS transform changes the sampling grid. Scaling once locally
+    // and again through a destination world transform is not the direct native
+    // sampling operation. Decline the optimization, not the image's painting.
+    (unsafe { GetWorldTransform(dc, &mut matrix) != 0 })
+        && matrix.eM11 == 1.0
+        && matrix.eM12 == 0.0
+        && matrix.eM21 == 0.0
+        && matrix.eM22 == 1.0
 }
 
 unsafe fn resample(
@@ -232,4 +261,10 @@ unsafe fn resample(
 }
 
 #[cfg(test)]
+mod affine_tests;
+#[cfg(test)]
+mod device_phase_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod working_set_tests;

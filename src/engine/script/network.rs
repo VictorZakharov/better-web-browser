@@ -4,6 +4,7 @@ mod base64;
 mod beacon;
 pub(super) mod database_host;
 pub(super) mod font_request;
+mod local_image;
 pub(crate) mod response;
 pub(super) mod websocket_host;
 pub(super) use base64::decode_base64;
@@ -73,6 +74,9 @@ pub(super) fn network_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if operation == "localImageAllowed" {
+        return local_image::allowed(args, state).map(Some);
+    }
     match operation {
         "integrityVerify" => {
             let metadata = argument_string(args, 1)?;

@@ -10,6 +10,7 @@ use std::collections::HashMap;
 enum Layer {
     Opacity(OpacityLayer),
     Mask(MaskLayer),
+    Transform { dc: Hdc, saved: i32 },
 }
 #[derive(Default)]
 pub(super) struct PaintGroups {
@@ -25,6 +26,7 @@ impl PaintGroups {
             .find_map(|(layer, _)| match layer {
                 Layer::Opacity(v) => v.dc(),
                 Layer::Mask(v) => Some(v.dc()),
+                Layer::Transform { .. } => None,
             })
             .unwrap_or(root)
     }
@@ -42,11 +44,15 @@ impl PaintGroups {
     ) -> bool {
         let begin = matches!(
             item,
-            DisplayItem::BeginOpacity { .. } | DisplayItem::BeginMask { .. }
+            DisplayItem::BeginOpacity { .. }
+                | DisplayItem::BeginMask { .. }
+                | DisplayItem::BeginTransform { .. }
         );
         let end = matches!(
             item,
-            DisplayItem::EndOpacity { .. } | DisplayItem::EndMask { .. }
+            DisplayItem::EndOpacity { .. }
+                | DisplayItem::EndMask { .. }
+                | DisplayItem::EndTransform { .. }
         );
         if self.skipped > 0 {
             if begin {
@@ -66,7 +72,12 @@ impl PaintGroups {
         let bytes = bounds
             .and_then(|bounds| {
                 super::opacity::intersection(
-                    super::super::paint_primitives::screen_rect(bounds, scroll_y, toolbar, scale),
+                    super::affine::device_bounds(
+                        dc,
+                        super::super::paint_primitives::screen_rect(
+                            bounds, scroll_y, toolbar, scale,
+                        ),
+                    ),
                     *content,
                 )
             })
@@ -77,6 +88,20 @@ impl PaintGroups {
             return true;
         }
         match item {
+            DisplayItem::BeginTransform { matrix, .. } => {
+                let matrix = super::affine::matrix(dc).then_local(super::affine::screen_matrix(
+                    *matrix, scroll_y, toolbar, scale,
+                ));
+                let saved = SaveDC(dc);
+                if saved == 0 || matrix.inverse().is_none() || !super::affine::set(dc, matrix) {
+                    if saved != 0 {
+                        RestoreDC(dc, saved);
+                    }
+                    self.skipped = 1;
+                } else {
+                    self.layers.push((Layer::Transform { dc, saved }, 0));
+                }
+            }
             DisplayItem::BeginOpacity { bounds, opacity } => {
                 if *opacity <= 0.0 {
                     self.skipped = 1;
@@ -103,12 +128,17 @@ impl PaintGroups {
                     self.skipped = 1;
                 }
             }
-            DisplayItem::EndOpacity { .. } | DisplayItem::EndMask { .. } => {
+            DisplayItem::EndOpacity { .. }
+            | DisplayItem::EndMask { .. }
+            | DisplayItem::EndTransform { .. } => {
                 if let Some((layer, bytes)) = self.layers.pop() {
                     self.bytes -= bytes;
                     match layer {
                         Layer::Opacity(v) => v.finish(),
                         Layer::Mask(v) => v.finish(),
+                        Layer::Transform { dc, saved } => {
+                            RestoreDC(dc, saved);
+                        }
                     }
                 }
             }
@@ -127,6 +157,9 @@ impl Drop for PaintGroups {
                 match layer {
                     Layer::Opacity(v) => v.finish(),
                     Layer::Mask(v) => v.finish(),
+                    Layer::Transform { dc, saved } => {
+                        RestoreDC(dc, saved);
+                    }
                 }
             }
         }

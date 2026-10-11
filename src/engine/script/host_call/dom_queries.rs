@@ -114,11 +114,25 @@ pub(super) fn dispatch(
                 .and_then(|node| closest_matching_element(&node, &selector));
             JsValue::from(closest.map(|node| state.id_for(&node)).unwrap_or_default())
         }
-        "layoutRect" => {
+        "layoutRect" | "layoutBoxRect" => {
             state.flush_layout_if_needed();
-            let rect = state
-                .node(argument_id(args, 1))
-                .and_then(|node| state.layout_geometry.get(&node.id()).copied());
+            let rect = state.node(argument_id(args, 1)).and_then(|node| {
+                let mut rect = if operation == "layoutBoxRect" {
+                    state
+                        .layout_fragments
+                        .layout_rect(node.id())
+                        .or_else(|| state.layout_geometry.get(&node.id()).copied())
+                } else {
+                    state.layout_geometry.get(&node.id()).copied()
+                }?;
+                if operation == "layoutBoxRect"
+                    && let Some(size) = state.resize_boxes.get(&node.id())
+                {
+                    rect.width = size.border_width;
+                    rect.height = size.border_height;
+                }
+                Some(rect)
+            });
             rect.map_or_else(JsValue::null, |rect| {
                 JsValue::Array(vec![
                     JsValue::from(rect.x as f64),

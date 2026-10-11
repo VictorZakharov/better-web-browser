@@ -2,41 +2,32 @@
 use crate::engine::dom::{Node, NodeData, NodeId, NodeRef};
 use crate::limits::{MAX_DOM_NODES, MAX_SVG_SOURCE_BYTES};
 use cssparser::{Parser, ParserInput};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
+use std::rc::Rc;
+mod index;
+pub(super) use index::IndexCache;
 
 pub(super) struct References {
     pub targets: Vec<NodeRef>,
-    first_ids: HashMap<String, NodeId>,
+    index: Option<Rc<index::Index>>,
     pub blocked_uses: HashSet<NodeId>,
 }
 
 impl References {
-    pub fn collect(root: &NodeRef) -> Result<Self, String> {
+    pub fn collect_with_index(root: &NodeRef, cache: &mut IndexCache) -> Result<Self, String> {
         let mut queue = VecDeque::new();
         let mut included = HashSet::new();
         scan(root, &mut included, &mut queue)?;
         let mut result = Self {
             targets: Vec::new(),
-            first_ids: HashMap::new(),
+            index: None,
             blocked_uses: HashSet::new(),
         };
         if queue.is_empty() {
             return Ok(result);
         }
-        let mut index = HashMap::new();
-        for (count, node) in Node::descendants(&Node::tree_root(root)).enumerate() {
-            if count >= MAX_DOM_NODES {
-                return Err("SVG reference tree exceeds node budget".into());
-            }
-            if let Some(id) = node.attr("id") {
-                index.entry(id).or_insert(node);
-            }
-        }
-        result.first_ids = index
-            .iter()
-            .map(|(id, node)| (id.clone(), node.id()))
-            .collect();
-        result.blocked_uses = super::expansion::blocked_uses(root, &index)?;
+        let index = cache.get(root)?;
+        result.blocked_uses = super::expansion::blocked_uses(root, &index.ids)?;
         let mut seen = HashSet::new();
         while let Some(id) = queue.pop_front() {
             if !seen.insert(id.clone()) {
@@ -45,7 +36,7 @@ impl References {
             if seen.len() > 256 {
                 return Err("SVG exceeds reference budget".into());
             }
-            let Some(target) = index.get(&id) else {
+            let Some(target) = index.ids.get(&id) else {
                 continue;
             };
             if target.namespace_uri() != Some("http://www.w3.org/2000/svg")
@@ -67,11 +58,14 @@ impl References {
             !std::iter::successors(node.parent(), |parent| parent.parent())
                 .any(|parent| roots.contains(&parent.id()))
         });
+        result.index = Some(index);
         Ok(result)
     }
 
     pub fn retain_id(&self, id: &str, node: NodeId) -> bool {
-        self.first_ids.get(id).is_none_or(|first| *first == node)
+        self.index
+            .as_ref()
+            .is_none_or(|index| index.retain_id(id, node))
     }
 }
 
