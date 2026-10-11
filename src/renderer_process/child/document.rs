@@ -253,6 +253,9 @@ impl DocumentRuntime {
             return Ok(self.blocked_render_update(outcome, load, wheel));
         }
         self.rendering.dirty = false;
+        // Color-only retained presentations can refresh SVG input without
+        // rebuilding geometry. Publish their current device rasters as well.
+        self.page.prepare_inline_svg_images(&self.layout);
         self.page.title = self.page.dom.title();
         if !self.diagnostic_selectors.is_empty()
             && outcome.diagnostics.len() < MAX_RUNTIME_REPORT_ENTRIES

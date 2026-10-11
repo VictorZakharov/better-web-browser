@@ -1,6 +1,7 @@
 //! Bounded animation discovery from the same compiled cascade used for layout.
 use super::*;
 use crate::engine::css::stylesheet::keyframes::KeyframeDefinition;
+use std::sync::Arc;
 
 #[derive(Default)]
 struct SnapshotBudget {
@@ -24,13 +25,12 @@ impl SnapshotBudget {
 
 fn frames(
     definition: &KeyframeDefinition,
-    styles: &mut StyleSet,
-    node: &NodeRef,
+    resolve: &impl Fn(&[(String, String)]) -> Vec<(String, String)>,
     budget: &mut SnapshotBudget,
 ) -> Option<JsValue> {
     let mut output = Vec::new();
     for block in definition.merged_blocks() {
-        let declarations = styles.resolved_keyframe_values(node, &block.declarations);
+        let declarations = resolve(&block.declarations);
         let bytes = declarations
             .iter()
             .map(|(name, value)| name.len() + value.len())
@@ -139,7 +139,10 @@ impl HostState {
             if node.element().is_none() || !styles.may_have_css_animation(&node) {
                 continue;
             }
-            let Some(style) = styles.computed_style_for_node(&node).cloned() else {
+            let Some(settings) = styles
+                .computed_style_for_node(&node)
+                .map(|style| Arc::clone(&style.animation))
+            else {
                 continue;
             };
             let mut current = Some(node.clone());
@@ -157,7 +160,10 @@ impl HostState {
             if !rendered {
                 continue;
             }
-            let settings = &style.animation;
+            // Discovery is synchronous: no author callback can change the
+            // cascade between this target's blocks or animation names. A new
+            // snapshot creates new inputs, including inherited parent effects.
+            let keyframe_values = std::cell::OnceCell::new();
             let mut animations = Vec::new();
             for (index, name) in settings.names.iter().enumerate().take(16) {
                 let Some(name) = name.named() else {
@@ -173,7 +179,12 @@ impl HostState {
                     exhausted = true;
                     break;
                 }
-                let Some(frames) = frames(&definition, &mut styles, &node, &mut budget) else {
+                let values = keyframe_values.get_or_init(|| styles.keyframe_values_for_node(&node));
+                let Some(frames) = frames(
+                    &definition,
+                    &|declarations| values.resolve(declarations),
+                    &mut budget,
+                ) else {
                     exhausted = true;
                     break;
                 };

@@ -121,6 +121,7 @@ mod tests {
 
     fn output(items: Vec<DisplayItem>) -> LayoutOutput {
         LayoutOutput {
+            fixed_layers: Default::default(),
             transformed: Default::default(),
             fragments: Default::default(),
             sticky_offsets: Default::default(),

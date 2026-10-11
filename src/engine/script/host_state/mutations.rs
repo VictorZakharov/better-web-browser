@@ -27,10 +27,20 @@ impl HostState {
         self.invalidate_style_rules_for_mutation(target, kind);
         if requires_render {
             self.css_animation_revision = self.css_animation_revision.wrapping_add(1);
-            self.pending_invalidation
-                .record(&self.document, target, kind);
-            self.pending_layout_invalidation
-                .record(&self.document, target, kind);
+            if let Some(target) = target
+                && kind == MutationKind::Attribute("style")
+                && self.inline_style_uses_target_scope()
+            {
+                self.pending_invalidation
+                    .record_selector_independent_style(&self.document, target);
+                self.pending_layout_invalidation
+                    .record_selector_independent_style(&self.document, target);
+            } else {
+                self.pending_invalidation
+                    .record(&self.document, target, kind);
+                self.pending_layout_invalidation
+                    .record(&self.document, target, kind);
+            }
             self.timers.request_render();
         }
     }

@@ -1,7 +1,7 @@
 use super::Page;
 use crate::engine::DecodedImage;
 use crate::engine::dom::{Dom, NodeId, NodeRef};
-use crate::limits::{MAX_PAGE_DECODED_IMAGE_BYTES, MAX_PRESENTED_IMAGES};
+use crate::limits::MAX_PRESENTED_IMAGES;
 use std::collections::HashMap;
 mod publication;
 
@@ -27,6 +27,20 @@ pub(super) fn install_initial_decoded_image(
     key: String,
     image: DecodedImage,
 ) -> Result<(), String> {
+    install_with_budget(
+        images,
+        key,
+        image,
+        crate::renderer_budget::current().decoded_image_bytes(),
+    )
+}
+
+fn install_with_budget(
+    images: &mut HashMap<String, DecodedImage>,
+    key: String,
+    image: DecodedImage,
+    byte_limit: usize,
+) -> Result<(), String> {
     if !images.contains_key(&key) && images.len() >= MAX_PRESENTED_IMAGES {
         return Err(format!(
             "decoded image count exceeds the {MAX_PRESENTED_IMAGES}-image document limit"
@@ -39,19 +53,23 @@ pub(super) fn install_initial_decoded_image(
             total.checked_add(image.bgra.len())
         })
         .ok_or_else(|| "decoded image byte count overflow".to_string())?;
-    if !fits_decoded_image_budget(retained_bytes, image.bgra.len()) {
+    if !fits_decoded_image_budget(retained_bytes, image.bgra.len(), byte_limit) {
         return Err(format!(
-            "decoded images exceed the {MAX_PAGE_DECODED_IMAGE_BYTES}-byte document limit"
+            "decoded images exceed the {byte_limit}-byte document limit"
         ));
     }
     images.insert(key, image);
     Ok(())
 }
 
-fn fits_decoded_image_budget(retained_bytes: usize, incoming_bytes: usize) -> bool {
+fn fits_decoded_image_budget(
+    retained_bytes: usize,
+    incoming_bytes: usize,
+    byte_limit: usize,
+) -> bool {
     retained_bytes
         .checked_add(incoming_bytes)
-        .is_some_and(|total| total <= MAX_PAGE_DECODED_IMAGE_BYTES)
+        .is_some_and(|total| total <= byte_limit)
 }
 
 pub(super) fn image_url(page: &Page, node: &NodeRef) -> Option<String> {
@@ -127,6 +145,7 @@ fn frame_key(node: NodeId) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::renderer_budget::RendererBudget;
     use std::sync::Arc;
 
     fn image(bytes: usize) -> DecodedImage {
@@ -143,15 +162,43 @@ mod tests {
         install_initial_decoded_image(&mut images, "icon".into(), image(8)).unwrap();
         assert_eq!(images["icon"].bgra.len(), 8);
 
-        assert!(fits_decoded_image_budget(
-            MAX_PAGE_DECODED_IMAGE_BYTES - 8,
-            8
-        ));
+        for profile in [RendererBudget::Standard, RendererBudget::Graphics] {
+            let limit = profile.decoded_image_bytes();
+            assert!(fits_decoded_image_budget(limit - 8, 8, limit));
+            assert!(!fits_decoded_image_budget(limit - 8, 9, limit));
+            assert!(!fits_decoded_image_budget(usize::MAX, 1, limit));
+        }
+        // A newly revealed HiDPI Canvas may coexist with its decoded SVG,
+        // other canvases and CSS paint snapshots. The user-selected graphics
+        // allowance admits that bounded overlap; standard remains unchanged.
+        let retained = RendererBudget::Standard.decoded_image_bytes();
         assert!(!fits_decoded_image_budget(
-            MAX_PAGE_DECODED_IMAGE_BYTES - 8,
-            9
+            retained,
+            6 * 1024 * 1024,
+            RendererBudget::Standard.decoded_image_bytes()
         ));
-        assert!(!fits_decoded_image_budget(usize::MAX, 1));
+        assert!(fits_decoded_image_budget(
+            retained,
+            6 * 1024 * 1024,
+            RendererBudget::Graphics.decoded_image_bytes()
+        ));
+    }
+
+    #[test]
+    fn failed_admission_preserves_previous_pixels_and_replacements_release_the_old_charge() {
+        let mut images = HashMap::from([("a".into(), image(8)), ("b".into(), image(4))]);
+        let previous = images["a"].bgra.clone();
+        let error = install_with_budget(&mut images, "a".into(), image(9), 12).unwrap_err();
+        assert!(error.contains("12-byte document limit"));
+        assert!(Arc::ptr_eq(&previous, &images["a"].bgra));
+        assert!(install_with_budget(&mut images, "c".into(), image(1), 12).is_err());
+        assert!(!images.contains_key("c"));
+        install_with_budget(&mut images, "a".into(), image(4), 12).unwrap();
+        install_with_budget(&mut images, "c".into(), image(4), 12).unwrap();
+        assert_eq!(
+            images.values().map(|image| image.bgra.len()).sum::<usize>(),
+            12
+        );
     }
 
     #[test]

@@ -2,16 +2,45 @@
 //! This is the same declaration pipeline as normal style, without the target's effect overlay.
 use super::*;
 
+/// One synchronous target snapshot; never retained across author/effect mutations.
+pub(crate) struct KeyframeValues {
+    underlying: ComputedStyle,
+    parent: Option<ComputedStyle>,
+    document_base_url: String,
+    viewport_width: f32,
+    viewport_height: f32,
+}
+
 impl StyleSet {
+    pub(crate) fn keyframe_values_for_node(&mut self, node: &NodeRef) -> KeyframeValues {
+        let underlying = self.underlying_style_for_node(node);
+        let parent = Node::composed_parent(node)
+            .and_then(|parent| self.computed_style_for_node(&parent).cloned());
+        KeyframeValues {
+            underlying,
+            parent,
+            document_base_url: self.document_base_url.clone(),
+            viewport_width: self.viewport_width,
+            viewport_height: self.viewport_height,
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn resolved_keyframe_values(
         &mut self,
         node: &NodeRef,
         declarations: &[(String, String)],
     ) -> Vec<(String, String)> {
-        let underlying = self.underlying_style_for_node(node);
-        let parent = Node::composed_parent(node)
-            .and_then(|parent| self.computed_style_for_node(&parent).cloned());
-        let mut style = underlying.clone();
+        self.keyframe_values_for_node(node).resolve(declarations)
+    }
+}
+
+impl KeyframeValues {
+    pub(crate) fn resolve(&self, declarations: &[(String, String)]) -> Vec<(String, String)> {
+        // Each block starts from the same actual cascade. Reusing that immutable
+        // input avoids repeating selector/variable work without leaking one
+        // block's font size, custom properties or shorthands into another.
+        let mut style = self.underlying.clone();
         let mut properties = Vec::new();
         for (name, value) in declarations {
             if name.len() > 128
@@ -28,9 +57,9 @@ impl StyleSet {
                     &mut style,
                     &declaration,
                     DeclarationContext {
-                        parent: parent.as_ref(),
-                        lower_origin: &underlying,
-                        layer_start: &underlying,
+                        parent: self.parent.as_ref(),
+                        lower_origin: &self.underlying,
+                        layer_start: &self.underlying,
                         base_url: &self.document_base_url,
                         viewport_width: self.viewport_width,
                         viewport_height: self.viewport_height,
@@ -96,5 +125,7 @@ fn longhands(name: &str) -> Vec<&str> {
     }
 }
 
+#[cfg(test)]
+mod snapshot_tests;
 #[cfg(test)]
 mod tests;

@@ -1,11 +1,20 @@
 //! Bounded decoder input, including referenced definitions from sibling SVGs.
-use super::references::References;
+use super::references::{IndexCache, References};
 use crate::engine::css::StyleSet;
 use crate::engine::dom::{NodeData, NodeRef};
 use crate::limits::{MAX_DOM_NODES, MAX_SVG_SOURCE_BYTES};
 
+#[cfg(test)]
 pub(super) fn source(node: &NodeRef, styles: Option<&StyleSet>) -> Result<String, String> {
-    let references = References::collect(node)?;
+    source_with_index(node, styles, &mut IndexCache::default())
+}
+
+pub(super) fn source_with_index(
+    node: &NodeRef,
+    styles: Option<&StyleSet>,
+    cache: &mut IndexCache,
+) -> Result<String, String> {
+    let references = References::collect_with_index(node, cache)?;
     let mut writer = Writer {
         output: String::new(),
         nodes: 0,

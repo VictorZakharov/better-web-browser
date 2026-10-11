@@ -162,6 +162,7 @@ pub(super) fn style_host_call(
         }))));
     }
     if matches!(operation, "setAnimationStyle" | "setTransitionStyle") {
+        let before = state.document.document_mutation_version();
         let node = state.node(argument_id(args, 1));
         let declarations = argument_string(args, 2)?;
         if declarations.len() > 8 * 1024 {
@@ -176,6 +177,7 @@ pub(super) fn style_host_call(
                 node.set_animation_style(&declarations)
             }
         {
+            state.effect_style_changed(&node, before);
             let revision = state.css_animation_revision;
             state.record_mutation(Some(&node), MutationKind::StyleOverlay);
             // Presentation samples do not change the authored animation list.

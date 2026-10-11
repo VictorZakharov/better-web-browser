@@ -24,7 +24,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             self.apply_transform_matrix(node.id(), matrix, start);
         }
         self.wrap_opacity(start, style.opacity);
-        if self.emit_paint && style.position == Position::Sticky {
+        let retained_fixed = self.emit_paint
+            && super::super::engine::fixed_layers::capture(
+                self.styles,
+                node,
+                style,
+                &mut self.output.fixed_layers,
+            );
+        if self.emit_paint && (style.position == Position::Sticky || retained_fixed) {
             self.output.items.insert(
                 start,
                 DisplayItem::NodeBoundary {

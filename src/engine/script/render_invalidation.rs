@@ -20,6 +20,29 @@ impl PendingInvalidation {
         target: Option<&NodeRef>,
         kind: MutationKind<'_>,
     ) {
+        self.record_with_style_scope(document, target, kind, false);
+    }
+
+    pub(super) fn record_selector_independent_style(
+        &mut self,
+        document: &NodeRef,
+        target: &NodeRef,
+    ) {
+        self.record_with_style_scope(
+            document,
+            Some(target),
+            MutationKind::Attribute("style"),
+            true,
+        );
+    }
+
+    fn record_with_style_scope(
+        &mut self,
+        document: &NodeRef,
+        target: Option<&NodeRef>,
+        kind: MutationKind<'_>,
+        selector_independent_style: bool,
+    ) {
         let rebuild_rules = rebuilds_style_rules(target, kind);
         self.impact = self.impact.union(kind.impact());
         if rebuild_rules {
@@ -30,6 +53,11 @@ impl PendingInvalidation {
             return;
         };
         let root = match kind {
+            // Private effect declarations leave authored attributes, sibling
+            // selectors and tree membership unchanged. Recompute inheritance
+            // below the target; geometry changes still request normal layout.
+            MutationKind::StyleOverlay => target.clone(),
+            MutationKind::Attribute("style") if selector_independent_style => target.clone(),
             // A stylesheet's text replacement keeps the old child-list scope;
             // rebuilding rules already clears local-content evidence above.
             MutationKind::TextChildren if rebuild_rules => target.clone(),
@@ -37,7 +65,6 @@ impl PendingInvalidation {
             | MutationKind::CharacterData
             | MutationKind::TextChildren
             | MutationKind::State
-            | MutationKind::StyleOverlay
             | MutationKind::PointerDesignation => target
                 .shadow_including_parent()
                 .unwrap_or_else(|| target.clone()),
@@ -152,6 +179,23 @@ fn is_descendant_of(node: &NodeRef, ancestor: &NodeRef) -> bool {
 mod tests {
     use super::*;
     use crate::engine::dom;
+
+    #[test]
+    fn native_effects_use_target_roots_but_author_writes_keep_sibling_scope() {
+        let dom = dom::parse("<main><b></b><i></i></main>");
+        let parent = dom.elements_named("main").next().unwrap();
+        let target = dom.elements_named("b").next().unwrap();
+        let mut pending = PendingInvalidation::default();
+        pending.record(&dom.document, Some(&target), MutationKind::StyleOverlay);
+        assert_eq!(pending.snapshot(1).roots, vec![target.id()]);
+        assert!(pending.snapshot(1).impact.affects_layout());
+        pending.record(
+            &dom.document,
+            Some(&target),
+            MutationKind::Attribute("style"),
+        );
+        assert_eq!(pending.snapshot(2).roots, vec![parent.id()]);
+    }
 
     #[test]
     fn validation_mutations_widen_roots_to_form_and_fieldsets() {

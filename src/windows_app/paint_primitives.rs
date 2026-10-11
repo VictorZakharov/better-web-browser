@@ -36,25 +36,21 @@ pub(super) fn bitmap_info(image: &DecodedImage) -> BitmapInfo {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) unsafe fn paint_alpha_image(
     destination: Hdc,
     bitmap: Hbitmap,
     image: &DecodedImage,
-    rect: RectF,
-    screen_y: i32,
-    scale: f32,
+    destination_rect: &Rect,
     opaque: bool,
     coverage: Option<&[Rect]>,
 ) {
-    let destination_rect = image_rect(rect, screen_y, scale);
     if let Some(coverage) = coverage
-        && sparse::paint(destination, bitmap, &destination_rect, coverage)
+        && sparse::paint(destination, bitmap, destination_rect, coverage)
     {
         return;
     }
-    if !opaque || !opaque::paint(destination, bitmap, image, &destination_rect) {
-        paint_alpha_bitmap(destination, bitmap, image, &destination_rect);
+    if !opaque || !opaque::paint(destination, bitmap, image, destination_rect) {
+        paint_alpha_bitmap(destination, bitmap, image, destination_rect);
     }
 }
 

@@ -49,6 +49,18 @@ pub struct FragmentGeometry {
 }
 
 impl FragmentGeometry {
+    pub(in crate::engine::layout) fn extend_subtree(&mut self, other: &Self) {
+        self.extend_transforms(other);
+        self.elements.extend(
+            other
+                .elements
+                .iter()
+                .map(|(&id, value)| (id, value.clone())),
+        );
+        self.text
+            .extend(other.text.iter().map(|(&id, value)| (id, value.clone())));
+        self.next_line = self.next_line.max(other.next_line);
+    }
     pub(in crate::engine::layout) fn extend_transforms(&mut self, other: &Self) {
         self.layout_boxes
             .extend(other.layout_boxes.iter().map(|(&id, &rect)| (id, rect)));

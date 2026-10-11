@@ -263,6 +263,8 @@ unsafe fn resample(
 #[cfg(test)]
 mod affine_tests;
 #[cfg(test)]
+mod device_phase_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod working_set_tests;

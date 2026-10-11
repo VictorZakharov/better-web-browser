@@ -65,6 +65,7 @@ impl DocumentRuntime {
         let parser_active = !matches!(first_step, crate::engine::dom::incremental::ParserStep::End);
         let reader = crate::document::parse_html(&decoded.text, &start.url);
         let mut page = Page::from_dom(parser.dom().clone(), &start.url);
+        page.enable_inline_svg_viewports();
         page.scripts.clear();
         page.hide_scripted_noscript();
         page.character_set = decoded.encoding.to_string();

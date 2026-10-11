@@ -5,6 +5,8 @@ use crate::engine::invalidation::InvalidationImpact;
 
 #[cfg(test)]
 mod deferred_paint_tests;
+#[cfg(test)]
+mod effect_roots_tests;
 
 impl StyleSet {
     pub(crate) fn refresh_subtrees(

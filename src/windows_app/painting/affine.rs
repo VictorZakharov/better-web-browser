@@ -7,6 +7,8 @@ use windows_sys::Win32::Graphics::Gdi::{
     CreatePolygonRgn, ExtSelectClipRgn, GM_ADVANCED, GetViewportOrgEx, GetWorldTransform, RGN_AND,
     SetGraphicsMode, SetWorldTransform, WINDING, XFORM,
 };
+mod device_images;
+pub(in crate::windows_app) use device_images::ScaledDestination;
 
 pub(super) unsafe fn matrix(dc: Hdc) -> Affine2D {
     let mut v = XFORM {

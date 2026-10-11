@@ -27,6 +27,26 @@
     const inside=ctx.getImageData(15,40,1,1).data;
     const outside=ctx.getImageData(290,110,1,1).data;
     if(inside[3]!==255||outside[3]!==0)throw Error('SVG snapshot pixels');
+    // Fractional device-pixel grids need an expanded viewBox, not a stretched
+    // copy of the visible title. Exercise the same primitive with original art.
+    const densities=[];
+    for(const grid of [1,1.25,2]){
+      const x0=Math.floor(-36*grid),y0=Math.floor(-26.4*grid);
+      const width=Math.ceil(336*grid)-x0,height=Math.ceil(146.4*grid)-y0;
+      const view=[x0/grid,y0/grid,width/grid,height/grid];
+      const expanded=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${view.join(' ')}" preserveAspectRatio="none">${source.innerHTML}</svg>`;
+      const objectUrl=URL.createObjectURL(new Blob([expanded],{type:'image/svg+xml'}));
+      try{
+        const image=new Image();image.src=objectUrl;await image.decode();
+        const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+        const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,0,0,width,height);
+        const pixels=ctx.getImageData(0,0,width,height).data;
+        let covered=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i])covered++;
+        if(covered<lit*grid*grid*.9||covered>lit*grid*grid*1.1)throw Error('density coverage '+grid+': '+covered);
+        densities.push([grid,covered]);
+      }finally{URL.revokeObjectURL(objectUrl);}
+    }
+    document.getElementById('result').setAttribute('data-density-coverage',JSON.stringify(densities));
     document.getElementById('result').textContent='PASS: embedded font, SVG blob, drawImage, getImageData; points='+lit;
     document.title='done SVG snapshot points='+lit;
     document.documentElement.dataset.fixtureReady='true';

@@ -163,11 +163,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         containing_block: InlineContainingBlock,
     ) {
         let key = inline_svg_key(node);
-        let (intrinsic_width, intrinsic_height) = self
-            .page
-            .images
-            .get(&key)
-            .map(|image| (image.width as f32, image.height as f32))
+        let dimensions = self.page.layout_image_dimensions(&key);
+        let (intrinsic_width, intrinsic_height) = dimensions
+            .map(|(width, height)| (width as f32, height as f32))
             .unwrap_or((300.0, 150.0));
         let (width, height) = resolve_svg_replaced_size(
             node,
@@ -176,7 +174,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             intrinsic_width,
             intrinsic_height,
         );
-        if self.page.images.contains_key(&key) {
+        if dimensions.is_some() {
             let margin = style
                 .margin
                 .resolve(containing_block.width, style.font_size);

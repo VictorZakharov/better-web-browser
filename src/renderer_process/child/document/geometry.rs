@@ -202,6 +202,27 @@ impl DocumentRuntime {
     }
 
     pub(super) fn rebuild_layout(&mut self) {
+        self.rebuild_layout_for_invalidation(None);
+    }
+
+    pub(super) fn can_reuse_fixed_layout(
+        &self,
+        resources_changed: bool,
+        style: &StyleRefreshStats,
+    ) -> bool {
+        !resources_changed
+            && !style.full_rebuild
+            && !self.rendering.dirty
+            && !self
+                .script_runtime
+                .as_ref()
+                .is_some_and(ScriptRuntime::has_pending_frame_layout)
+    }
+
+    pub(super) fn rebuild_layout_for_invalidation(
+        &mut self,
+        invalidation: Option<&crate::engine::invalidation::RenderInvalidation>,
+    ) {
         self.sync_script_layout_page();
         // A blocked rendering opportunity does not need a paintable display list.
         // Keep the CSSOM snapshot current: explicit geometry reads still flush it
@@ -214,15 +235,30 @@ impl DocumentRuntime {
         self.install_canvas_presentation();
         let mut text = self.text.borrow_mut();
         text.reset_layout_metrics();
-        self.layout = layout_page_with_style_viewport(
-            &self.page,
-            self.viewport.width,
-            self.viewport.height,
-            self.viewport.style_width,
-            &mut *text,
-        );
+        let refreshed = invalidation.is_some_and(|invalidation| {
+            self.layout.try_refresh_fixed_layers(
+                &self.page,
+                [
+                    self.viewport.width,
+                    self.viewport.height,
+                    self.viewport.style_width,
+                ],
+                invalidation,
+                &mut *text,
+            )
+        });
+        if !refreshed {
+            self.layout = layout_page_with_style_viewport(
+                &self.page,
+                self.viewport.width,
+                self.viewport.height,
+                self.viewport.style_width,
+                &mut *text,
+            );
+        }
         drop(text);
         self.page.prepare_css_images(&mut self.layout);
+        self.page.prepare_inline_svg_images(&self.layout);
         self.compose_embedded_frames();
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.finish_frame_layout_attempt();

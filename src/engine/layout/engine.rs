@@ -1,6 +1,7 @@
 use super::*;
 mod block_measure;
 pub(super) mod box_tree;
+pub(crate) mod fixed_layers;
 mod intrinsic_widths;
 mod popover;
 
@@ -41,7 +42,7 @@ pub fn layout_page_with_style_viewport<M: TextMeasurer>(
         viewport_height,
         style_viewport_width,
         measurer,
-        true,
+        fixed_layers::OutputRequest::paint(),
     )
 }
 
@@ -72,7 +73,7 @@ pub fn layout_geometry_with_style_viewport<M: TextMeasurer>(
         viewport_height,
         style_viewport_width,
         &mut MetricsOnly(measurer),
-        false,
+        fixed_layers::OutputRequest::geometry(),
     )
 }
 
@@ -82,8 +83,10 @@ fn layout_page_for_output<M: TextMeasurer>(
     viewport_height: f32,
     style_viewport_width: f32,
     measurer: &mut M,
-    emit_paint: bool,
+    request: fixed_layers::OutputRequest,
 ) -> LayoutOutput {
+    let emit_paint = request.emit_paint;
+    let partial = request.root.is_some();
     let computed_styles;
     let cached_styles = page.cached_style_for_viewport(style_viewport_width, viewport_height);
     let styles = if let Some(cached_styles) = cached_styles {
@@ -104,7 +107,10 @@ fn layout_page_for_output<M: TextMeasurer>(
                         .is_some_and(|style| style.display != Display::None)
                 })
     });
-    let mut root = fullscreen_root
+    let mut root = request
+        .root
+        .clone()
+        .or(fullscreen_root)
         .or_else(|| page.dom.elements_named("html").next())
         .or_else(|| page.dom.elements_named("body").next())
         .unwrap_or_else(|| page.dom.document.clone());
@@ -158,7 +164,7 @@ fn layout_page_for_output<M: TextMeasurer>(
             items: Vec::new(),
             content_height: viewport_height,
             background: Color::WHITE,
-            forms: if emit_paint {
+            forms: if emit_paint && !partial {
                 collect_forms(page)
             } else {
                 HashMap::new()
@@ -166,8 +172,14 @@ fn layout_page_for_output<M: TextMeasurer>(
             node_bounds: HashMap::new(),
             resize_boxes: HashMap::new(),
             node_paint_order: Vec::new(),
+            fixed_layers: fixed_layers::FixedLayers::new(
+                viewport_width,
+                viewport_height,
+                style_viewport_width,
+            ),
         },
     };
+    std::sync::Arc::make_mut(&mut engine.output.fragments).next_line = request.first_line;
 
     if root.is_fullscreen() {
         // A fullscreen element is painted in the top layer over the default black backdrop.
@@ -206,19 +218,22 @@ fn layout_page_for_output<M: TextMeasurer>(
         .max(engine.scrollable_overflow_bottom(&root))
         .max(viewport_height);
     block::paint_order::finalize(&mut engine.output);
-    popover::append_top_layer(
-        page,
-        styles,
-        &mut engine.output,
-        viewport_width,
-        viewport_height,
-        &mut *engine.measurer,
-        emit_paint,
-    );
+    if !partial {
+        popover::append_top_layer(
+            page,
+            styles,
+            &mut engine.output,
+            viewport_width,
+            viewport_height,
+            &mut *engine.measurer,
+            emit_paint,
+        );
+    }
     if emit_paint {
         // Text display items retain text-node IDs, so resolve their inherited
         // eligibility alongside element IDs in one ancestor-first DOM walk.
-        for node in Node::shadow_including_descendants(&page.dom.document) {
+        let hit_root = if partial { &root } else { &page.dom.document };
+        for node in Node::shadow_including_descendants(hit_root) {
             let eligible = styles
                 .styles
                 .get(&node.id())
@@ -240,6 +255,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         viewport_height,
         style_viewport_width,
     );
+    fixed_layers::retain_image_inputs(page, &mut engine.output);
     engine.output
 }
 

@@ -2,6 +2,7 @@
 
 mod author;
 mod computed;
+mod effect_cache;
 mod keyframe_values;
 mod layout;
 mod matching;

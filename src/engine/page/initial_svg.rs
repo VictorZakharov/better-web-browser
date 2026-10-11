@@ -9,7 +9,7 @@ impl Page {
             .take(MAX_INLINE_SVGS)
         {
             let input = svg::InlineSvgInput::new(&svg, None);
-            self.inline_svg_versions.insert(svg.id(), input.version);
+            self.inline_svgs.versions.insert(svg.id(), input.version);
             if let Ok(image) = input.decode() {
                 let _ = media::install_initial_decoded_image(
                     &mut self.images,

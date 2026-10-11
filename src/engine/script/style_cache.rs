@@ -3,6 +3,7 @@
 use super::*;
 
 mod animations;
+mod effects;
 pub(super) mod inline_transitions;
 mod viewport;
 

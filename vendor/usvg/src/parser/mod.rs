@@ -171,7 +171,23 @@ impl crate::Tree {
     /// Parses `Tree` from `roxmltree::Document`.
     pub fn from_xmltree(doc: &roxmltree::Document, opt: &Options) -> Result<Self, Error> {
         let doc = svgtree::Document::parse_tree(doc, opt.style_sheet.as_deref())?;
-        self::converter::convert_doc(&doc, opt)
+        self::converter::convert_doc(&doc, opt, None)
+    }
+
+    /// Breeze: parse inline SVG into a viewport established by containing CSS.
+    ///
+    /// Original attributes remain available to selectors. The root viewBox and
+    /// preserveAspectRatio map into this size; without a viewBox, user units
+    /// and percentages use this viewport. Nested image documents retain their
+    /// own sizing. Device-pixel density is a later raster transform, not size.
+    /// See https://www.w3.org/TR/SVG2/coords.html#SVGViewport.
+    pub fn from_xmltree_with_viewport(
+        doc: &roxmltree::Document,
+        opt: &Options,
+        size: crate::Size,
+    ) -> Result<Self, Error> {
+        let doc = svgtree::Document::parse_tree(doc, opt.style_sheet.as_deref())?;
+        self::converter::convert_doc(&doc, opt, Some(size))
     }
 }
 

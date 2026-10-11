@@ -2,7 +2,6 @@
 
 use super::*;
 use crate::engine::Page;
-use crate::limits::MAX_PAGE_DECODED_IMAGE_BYTES;
 
 impl ChildRuntimes {
     pub(super) fn sync_canvas(&mut self, document: NodeId) {
@@ -60,16 +59,17 @@ impl ChildRuntimes {
         let frame_bytes = page.images.values().fold(0_usize, |total, image| {
             total.saturating_add(image.bgra.len())
         });
-        let (images, updates) =
-            if other_bytes.saturating_add(frame_bytes) > MAX_PAGE_DECODED_IMAGE_BYTES {
-                child
-                    .host
-                    .borrow_mut()
-                    .diagnose("child Canvas image budget exhausted".into());
-                (before_updates, HashSet::new())
-            } else {
-                (page.images, updates)
-            };
+        let (images, updates) = if other_bytes.saturating_add(frame_bytes)
+            > crate::renderer_budget::current().decoded_image_bytes()
+        {
+            child
+                .host
+                .borrow_mut()
+                .diagnose("child Canvas image budget exhausted".into());
+            (before_updates, HashSet::new())
+        } else {
+            (page.images, updates)
+        };
         let state = self.images.entry(document).or_default();
         state.decoded = images;
         state

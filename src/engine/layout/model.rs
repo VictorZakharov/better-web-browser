@@ -150,6 +150,8 @@ pub enum DisplayItem {
 
 #[derive(Debug, Clone, Default)]
 pub struct LayoutOutput {
+    /// Bounded renderer-local ownership for independent viewport-fixed paint ranges.
+    pub(crate) fixed_layers: super::engine::fixed_layers::FixedLayers,
     /// Exact local boxes and matrices for nested transformed geometry and hit tests.
     pub(crate) transformed: super::transforms::Geometry,
     /// Immutable when published to script; never serialized to the browser process.

@@ -44,7 +44,7 @@ impl Page {
             image_updates: HashSet::new(),
             scripting_enabled: self.scripting_enabled,
             hidden_media_video: self.hidden_media_video.clone(),
-            inline_svg_versions: HashMap::new(),
+            inline_svgs: self.inline_svgs.snapshot(),
             fonts: Vec::new(),
             diagnostics: Vec::new(),
             media_environment: self.media_environment,
@@ -67,6 +67,7 @@ impl Page {
         self.stylesheet_sources = source.stylesheet_sources.clone();
         self.stylesheet_discovery = None;
         self.images = layout_image_metadata(&source.images);
+        self.inline_svgs.synchronize(&source.inline_svgs);
         self.scripting_enabled = source.scripting_enabled;
         self.hidden_media_video
             .clone_from(&source.hidden_media_video);
