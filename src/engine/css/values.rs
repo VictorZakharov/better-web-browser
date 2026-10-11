@@ -39,6 +39,7 @@ pub use vertical_align::VerticalAlign;
 use super::*;
 mod color;
 pub use color::Color;
+pub(crate) mod svg_paint;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Length {
@@ -272,6 +273,8 @@ pub struct ComputedStyle {
     pub(crate) content_visibility_hidden: bool,
     pub pointer_events: bool,
     pub opacity: f32,
+    pub(crate) svg_fill: svg_paint::SvgPaint,
+    pub(crate) svg_stroke: svg_paint::SvgPaint,
     /// Computed, non-inherited CSS zoom. Layout applies ancestor products separately.
     pub zoom: f32,
     pub(crate) effective_zoom: f32,

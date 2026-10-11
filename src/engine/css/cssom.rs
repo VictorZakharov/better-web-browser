@@ -147,6 +147,8 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         }
         .to_string(),
         "color" => serialize_color(style.color),
+        "fill" => style.svg_fill.css_text(style.color),
+        "stroke" => style.svg_stroke.css_text(style.color),
         "clear" => style.clear.css_keyword().to_string(),
         "content" => style.generated_content.css_text(),
         "display" => style.display.css_keyword().to_string(),

@@ -14,6 +14,8 @@ impl ComputedStyle {
             float: Float::None,
             clear: Clear::None,
             color: Color::BLACK,
+            svg_fill: svg_paint::SvgPaint::Color(Color::BLACK),
+            svg_stroke: svg_paint::SvgPaint::None,
             appearance: Appearance::Auto,
             accent_color: AccentColor::Auto,
             background_color: Color::TRANSPARENT,
@@ -137,6 +139,8 @@ impl ComputedStyle {
         let mut style = Self::initial();
         if let Some(parent) = parent {
             style.color = parent.color;
+            style.svg_fill.clone_from(&parent.svg_fill);
+            style.svg_stroke.clone_from(&parent.svg_stroke);
             style.font_size = parent.font_size;
             style.root_font_size = parent.root_font_size;
             style.font_weight = parent.font_weight;

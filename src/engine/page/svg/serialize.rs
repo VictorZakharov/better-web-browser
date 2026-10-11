@@ -156,6 +156,23 @@ impl Writer<'_> {
                         // a matrix accepted by both CSS and the SVG decoder.
                         self.push(";opacity:1!important;transform:matrix(1,0,0,1,0,0)!important")?;
                     }
+                    // The document cascade can match ancestors and rules outside
+                    // this SVG. Preserve instance inheritance in definitions:
+                    // the isolated backend resolves their use/marker context.
+                    if !std::iter::successors(Some(node.clone()), |node| node.parent())
+                        .any(|node| matches!(node.tag_name(), Some("defs" | "symbol" | "marker")))
+                        && let Some(style) = styles.and_then(|styles| styles.styles.get(&node.id()))
+                    {
+                        for (name, paint) in
+                            [("fill", &style.svg_fill), ("stroke", &style.svg_stroke)]
+                        {
+                            self.push(";")?;
+                            self.push(name)?;
+                            self.push(":")?;
+                            self.escape(&super::urls::paint(&paint.css_text(style.color))?)?;
+                            self.push("!important")?;
+                        }
+                    }
                     if (root || matches!(tag, "text" | "tspan" | "textPath"))
                         && !std::iter::successors(node.parent(), |parent| parent.parent())
                             .any(|parent| matches!(parent.tag_name(), Some("defs" | "symbol")))

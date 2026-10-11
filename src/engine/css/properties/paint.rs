@@ -3,6 +3,15 @@ use super::*;
 
 pub(super) fn apply(style: &mut ComputedStyle, name: &str, value: &str) -> bool {
     match name {
+        "fill" | "stroke" => {
+            if let Some(paint) = values::svg_paint::SvgPaint::parse(value) {
+                if name == "fill" {
+                    style.svg_fill = paint;
+                } else {
+                    style.svg_stroke = paint;
+                }
+            }
+        }
         "appearance" | "-webkit-appearance" => {
             if let Some(appearance) = Appearance::parse(value) {
                 style.appearance = appearance;

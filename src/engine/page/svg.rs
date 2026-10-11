@@ -14,6 +14,8 @@ mod embedded_fonts;
 mod expansion;
 mod fonts;
 #[cfg(test)]
+mod paint_cascade_tests;
+#[cfg(test)]
 mod publication_tests;
 #[cfg(test)]
 mod reference_tests;

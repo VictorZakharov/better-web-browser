@@ -59,6 +59,8 @@ fn is_inherited_property(property: &str) -> bool {
     matches!(
         property,
         "color"
+            | "fill"
+            | "stroke"
             | "scrollbar-color"
             | "direction"
             | "border-collapse"
@@ -140,6 +142,8 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "float" => style.float = source.float,
         "clear" => style.clear = source.clear,
         "color" => style.color = source.color,
+        "fill" => style.svg_fill.clone_from(&source.svg_fill),
+        "stroke" => style.svg_stroke.clone_from(&source.svg_stroke),
         "object-fit" => style.object_fit = source.object_fit,
         "object-position" => style.object_position = source.object_position.clone(),
         "aspect-ratio" => style.aspect_ratio = source.aspect_ratio,

@@ -9,6 +9,9 @@ pub(super) fn apply(node: &NodeRef, style: &mut ComputedStyle, context: Declarat
         return;
     }
     for name in [
+        "color",
+        "fill",
+        "stroke",
         "font-family",
         "font-size",
         "font-weight",

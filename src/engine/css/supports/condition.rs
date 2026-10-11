@@ -204,7 +204,7 @@ fn declaration_value(value: &str) -> Option<&str> {
 
 /// The two-argument CSS.supports(property, value) overload parses a property value, not a
 /// declaration. In particular it must reject a priority annotation instead of stripping it.
-pub(super) fn property_value(value: &str) -> Option<String> {
+pub(in crate::engine::css) fn property_value(value: &str) -> Option<String> {
     parsed_declaration_value(value, false)?;
     // CSS.supports(property, value) parses the value as CSS tokens. Passing the original
     // source through to string-based property parsers would leave comments and escapes in

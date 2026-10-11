@@ -4,6 +4,7 @@ use super::values::{BoxOrient, LineClamp, TextOverflow};
 use super::*;
 mod condition;
 mod selector;
+pub(super) use condition::property_value as normalized_property_tokens;
 #[cfg(test)]
 mod tests;
 
@@ -191,6 +192,7 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
             }
         }
         "color" | "background-color" => parse_color(&value).is_some(),
+        "fill" | "stroke" => values::svg_paint::SvgPaint::parse(&value).is_some(),
         "background" => shorthands::background::valid(&value),
         "box-shadow" => values::box_shadow::parse(&value).is_some(),
         "border" | "border-top" | "border-right" | "border-bottom" | "border-left" => {
