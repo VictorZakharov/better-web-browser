@@ -6,6 +6,7 @@ use std::rc::Weak;
 use std::time::Instant;
 mod errors;
 use errors::{allocation_error, throw_error};
+mod canvas_inspect;
 #[cfg(windows)]
 mod gpu;
 #[cfg(windows)]
@@ -195,6 +196,10 @@ fn host_call_callback(
     mut return_value: v8::ReturnValue,
 ) {
     let operation = arguments.get(0).to_rust_string_lossy(scope);
+    if operation == "canvasBitmapHasHiddenRgb" {
+        canvas_inspect::dispatch(scope, arguments, return_value);
+        return;
+    }
     #[cfg(windows)]
     if operation == "webglCommandPacket" {
         gpu_packet::dispatch(scope, arguments, return_value);

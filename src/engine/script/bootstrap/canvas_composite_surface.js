@@ -26,12 +26,12 @@
             (canvasDrawingState(context).shadowBlur !== 0 || canvasDrawingState(context).shadowOffsetX !== 0 || canvasDrawingState(context).shadowOffsetY !== 0);
         const hasFilter = canvasDrawingState(context).filterOperations.length !== 0;
         if (!canvasNeedsSourceLayer.has(operator) && !hasShadow && !hasFilter) {
-            if (draw === canvasOriginalDrawImage) paintCanvasImage.apply(context, args);
-            else draw.apply(context, args);
+            if (draw === canvasOriginalDrawImage) canvasPrivateApply(paintCanvasImage,context,args);
+            else canvasPrivateApply(draw,context,args);
             return;
         }
         const state = stateForCanvas(context.canvas);
-        if (!state.pixels) return draw.apply(context, args);
+        if (!state.pixels) return canvasPrivateApply(draw,context,args);
         if (hasShadow && !hasFilter && state.width*state.height >= 256 &&
             canvasPaintShadowPath(context,draw,args,state)) return;
         const destination = state.pixels;
@@ -62,8 +62,8 @@
         canvasDrawingState(context).compositeOperation = 'source-over';
         let painted = true;
         try {
-            if (draw === canvasOriginalDrawImage) painted = paintCanvasImage.apply(context, args);
-            else draw.apply(context, args);
+            if (draw === canvasOriginalDrawImage) painted = canvasPrivateApply(paintCanvasImage,context,args);
+            else canvasPrivateApply(draw,context,args);
         }
         finally {
             state.pixels = destination;

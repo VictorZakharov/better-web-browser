@@ -109,6 +109,7 @@ pub(super) const WORKER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/canvas_draw_path_arguments.js"),
     include_str!("bootstrap/canvas_text.js"),
     include_str!("bootstrap/canvas_text_paint.js"),
+    include_str!("bootstrap/canvas_text_shadow.js"),
     include_str!("bootstrap/canvas_context_bindings.js"),
     super::bootstrap::webgl_bootstrap!(),
     include_str!("bootstrap/geometry_matrix.js"),

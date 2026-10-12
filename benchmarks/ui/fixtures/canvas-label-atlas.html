@@ -1,0 +1,64 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Canvas label atlas commands</title>
+<style>body{font:14px Arial;margin:24px;background:#25354b;color:#eee}pre{white-space:pre-wrap}canvas{display:block}</style>
+<h1>Canvas label atlas command workload</h1>
+<canvas id="preview" width="256" height="96"></canvas>
+<pre id="result">Running completed pixel operations</pre>
+<script>
+const results=[];
+function sample(name,draw,count=12){
+ const samples=[];
+ for(let block=0;block<4;block++){
+  const start=performance.now();
+  for(let i=0;i<count;i++)draw(i);
+  samples.push((performance.now()-start)/count);
+ }
+ results.push({name,count,samples});
+}
+function checkUpload(gl,canvas,premultiply){
+ const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);
+ gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,gl.getParameter(gl.TEXTURE_BINDING_2D),0);
+ if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error('incomplete atlas');
+ const expected=canvas.getContext('2d').getImageData(0,0,220,64).data;
+ const actual=new Uint8Array(expected.length);gl.readPixels(0,0,220,64,gl.RGBA,gl.UNSIGNED_BYTE,actual);
+ let visible=false;
+ for(let i=0;i<actual.length;i++){
+  const alpha=expected[i-i%4+3];
+  const value=premultiply&&i%4!==3?Math.round(expected[i]*(alpha/255)):expected[i];
+  // Chrome can quantize straight-alpha readback around low-alpha glyph edges.
+  if(Math.abs(actual[i]-value)>1)throw Error('atlas upload byte '+i+': '+actual[i]+'/'+value);
+  if(i%4===3&&actual[i])visible=true;
+ }
+ if(!visible||gl.getError())throw Error('missing atlas pixels');
+ gl.deleteFramebuffer(fb);
+}
+document.fonts.ready.then(()=>{
+ for(const width of [256,2048]){
+  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=width===256?96:1024;
+  const c=canvas.getContext('2d');c.font='18px Arial';c.fillStyle='#edc';
+  sample('clear-'+width,()=>c.clearRect(0,0,220,64),120);
+  // A readback on every iteration forces deferred Canvas work to finish, not
+  // just enqueue. Its identical small cost is included in both browsers.
+  sample('text-'+width,i=>{c.clearRect(0,0,220,64);c.fillText('Damage '+i,12,32);c.getImageData(0,0,220,64);});
+  c.shadowColor='rgba(0,0,0,.8)';c.shadowBlur=8;c.shadowOffsetY=1;
+  sample('shadow-'+width,i=>{c.clearRect(0,0,220,64);c.fillText('Damage '+i,12,32);c.getImageData(0,0,220,64);});
+  const gl=document.createElement('canvas').getContext('webgl2');
+  if(!gl)throw Error('WebGL2 unavailable');
+  const texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);
+  gl.texStorage2D(gl.TEXTURE_2D,1,gl.RGBA8,256,128);
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH,width);gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT,canvas.height);
+  for(const premultiply of [false,true]){
+   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,premultiply);
+   sample('upload-'+width+'-'+Number(premultiply),()=>{
+    gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,220,64,gl.RGBA,gl.UNSIGNED_BYTE,canvas);gl.finish();
+   });
+   checkUpload(gl,canvas,premultiply);
+  }
+  document.getElementById('preview').getContext('2d').drawImage(canvas,0,0,220,64,0,0,220,64);
+  gl.deleteTexture(texture);
+ }
+ document.getElementById('result').textContent=JSON.stringify(results,null,2);
+ document.title='done '+JSON.stringify(results.map(r=>[r.name,r.samples.map(n=>Math.round(n*100)/100)]));
+}).catch(error=>{document.title='failed '+error.message;throw error;});
+</script>

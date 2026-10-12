@@ -15,37 +15,40 @@
         // A DOM overload is incompatible with PIXEL_UNPACK_BUFFER, even when
         // the source has no decoded frame. Validate without reading any pixels.
         if (webGlCall(context,'getParameter',[0x88ef])) { webGlError(context,0x0502); return null; }
-        const snapshot=webGlSourceSnapshot(context,source), state=webGl2State(context);
+        const rgba8=format===0x1908 && type===0x1401;
+        const borrowedCanvas=rgba8 && (canvasSourceSetHas(offscreenCanvasBrands,source) ||
+            canvasSourceElement(source,'canvas'));
+        const snapshot=webGlSourceSnapshot(context,source,borrowedCanvas), state=webGl2State(context);
         if (!snapshot) return null;
         const bitmap=canvasPrivateWeakGet(imageBitmapStates, source);
         if (bitmap) { snapshot.pixels=bitmap.pixels; snapshot.pixels16=bitmap.pixels16; }
-        const components=new Map([[0x1903,1],[0x1906,1],[0x1909,1],[0x190a,2],
+        const components=rgba8 ? 4 : new Map([[0x1903,1],[0x1906,1],[0x1909,1],[0x190a,2],
             [0x8227,2],[0x1907,3],[0x1908,4],[0x8d94,1],[0x8228,2],[0x8d98,3],[0x8d99,4]]).get(format);
-        const integer=[0x8d94,0x8228,0x8d98,0x8d99].includes(format);
-        const constructors=new Map([[0x1401,Uint8Array],[0x1406,Float32Array],[0x140b,webGlBinary16Array]]);
+        const integer=!rgba8 && [0x8d94,0x8228,0x8d98,0x8d99].includes(format);
         // Low-bit/integer targets keep their established RGBA8 conversion.
         // Floating and RGB10 targets consume real decoder precision, not an
         // expanded eight-bit approximation. WebGL2 DOM uploads remain restricted
         // to the specification's table (EXT_texture_norm16 does not widen it).
-        const precise=!!snapshot.pixels16 && [0x1406,0x140b,0x8368,0x8c3b].includes(type);
-        const packing=webGl2ImagePacking(format,type,precise);
-        const constructor=packing?.constructor ?? constructors.get(type);
+        const precise=!rgba8 && !!snapshot.pixels16 && [0x1406,0x140b,0x8368,0x8c3b].includes(type);
+        const packing=rgba8 ? null : webGl2ImagePacking(format,type,precise);
+        const constructor=rgba8 ? webGl2ByteArray : packing?.constructor ??
+            new Map([[0x1401,Uint8Array],[0x1406,Float32Array],[0x140b,webGlBinary16Array]]).get(type);
         if (!components || !constructor || integer && type!==0x1401) { webGlError(context,0x0502); return null; }
         if (width===undefined) width=snapshot.width;
         if (height===undefined) height=snapshot.height;
-        const skipPixels=context.getParameter(0x0cf4), skipRows=context.getParameter(0x0cf3);
-        const imageHeight=volume ? context.getParameter(0x806e)||height : height;
-        const skipImages=volume ? context.getParameter(0x806d) : 0;
+        const skipPixels=webGlCall(context,'getParameter',[0x0cf4]), skipRows=webGlCall(context,'getParameter',[0x0cf3]);
+        const imageHeight=volume ? webGlCall(context,'getParameter',[0x806e])||height : height;
+        const skipImages=volume ? webGlCall(context,'getParameter',[0x806d]) : 0;
         if (width<0 || height<0 || depth<0) { webGlError(context,0x0501); return null; }
         const lastRow=skipRows+skipImages*imageHeight+(canvasPrivateMath.max(1,depth)-1)*imageHeight+height;
         if (skipPixels+width>snapshot.width || lastRow>snapshot.height ||
             volume && imageHeight<height) { webGlError(context,0x0502); return null; }
         const count=width*height*depth*(packing?1:components);
         const size=count*(packing?.bytes ?? (type===0x1401?1:type===0x140b?2:4));
-        if (!Number.isSafeInteger(size) || size>16*1024*1024) { webGlError(context,0x0505); return null; }
-        if (format===0x1908 && type===0x1401 && (bitmap || !state.unpackPremultiply)) {
+        if (!webGlWireInteger(size) || size>16*1024*1024) { webGlError(context,0x0505); return null; }
+        if (rgba8) {
             const bytes=webGl2Rgba8Rows(snapshot,width,height,depth,skipPixels,skipRows,
-                imageHeight,skipImages,!bitmap && state.unpackFlip);
+                imageHeight,skipImages,!bitmap && state.unpackFlip,!bitmap && state.unpackPremultiply,borrowedCanvas);
             if (bytes) return {bytes,width,height};
         }
         const values=new constructor(count);

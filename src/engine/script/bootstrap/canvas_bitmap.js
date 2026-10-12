@@ -35,14 +35,16 @@
             throw new DOMException('ImageBitmap exceeds the bitmap budget', 'NotSupportedError');
         return new ImageBitmap(imageBitmapToken, width, height, pixels, premultiplied, pixels16, originClean);
     };
-    const canvasBitmapSnapshot = (canvas, allowTainted = false) => {
+    const canvasBitmapSnapshot = (canvas, allowTainted = false, copy = true) => {
         const state = stateForCanvas(canvas);
         const output = state.placeholder ? stateForCanvas(state.placeholder) : state;
         if (!allowTainted && output.originClean === false)
             throw new DOMException('Canvas bitmap is not origin-clean', 'SecurityError');
         if (!output.pixels || !output.width || !output.height)
             throw new DOMException('Canvas has no available bitmap', 'InvalidStateError');
-        return { width: output.width, height: output.height, pixels: new canvasPrivatePixelArray(output.pixels), originClean: output.originClean !== false };
+        return { width: output.width, height: output.height,
+            pixels: copy ? new canvasPrivatePixelArray(output.pixels) : output.pixels,
+            originClean: output.originClean !== false };
     };
     const canvasSourceWeakGet = Function.call.bind(WeakMap.prototype.get);
     const canvasSourceWeakHas = Function.call.bind(WeakMap.prototype.has);

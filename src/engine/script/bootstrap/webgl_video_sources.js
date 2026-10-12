@@ -9,8 +9,12 @@
         if (!snapshot) throw new DOMException('Video has no current frame','InvalidStateError');
         return {width:snapshot[0],height:snapshot[1],pixels:snapshot[2]};
     };
-    const webGlSourceSnapshot = (context,source) => {
+    const webGlSourceSnapshot = (context,source,borrowCanvas = false) => {
         try {
+            // Only the callback-free RGBA8 row packer borrows private Canvas
+            // storage. It copies the selected rows before returning/queuing.
+            if (borrowCanvas && (canvasSourceSetHas(offscreenCanvasBrands,source) ||
+                canvasSourceElement(source,'canvas'))) return canvasBitmapSnapshot(source,false,false);
             return webGlIsVideoSource(source) ? webGlVideoSnapshot(source) : imageSourceSnapshot(source,true);
         } catch (error) {
             // WebGL's DOM upload contract uses GL errors for unavailable/detached

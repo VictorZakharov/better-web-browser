@@ -12,6 +12,8 @@
 ## Shared-machine resources and performance work
 
 - This workstation also runs other agents. Default local Cargo builds to four jobs, and run heavy builds and full suites sequentially unless the user requests otherwise. Keep native GPU and automated browser suites to one local worker. Do not terminate another agent's processes or the user's browsers to obtain cleaner measurements.
+- During development, run focused tests for the changed responsibilities instead of repeatedly running unrelated suites. Run the full local verification gate once the implementation is ready for a PR; use focused tests to repair any failure before repeating that final gate.
+- Use `scripts/run-impacted-tests.ps1` to inspect responsibility-based test selection during iteration. Keep its ownership/dependent-consumer map and isolated contract tests current as modules split; shared coordinators and unknown changes must select broader coverage, never a guessed safe subset. This local selector does not reduce the final pre-PR verification gate or change CI.
 - Optimize measured slow commands with small reproducible workloads, not a live application's end-to-end loading clock. Validate actual results/pixels and preserve ordering, ownership and error behavior. Keep the unchanged application as a separate functionality check.
 - Run timing comparisons without this agent's builds or heavy suites overlapping; rotate sequential candidate/reference order and retain individual samples and ranges. Other agents still affect scheduling, so do not silently discard busy-machine outliers or present elapsed time as isolated CPU cost.
 
