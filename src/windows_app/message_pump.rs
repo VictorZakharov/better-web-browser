@@ -84,6 +84,7 @@ pub(super) unsafe fn run(app: &BrowserApplication) -> Result<(), String> {
         scrolling::frame_service::flush_for_message(app, message.hwnd);
         runtime::flush_due_for_message(app, message.hwnd);
         video_presentation::flush_for_message(app, message.hwnd);
+        paint_service::flush_for_message(app, message.hwnd);
     }
     Ok(())
 }

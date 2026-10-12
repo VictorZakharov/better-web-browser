@@ -15,6 +15,26 @@ impl Summary {
 }
 pub(in crate::windows_app::painting) struct ImageTiming(Option<(Instant, Summary)>);
 impl ImageTiming {
+    pub(in crate::windows_app::painting) fn native(
+        source: [u32; 2],
+        dc: crate::windows_app::platform::Hdc,
+        destination: crate::windows_app::platform::Rect,
+        opaque: bool,
+        kind: &'static str,
+    ) -> Self {
+        if ACTIVE.get().is_none() {
+            return Self(None);
+        }
+        let bounds =
+            unsafe { crate::windows_app::painting::affine::device_bounds(dc, destination) };
+        Self::start(
+            source,
+            [bounds.width().max(0) as u32, bounds.height().max(0) as u32],
+            opaque,
+            kind,
+        )
+    }
+
     pub(in crate::windows_app::painting) fn start(
         source: [u32; 2],
         destination: [u32; 2],

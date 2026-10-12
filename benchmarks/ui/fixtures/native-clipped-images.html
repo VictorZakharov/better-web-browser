@@ -1,0 +1,46 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Native clipped image workload</title>
+<style>
+body{margin:0;background:#243448;color:white;font:14px Arial,sans-serif}
+main{display:flex;gap:24px;padding:30px}
+.viewport{position:relative;width:240px;height:140px;overflow:hidden;border-radius:13px;border:2px solid #bce}
+.field{position:absolute;inset:0;opacity:.8}
+.sprite{position:absolute;width:125px;height:75px}
+.reflected{transform:translateX(240px) scaleX(-1);transform-origin:0 0}
+.hidden{position:absolute;left:900px;top:700px;width:120px;height:100px;opacity:.7;mask-image:linear-gradient(black,transparent)}
+.hidden div{transform:rotate(13deg);background:linear-gradient(#d85b,#743c);width:120px;height:100px}
+output{display:block;padding:30px}
+canvas{position:absolute;left:550px;top:30px;width:8px;height:8px}
+</style>
+<main>
+ <section class="viewport"><div class="field" id="normal"></div></section>
+ <section class="viewport"><div class="field reflected" id="reflected"></div></section>
+</main>
+<output id="result">Rendering original sprite images</output>
+<canvas id="tick" width="8" height="8"></canvas>
+<script>
+const images=[];
+for(const id of ['normal','reflected']){
+ const field=document.getElementById(id);
+ field.innerHTML=Array.from({length:177},(_,index)=>`<svg class="sprite" style="left:${index%20*148}px;top:${Math.floor(index/20)*93}px" xmlns="http://www.w3.org/2000/svg" width="31" height="23" viewBox="0 0 31 23"><rect width="31" height="23" rx="7" fill="#ffd080" fill-opacity=".45"/><path d="M4 19L15 3L27 19Z" fill="#80dcff" fill-opacity=".75"/></svg>`).join('');
+ images.push(...field.querySelectorAll('svg'));
+ const hidden=document.createElement('div');hidden.className='hidden';
+ hidden.append(document.createElement('div'));field.append(hidden);
+}
+document.fonts.ready.then(()=>{
+ if(images.length!==354||images.some(img=>img.getBoundingClientRect().width!==125||img.getBoundingClientRect().height!==75))throw Error('Sprite geometry mismatch');
+ const normal=document.getElementById('normal').getBoundingClientRect();
+ if(normal.width!==240||normal.height!==140)throw Error('Clip changed logical geometry');
+ const context=document.getElementById('tick').getContext('2d');
+ let frames=0;
+ function tick(){
+  context.fillStyle=++frames===32?'#00ff00':frames%2?'#ff0000':'#0000ff';
+  context.fillRect(0,0,8,8);
+  if(frames<32){requestAnimationFrame(tick);return;}
+  document.getElementById('result').textContent='354 SVG images; two rounded overflow clips; reflection; hidden nested mask/transform';
+  document.title='done native clipped images: 354 SVGs, logical geometry retained';
+ }
+ requestAnimationFrame(tick);
+}).catch(error=>{document.title='failed '+error.message;throw error;});
+</script>

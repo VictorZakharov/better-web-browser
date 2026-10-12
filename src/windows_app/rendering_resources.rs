@@ -6,7 +6,7 @@ mod images;
 use super::*;
 
 pub(super) use glyphs::GlyphBitmaps;
-pub(super) use images::ImageBitmaps;
+pub(super) use images::{ImageBitmaps, Reflection};
 
 #[derive(Clone, Copy)]
 pub(super) enum FontKind {

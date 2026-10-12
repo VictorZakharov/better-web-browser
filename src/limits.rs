@@ -134,6 +134,8 @@ pub const MAX_QUEUED_BROWSER_WRITES: usize = 4_096;
 /// Valid native input retained per tab while the renderer command pipe applies backpressure.
 /// This is deliberately no larger than the broker command channel so a stalled renderer cannot
 /// make browser-owned memory grow with the rate of Windows input messages.
+/// The shell separately reserves at most 256 key-release slots for accepted
+/// physical presses; those terminal events must survive ordinary backpressure.
 pub const MAX_PENDING_RENDERER_INPUTS: usize = MAX_QUEUED_BROWSER_COMMANDS;
 pub const MAX_QUEUED_RENDERER_IPC_MESSAGES: usize = 8;
 pub const MAX_QUEUED_RENDERER_EVENTS: usize = 256;

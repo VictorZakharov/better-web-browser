@@ -1,11 +1,32 @@
 //! Bounded browser-to-renderer input delivery and deferred History retry.
 
 use super::*;
-use crate::windows_app::renderer_input_queue::PendingRendererInputs;
+use crate::windows_app::renderer_input_queue::{KeyboardAdmission, PendingRendererInputs};
 use better_web_browser::limits::MAX_QUEUED_BROWSER_COMMANDS;
 
 impl BrowserState {
     pub(in crate::windows_app) fn submit_renderer_input(&mut self, input: DocumentInput) -> bool {
+        if let Err(error) = input.validate() {
+            unsafe {
+                self.contain_page_engine_failure(
+                    self.id,
+                    format!("invalid document input: {error}"),
+                );
+            }
+            return false;
+        }
+        let keyboard = KeyboardAdmission::from_input(&input);
+        if !self
+            .pending_renderer_inputs
+            .can_accept_keyboard(keyboard.as_ref())
+        {
+            unsafe {
+                self.set_status(
+                    "Too many held keys; this press was not accepted. Release a key and try again.",
+                );
+            }
+            return false;
+        }
         if let DocumentInput::Wheel(wheel) = &input
             && self.navigation.owns_document(wheel.document)
         {
@@ -27,13 +48,11 @@ impl BrowserState {
                 .ok_or_else(|| "renderer session is unavailable".to_string())
                 .and_then(|session| session.try_send_input_retained(input))
         } else {
-            input
-                .validate()
-                .map_err(|error| error.to_string())
-                .map(|()| Some(input))
+            Ok(Some(input))
         };
         match result {
             Ok(None) => {
+                self.pending_renderer_inputs.note_direct_keyboard(keyboard);
                 self.pending_renderer_inputs.note_sent(move_key);
                 self.note_renderer_input_activity();
                 true
@@ -81,32 +100,37 @@ impl BrowserState {
                     break;
                 };
                 if !tab.navigation.owns_document(input.document()) {
+                    tab.pending_renderer_inputs
+                        .note_delivered(input.document(), input.sequence());
                     made_room = true;
                     continue;
                 }
                 let move_key = PendingRendererInputs::move_key(&input);
+                let input_key = (input.document(), input.sequence());
                 let result = tab
                     .renderer_session
                     .as_ref()
                     .ok_or_else(|| "renderer session is unavailable".to_string())
                     .and_then(|session| session.try_send_input_retained(input));
-                (result, move_key)
+                (result, move_key, input_key)
             };
             match delivery {
-                (Ok(None), move_key) => {
+                (Ok(None), move_key, input_key) => {
                     if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.pending_renderer_inputs
+                            .note_delivered(input_key.0, input_key.1);
                         tab.pending_renderer_inputs.note_sent(move_key);
                     }
                     made_room = true;
                 }
-                (Ok(Some(input)), _) => {
+                (Ok(Some(input)), _, _) => {
                     if let Some(tab) = self.tabs.get_mut(id) {
                         tab.pending_renderer_inputs.restore_front(input);
                         tab.renderer_input_poll_budget = RENDERER_INPUT_POLL_BUDGET;
                     }
                     break;
                 }
-                (Err(error), _) => {
+                (Err(error), _, _) => {
                     self.contain_page_engine_failure(
                         id,
                         format!("could not deliver document input: {error}"),

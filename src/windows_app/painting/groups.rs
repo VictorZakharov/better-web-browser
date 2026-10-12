@@ -69,6 +69,15 @@ impl PaintGroups {
             }
             _ => None,
         };
+        if bounds.is_some_and(|bounds| {
+            !super::visibility::drawable(
+                dc,
+                super::super::paint_primitives::screen_rect(bounds, scroll_y, toolbar, scale),
+            )
+        }) {
+            self.skipped = 1;
+            return true;
+        }
         let bytes = bounds
             .and_then(|bounds| {
                 super::opacity::intersection(
@@ -165,3 +174,6 @@ impl Drop for PaintGroups {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

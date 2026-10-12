@@ -28,6 +28,7 @@ mod page_controls;
 mod page_crash;
 mod paint_index;
 mod paint_primitives;
+mod paint_service;
 mod painting;
 mod performance_monitor;
 mod permissions;

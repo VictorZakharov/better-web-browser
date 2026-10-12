@@ -348,6 +348,7 @@ fn transparent_images_follow_the_affine_destination_without_double_alpha() {
         super::super::images::paint(
             &item,
             groups.dc(surface.dc),
+            null_mut(),
             &images,
             &mut bitmaps,
             0,

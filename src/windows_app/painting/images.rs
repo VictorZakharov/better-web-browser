@@ -4,11 +4,13 @@ use crate::windows_app::paint_primitives::{image_rect, paint_alpha_image};
 use crate::windows_app::rendering_resources::{Fonts, ImageBitmaps};
 use better_web_browser::engine::DecodedImage;
 use std::collections::HashMap;
+mod reflected;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) unsafe fn paint(
     item: &DisplayItem,
     dc: Hdc,
+    source_dc: Hdc,
     images: &HashMap<String, DecodedImage>,
     bitmaps: &mut ImageBitmaps,
     scroll_y: i32,
@@ -48,6 +50,12 @@ pub(super) unsafe fn paint(
     if saved == Some(0) {
         return;
     }
+    if !super::visibility::drawable(dc, screen_rect(*rect, scroll_y, toolbar_height, scale)) {
+        if let Some(saved) = saved {
+            RestoreDC(dc, saved);
+        }
+        return;
+    }
     if let Some(image) = images.get(url) {
         let bitmap = if let Some(color) = tint {
             bitmaps.get_or_create_tinted(
@@ -62,15 +70,10 @@ pub(super) unsafe fn paint(
         if !bitmap.is_null() {
             let opaque = tint.is_none() && bitmaps.is_opaque(url);
             let destination = image_rect(*rect, screen_y, scale);
-            let device_sampling = (tint.is_none() && !opaque)
-                .then(|| super::affine::ScaledDestination::new(dc, destination))
-                .flatten();
-            let destination = device_sampling
-                .as_ref()
-                .map_or(destination, |plan| plan.rect());
-            let _timing = profile::ImageTiming::start(
+            let _timing = profile::ImageTiming::native(
                 [image.width, image.height],
-                [destination.width() as u32, destination.height() as u32],
+                dc,
+                destination,
                 opaque,
                 if url.starts_with("breeze-css-paint:") {
                     "css-paint"
@@ -80,6 +83,21 @@ pub(super) unsafe fn paint(
                     "image"
                 },
             );
+            if tint.is_none()
+                && !opaque
+                && reflected::paint(dc, source_dc, bitmap, url, image, destination, bitmaps)
+            {
+                if let Some(saved) = saved {
+                    RestoreDC(dc, saved);
+                }
+                return;
+            }
+            let device_sampling = (tint.is_none() && !opaque)
+                .then(|| super::affine::ScaledDestination::new(dc, destination))
+                .flatten();
+            let destination = device_sampling
+                .as_ref()
+                .map_or(destination, |plan| plan.rect());
             let coverage = tint
                 .is_none()
                 .then(|| bitmaps.sparse_coverage(url, image, &destination))
@@ -91,16 +109,18 @@ pub(super) unsafe fn paint(
             };
             if let Some(scaled) = scaled {
                 let sparse = scaled.coverage.as_deref().is_some_and(|coverage| {
-                    crate::windows_app::paint_primitives::paint_sparse_bitmap(
+                    crate::windows_app::paint_primitives::paint_sparse_bitmap_from_dc(
                         dc,
+                        source_dc,
                         scaled.handle,
                         &destination,
                         coverage,
                     )
                 });
                 if !sparse {
-                    crate::windows_app::paint_primitives::paint_alpha_bitmap_size(
+                    crate::windows_app::paint_primitives::paint_alpha_bitmap_from_dc(
                         dc,
+                        source_dc,
                         scaled.handle,
                         destination.width() as u32,
                         destination.height() as u32,
@@ -108,7 +128,15 @@ pub(super) unsafe fn paint(
                     );
                 }
             } else {
-                paint_alpha_image(dc, bitmap, image, &destination, opaque, coverage.as_deref());
+                paint_alpha_image(
+                    dc,
+                    source_dc,
+                    bitmap,
+                    image,
+                    &destination,
+                    opaque,
+                    coverage.as_deref(),
+                );
             }
         }
     } else if !alt.is_empty()

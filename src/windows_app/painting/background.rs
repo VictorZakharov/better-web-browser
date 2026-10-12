@@ -8,6 +8,7 @@ use std::collections::HashMap;
 pub(super) unsafe fn paint(
     item: &DisplayItem,
     dc: Hdc,
+    source_dc: Hdc,
     images: &HashMap<String, DecodedImage>,
     bitmaps: &mut ImageBitmaps,
     scroll_y: i32,
@@ -26,7 +27,11 @@ pub(super) unsafe fn paint(
         return;
     };
     let clip = screen_rect(*clip_rect, scroll_y, toolbar_height, scale);
-    if !intersects(&clip, content) || tile_rect.width <= 0.0 || tile_rect.height <= 0.0 {
+    if !intersects(&clip, content)
+        || tile_rect.width <= 0.0
+        || tile_rect.height <= 0.0
+        || !super::visibility::drawable(dc, clip)
+    {
         return;
     }
     if let Some(image) = images.get(url) {
@@ -34,6 +39,7 @@ pub(super) unsafe fn paint(
         if !bitmap.is_null() {
             paint_background_image(
                 dc,
+                source_dc,
                 bitmap,
                 image,
                 *clip_rect,

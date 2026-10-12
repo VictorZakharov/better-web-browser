@@ -2,6 +2,9 @@
 //! AlphaBlend's sampling is not interchangeable with StretchBlt for alpha images.
 use super::*;
 use std::collections::VecDeque;
+mod raster;
+mod reflection;
+pub(in crate::windows_app) use reflection::Reflection;
 
 const MAX_BYTES: usize = 64 * 1024 * 1024;
 // The byte limit remains the primary bound. A 32-entry admission history
@@ -33,11 +36,21 @@ struct Key {
     source: String,
     width: i32,
     height: i32,
+    reflection: Option<Reflection>,
 }
 
 impl Key {
-    fn matches(&self, source: &str, width: i32, height: i32) -> bool {
-        self.source == source && self.width == width && self.height == height
+    fn matches(
+        &self,
+        source: &str,
+        width: i32,
+        height: i32,
+        reflection: Option<Reflection>,
+    ) -> bool {
+        self.source == source
+            && self.width == width
+            && self.height == height
+            && self.reflection == reflection
     }
 }
 
@@ -98,7 +111,7 @@ impl Cache {
         if let Some(index) = self
             .entries
             .iter()
-            .position(|v| v.key.matches(key, width, height))
+            .position(|v| v.key.matches(key, width, height, None))
         {
             let entry = self.entries.remove(index)?;
             let result = ScaledImage::from_bitmap(&entry.bitmap);
@@ -107,36 +120,59 @@ impl Cache {
         }
         // One-shot paints and Canvas surfaces updated every frame should not pay
         // allocation/resampling twice. A second identical request admits a variant.
-        let Some(index) = self
+        let index = self
             .pending
             .iter()
-            .position(|v| v.matches(key, width, height))
-        else {
+            .position(|v| v.matches(key, width, height, None));
+        self.admit_pending(index, key, width, height, None)?;
+        self.make_room(bytes)?;
+        let bitmap = unsafe { raster::resample(source, image, width, height, bytes, dc, None) }?;
+        let result = ScaledImage::from_bitmap(&bitmap);
+        self.bytes += bytes;
+        self.entries.push_back(Variant {
+            key: Key {
+                source: key.into(),
+                width,
+                height,
+                reflection: None,
+            },
+            bitmap,
+        });
+        Some(result)
+    }
+
+    fn admit_pending(
+        &mut self,
+        index: Option<usize>,
+        source: &str,
+        width: i32,
+        height: i32,
+        reflection: Option<Reflection>,
+    ) -> Option<()> {
+        let Some(index) = index else {
             if self.pending.len() == self.pending_limit {
                 self.pending.pop_front();
             }
             self.pending.push_back(Key {
-                source: key.into(),
+                source: source.into(),
                 width,
                 height,
+                reflection,
             });
             return None;
         };
-        let pending = self.pending.remove(index)?;
+        self.pending.remove(index)?;
+        Some(())
+    }
+
+    fn make_room(&mut self, bytes: usize) -> Option<()> {
         while self.bytes.saturating_add(bytes) > self.byte_limit
             || self.entries.len() >= self.entry_limit
         {
             let retired = self.entries.pop_front()?;
             self.bytes -= retired.bitmap.bytes;
         }
-        let bitmap = unsafe { resample(source, image, width, height, bytes, dc) }?;
-        let result = ScaledImage::from_bitmap(&bitmap);
-        self.bytes += bytes;
-        self.entries.push_back(Variant {
-            key: pending,
-            bitmap,
-        });
-        Some(result)
+        Some(())
     }
 
     pub(super) fn remove(&mut self, source: &str) {
@@ -166,98 +202,6 @@ unsafe fn local_resampling_matches_device(dc: Hdc) -> bool {
         && matrix.eM12 == 0.0
         && matrix.eM21 == 0.0
         && matrix.eM22 == 1.0
-}
-
-unsafe fn resample(
-    source: Hbitmap,
-    image: &DecodedImage,
-    width: i32,
-    height: i32,
-    bytes: usize,
-    dc: Hdc,
-) -> Option<Bitmap> {
-    unsafe {
-        let mut info = bitmap_info(image);
-        info.header.width = width;
-        info.header.height = -height;
-        info.header.size_image = bytes as u32;
-        let mut bits = null_mut();
-        let handle = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &mut bits, null_mut(), 0);
-        if handle.is_null() {
-            return None;
-        }
-        let Some(pixels) = NonNull::new(bits.cast::<u8>()) else {
-            DeleteObject(handle);
-            return None;
-        };
-        let mut bitmap = Bitmap {
-            handle,
-            pixels,
-            width: width as u32,
-            height: height as u32,
-            bytes,
-            opaque: false,
-            coverage: None,
-        };
-        // A zero destination preserves all premultiplied source channels while
-        // applying exactly the old AlphaBlend sampling, including fractional DPI.
-        std::ptr::write_bytes(pixels.as_ptr(), 0, bytes);
-        let source_dc = CreateCompatibleDC(dc);
-        let target_dc = CreateCompatibleDC(dc);
-        if source_dc.is_null() || target_dc.is_null() {
-            if !source_dc.is_null() {
-                DeleteDC(source_dc);
-            }
-            if !target_dc.is_null() {
-                DeleteDC(target_dc);
-            }
-            return None;
-        }
-        let old_source = SelectObject(source_dc, source);
-        let old_target = SelectObject(target_dc, handle);
-        let selected = |previous: Hgdiobj| !previous.is_null() && previous as isize != -1;
-        let ok = selected(old_source)
-            && selected(old_target)
-            && AlphaBlend(
-                target_dc,
-                0,
-                0,
-                width,
-                height,
-                source_dc,
-                0,
-                0,
-                image.width as i32,
-                image.height as i32,
-                BlendFunction {
-                    operation: 0,
-                    flags: 0,
-                    source_constant_alpha: 255,
-                    alpha_format: 1,
-                },
-            ) != 0
-            && GdiFlush() != 0;
-        if selected(old_source) {
-            SelectObject(source_dc, old_source);
-        }
-        if selected(old_target) {
-            SelectObject(target_dc, old_target);
-        }
-        DeleteDC(source_dc);
-        DeleteDC(target_dc);
-        if !ok {
-            return None;
-        }
-        // Immutable source pixels have just been synchronized. Derive conservative
-        // coverage once; drawing must use the resampled extent, not the old mask.
-        let pixels = std::slice::from_raw_parts(bitmap.pixels.as_ptr(), bytes);
-        bitmap.coverage = Some(super::coverage::derive_bytes(
-            width as u32,
-            height as u32,
-            pixels,
-        ));
-        Some(bitmap)
-    }
 }
 
 #[cfg(test)]
