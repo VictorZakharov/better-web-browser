@@ -95,8 +95,8 @@ fn native_axis_world_transform_flattening_preserves_every_destination_byte() {
     }
 }
 
-struct DeviceTarget {
-    dc: Hdc,
+pub(super) struct DeviceTarget {
+    pub(super) dc: Hdc,
     bitmap: Hbitmap,
     previous: Hgdiobj,
     width: u32,
@@ -104,7 +104,7 @@ struct DeviceTarget {
 }
 
 impl DeviceTarget {
-    unsafe fn new(width: u32, height: u32) -> Self {
+    pub(super) unsafe fn new(width: u32, height: u32) -> Self {
         let display = GetDC(null_mut());
         assert!(!display.is_null());
         let dc = CreateCompatibleDC(display);
@@ -132,7 +132,7 @@ impl DeviceTarget {
         }
     }
 
-    unsafe fn pixels(&self) -> Vec<u8> {
+    pub(super) unsafe fn pixels(&self) -> Vec<u8> {
         let target = Target::new(&image(self.width, self.height, [0; 4]));
         let saved = SaveDC(self.dc);
         let identity = XFORM {

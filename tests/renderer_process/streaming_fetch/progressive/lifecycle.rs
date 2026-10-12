@@ -1,4 +1,7 @@
 use super::*;
+use better_web_browser::renderer_protocol::{
+    DocumentInput, InputModifiers, KeyPhase, KeyboardInput,
+};
 
 fn aborted(session: &RendererSession, document: DocumentId, id: u64) {
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -82,7 +85,7 @@ fn worker_termination_cancels_streaming_bodies_and_pending_entry_scripts() {
             186,
             "<div id='status'>pending</div><script>const w = new Worker('/worker.js');
              w.onmessage=e=>{ document.querySelector('#status').textContent=e.data; };
-             setTimeout(()=>w.terminate(), 2000);</script>",
+             document.addEventListener('keydown',()=>w.terminate());</script>",
         );
         if !entry_pending {
             serve_worker(
@@ -97,8 +100,20 @@ fn worker_termination_cancels_streaming_bodies_and_pending_entry_scripts() {
         if !entry_pending {
             text(&session, initial.document, "headers");
         }
+        // Awaiting worker startup advances virtual time. A timer could terminate
+        // the worker before this test reached its active-stream case. Trigger
+        // termination only after the pending entry/response is actually observed.
         session
-            .advance_time(initial.document, Duration::from_millis(2200), 32)
+            .send_input(DocumentInput::Keyboard(KeyboardInput {
+                document: initial.document,
+                sequence: 1,
+                phase: KeyPhase::Down,
+                key: "Escape".into(),
+                code: "Escape".into(),
+                repeat: false,
+                modifiers: InputModifiers::default(),
+                target: None,
+            }))
             .unwrap();
         aborted(&session, initial.document, id);
         assert!(

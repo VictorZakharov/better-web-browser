@@ -9,6 +9,7 @@ impl BrowserState {
         if window_dc.is_null() {
             return;
         }
+        self.paint_opportunity.clear();
         let mut client: Rect = std::mem::zeroed();
         GetClientRect(self.window, &mut client);
         let dirty = if paint.paint.width() > 0 && paint.paint.height() > 0 {

@@ -2,13 +2,19 @@
 use super::*;
 use windows_sys::Win32::Graphics::Gdi::{COLORONCOLOR, SetStretchBltMode, StretchBlt};
 
-pub(super) unsafe fn paint(
+pub(super) unsafe fn paint_from_dc(
     destination: Hdc,
+    source: Hdc,
     bitmap: Hbitmap,
     image: &DecodedImage,
     rect: &Rect,
 ) -> bool {
-    let source = CreateCompatibleDC(destination);
+    let owned_source = source.is_null();
+    let source = if owned_source {
+        CreateCompatibleDC(destination)
+    } else {
+        source
+    };
     if source.is_null() {
         return false;
     }
@@ -41,6 +47,8 @@ pub(super) unsafe fn paint(
     if valid_selection {
         SelectObject(source, previous_bitmap);
     }
-    DeleteDC(source);
+    if owned_source {
+        DeleteDC(source);
+    }
     copied
 }

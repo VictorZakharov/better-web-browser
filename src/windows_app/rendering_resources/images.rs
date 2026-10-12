@@ -6,6 +6,7 @@ use windows_sys::Win32::Graphics::Gdi::GdiFlush;
 mod coverage;
 mod opacity;
 mod scaled;
+pub(in crate::windows_app) use scaled::Reflection;
 
 struct Bitmap {
     handle: Hbitmap,
@@ -99,6 +100,16 @@ pub(in crate::windows_app) struct ImageBitmaps {
 }
 
 impl ImageBitmaps {
+    pub(in crate::windows_app) unsafe fn reflected_image(
+        &mut self,
+        key: &str,
+        image: &DecodedImage,
+        bitmap: Hbitmap,
+        reflection: Reflection,
+        dc: Hdc,
+    ) -> Option<scaled::ScaledImage> {
+        unsafe { self.scaled.reflected(key, image, bitmap, reflection, dc) }
+    }
     pub(in crate::windows_app) unsafe fn scaled_image(
         &mut self,
         key: &str,

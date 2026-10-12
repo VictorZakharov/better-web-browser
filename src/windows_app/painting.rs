@@ -10,6 +10,7 @@ mod masking;
 mod opacity;
 pub(in crate::windows_app) mod profile;
 mod solid;
+mod visibility;
 
 use super::paint_primitives::{
     draw_text_in_rect, fill_color_rect, fill_color_shape, intersects, paint_alpha_bitmap,
@@ -273,6 +274,7 @@ impl BrowserState {
                             DisplayItem::Image { .. } => images::paint(
                                 item,
                                 item_dc,
+                                glyph_source_dc,
                                 &tab.presented_images,
                                 &mut tab.image_bitmaps,
                                 tab.scroll_y,
@@ -284,6 +286,7 @@ impl BrowserState {
                             DisplayItem::BackgroundImage { .. } => background::paint(
                                 item,
                                 item_dc,
+                                glyph_source_dc,
                                 &tab.presented_images,
                                 &mut tab.image_bitmaps,
                                 tab.scroll_y,

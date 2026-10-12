@@ -5,6 +5,8 @@ use better_web_browser::renderer_protocol::{
     DocumentId, DocumentInput, PointerCursorResult, PointerPhase,
 };
 use std::collections::VecDeque;
+mod keyboard;
+pub(super) use keyboard::Admission as KeyboardAdmission;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum QueueResult {
@@ -17,9 +19,23 @@ pub(super) enum QueueResult {
 pub(super) struct PendingRendererInputs {
     inputs: VecDeque<DocumentInput>,
     move_in_flight: Option<(DocumentId, u64)>,
+    keyboard: keyboard::Reservations,
 }
 
 impl PendingRendererInputs {
+    pub(super) fn can_accept_keyboard(&self, admission: Option<&KeyboardAdmission>) -> bool {
+        admission.is_none_or(|key| self.keyboard.can_accept(key))
+    }
+
+    pub(super) fn note_direct_keyboard(&mut self, admission: Option<KeyboardAdmission>) {
+        if let Some(key) = admission {
+            self.keyboard.accepted(key, false);
+        }
+    }
+
+    pub(super) fn note_delivered(&mut self, document: DocumentId, sequence: u64) {
+        self.keyboard.delivered(document, sequence);
+    }
     // Coalescing only after a full command channel is too late: its writer may have
     // already copied many expensive mousemoves into the pipe. Keep one ordinary
     // move in flight and the latest unsent position, with discrete FIFO barriers.
@@ -104,8 +120,22 @@ impl PendingRendererInputs {
             self.inputs.push_back(input);
             return QueueResult::Coalesced;
         }
-        if self.inputs.len() == MAX_PENDING_RENDERER_INPUTS {
+        let admission = KeyboardAdmission::from_input(&input);
+        let reserved_release = admission
+            .as_ref()
+            .is_some_and(|key| self.keyboard.owes_release(key));
+        let ordinary = self
+            .inputs
+            .iter()
+            .filter(|input| !self.keyboard.is_reserved(input))
+            .count();
+        if !self.can_accept_keyboard(admission.as_ref())
+            || (!reserved_release && ordinary >= MAX_PENDING_RENDERER_INPUTS)
+        {
             return QueueResult::Full;
+        }
+        if let Some(key) = admission {
+            self.keyboard.accepted(key, true);
         }
         self.inputs.push_back(input);
         QueueResult::Queued
@@ -119,13 +149,16 @@ impl PendingRendererInputs {
     }
 
     pub(super) fn restore_front(&mut self, input: DocumentInput) {
-        debug_assert!(self.inputs.len() < MAX_PENDING_RENDERER_INPUTS);
+        // A popped reserved release still owns its slot until broker admission;
+        // a failed retry restores the same event without spending another slot.
+        debug_assert!(self.inputs.len() < MAX_PENDING_RENDERER_INPUTS + keyboard::MAX_RESERVATIONS);
         self.inputs.push_front(input);
     }
 
     pub(super) fn clear(&mut self) {
         self.inputs.clear();
         self.move_in_flight = None;
+        self.keyboard.clear();
     }
 
     pub(super) fn discard_native_text_generation(

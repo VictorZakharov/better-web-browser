@@ -20,7 +20,9 @@ pub(super) unsafe fn paint(
         return;
     }
     let rect = screen_rect(bounds, scroll_y, toolbar_height, scale);
-    if !intersects(&super::affine::device_bounds(dc, rect), content) {
+    if !intersects(&super::affine::device_bounds(dc, rect), content)
+        || !super::visibility::drawable(dc, rect)
+    {
         return;
     }
     if color.alpha == 255 {

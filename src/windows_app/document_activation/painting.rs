@@ -33,7 +33,11 @@ impl BrowserState {
                 );
                 InvalidateRect(self.window, &dirty, 0);
             }
-            UpdateWindow(self.window);
+            if first_presentation {
+                UpdateWindow(self.window);
+            } else {
+                self.paint_opportunity.request(Instant::now());
+            }
             self.paint_benchmark_native_presentation();
             if first_presentation && let Some(benchmark) = self.benchmark.as_mut() {
                 benchmark.paint_time = paint_started.elapsed();

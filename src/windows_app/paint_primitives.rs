@@ -6,7 +6,9 @@ mod border;
 mod opaque;
 mod sparse;
 pub(super) use border::{paint_border, paint_border_colors};
+#[cfg(test)]
 pub(super) use sparse::paint as paint_sparse_bitmap;
+pub(super) use sparse::paint_from_dc as paint_sparse_bitmap_from_dc;
 
 pub(super) fn screen_rect(rect: RectF, scroll_y: i32, content_top: i32, scale: f32) -> Rect {
     Rect {
@@ -38,6 +40,7 @@ pub(super) fn bitmap_info(image: &DecodedImage) -> BitmapInfo {
 
 pub(super) unsafe fn paint_alpha_image(
     destination: Hdc,
+    source: Hdc,
     bitmap: Hbitmap,
     image: &DecodedImage,
     destination_rect: &Rect,
@@ -45,12 +48,19 @@ pub(super) unsafe fn paint_alpha_image(
     coverage: Option<&[Rect]>,
 ) {
     if let Some(coverage) = coverage
-        && sparse::paint(destination, bitmap, destination_rect, coverage)
+        && sparse::paint_from_dc(destination, source, bitmap, destination_rect, coverage)
     {
         return;
     }
-    if !opaque || !opaque::paint(destination, bitmap, image, destination_rect) {
-        paint_alpha_bitmap(destination, bitmap, image, destination_rect);
+    if !opaque || !opaque::paint_from_dc(destination, source, bitmap, image, destination_rect) {
+        paint_alpha_bitmap_from_dc(
+            destination,
+            source,
+            bitmap,
+            image.width,
+            image.height,
+            destination_rect,
+        );
     }
 }
 
@@ -66,6 +76,7 @@ pub(super) fn image_rect(rect: RectF, screen_y: i32, scale: f32) -> Rect {
 #[allow(clippy::too_many_arguments)]
 pub(super) unsafe fn paint_background_image(
     destination: Hdc,
+    source: Hdc,
     bitmap: Hbitmap,
     image: &DecodedImage,
     clip_rect: RectF,
@@ -112,8 +123,17 @@ pub(super) unsafe fn paint_background_image(
                 height: tile_rect.height,
             };
             let destination_rect = screen_rect(tile, scroll_y, content_top, scale);
-            if !opaque || !opaque::paint(destination, bitmap, image, &destination_rect) {
-                paint_alpha_bitmap(destination, bitmap, image, &destination_rect);
+            if !opaque
+                || !opaque::paint_from_dc(destination, source, bitmap, image, &destination_rect)
+            {
+                paint_alpha_bitmap_from_dc(
+                    destination,
+                    source,
+                    bitmap,
+                    image.width,
+                    image.height,
+                    &destination_rect,
+                );
             }
             painted += 1;
             if !repeat_x || painted >= 4_096 {
@@ -183,7 +203,20 @@ pub(super) unsafe fn paint_alpha_bitmap_from_dc(
     source_height: u32,
     destination_rect: &Rect,
 ) {
+    if source.is_null() {
+        paint_alpha_bitmap_size(
+            destination,
+            bitmap,
+            source_width,
+            source_height,
+            destination_rect,
+        );
+        return;
+    }
     let previous = SelectObject(source, bitmap);
+    if previous.is_null() || previous as usize == usize::MAX {
+        return;
+    }
     AlphaBlend(
         destination,
         destination_rect.left,

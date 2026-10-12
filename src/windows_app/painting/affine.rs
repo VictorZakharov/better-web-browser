@@ -110,12 +110,12 @@ pub(in crate::windows_app) unsafe fn clip_rect(dc: Hdc, rect: Rect) -> bool {
     ok
 }
 
-pub(super) struct IdentityScope {
+pub(in crate::windows_app) struct IdentityScope {
     dc: Hdc,
     saved: i32,
 }
 impl IdentityScope {
-    pub(super) unsafe fn new(dc: Hdc) -> Option<Self> {
+    pub(in crate::windows_app) unsafe fn new(dc: Hdc) -> Option<Self> {
         let saved = SaveDC(dc);
         if saved == 0 {
             return None;
