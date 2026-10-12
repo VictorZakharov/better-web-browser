@@ -1,8 +1,6 @@
     // Solid paints and intrinsic color glyphs use the same native compositor as
     // other Canvas sources. Gradients/patterns retain the scalar paint resolver.
-    const canvasPaintGlyphs = (context, state, glyphs, paint, x, y, scale, inverse, stroke) => {
-        if (state.width*state.height < 256 || canvasIsGradient(paint) || canvasIsPattern(paint) ||
-            !paint.channels) return false;
+    const canvasGlyphPacket = (context, state, glyphs, x, y, scale) => {
         const packet = [];
         let regionLeft=state.width,regionTop=state.height,regionRight=0,regionBottom=0;
         for (const [left,top,width,height,color,data] of glyphs) {
@@ -15,6 +13,13 @@
                 regionRight=canvasPrivateMath.max(regionRight,bounds[2]);regionBottom=canvasPrivateMath.max(regionBottom,bounds[3]);
             }
         }
+        return {packet,bounds:[regionLeft,regionTop,regionRight,regionBottom]};
+    };
+    const canvasPaintGlyphs = (context, state, glyphs, paint, x, y, scale, inverse, stroke) => {
+        if (state.width*state.height < 256 || canvasIsGradient(paint) || canvasIsPattern(paint) ||
+            !paint.channels) return false;
+        const {packet,bounds:[regionLeft,regionTop,regionRight,regionBottom]} =
+            canvasGlyphPacket(context,state,glyphs,x,y,scale);
         if (!packet.length) return true;
         const regionWidth=regionRight-regionLeft,regionHeight=regionBottom-regionTop;
         if (!regionWidth||!regionHeight) return true;

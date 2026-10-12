@@ -19,6 +19,7 @@ pub(in crate::engine::script) fn painter(operation: &str) -> Option<Painter> {
         "canvasPaintGradientMask" => gradient_mask::paint_owned,
         "canvasPaintPatternMask" => pattern_mask::paint_owned,
         "canvasPaintGlyphs" => glyph_paint::paint_owned,
+        "canvasPaintGlyphShadow" => glyph_paint::shadow::paint_owned,
         "canvasPaintSolidMask" => solid_mask::paint_owned,
         "canvasPaintGradientPath" => gradient_mask::paint_path_owned,
         "canvasPaintPatternPath" => pattern_mask::paint_path_owned,

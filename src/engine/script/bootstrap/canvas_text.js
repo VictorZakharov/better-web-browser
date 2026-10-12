@@ -147,10 +147,12 @@
     Object.defineProperty(TextMetrics.prototype, Symbol.toStringTag, { value: 'TextMetrics' });
     globalThis.TextMetrics = TextMetrics;
 
-    const canvasTextPaint = function(text, x, y, maxWidth, stroke) {
+    const canvasTextPaint = function(text, x, y, maxWidth, stroke, preparation, shadow = false) {
         const state = stateForCanvas(this.canvas);
         if (!state.pixels || !Number.isFinite(x) || !Number.isFinite(y)) return;
-        const [width, ascent, descent, glyphs] = canvasTextRun(this, text, stroke);
+        const run = preparation?.run || canvasTextRun(this,text,stroke);
+        if (preparation) preparation.run = run;
+        const [width, ascent, descent, glyphs] = run;
         if (!glyphs.length) return;
         const scale = maxWidth === undefined || width <= maxWidth ? 1 : maxWidth / width;
         const shift = canvasTextShift(this, width) * scale;
@@ -158,6 +160,8 @@
         const inverse = matrixInverse2D(canvasDrawingState(this).transform);
         if (!inverse) return;
         const paint = stroke ? canvasDrawingState(this).stroke : canvasDrawingState(this).fill;
+        if (shadow) return canvasPaintGlyphShadow(this, state, glyphs, paint,
+            x+shift, y+baselineShift, scale, inverse, stroke);
         if (canvasPaintGlyphs(this, state, glyphs, paint, x+shift, y+baselineShift, scale, inverse, stroke))
             return;
         for (const [left, top, glyphWidth, glyphHeight, colorGlyph, data] of glyphs) {
@@ -184,6 +188,22 @@
             }
         }
     };
+    const canvasDrawText = (context, args) => {
+        const drawing = canvasDrawingState(context);
+        const paint = args[4] ? drawing.stroke : drawing.fill;
+        const shadow = drawing.shadowColor.channels[3] !== 0 &&
+            (drawing.shadowBlur !== 0 || drawing.shadowOffsetX !== 0 || drawing.shadowOffsetY !== 0);
+        if (shadow && !drawing.filterOperations.length &&
+            !canvasIsGradient(paint) && !canvasIsPattern(paint) && paint.channels &&
+            !canvasNeedsSourceLayer.has(drawing.compositeOperation)) {
+            // A native decline must not shape again or repeat author-observable
+            // text processing/font preparation before the ordinary fallback.
+            const shaped = [...args,{run:null}];
+            if (canvasPrivateApply(canvasTextPaint,context,[...shaped,true])) return;
+            return canvasCompositeSourceLayer(context,canvasTextPaint,shaped);
+        }
+        return canvasCompositeSourceLayer(context, canvasTextPaint, args);
+    };
     CanvasRenderingContext2D.prototype.fillText = function(text, x, y, maxWidth) {
         if (arguments.length < 3) throw new TypeError('fillText requires text and coordinates');
         text = canvasTextValue(text); x = +x; y = +y;
@@ -192,7 +212,7 @@
             if (!Number.isFinite(maxWidth) || maxWidth <= 0) return;
         }
         if (!text || !Number.isFinite(x) || !Number.isFinite(y)) return;
-        return canvasCompositeSourceLayer(this, canvasTextPaint, [text, x, y, maxWidth, false]);
+        return canvasDrawText(this, [text, x, y, maxWidth, false]);
     };
     CanvasRenderingContext2D.prototype.strokeText = function(text, x, y, maxWidth) {
         if (arguments.length < 3) throw new TypeError('strokeText requires text and coordinates');
@@ -202,6 +222,6 @@
             if (!Number.isFinite(maxWidth) || maxWidth <= 0) return;
         }
         if (!text || !Number.isFinite(x) || !Number.isFinite(y)) return;
-        return canvasCompositeSourceLayer(this, canvasTextPaint, [text, x, y, maxWidth, true]);
+        return canvasDrawText(this, [text, x, y, maxWidth, true]);
     };
     }

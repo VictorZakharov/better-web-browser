@@ -1,0 +1,31 @@
+# Canvas label-atlas command costs
+
+The October 12 Last Stand report shows a large new cost inside its `floaters` update stage (36.71 ms mean, 116 ms p95, 219.6 ms maximum). Inspection of the unchanged sibling application's source shows that this stage now includes painting updated labels into a 2048-by-1024 Canvas scratch bitmap and uploading small rectangles to its GPU atlas. Damage-meter labels repaint periodically after combat. That explains why a label-rendering cost can become more visible after playing; it does not establish an unbounded queue or a leak, or account for every slow frame.
+
+## Compact text shadows
+
+The previous text-shadow fallback allocated a full-size transparent source bitmap, transferred full source/destination bitmaps through the native bridge, scanned the source for shadow support and composited the full destination. Small label ink therefore incurred work proportional to the 8 MiB scratch bitmap on every shadowed `fillText` or `strokeText` call.
+
+The compact path reuses the existing shaped glyph packet, Gaussian implementation from the already-locked `image` dependency, and straight-alpha compositor. It rasterizes only the glyph rectangle, generates the translated shadow in whole-bitmap coordinates, and transfers only a conservatively bounded destination rectangle. Native validation rejects truncated shadow support, malformed packets and invalid storage before returning any pixels. No new dependency, retained per-label cache, author buffer alias, changed blur quality or application-specific branch is introduced.
+
+The [HTML drawing model](https://html.spec.whatwg.org/multipage/canvas.html#drawing-model) applies global alpha to the source before generating its shadow, then composites shadow and source separately, applying the drawing clip only at the final destination. The compact transaction preserves that order, glyph overlap, fractional geometry, transformed sampling and opaque-output behavior. Destructive operators, gradients/patterns and filters retain the existing full-layer route. This is an optimization of the existing raster contract, not a claim to resolve every off-bitmap/filter behavior.
+
+Raw `putImageData` writes and very faint ordinary painting can introduce hidden RGB under zero alpha. Skipping untouched rows must not change the existing dense compositor's normalization of those pixels. A bounded read-only native predicate checks the actual fixed bitmap without allocating/copying it, after preparing the request; hidden RGB retains the full-layer route. The predicate admits only genuine byte views of fixed, nonshared, nondetached storage, invokes no author code, returns only a boolean and keeps no handle or memory alias. Its x86-64 SSE2 scan and scalar tails match the same byte predicate; it still visits the bitmap, so this PR removes full-layer allocation/copy/compositing, not all large-bitmap reads.
+
+## Owned texture regions
+
+RGBA8 WebGL2 TexImageSource packing can read private Canvas storage synchronously, then copy only the selected rows into an independent upload allocation before returning or queueing the native command. Nothing author-visible borrows the bitmap. Other source kinds and pixel formats keep their snapshot/conversion paths, and `createImageBitmap` still owns its independent snapshot.
+
+The [WebGL2 source-selection contract](https://registry.khronos.org/webgl/specs/latest/2.0/) retains source-coordinate skips, layer gaps, image height, Y flip, origin-clean admission and pixel-unpack-buffer error precedence; DOM sources ignore `UNPACK_ROW_LENGTH` and `UNPACK_ALIGNMENT` and select rows using their own image width. Internal parameter reads and RGBA8 packing use captured intrinsics, not replaceable public methods/constructors/getters. Premultiplication uses the same byte result as `round(channel * alpha / 255)`; all 65,536 channel/alpha products are checked through actual framebuffer readback. Source repaint/reset after a queued upload cannot change its texture. Already-owned contiguous snapshots retain their view fast path instead of gaining a redundant full-image copy.
+
+## Measurement protocol
+
+Use [the command fixture](../benchmarks/ui/fixtures/canvas-label-atlas.html) through the existing owned loopback fixture server. Run Breeze with `scripts/run-hidden-benchmark.ps1` and the reference with the checked-in Chromium harness (`--headless`, `CreateNoWindow`); keep all profiles, JSON reports and screenshots on G:. The fixture finishes with a compact `done` title containing every individual timing sample, and a full JSON report in its `result` element.
+
+Each text timing includes a 220-by-64 `getImageData` after every draw, forcing deferred reference-browser work to complete. Each upload includes `finish`; framebuffer pixels, premultiplication, transparency and nonempty text are checked outside the upload clock. Partial-clear timing is reported separately and may include deferred recording in Chromium; it is not presented as completed raster work. Four blocks of 12 calls retain cold and warm samples; clears use 120 calls per block. Compare unchanged 256-by-96 and 2048-by-1024 source surfaces with the same 220-by-64 upload rectangle.
+
+Rotate reference/candidate order across fresh hidden runs, run one browser worker, and do not overlap this agent's builds or heavy tests with measurements. Preserve all samples, including busy-machine outliers. Wall time includes scheduling, readback and bridge/GPU synchronization; it is not isolated CPU time or end-to-end game FPS. The unchanged game remains a separate functionality check.
+
+## Regression coverage
+
+Native compact/dense oracles check color and mask glyphs, separate shadow/source order, compositing modes, fractional offsets, clips, malformed packets and independent ownership. Window/Worker tests compare fill/stroke text to the full-layer gradient oracle across alpha, transformations, alignments, destructive operators, filters, huge offsets and hidden-RGB writes, and repeat large-atlas clear/repaint/reset cycles. GPU tests check immutable atlas subuploads and neighbors, source mutation/reset, all byte-product premultiplication, volume layer gaps, taint/PBO precedence and replaced author intrinsics. Timing thresholds are not correctness assertions and these extended suites remain local; CI remains the existing smoke gate.

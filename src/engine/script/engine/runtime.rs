@@ -13,6 +13,8 @@ mod errors;
 mod frames;
 use errors::{allocation_error, caught_error};
 #[cfg(all(test, windows))]
+mod canvas_inspect_tests;
+#[cfg(all(test, windows))]
 mod gpu_task_tests;
 mod gpu_tasks;
 mod hooks;
@@ -55,6 +57,8 @@ mod webgl_argument_plan_tests;
 mod webgl_bitmap_query_tests;
 #[cfg(all(test, windows))]
 mod webgl_buffer_admission_tests;
+#[cfg(all(test, windows))]
+mod webgl_canvas_region_tests;
 #[cfg(all(test, windows))]
 mod webgl_direct_uniform_tests;
 #[cfg(all(test, windows))]

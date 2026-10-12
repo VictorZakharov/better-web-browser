@@ -96,6 +96,9 @@ pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Op
     if operation == "canvasPaintGlyphs" {
         return Ok(Some(glyph_paint::paint(args)));
     }
+    if operation == "canvasPaintGlyphShadow" {
+        return Ok(Some(glyph_paint::shadow::paint(args)));
+    }
     if operation == "canvasCompositeLayer" {
         return Ok(Some(composite_layer::paint(args)));
     }

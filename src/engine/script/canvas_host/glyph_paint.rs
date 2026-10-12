@@ -6,6 +6,8 @@ use super::{JsValue, MAX_CANVAS_PIXELS, composite::Operator};
 use serde::Deserialize;
 use std::borrow::Cow;
 
+pub(super) mod shadow;
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Request {

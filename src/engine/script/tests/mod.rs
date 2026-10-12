@@ -95,6 +95,7 @@ mod canvas_svg_path;
 mod canvas_text;
 mod canvas_text_metrics;
 mod canvas_text_paint;
+mod canvas_text_shadow;
 #[cfg(windows)]
 mod canvas_text_shaping;
 #[cfg(windows)]
