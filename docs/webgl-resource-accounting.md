@@ -64,10 +64,15 @@ and eight shader errors under the old ceiling, on both the merged browser and
 the first composition candidate. Its scene was black, so those FPS readings
 were excluded. With the 1280 MiB ledger, Crypt and Forest both rendered their
 3D scenes with active GPU composition, no shader-console errors and no renderer
-exit; the main game context reserved 1,197,178,092 bytes and had no admission
-rejections. These are functionality checks, not a controlled gameplay FPS
-comparison. A secondary logo Canvas in the Crypt check still encountered the
-private-headroom guard, preserving the game's existing link-failure fallback.
+exit. Initial captures reserved 1,197,178,092 bytes in the main game context
+without admission rejections. A later Forest capture remained visibly High
+quality through 2,877 GPU compositions, with no shader errors or renderer exit,
+while the private-headroom guard declined one 32 MiB texture reservation growth
+at 1,877,483,520 bytes of private commit; its main context reserved
+1,181,752,424 bytes. Neither capture reported ledger-ceiling rejections under
+the larger policy. These are functionality checks, not a controlled gameplay
+FPS comparison. A secondary logo Canvas in the Crypt check also encountered
+the private-headroom guard, preserving the game's existing link-failure fallback.
 
 ## Opt-in attribution
 
