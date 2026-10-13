@@ -156,6 +156,36 @@ impl BackendContexts {
         self.snapshot_pixels(id, true)
     }
 
+    pub(super) fn gpu_frame(
+        &mut self,
+        id: u32,
+    ) -> std::result::Result<Option<crate::gpu_frame::GpuFrame>, String> {
+        self.contexts
+            .get_mut(&id)
+            .ok_or("GPU Canvas context is unavailable")?
+            .gpu_frame()
+    }
+
+    pub(super) fn paint_fallback(
+        &mut self,
+        id: u32,
+    ) -> std::result::Result<Option<(u32, u32, Vec<u8>)>, String> {
+        let context = self
+            .contexts
+            .get_mut(&id)
+            .ok_or("GPU Canvas context is unavailable")?;
+        if context.objects.poisoned {
+            return Err("GPU Canvas context is lost".into());
+        }
+        if !context.surface.presentation_dirty && context.gpu_frames.is_some() {
+            context.last_gpu_bitmap()
+        } else {
+            self.canvas_snapshot(id)
+                .map(Some)
+                .ok_or_else(|| "GPU Canvas fallback readback is unavailable".into())
+        }
+    }
+
     fn snapshot_pixels(&mut self, id: u32, straight_alpha: bool) -> Option<(u32, u32, Vec<u8>)> {
         let context = self.contexts.get_mut(&id)?;
         if context.objects.poisoned {

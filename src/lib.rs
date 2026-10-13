@@ -6,6 +6,9 @@ pub(crate) mod encoded_audio;
 pub mod engine;
 pub mod fetch;
 pub mod fuzzing;
+#[cfg(windows)]
+pub mod gpu_composition;
+pub mod gpu_frame;
 pub mod indexed_db;
 pub mod limits;
 pub mod metrics;

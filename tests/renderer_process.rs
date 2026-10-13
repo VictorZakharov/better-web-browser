@@ -42,6 +42,8 @@ mod form_validation_presentation;
 mod fullscreen;
 #[path = "renderer_process/geolocation.rs"]
 mod geolocation;
+#[path = "renderer_process/gpu_canvas.rs"]
+mod gpu_canvas;
 #[path = "renderer_process/history_traversal.rs"]
 mod history_traversal;
 #[path = "renderer_process/hover.rs"]

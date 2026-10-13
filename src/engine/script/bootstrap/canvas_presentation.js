@@ -10,6 +10,7 @@
     const detachedCanvases = new Set();
     const presentedDimensions = new WeakMap();
     const exportedBitmaps = new WeakSet();
+    const gpuPresentedCanvases = new WeakSet();
     const placeholderOwners = new WeakMap();
 
     const forgetDetachedCanvases = () => {
@@ -116,7 +117,7 @@
     Object.defineProperty(HTMLCanvasElement.prototype.transferControlToOffscreen, 'length',
         { value: originalTransfer.length });
 
-    globalThis.__takeCanvasPresentation = () => {
+    globalThis.__takeCanvasPresentation = (forceGpuFallback = false) => {
         const snapshots = [];
         let bytes = 0;
         let deferred = false;
@@ -133,6 +134,9 @@
             const dimensions = canvasOwnedDimensions(canvas);
             const width = dimensions[0], height = dimensions[1];
             const previous = canvasPrivateWeakGet(presentedDimensions, canvas);
+            const gpuFallback = forceGpuFallback && canvasPrivateWeakSetHas(gpuPresentedCanvases, canvas) &&
+                previous?.[0] === width && previous?.[1] === height;
+            if (gpuFallback) canvasPrivateSetAdd(dirtyCanvases, canvas);
             if (previous?.[0] !== width || previous?.[1] !== height) {
                 stateForCanvas(canvas, false, false);
                 canvasPrivateSetAdd(dirtyCanvases, canvas);
@@ -146,7 +150,7 @@
             const cached = canvasPrivateWeakGet(canvasStates, canvas);
             const backing = cached?.placeholder && !canvasOffscreenDetached(cached.placeholder)
                 ? canvasPrivateWeakGet(canvasStates, cached.placeholder) : cached;
-            if (canvasPrivateWeakSetHas(exportedBitmaps, canvas) && previous?.[0] === width && previous?.[1] === height &&
+            if (!gpuFallback && canvasPrivateWeakSetHas(exportedBitmaps, canvas) && previous?.[0] === width && previous?.[1] === height &&
                 backing?.mode === 'webgl') {
                 const native = webGlContexts.get(backing.context);
                 if (native && !native.lost && webGlCall(backing.context, 'drawingBufferDirty') === false) {
@@ -158,12 +162,18 @@
             const placeholder = state.placeholder;
             const output = placeholder && !canvasOffscreenDetached(placeholder)
                 ? stateForCanvas(placeholder, false, false) : state;
+            if (gpuFallback && output.mode === 'webgl') {
+                const native = webGlContexts.get(output.context);
+                if (native && !native.lost) native.dirty = true;
+            }
             // A dirty native WebGL frame needs no JavaScript pixel cache for
             // painting. The embedder owns this bounded transfer until the hook
             // returns; public bitmap/export consumers still snapshot independently.
             const transfer = !canvasOffscreenDetached(placeholder) && width && height &&
-                output.mode === 'webgl' ? webGlPaintSnapshot(output, nodeId(canvas)) : null;
+                output.mode === 'webgl' ? webGlPaintSnapshot(output, nodeId(canvas),
+                    canvasPrivateWeakSetHas(exportedBitmaps, canvas) && previous?.[0] === width && previous?.[1] === height, gpuFallback) : null;
             if (transfer) {
+                if (!transfer[0]) { host('canvasPaintDirty', nodeId(canvas)); continue; }
                 const length = transfer[0] * transfer[1] * 4;
                 if (bytes + length > MAX_PRESENTED_CANVAS_BYTES) {
                     if (!deferred) host('canvasPaintDirty', nodeId(canvas));
@@ -173,6 +183,8 @@
                 bytes += length;
                 canvasPrivatePush(snapshots, [nodeId(canvas), transfer[0], transfer[1], width, height, transfer[2]]);
                 webGlPresented(output);
+                if (transfer[3]) canvasPrivateWeakSetAdd(gpuPresentedCanvases, canvas);
+                else canvasPrivateWeakSetDelete(gpuPresentedCanvases, canvas);
                 canvasPrivateWeakSetAdd(exportedBitmaps, canvas);
                 canvasPrivateWeakSet(presentedDimensions, canvas, [width, height]);
                 canvasPrivateSetDelete(dirtyCanvases, canvas);
@@ -200,6 +212,7 @@
             // stamp, so native painting can reject stale post-resize assets.
             canvasPrivatePush(snapshots, [nodeId(canvas), output.width, output.height, width, height, pixels]);
             if (pixels && output.mode === 'webgl') webGlPresented(output);
+            canvasPrivateWeakSetDelete(gpuPresentedCanvases, canvas);
             if (pixels) canvasPrivateWeakSetAdd(exportedBitmaps, canvas);
             canvasPrivateWeakSet(presentedDimensions, canvas, [width, height]);
             canvasPrivateSetDelete(dirtyCanvases, canvas);

@@ -20,6 +20,7 @@ fn acknowledgement() -> WheelAcknowledgement {
 
 fn presentation() -> RendererPresentation {
     RendererPresentation {
+        gpu_canvases: Vec::new(),
         document: DocumentId::new(1).unwrap(),
         revision: 1,
         clock_advanced: false,

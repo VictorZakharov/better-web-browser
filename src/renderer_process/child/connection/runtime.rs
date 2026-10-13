@@ -182,6 +182,16 @@ impl ChildConnection {
         elapsed_micros: u64,
         max_callbacks: u32,
     ) -> Result<(), String> {
+        self.advance_document_with_clock(document, elapsed_micros, max_callbacks, true)
+    }
+
+    pub(super) fn advance_document_with_clock(
+        &mut self,
+        document: DocumentId,
+        elapsed_micros: u64,
+        max_callbacks: u32,
+        clock_advanced: bool,
+    ) -> Result<(), String> {
         let Some(mut runtime) = self.document.take() else {
             return Ok(());
         };
@@ -199,13 +209,16 @@ impl ChildConnection {
                 let result = runtime.restart_encoding(self);
                 return self.install_streamed_document(document, result);
             }
-            Ok(Ok(AdvanceResult::Presentation(presentation))) => {
+            Ok(Ok(AdvanceResult::Presentation(mut presentation))) => {
+                presentation.clock_advanced = clock_advanced;
                 self.send_presentation(&presentation)?
             }
-            Ok(Ok(AdvanceResult::Runtime(update))) => self
-                .writer
-                .send_renderer(&RendererMessage::RuntimeUpdate(update))
-                .map_err(|error| error.to_string())?,
+            Ok(Ok(AdvanceResult::Runtime(mut update))) => {
+                update.clock_advanced = clock_advanced;
+                self.writer
+                    .send_renderer(&RendererMessage::RuntimeUpdate(update))
+                    .map_err(|error| error.to_string())?;
+            }
             Ok(Err(error)) => {
                 self.send_document_failure(document, error)?;
                 return Ok(());

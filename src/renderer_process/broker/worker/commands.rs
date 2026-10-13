@@ -102,6 +102,15 @@ impl Broker {
             };
             match command {
                 BrokerCommand::Ping(reply) => self.send_ping(Some(reply)),
+                BrokerCommand::GpuCanvasPolicy { document, enabled } => {
+                    if self.active_document == Some(document)
+                        && let Err(error) = self
+                            .writer()
+                            .send_browser(&BrowserMessage::GpuCanvasPolicy { document, enabled })
+                    {
+                        self.protocol_failure(error.to_string());
+                    }
+                }
                 BrokerCommand::ProbeRestrictions {
                     loopback_port,
                     reply,

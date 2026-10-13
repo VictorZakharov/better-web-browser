@@ -182,6 +182,10 @@ pub enum BrowserMessage {
     FullscreenResponse(FullscreenResponse),
     PointerLockResponse(PointerLockResponse),
     CancelDocument(DocumentId),
+    GpuCanvasPolicy {
+        document: DocumentId,
+        enabled: bool,
+    },
     Test(TestCommand),
 }
 

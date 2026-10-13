@@ -4,6 +4,7 @@ use crate::engine::dom::NodeRef;
 use crate::engine::script::engine::JsValue;
 use crate::engine::script::{ScriptFetchOptions, ScriptKind};
 mod command_samples;
+mod gpu_recovery;
 
 fn input(node: &NodeRef, code: &str) -> ScriptInput {
     ScriptInput {

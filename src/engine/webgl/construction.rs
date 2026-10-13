@@ -20,7 +20,7 @@ impl WebGl {
         })
     }
 
-    fn new_with_backend(
+    pub(super) fn new_with_backend(
         width: u32,
         height: u32,
         options: Options,
@@ -55,6 +55,8 @@ impl WebGl {
             core,
             core_buffer_bindings: HashMap::new(),
             surface,
+            gpu_frames: None,
+            gpu_unavailable_extent: None,
             readback_cache: readback_cache::Cache::default(),
             shader_validation_cache: shader_validation_cache::Cache::default(),
             shader_validators: shader_validators::Validators::default(),
@@ -116,6 +118,7 @@ impl Drop for WebGl {
         // Each retained entry also initializes TLS itself: a peer's lazy native
         // compiler may already have retired without owning our validators.
         self.shader_validators.clear();
+        self.gpu_frames = None;
         if self.native.make_current().is_ok() {
             if self.vertex_arrays.default_native != 0 {
                 unsafe {

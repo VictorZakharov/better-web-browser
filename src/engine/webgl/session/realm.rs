@@ -19,6 +19,29 @@ pub(crate) struct Contexts {
     profiling: bool,
 }
 impl Contexts {
+    pub(crate) fn paint_fallback(&mut self, id: u32) -> Result<Option<Bitmap>, String> {
+        self.flush_pending();
+        if !self.live.contains(&id) {
+            return Err("GPU Canvas owner is unavailable".into());
+        }
+        match request(Operation::PaintFallback(id)).ok_or("GPU Canvas owner did not reply")? {
+            Reply::PaintFallback(bitmap) => bitmap,
+            _ => Err("GPU Canvas owner returned an invalid fallback reply".into()),
+        }
+    }
+    pub(crate) fn gpu_frame(
+        &mut self,
+        id: u32,
+    ) -> Result<Option<crate::gpu_frame::GpuFrame>, String> {
+        self.flush_pending();
+        if !self.live.contains(&id) {
+            return Err("GPU Canvas owner is unavailable".into());
+        }
+        match request(Operation::GpuFrame(id)).ok_or("GPU Canvas owner did not reply")? {
+            Reply::GpuFrame(frame) => frame,
+            _ => Err("GPU Canvas owner returned an invalid frame reply".into()),
+        }
+    }
     pub(crate) fn set_profiling(&mut self, enabled: bool) {
         if self.profiling == enabled {
             return;

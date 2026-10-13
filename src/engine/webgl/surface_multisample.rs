@@ -58,7 +58,7 @@ pub(super) fn requested(options: Options) -> bool {
 pub(super) struct Multisample {
     pub(super) draw: u32,
     pub(super) resolve: u32,
-    color: u32,
+    pub(super) color: u32,
     depth: u32,
     blit: super::core_entries::Blit,
     read_buffer: super::core_entries::ReadBuffer,

@@ -9,6 +9,7 @@ pub(crate) struct CanvasPaintSnapshot {
     pub(crate) height: u32,
     pub(crate) content_size: (u32, u32),
     pub(crate) pixels: Option<Vec<u8>>,
+    pub(crate) gpu_frame: Option<crate::gpu_frame::GpuFrame>,
 }
 
 fn unsigned(value: &JsValue) -> Option<u32> {
@@ -18,6 +19,14 @@ fn unsigned(value: &JsValue) -> Option<u32> {
 }
 
 impl ScriptRuntime {
+    pub(crate) fn set_gpu_canvas_enabled(&mut self, enabled: bool) {
+        let mut host = self.host.borrow_mut();
+        host.gpu_canvas_enabled = enabled;
+        host.gpu_canvas_fallback = !enabled;
+        if !enabled {
+            host.timers.request_surface_repaint();
+        }
+    }
     pub(crate) fn take_canvas_presentation(&mut self) -> Result<Vec<CanvasPaintSnapshot>, String> {
         if !self.initialized {
             return Ok(Vec::new());
@@ -28,7 +37,9 @@ impl ScriptRuntime {
         if !self.host.borrow_mut().canvas_presentations.begin() {
             return Err("Canvas snapshot capture is already active".into());
         }
-        let response = context.call_global("__takeCanvasPresentation", &[]);
+        let fallback = self.host.borrow().gpu_canvas_fallback;
+        let response =
+            context.call_global("__takeCanvasPresentation", &[JsValue::Boolean(fallback)]);
         // Always retire the transfer batch, including a hook exception or a
         // malformed reply. Unreferenced native pixels drop with this local batch.
         let mut native = self.host.borrow_mut().canvas_presentations.finish();
@@ -63,14 +74,20 @@ impl ScriptRuntime {
                 .node(handle)
                 .filter(|node| node.tag_name() == Some("canvas"))
                 .ok_or_else(|| "Canvas snapshot has no matching element".to_string())?;
+            let mut gpu_frame = None;
             let pixels = if matches!(pixels, JsValue::Number(_)) {
                 let token =
                     unsigned(&pixels).ok_or("Canvas snapshot has an invalid transfer token")?;
-                JsValue::Bytes(
-                    native
-                        .take(token, node.id(), width, height)
-                        .ok_or("Canvas snapshot has no matching native transfer")?,
-                )
+                gpu_frame = native.take_gpu(token, node.id(), width, height);
+                if gpu_frame.is_some() {
+                    JsValue::Null
+                } else {
+                    JsValue::Bytes(
+                        native
+                            .take(token, node.id(), width, height)
+                            .ok_or("Canvas snapshot has no matching native transfer")?,
+                    )
+                }
             } else {
                 pixels
             };
@@ -99,6 +116,7 @@ impl ScriptRuntime {
                 height,
                 content_size,
                 pixels: bytes,
+                gpu_frame,
             });
         }
         Ok(snapshots)

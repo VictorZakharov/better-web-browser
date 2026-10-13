@@ -60,6 +60,7 @@ pub(super) fn sample() -> RendererPresentation {
     let url = "https://example.test/".to_string();
     let accessibility_root = DocumentNodeId::new((1_u128 << 64) | 1).unwrap();
     RendererPresentation {
+        gpu_canvases: Vec::new(),
         document: DocumentId::new(1).unwrap(),
         revision: 1,
         clock_advanced: false,

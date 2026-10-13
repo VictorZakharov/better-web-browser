@@ -353,6 +353,17 @@ impl DocumentRuntime {
             reader: self.reader.clone(),
             layout: PresentedLayout::from_layout(self.layout.clone()),
             images: Vec::new(),
+            gpu_canvases: self
+                .page
+                .canvas_gpu_frames
+                .iter()
+                .map(
+                    |(url, frame)| crate::renderer_protocol::PresentedGpuCanvas {
+                        url: url.clone(),
+                        frame: *frame,
+                    },
+                )
+                .collect(),
             retired_image_keys,
             glyph_epoch,
             glyphs,

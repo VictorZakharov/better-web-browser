@@ -207,6 +207,8 @@ pub struct RendererPresentation {
     pub reader: Document,
     pub layout: PresentedLayout,
     pub images: Vec<PresentedImage>,
+    /// Complete current GPU Canvas set; newer snapshots replace it atomically.
+    pub gpu_canvases: Vec<super::PresentedGpuCanvas>,
     /// Previously sent image keys no longer owned by this document revision.
     pub retired_image_keys: Vec<String>,
     pub glyph_epoch: u64,

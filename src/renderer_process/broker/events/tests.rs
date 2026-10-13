@@ -16,6 +16,7 @@ fn presentation(revision: u64) -> RendererEvent {
         accessibility.nodes[0].name = format!("revision {revision}");
     }
     RendererEvent::Presentation(Box::new(RendererPresentation {
+        gpu_canvases: Vec::new(),
         document: DocumentId::new(1).unwrap(),
         revision,
         clock_advanced: false,

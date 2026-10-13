@@ -19,6 +19,8 @@ enum Operation {
     Batch(Vec<(u32, super::command_batch::Entry)>),
     Pixels(u32, String, Option<Vec<u8>>),
     Snapshot(u32, bool),
+    GpuFrame(u32),
+    PaintFallback(u32),
     TaskBoundary(Vec<u32>),
     ResourceDiagnostics(Vec<u32>),
     Profiling(Vec<u32>, bool),
@@ -31,6 +33,8 @@ enum Reply {
     Batch(Vec<u32>),
     Pixels(PixelReply),
     Snapshot(Option<Bitmap>),
+    GpuFrame(Result<Option<crate::gpu_frame::GpuFrame>, String>),
+    PaintFallback(Result<Option<Bitmap>, String>),
     TaskBoundary(Vec<u32>),
     ResourceDiagnostics(Vec<String>),
     Profiling,
@@ -129,6 +133,10 @@ fn run(incoming: mpsc::Receiver<Request>) {
                 }),
                 Some(id),
             ),
+            Operation::GpuFrame(id) => (Reply::GpuFrame(backend.gpu_frame(id)), Some(id)),
+            Operation::PaintFallback(id) => {
+                (Reply::PaintFallback(backend.paint_fallback(id)), Some(id))
+            }
             Operation::TaskBoundary(ids) => {
                 let lost = backend.complete_task(&ids);
                 for id in &lost {

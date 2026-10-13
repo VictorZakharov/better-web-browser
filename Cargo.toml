@@ -88,6 +88,11 @@ unicode-script = "0.5.8"
 # Reuse the ICU4X property data already locked through URL parsing (Unicode-3.0).
 icu_properties = "=2.0.2"
 windows = { version = "0.62.2", features = [
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectComposition",
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
     "Devices_Enumeration",

@@ -6,6 +6,7 @@ mod database;
 mod fetch;
 mod file_picker;
 mod geolocation;
+mod gpu;
 mod interaction;
 mod media;
 mod media_capture;
@@ -19,6 +20,7 @@ mod runtime;
 mod sensor;
 mod speech;
 mod state;
+mod task_diagnostics;
 mod wake_lock;
 mod websocket;
 mod writer;
@@ -144,66 +146,6 @@ impl ChildConnection {
         media::acknowledge_renderer_progress(&mut self.writer, &mut self.last_processed_work_ack)
     }
 
-    pub(super) fn report_renderer_task_stage(
-        &mut self,
-        stage: impl Into<String>,
-    ) -> Result<(), String> {
-        let diagnostic = RendererDiagnostic::new(RENDERER_DIAGNOSTIC_TASK_STAGE, stage)
-            .map_err(|error| error.to_string())?;
-        self.writer
-            .send_renderer(&RendererMessage::Diagnostic(diagnostic))
-            .map_err(|error| error.to_string())
-    }
-
-    fn renderer_task_label(&self, message: &BrowserMessage) -> Option<String> {
-        let label = match message {
-            BrowserMessage::EndDocument(document) => format!(
-                "loading and presenting {}",
-                self.document_context(*document)
-            ),
-            BrowserMessage::StorageSnapshotEnd(update) => format!(
-                "installing storage for {}",
-                self.document_context(update.document)
-            ),
-            BrowserMessage::AdvanceTime { document, .. } => format!(
-                "running timers, promise jobs, and rendering mutations for {}",
-                self.document_context(*document)
-            ),
-            BrowserMessage::ViewportChanged { document, .. } => format!(
-                "laying out a viewport change for {}",
-                self.document_context(*document)
-            ),
-            BrowserMessage::Input(input) => format!(
-                "dispatching input and rendering mutations for {}",
-                self.document_context(input.document())
-            ),
-            BrowserMessage::FetchResponseChunk(_) => "delivering a streamed response chunk".into(),
-            BrowserMessage::FetchResponseEnd(_) => "completing a streamed response".into(),
-            BrowserMessage::FetchResponseAbort(_) => "aborting a streamed response".into(),
-            BrowserMessage::Test(command) => format!("running renderer test command {command:?}"),
-            _ => return None,
-        };
-        Some(label)
-    }
-
-    fn document_context(&self, document: DocumentId) -> String {
-        let url = self
-            .incoming_document
-            .as_ref()
-            .filter(|incoming| incoming.start.document == document)
-            .map(|incoming| incoming.start.url.as_str())
-            .or_else(|| {
-                self.document
-                    .as_ref()
-                    .filter(|runtime| runtime.id() == document)
-                    .map(DocumentRuntime::source_url)
-            });
-        match url {
-            Some(url) => format!("document {} ({url})", document.get()),
-            None => format!("document {}", document.get()),
-        }
-    }
-
     pub(super) fn allocate_request_id(&mut self) -> u64 {
         let id = self.next_request_id;
         self.next_request_id = id.checked_add(1).unwrap_or(1);
@@ -212,6 +154,9 @@ impl ChildConnection {
 
     fn handle(&mut self, message: BrowserMessage) -> Result<(), String> {
         match message {
+            BrowserMessage::GpuCanvasPolicy { document, enabled } => {
+                self.gpu_canvas_policy(document, enabled)
+            }
             BrowserMessage::Ping(token) => self
                 .writer
                 .send_renderer(&RendererMessage::Pong(token))

@@ -7,6 +7,8 @@ pub(super) struct WebGl {
     pub(super) core: Option<core_entries::CoreEntries>,
     pub(super) core_buffer_bindings: HashMap<u32, u32>,
     pub(super) surface: Surface,
+    pub(super) gpu_frames: Option<gpu_frames::Pool>,
+    pub(super) gpu_unavailable_extent: Option<(u32, u32)>,
     pub(super) readback_cache: readback_cache::Cache,
     pub(super) shader_validation_cache: shader_validation_cache::Cache,
     pub(super) shader_validators: shader_validators::Validators,
