@@ -193,6 +193,7 @@ dependencies = [
  "webm-iterable",
  "windows",
  "windows-future",
+ "windows-numerics",
  "windows-sys 0.61.2",
  "wuff",
  "xml",
