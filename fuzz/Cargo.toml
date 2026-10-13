@@ -16,6 +16,13 @@ libfuzzer-sys = "=0.4.13"
 [workspace]
 members = ["."]
 
+[patch.crates-io]
+# Cargo ignores patches in path dependencies. This separate workspace must use
+# the same reviewed SVG fixes and maintained macro fork as the browser root.
+# https://doc.rust-lang.org/cargo/reference/overriding-dependencies.html#the-patch-section
+paste = { path = "../vendor/paste-complete" }
+usvg = { path = "../vendor/usvg" }
+
 [[bin]]
 name = "html_document"
 path = "fuzz_targets/html_document.rs"
