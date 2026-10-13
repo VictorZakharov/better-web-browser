@@ -19,11 +19,20 @@ fn available_for(
 }
 
 pub(super) fn admits(charged: usize, growth: usize, private: Option<usize>) -> bool {
+    admits_for(crate::renderer_budget::current(), charged, growth, private)
+}
+
+fn admits_for(
+    budget: crate::renderer_budget::RendererBudget,
+    charged: usize,
+    growth: usize,
+    private: Option<usize>,
+) -> bool {
     if growth == 0 {
         return true;
     }
     match private {
-        Some(_) => growth <= available(usize::MAX, private),
+        Some(_) => growth <= available_for(budget, usize::MAX, private),
         // Retain the previous conservative baseline on unsupported/failed
         // observations. Unknown cannot justify the larger HDR storage budget.
         None => charged
@@ -37,6 +46,19 @@ mod tests {
     use super::*;
     use crate::limits::RENDERER_MEMORY_LIMIT_BYTES;
     const MIB: usize = 1024 * 1024;
+
+    #[test]
+    fn larger_graphics_ledger_still_rejects_growth_without_private_headroom() {
+        use crate::renderer_budget::RendererBudget::Graphics;
+        let charged = 1100 * MIB;
+        let growth = 32 * MIB;
+        assert!(charged + growth < Graphics.gpu_context_bytes());
+        assert!(admits_for(Graphics, charged, growth, Some(1760 * MIB)));
+        assert!(!admits_for(Graphics, charged, growth + 1, Some(1760 * MIB)));
+        assert!(!admits_for(Graphics, charged, 1, Some(1792 * MIB)));
+        assert!(!admits_for(Graphics, charged, growth, None));
+        assert!(admits_for(Graphics, charged, 0, None));
+    }
 
     #[test]
     fn graphics_mode_uses_its_selected_limit_and_the_same_reserve_fraction() {

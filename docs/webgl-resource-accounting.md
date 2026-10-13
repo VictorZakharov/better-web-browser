@@ -2,7 +2,7 @@
 
 The standard renderer policy admits at most 256 MiB per context and 512 MiB
 per native owner, inside the default 1 GiB Windows Job limit. The opt-in 3D
-policy admits at most 1 GiB per context and owner, inside a 2 GiB Job limit.
+policy admits at most 1280 MiB per context and owner, inside a 2 GiB Job limit.
 Both policies reserve process-private emergency headroom before storage growth;
 see [renderer pressure and headroom](renderer-memory-pressure.md). User selection
 requires a restart and does not grant any new JavaScript capability.
@@ -41,6 +41,33 @@ site-specific exception, URL-dependent policy or successful fake allocation.
 Native tests cover buffer churn under a small budget, delayed VAO/FBO/program
 retirement, repeated and shrinking renderbuffer definitions, multisample
 redefinitions, failed admission, and unchanged native sizes after rejection.
+
+## HiDPI graphics reservation ceiling
+
+The opt-in graphics ledger admits 1280 MiB instead of 1024 MiB. A full-size
+postprocessing workload can exceed the old ledger ceiling because every live
+texture image and renderbuffer retains its lifetime high-water reservation and
+the conservative two-copy multiplier. Raising this finite reservation ceiling
+preserves retirement, copy accounting and individual allocation validation.
+The same 1280 MiB ceiling bounds the aggregate owner across peer contexts;
+the renderer Job remains 2 GiB.
+
+The independent private-commit guard still reserves one eighth of the selected
+Job limit before new storage growth. Unknown samples retain the 64 MiB
+conservative baseline; reuse without growth remains possible under pressure.
+Tests exercise graphics growth above the old ledger ceiling and reject it when
+private headroom is insufficient, including the exact headroom boundary. Correct
+pixels and successful allocations are required before gameplay timing is used.
+
+An unchanged High-quality scene at 1920 × 1080 reproduced 53 storage rejections
+and eight shader errors under the old ceiling, on both the merged browser and
+the first composition candidate. Its scene was black, so those FPS readings
+were excluded. With the 1280 MiB ledger, Crypt and Forest both rendered their
+3D scenes with active GPU composition, no shader-console errors and no renderer
+exit; the main game context reserved 1,197,178,092 bytes and had no admission
+rejections. These are functionality checks, not a controlled gameplay FPS
+comparison. A secondary logo Canvas in the Crypt check still encountered the
+private-headroom guard, preserving the game's existing link-failure fallback.
 
 ## Opt-in attribution
 

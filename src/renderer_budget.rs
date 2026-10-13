@@ -41,14 +41,17 @@ impl RendererBudget {
     pub(crate) const fn gpu_context_bytes(self) -> usize {
         match self {
             Self::Standard => 256 * 1024 * 1024,
-            Self::Graphics => 1024 * 1024 * 1024,
+            // Storage reservations count two copies and lifetime high-water
+            // capacities. Permit HiDPI render targets without enlarging the
+            // selected Job or bypassing the independent private-headroom guard.
+            Self::Graphics => 1280 * 1024 * 1024,
         }
     }
 
     pub(crate) const fn gpu_owner_bytes(self) -> usize {
         match self {
             Self::Standard => 512 * 1024 * 1024,
-            Self::Graphics => 1024 * 1024 * 1024,
+            Self::Graphics => self.gpu_context_bytes(),
         }
     }
 
