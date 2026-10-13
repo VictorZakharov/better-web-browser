@@ -1,6 +1,8 @@
 //! Hidden in-process navigation sequences for lifecycle regression coverage.
 
+mod browser;
 mod delay;
+pub(in crate::windows_app) use browser::BrowserAction;
 mod scroll;
 mod text;
 
@@ -14,6 +16,7 @@ use better_web_browser::renderer_protocol::{
 pub(in crate::windows_app) enum BenchmarkNavigation {
     Address(String),
     HistoryBack,
+    Browser(BrowserAction),
     ActivateLink(String),
     ActivateSelector(String),
     ClickPoint { x: i32, y: i32 },
@@ -56,6 +59,13 @@ impl BrowserState {
         });
         if let Some(target) = target {
             let result = match target {
+                BenchmarkNavigation::Browser(action) => {
+                    let result = self.run_hidden_browser_action(action);
+                    if result.is_ok() {
+                        self.continue_or_finish_benchmark_actions();
+                    }
+                    result
+                }
                 BenchmarkNavigation::Address(url) => {
                     self.begin_navigation(url, browser_navigation::HistoryMode::Push);
                     Ok(())

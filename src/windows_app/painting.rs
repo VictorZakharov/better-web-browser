@@ -28,6 +28,17 @@ use std::time::Instant;
 
 impl BrowserState {
     pub(super) unsafe fn paint_surface(&mut self, dc: Hdc, client: &Rect, dirty: &Rect) {
+        if self.surface != Surface::Page || self.crashed {
+            self.suspend_gpu_canvas();
+        }
+        if self
+            .gpu_compositor
+            .as_ref()
+            .is_some_and(|compositor| !compositor.belongs_to(self.navigation.active_document()))
+        {
+            self.gpu_compositor = None;
+        }
+        let gpu_content = self.gpu_content_active();
         let toolbar_height = self.toolbar_height();
         let scale = self.page_scale();
         let dpi = self.dpi;
@@ -59,6 +70,7 @@ impl BrowserState {
         IntersectClipRect(dc, content.left, content.top, content.right, content.bottom);
         let glyph_source_dc = CreateCompatibleDC(dc);
         match tab.surface {
+            Surface::Page if gpu_content => {}
             Surface::Page => {
                 let dirty_content_top = (dirty.top - toolbar_height).max(0);
                 let dirty_content_bottom = (dirty.bottom - toolbar_height).max(0);

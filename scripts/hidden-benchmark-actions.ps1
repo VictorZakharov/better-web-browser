@@ -61,6 +61,12 @@ function Get-HiddenBenchmarkActionArguments {
                 }
                 '--activate-selector-after-ready'
             }
+            'browser' {
+                if ($value -notin @('new-tab','next-tab','previous-tab','close-tab','reader')) {
+                    throw 'Ordered browser action requires new-tab, next-tab, previous-tab, close-tab or reader.'
+                }
+                '--browser-action-after-ready'
+            }
             default { throw "Unsupported ordered hidden action: $kind" }
         }
         $result.Add($option)

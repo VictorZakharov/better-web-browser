@@ -119,8 +119,25 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn capture_screenshot_pixels(&mut self) -> Result<ScreenshotPixels, String> {
+        self.flush_gpu_capture()?;
         let surface = OffscreenSurface::new(self)?;
         self.paint_surface(surface.dc, &surface.client, &surface.client);
+        if self.gpu_content_active() {
+            let compositor = self.gpu_compositor.as_ref().unwrap();
+            let (gpu_width, gpu_height, pixels) = compositor.capture_bgra()?;
+            let top = self.toolbar_height().max(0) as usize;
+            let width = surface.client.width().max(1) as usize;
+            let destination =
+                std::slice::from_raw_parts_mut(surface.pixels.cast::<u8>(), surface.byte_len);
+            let row = gpu_width as usize * 4;
+            for y in 0..gpu_height as usize {
+                let start = ((top + y) * width) * 4;
+                if start + row > destination.len() {
+                    return Err("GPU capture exceeds the native screenshot extent".into());
+                }
+                destination[start..start + row].copy_from_slice(&pixels[y * row..(y + 1) * row]);
+            }
+        }
         if let Some(fonts) = self.fonts.as_ref() {
             SelectObject(surface.dc, fonts.ui);
             SetTextColor(surface.dc, CHROME_THEME.text);

@@ -232,6 +232,7 @@ impl BrowserState {
                 "  \"presentation_install_ms\": {:.3},\n",
                 "  \"paint_ms\": {:.3},\n",
                 "  \"native_paint_trace\": {},\n",
+                "  \"gpu_composition\": {},\n",
                 "  \"scroll_paint_samples\": {},\n",
                 "  \"average_scroll_paint_ms\": {:.3},\n",
                 "  \"maximum_scroll_paint_ms\": {:.3},\n",
@@ -325,6 +326,7 @@ impl BrowserState {
                 .native_paint
                 .as_ref()
                 .map_or_else(|| "null".into(), native_paint::NativePaintTrace::to_json,),
+            self.gpu_composition_report_json(),
             scroll_paint.samples,
             scroll_paint.average.as_secs_f64() * 1_000.0,
             scroll_paint.maximum.as_secs_f64() * 1_000.0,

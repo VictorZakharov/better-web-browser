@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Canvas GPU composition running</title>
+<style>
+  html, body { margin: 0; background: #284060; color: white; font: 16px Arial; }
+  h1 { font-size: 22px; margin: 12px; }
+  .panel { position: relative; margin: 12px; width: 360px; height: 120px; overflow: hidden; }
+  canvas { position: absolute; width: 288px; height: 96px; top: 8px; left: 16px; }
+  .hud { position: absolute; top: 25px; left: 35px; padding: 8px; border: 2px solid #9df;
+         border-radius: 8px; background: #305070; box-shadow: 4px 4px 3px #0008; }
+  .clip { width: 230px; height: 74px; overflow: hidden; position: absolute; left: 70px; top: 15px; }
+  .clip canvas { left: -32px; top: -8px; }
+  .fade { opacity: .5; }
+  .mask { mask-image: linear-gradient(to right, transparent, black 50%); }
+  .sectors { border-width: 3px 7px 5px 2px; border-color: #f60 #8f8 #59f transparent; }
+  #result { margin: 12px; }
+</style>
+<h1>Canvas with retained DOM overlays</h1>
+<div class="panel"><canvas id="opaque" width="96" height="32"></canvas><div class="hud sectors">HUD: 123 / 456</div></div>
+<div class="panel"><div class="clip"><canvas id="premul" width="96" height="32"></canvas></div><div class="hud fade">Half opacity</div></div>
+<div class="panel fade"><canvas id="straight" width="96" height="32"></canvas><div class="hud">Nested <span style="opacity:.5">opacity</span></div></div>
+<div class="panel mask"><canvas id="masked" width="96" height="32"></canvas><div class="hud">Mask + text</div></div>
+<p id="result">Waiting for frames</p>
+<script>
+  const contexts = ['opaque', 'premul', 'straight', 'masked'].map((id, index) => {
+    const canvas = document.getElementById(id);
+    const gl = canvas.getContext('webgl2', {
+      alpha: index !== 0, premultipliedAlpha: index !== 2,
+      antialias: index === 3, preserveDrawingBuffer: false
+    });
+    if (!gl) throw Error('WebGL2 unavailable: ' + id);
+    return gl;
+  });
+  let frames = 0;
+  function draw() {
+    for (let index = 0; index < contexts.length; index++) {
+      const gl = contexts[index];
+      gl.disable(gl.SCISSOR_TEST);
+      gl.clearColor(0, .5, .25, index === 0 ? 1 : .5);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.enable(gl.SCISSOR_TEST);
+      gl.scissor(0, 0, 48, 16);
+      gl.clearColor(.5, 0, 0, index === 0 ? 1 : .5);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.disable(gl.SCISSOR_TEST);
+    }
+    if (++frames < 40) requestAnimationFrame(draw);
+    else {
+      document.getElementById('result').textContent = 'Passed: 40 frames, opaque/premultiplied/straight, clips, opacity, masks and HUD';
+      document.title = 'done Canvas GPU composition';
+    }
+  }
+  requestAnimationFrame(draw);
+</script>

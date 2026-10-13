@@ -321,6 +321,12 @@ impl BrowserState {
         }
 
         installation_timing.checkpoint(benchmark::InstallationStage::Metadata);
+        if presentation.runtime.runtime_active {
+            self.enable_gpu_canvas_policy();
+        }
+        if visual_changed {
+            self.request_gpu_composition();
+        }
         self.paint_installed_presentation(
             &accessibility_update,
             damage,

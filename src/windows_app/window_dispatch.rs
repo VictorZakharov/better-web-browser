@@ -2,6 +2,7 @@
 
 mod completions;
 mod input;
+mod timers;
 
 use super::tabs::{KeyModifiers, TabId, TabStripHit};
 use super::*;
@@ -219,25 +220,7 @@ unsafe fn dispatch_window_message(
                 DefWindowProcW(window, message, wparam, lparam)
             }
         }
-        WM_TIMER if wparam == ID_RENDERER_RUNTIME_TIMER => {
-            state.service_due_script_runtime();
-            0
-        }
-        WM_TIMER if wparam == ID_RENDERER_MONITOR_TIMER => {
-            state.poll_renderers();
-            state.tick_geolocation();
-            state.tick_media_devices();
-            state.tick_capture();
-            0
-        }
-        WM_TIMER if wparam == ID_PERFORMANCE_MONITOR_TIMER => {
-            state.refresh_performance_monitor();
-            0
-        }
-        WM_TIMER if wparam == ID_SCROLL_ANIMATION_TIMER => {
-            state.tick_scroll_animation();
-            0
-        }
+        WM_TIMER if timers::dispatch(state, wparam) => 0,
         WM_APP_CHROME_INVALIDATE => {
             let toolbar = Rect {
                 left: 0,
