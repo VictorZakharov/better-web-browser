@@ -136,6 +136,7 @@ mod framebuffer_invalidation_storage_tests;
 mod framebuffer_invalidation_tests;
 mod framebuffer_queries;
 mod framebuffers;
+mod gpu_frames;
 mod image_uploads;
 #[cfg(test)]
 mod immutable_attachment_tests;

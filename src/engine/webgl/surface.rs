@@ -254,6 +254,18 @@ impl Surface {
             .as_ref()
             .map_or(self.framebuffer, |surface| surface.resolve)
     }
+    pub(super) fn presentation_texture(&self) -> u32 {
+        self.texture
+    }
+    pub(super) fn presentation_resolve_source(&self) -> Option<u32> {
+        self.resolve_dirty
+            .get()
+            .then(|| self.multisample.as_ref().map(|surface| surface.color))
+            .flatten()
+    }
+    pub(super) fn mark_presentation_resolved(&self) {
+        self.resolve_dirty.set(false);
+    }
     pub(super) fn resolve(&self) -> Result<(), String> {
         if self.resolve_dirty.get()
             && let Some(multisample) = &self.multisample

@@ -39,7 +39,12 @@ pub(super) unsafe fn set(dc: Hdc, matrix: Affine2D) -> bool {
     SetGraphicsMode(dc, GM_ADVANCED) != 0 && SetWorldTransform(dc, &v) != 0
 }
 
-pub(super) fn screen_matrix(matrix: Affine2D, scroll_y: i32, toolbar: i32, scale: f32) -> Affine2D {
+pub(in crate::windows_app) fn screen_matrix(
+    matrix: Affine2D,
+    scroll_y: i32,
+    toolbar: i32,
+    scale: f32,
+) -> Affine2D {
     let offset = f64::from(toolbar) - f64::from(scroll_y);
     let scale = f64::from(scale);
     let screen = Affine2D([scale, 0.0, 0.0, scale, 0.0, offset]);

@@ -275,6 +275,10 @@ impl RendererSession {
         }
     }
 
+    pub fn set_gpu_canvas_policy(&self, document: DocumentId, enabled: bool) -> Result<(), String> {
+        self.send_command(worker::BrokerCommand::GpuCanvasPolicy { document, enabled })
+    }
+
     pub fn respond_fullscreen(&self, response: FullscreenResponse) -> Result<(), String> {
         response.validate().map_err(|error| error.to_string())?;
         self.send_command(worker::BrokerCommand::FullscreenResponse(response))

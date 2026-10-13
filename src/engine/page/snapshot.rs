@@ -40,6 +40,7 @@ impl Page {
             stylesheet_discovery: None,
             cached_styles: None,
             images: layout_image_metadata(&self.images),
+            canvas_gpu_frames: HashMap::new(),
             image_origin_clean: HashMap::new(),
             image_updates: HashSet::new(),
             scripting_enabled: self.scripting_enabled,

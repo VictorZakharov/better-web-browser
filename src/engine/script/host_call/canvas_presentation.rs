@@ -13,9 +13,57 @@ pub(super) fn dispatch(
             let owner = state
                 .node(argument_id(args, 2))
                 .filter(|node| node.tag_name() == Some("canvas") && state.is_connected(node));
+            if owner.is_none() || !state.canvas_presentations.available() {
+                return Some(JsValue::Null);
+            }
+            let gpu_eligible = state.gpu_canvas_enabled
+                && args
+                    .get(3)
+                    .is_some_and(|value| value.as_boolean() == Some(true));
+            let frame = if gpu_eligible {
+                match state.webgl.gpu_frame(argument_id(args, 1)) {
+                    Ok(frame) => frame,
+                    Err(error) => {
+                        state.diagnose(format!(
+                            "GPU Canvas export declined; using CPU presentation: {error}"
+                        ));
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            if gpu_eligible
+                && let Some(owner) = owner.as_ref()
+                && state.canvas_presentations.available()
+                && let Some(frame) = frame
+                && let Some((width, height, token)) =
+                    state.canvas_presentations.record_gpu(owner.id(), frame)
+            {
+                return Some(JsValue::String(format!("[{width},{height},{token},1]")));
+            }
+            let fallback = args
+                .get(4)
+                .is_some_and(|value| value.as_boolean() == Some(true));
+            let bitmap = if fallback {
+                match state.webgl.paint_fallback(argument_id(args, 1)) {
+                    Ok(bitmap) => bitmap,
+                    Err(error) => {
+                        state.diagnose(format!(
+                            "GPU Canvas repair unavailable; using the drawing buffer: {error}"
+                        ));
+                        return Some(JsValue::Null);
+                    }
+                }
+            } else {
+                state.webgl.canvas_snapshot(argument_id(args, 1))
+            };
+            if fallback && bitmap.is_none() {
+                return Some(JsValue::String("[0,0,0]".into()));
+            }
             if let Some(owner) = owner
                 && state.canvas_presentations.available()
-                && let Some(bitmap) = state.webgl.canvas_snapshot(argument_id(args, 1))
+                && let Some(bitmap) = bitmap
                 && let Some((width, height, token)) =
                     state.canvas_presentations.record(owner.id(), bitmap)
             {

@@ -11,6 +11,7 @@ struct Record {
     width: u32,
     height: u32,
     pixels: Vec<u8>,
+    gpu: Option<crate::gpu_frame::GpuFrame>,
 }
 
 #[derive(Default)]
@@ -63,8 +64,34 @@ impl Transfers {
             width,
             height,
             pixels,
+            gpu: None,
         });
         Some((width, height, self.next))
+    }
+
+    pub(in crate::engine::script) fn record_gpu(
+        &mut self,
+        owner: NodeId,
+        gpu: crate::gpu_frame::GpuFrame,
+    ) -> Option<(u32, u32, u32)> {
+        let bytes = (gpu.width as usize)
+            .checked_mul(gpu.height as usize)?
+            .checked_mul(4)?
+            .checked_add(self.bytes)?;
+        if !self.available() || !gpu.validate() || bytes > MAX_BYTES {
+            return None;
+        }
+        self.next += 1;
+        self.bytes = bytes;
+        self.records.push(Record {
+            token: self.next,
+            owner,
+            width: gpu.width,
+            height: gpu.height,
+            pixels: Vec::new(),
+            gpu: Some(gpu),
+        });
+        Some((gpu.width, gpu.height, self.next))
     }
 
     pub(in crate::engine::script) fn finish(&mut self) -> Batch {
@@ -75,6 +102,22 @@ impl Transfers {
 }
 
 impl Batch {
+    pub(crate) fn take_gpu(
+        &mut self,
+        token: u32,
+        owner: NodeId,
+        width: u32,
+        height: u32,
+    ) -> Option<crate::gpu_frame::GpuFrame> {
+        let index = self.0.iter().position(|record| {
+            record.token == token
+                && record.owner == owner
+                && record.width == width
+                && record.height == height
+                && record.gpu.is_some()
+        })?;
+        self.0.swap_remove(index).gpu
+    }
     pub(crate) fn take(
         &mut self,
         token: u32,
@@ -87,6 +130,7 @@ impl Batch {
                 && record.owner == owner
                 && record.width == width
                 && record.height == height
+                && record.gpu.is_none()
         })?;
         Some(self.0.swap_remove(index).pixels)
     }

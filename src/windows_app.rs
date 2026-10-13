@@ -18,6 +18,7 @@ mod document_state;
 mod file_picker;
 mod fullscreen;
 mod geolocation;
+mod gpu_composition;
 mod incident_log;
 mod media_devices;
 mod memory_preferences;

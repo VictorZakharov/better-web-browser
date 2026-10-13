@@ -42,19 +42,42 @@ pub(in crate::windows_app) unsafe fn paint_border_colors(
         DeleteObject(ring);
         return;
     }
-    for (side, points) in side_polygons(rect, widths).iter().enumerate() {
-        if colors[side].alpha == 0 || widths[side] == 0.0 {
+    for (side, color) in colors.iter().enumerate() {
+        if color.alpha == 0 || widths[side] == 0.0 {
             continue;
         }
-        let region = CreatePolygonRgn(points.as_ptr(), 4, 1 /* ALTERNATE */);
+        let region = border_side_region(rect, widths, side, ring);
         if region.is_null() {
             continue;
         }
-        CombineRgn(region, region, ring, 1 /* RGN_AND */);
-        fill_region(dc, region, colors[side]);
+        fill_region(dc, region, *color);
         DeleteObject(region);
     }
     DeleteObject(ring);
+}
+
+/// Share the native painter's proportional corner coverage with GPU bitmap caching.
+pub(in crate::windows_app) unsafe fn border_side_region(
+    rect: &Rect,
+    widths: [f32; 4],
+    side: usize,
+    ring: Hrgn,
+) -> Hrgn {
+    let points = side_polygons(rect, widths)[side];
+    let region = unsafe {
+        CreatePolygonRgn(points.as_ptr(), 4, 1 /* ALTERNATE */)
+    };
+    if !region.is_null()
+        && unsafe {
+            CombineRgn(region, region, ring, 1 /* RGN_AND */)
+        } == 0
+    {
+        unsafe {
+            DeleteObject(region);
+        }
+        return std::ptr::null_mut();
+    }
+    region
 }
 
 unsafe fn fill_region(dc: Hdc, region: Hrgn, color: Color) {
@@ -68,7 +91,11 @@ unsafe fn fill_region(dc: Hdc, region: Hrgn, color: Color) {
     }
 }
 
-unsafe fn border_ring(rect: &Rect, widths: [f32; 4], radius: f32) -> Hrgn {
+pub(in crate::windows_app) unsafe fn border_ring(
+    rect: &Rect,
+    widths: [f32; 4],
+    radius: f32,
+) -> Hrgn {
     let [top, right, bottom, left] = widths.map(|v| v as i32);
     let radius = radius
         .max(0.0)

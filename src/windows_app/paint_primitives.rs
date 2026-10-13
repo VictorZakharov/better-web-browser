@@ -5,6 +5,7 @@ use std::mem::size_of;
 mod border;
 mod opaque;
 mod sparse;
+pub(super) use border::{border_ring, border_side_region};
 pub(super) use border::{paint_border, paint_border_colors};
 #[cfg(test)]
 pub(super) use sparse::paint as paint_sparse_bitmap;

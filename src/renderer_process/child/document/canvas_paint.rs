@@ -9,6 +9,11 @@ use super::*;
 use crate::engine::DisplayItem;
 
 impl DocumentRuntime {
+    pub(in crate::renderer_process::child) fn set_gpu_canvas_enabled(&mut self, enabled: bool) {
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            runtime.set_gpu_canvas_enabled(enabled);
+        }
+    }
     pub(super) fn try_repaint_canvas_surfaces(
         &mut self,
         outcome: &ScriptOutcome,
@@ -74,7 +79,7 @@ impl DocumentRuntime {
                 snapshot.width,
                 snapshot.height,
                 snapshot.content_size,
-                snapshot.pixels.is_some(),
+                snapshot.pixels.is_some() || snapshot.gpu_frame.is_some(),
             );
             stable &= key.as_ref().is_some_and(|key| {
                 self.layout
@@ -82,7 +87,11 @@ impl DocumentRuntime {
                     .iter()
                     .any(|item| matches!(item, DisplayItem::Image { url, .. } if url == key))
             });
-            if let Err(error) = self.page.install_canvas_bitmap(
+            if let Some(frame) = snapshot.gpu_frame {
+                stable &=
+                    self.page
+                        .install_canvas_gpu_frame(snapshot.node, snapshot.content_size, frame);
+            } else if let Err(error) = self.page.install_canvas_bitmap(
                 snapshot.node,
                 snapshot.width,
                 snapshot.height,

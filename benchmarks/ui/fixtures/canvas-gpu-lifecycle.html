@@ -1,0 +1,60 @@
+<!doctype html>
+<meta charset="utf-8"><title>Canvas GPU lifecycle running</title>
+<style>
+body { margin: 20px; background: #183048; color: white; font: 16px Arial; }
+#surface { width: 340px; height: 230px; overflow: hidden; background: #284058; }
+canvas { width: 300px; height: 190px; margin: 12px; }
+button { margin: 8px 3px; padding: 6px; }
+</style>
+<h1>Canvas lifecycle and native presentation</h1>
+<div id="surface"><canvas width="257" height="129"></canvas></div>
+<button id="redraw">Redraw</button><button id="resize">Resize</button>
+<button id="detach">Detach and reattach</button><button id="rotate">Rotate</button>
+<button id="lose">Lose and restore context</button>
+<p id="result">Starting</p>
+<script>
+const canvas = document.querySelector('canvas');
+const gl = canvas.getContext('webgl2', {alpha:true, premultipliedAlpha:false,
+  antialias:true, preserveDrawingBuffer:false});
+if (!gl) throw Error('WebGL2 unavailable');
+let program, frames, generation = 0;
+function initialize() {
+  function shader(type, source) {
+    const shader = gl.createShader(type); gl.shaderSource(shader, source); gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw Error(gl.getShaderInfoLog(shader));
+    return shader;
+  }
+  program = gl.createProgram();
+  gl.attachShader(program, shader(gl.VERTEX_SHADER, `#version 300 es
+    void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));gl_Position=vec4(p*2.0-1.0,0,1);}`));
+  gl.attachShader(program, shader(gl.FRAGMENT_SHADER, `#version 300 es
+    precision highp float;precision highp int;out vec4 color;
+    void main(){ivec2 p=ivec2(gl_FragCoord.xy);color=vec4(float(p.x%5)/4.0,float(p.y%7)/6.0,float((p.x+p.y)%3)/2.0,1);}`));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(program));
+}
+function begin() {
+  frames = 0; generation++;
+  requestAnimationFrame(draw);
+}
+function draw() {
+  gl.viewport(0,0,canvas.width,canvas.height);gl.useProgram(program);gl.drawArrays(gl.TRIANGLES,0,3);
+  if (gl.getError()) throw Error('draw state failed');
+  if (++frames < 40) requestAnimationFrame(draw);
+  else {
+    document.querySelector('#result').textContent = 'Passed: generation '+generation+' at '+canvas.width+'x'+canvas.height;
+    document.title = 'done Canvas GPU lifecycle';
+  }
+}
+document.querySelector('#redraw').onclick = begin;
+document.querySelector('#resize').onclick = () => {canvas.width=131;canvas.height=67;begin();};
+document.querySelector('#detach').onclick = () => {
+  canvas.remove();setTimeout(()=>{document.querySelector('#surface').appendChild(canvas);begin();},100);
+};
+document.querySelector('#rotate').onclick = () => {canvas.style.transform='rotate(13deg)';};
+const loss = gl.getExtension('WEBGL_lose_context');
+canvas.addEventListener('webglcontextlost', event => {event.preventDefault();setTimeout(()=>loss.restoreContext(),100);});
+canvas.addEventListener('webglcontextrestored', () => {initialize();begin();});
+document.querySelector('#lose').onclick = () => {if(!loss)throw Error('loss extension unavailable');loss.loseContext();};
+initialize();begin();
+</script>

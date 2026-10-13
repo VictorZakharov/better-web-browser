@@ -12,6 +12,8 @@ mod document;
 mod fetch;
 mod file_picker;
 mod geolocation;
+mod gpu;
+pub use gpu::PresentedGpuCanvas;
 mod input;
 mod media_capture;
 mod media_devices;
@@ -113,8 +115,8 @@ pub use state::{
 
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
-// Font records carry CSS base direction, kerning and bounded OpenType features.
-pub const PROTOCOL_MAJOR: u16 = 17;
+// Presentation carries bounded GPU Canvas descriptors and document-scoped policy.
+pub const PROTOCOL_MAJOR: u16 = 18;
 pub const PROTOCOL_MINOR: u16 = 0;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 

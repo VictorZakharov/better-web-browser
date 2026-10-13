@@ -19,8 +19,20 @@ function Get-TestImpactCatalog {
         'renderer' = @{ Target='renderer_process'; Filter=''; Covers=@('canvas-renderer','webgl-renderer') }
         'live-runtime' = @{ Target='live_runtime'; Filter=''; Covers=@() }
         'selector' = @{ Target='selector'; Filter=''; Covers=@() }
+        'full' = @{ Target='all'; Filter=''; Covers=@() }
     }
     $owners = @(
+        # Shared presentation modules cross the renderer/native boundary. No
+        # isolated native consumer target replaces their broader contracts yet.
+        @{ Id='gpu-presentation'; Paths=@('src/gpu_frame.rs','src/gpu_composition.rs','src/gpu_composition/*',
+            'src/engine/webgl/gpu_frames.rs','src/engine/webgl/gpu_frames/*',
+            'src/engine/webgl/context/gpu_surface*','src/engine/webgl/context/shared_copy.rs',
+            'src/renderer_protocol/gpu.rs','src/renderer_protocol/gpu/*',
+            'src/renderer_protocol/codec/payload/gpu.rs','src/renderer_process/child/connection/gpu.rs',
+            'src/windows_app/gpu_composition.rs','src/windows_app/gpu_composition/*',
+            'tests/renderer_process/gpu_canvas.rs','benchmarks/ui/fixtures/canvas-gpu-composition.html',
+            'benchmarks/ui/fixtures/canvas-gpu-lifecycle.html');
+            Groups=@('full'); Consumers=@() }
         @{ Id='canvas'; Paths=@('src/engine/script/bootstrap/canvas*.js','src/engine/script/bootstrap/offscreen*.js',
             'src/engine/script/canvas_host.rs','src/engine/script/canvas_host/*',
             'src/engine/script/engine/bridge/canvas_inspect.rs',
@@ -90,7 +102,7 @@ function Get-ImpactedTestPlan {
     foreach ($id in @($ids)) {
         foreach ($covered in $catalog.Groups[$id].Covers) { [void]$ids.Remove($covered) }
     }
-    $full = $Final.IsPresent -or $unknown.Count -gt 0
+    $full = $Final.IsPresent -or $unknown.Count -gt 0 -or $ids.Contains('full')
     $commands = if ($full) {
         @(@{ Id='full'; Target='all'; Filter='' },@{ Id='selector'; Target='selector'; Filter='' })
     } else {

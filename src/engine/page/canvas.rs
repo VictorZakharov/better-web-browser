@@ -91,6 +91,7 @@ impl Page {
             return Ok(());
         }
         let key = key(node_id, content_size);
+        self.canvas_gpu_frames.remove(&key);
         let count = usize::try_from(width)
             .ok()
             .and_then(|width| {
@@ -153,6 +154,26 @@ impl Page {
             }
             connected
         });
+        self.canvas_gpu_frames
+            .retain(|key, _| self.images.contains_key(key));
+    }
+
+    pub(crate) fn install_canvas_gpu_frame(
+        &mut self,
+        node: NodeId,
+        content_size: (u32, u32),
+        frame: crate::gpu_frame::GpuFrame,
+    ) -> bool {
+        let Some(key) =
+            self.canvas_repaint_key(node, frame.width, frame.height, content_size, true)
+        else {
+            return false;
+        };
+        if !frame.validate() {
+            return false;
+        }
+        self.canvas_gpu_frames.insert(key, frame);
+        true
     }
 }
 

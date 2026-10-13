@@ -35,7 +35,7 @@ impl NativePaintTrace {
 
     pub(super) fn to_json(&self) -> String {
         serde_json::json!({
-            "scope": "offscreen native compatible bitmap; no DWM presentation",
+            "scope": "offscreen GDI compatible bitmap; excludes active GPU page content and DWM presentation",
             "total_samples": self.count,
             "retained_samples": self.samples,
             "total_installations": self.installation_count,
@@ -89,6 +89,7 @@ impl BrowserState {
             Ok((flush_ms, totals)) => serde_json::json!({
                 "elapsed_ms": elapsed_ms, "paint_ms": paint_ms,
                 "flush_ms": flush_ms, "items": totals.to_json(),
+                "gpu_content_active":self.gpu_content_active(),
             }),
             Err(error) => serde_json::json!({
                 "elapsed_ms": elapsed_ms, "paint_ms": paint_ms, "error": error,

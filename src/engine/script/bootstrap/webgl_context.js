@@ -193,12 +193,12 @@
         webGlCall(state.context, 'resizeCanvas', [native.canvas.width, native.canvas.height]);
         native.dirty = true;
     };
-    const webGlPaintSnapshot = (state, owner) => {
+    const webGlPaintSnapshot = (state, owner, gpuEligible = false, fallbackFrame = false) => {
         const native = webGlContexts.get(state.context);
         if (!native || native.lost || !native.dirty) return null;
         flushWebGlCommands();
         if (native.lost) return null;
-        const metadata = host('canvasWebGlPaintSnapshot', native.id, owner);
+        const metadata = host('canvasWebGlPaintSnapshot', native.id, owner, gpuEligible, fallbackFrame);
         return metadata ? webGlWireParse(metadata) : null;
     };
     const webGlPresented = state => {

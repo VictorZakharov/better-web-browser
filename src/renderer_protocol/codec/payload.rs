@@ -5,6 +5,7 @@ mod document;
 mod fetch;
 mod file_picker;
 mod geolocation;
+mod gpu;
 mod input;
 mod media_capture;
 mod media_devices;
@@ -84,6 +85,9 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
     }
     let mut payload = Vec::new();
     let kind = match message {
+        BrowserMessage::GpuCanvasPolicy { document, enabled } => {
+            return gpu::encode(*document, *enabled);
+        }
         BrowserMessage::Hello {
             nonce,
             context,
@@ -176,6 +180,7 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
 
 pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage, ProtocolError> {
     match kind {
+        0x0251 => gpu::decode(payload),
         1 => {
             require_length(payload, NONCE_LENGTH + 20)?;
             let nonce = nonce_from(&payload[..NONCE_LENGTH])?;

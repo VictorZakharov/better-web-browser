@@ -5,6 +5,36 @@ fn owner(id: u128) -> NodeId {
 }
 
 #[test]
+fn gpu_transfer_tokens_require_the_same_owner_extent_and_capture_batch() {
+    let frame = crate::gpu_frame::GpuFrame {
+        surface: 1,
+        handle: 2,
+        key: 3,
+        width: 3,
+        height: 2,
+        adapter_low: 4,
+        adapter_high: -1,
+    };
+    let mut transfers = Transfers::default();
+    assert!(transfers.record_gpu(owner(1), frame).is_none());
+    assert!(transfers.begin());
+    let (_, _, token) = transfers.record_gpu(owner(1), frame).unwrap();
+    let mut batch = transfers.finish();
+    assert!(batch.take_gpu(token, owner(2), 3, 2).is_none());
+    assert!(batch.take_gpu(token, owner(1), 2, 3).is_none());
+    assert!(
+        batch.take(token, owner(1), 3, 2).is_none(),
+        "a GPU token cannot provide author pixel bytes"
+    );
+    assert_eq!(batch.take_gpu(token, owner(1), 3, 2), Some(frame));
+    assert!(batch.take_gpu(token, owner(1), 3, 2).is_none());
+    assert!(transfers.begin());
+    transfers.bytes = MAX_BYTES - 4;
+    assert!(transfers.record_gpu(owner(1), frame).is_none());
+    assert!(transfers.records.is_empty());
+}
+
+#[test]
 fn transfer_moves_the_allocation_once_and_checks_owner_and_extent() {
     let mut transfers = Transfers::default();
     assert!(!transfers.available());

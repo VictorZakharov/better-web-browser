@@ -28,7 +28,7 @@ impl LaunchOptions {
             .unwrap_or((DEFAULT_WINDOW_WIDTH_DIP, DEFAULT_WINDOW_HEIGHT_DIP))
     }
 
-    fn parse_from(
+    pub(in crate::windows_app::benchmark) fn parse_from(
         process_started: Instant,
         arguments: impl IntoIterator<Item = String>,
     ) -> Result<Self, String> {
@@ -118,6 +118,14 @@ impl LaunchOptions {
                     )?));
                 }
                 "--back-after-ready" => navigation_targets.push(BenchmarkNavigation::HistoryBack),
+                "--browser-action-after-ready" => {
+                    navigation_targets.push(BenchmarkNavigation::Browser(
+                        super::navigation::BrowserAction::parse(&required(
+                            &mut arguments,
+                            &argument,
+                        )?)?,
+                    ));
+                }
                 "--activate-link-after-ready" => {
                     navigation_targets.push(BenchmarkNavigation::ActivateLink(required(
                         &mut arguments,

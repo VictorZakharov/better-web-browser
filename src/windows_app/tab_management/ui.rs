@@ -4,6 +4,7 @@ use super::*;
 
 impl BrowserState {
     pub(in crate::windows_app) unsafe fn suspend_active_tab_ui(&mut self) {
+        self.suspend_gpu_canvas();
         // The animation timer belongs to this HWND's foreground tab, not a
         // saved background target that can outlive the activation change.
         self.suspend_wheel_gesture();

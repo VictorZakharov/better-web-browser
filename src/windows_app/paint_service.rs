@@ -46,6 +46,9 @@ pub(super) unsafe fn flush_for_message(app: &BrowserApplication, message_window:
                 .then_some(window)
         });
     if let Some(window) = window {
+        if let Some((_, state)) = app.browser_for_message(window) {
+            (*state).flush_gpu_composition();
+        }
         UpdateWindow(window);
     }
 }

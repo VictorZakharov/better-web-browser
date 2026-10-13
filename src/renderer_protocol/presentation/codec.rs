@@ -57,6 +57,7 @@ pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolEr
         writer.u32(glyph.image.height);
         writer.bytes(&glyph.image.bgra)?;
     }
+    super::super::gpu::encode(&mut writer, &value.gpu_canvases)?;
     let bytes = writer.finish();
     if bytes.len() > MAX_RENDERER_PRESENTATION_BYTES {
         return Err(ProtocolError::PayloadTooLarge(bytes.len() as u32));
@@ -243,6 +244,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
             color,
         });
     }
+    let gpu_canvases = super::super::gpu::decode(&mut reader)?;
     reader.finish()?;
     Ok(RendererPresentation {
         document,
@@ -255,6 +257,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
         reader: reader_document,
         layout,
         images,
+        gpu_canvases,
         retired_image_keys,
         glyph_epoch,
         glyphs,

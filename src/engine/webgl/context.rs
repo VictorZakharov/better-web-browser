@@ -1,11 +1,15 @@
 //! EGL pbuffer lifecycle. No HWND, client pointers, or uninitialized author-visible resources.
 use mozangle::egl::ffi as egl;
 use std::{marker::PhantomData, ptr, rc::Rc};
+mod gpu_surface;
+mod shared_copy;
+pub(super) use gpu_surface::SharedSurface;
 
 pub(super) struct NativeContext {
     display: egl::types::EGLDisplay,
     context: egl::types::EGLContext,
     surface: egl::types::EGLSurface,
+    config: egl::types::EGLConfig,
     // ANGLE contexts are thread-affine; never make this object Send/Sync.
     _thread: PhantomData<Rc<()>>,
 }
@@ -35,6 +39,7 @@ impl NativeContext {
             display,
             context: ptr::null(),
             surface: ptr::null(),
+            config: ptr::null(),
             _thread: PhantomData,
         };
         let mut major = 0;
@@ -69,6 +74,7 @@ impl NativeContext {
             {
                 return Err(error("choose versioned GLES pbuffer format"));
             }
+            result.config = config;
             let attributes = [
                 egl::WIDTH as i32,
                 1,

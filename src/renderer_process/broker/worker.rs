@@ -38,6 +38,10 @@ pub(super) enum BrokerCommand {
     },
     Test(TestCommand),
     Input(DocumentInput),
+    GpuCanvasPolicy {
+        document: DocumentId,
+        enabled: bool,
+    },
     BroadcastDelivery(crate::renderer_protocol::BroadcastDelivery),
     FullscreenResponse(crate::renderer_protocol::FullscreenResponse),
     PointerLockResponse(crate::renderer_protocol::PointerLockResponse),

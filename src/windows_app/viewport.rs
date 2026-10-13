@@ -82,6 +82,7 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn toggle_reader(&mut self) {
+        self.suspend_gpu_canvas();
         self.surface = match self.surface {
             Surface::Page => Surface::Reader,
             Surface::Reader => Surface::Page,
@@ -98,6 +99,7 @@ impl BrowserState {
         InvalidateRect(self.controls.reader, null(), 0);
         self.scroll_y = 0;
         self.rebuild_layout();
+        self.enable_gpu_canvas_policy();
         self.refresh_accessibility_full();
         InvalidateRect(self.window, null(), 0);
     }

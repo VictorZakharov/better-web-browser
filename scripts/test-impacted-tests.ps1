@@ -14,6 +14,12 @@ $uploads=$images+@('webgl-renderer')
 $webgl=@('webgl-lib','webgl-renderer')
 $script=@('script-lib','renderer','live-runtime')
 $full=@('full','selector')
+foreach ($path in @('src/engine/webgl/gpu_frames/copy.rs','src/gpu_composition/frames.rs',
+    'src/windows_app/gpu_composition/groups.rs','src/renderer_protocol/gpu/tests.rs',
+    'benchmarks/ui/fixtures/canvas-gpu-composition.html')) {
+    $plan=Expect-Plan @($path) $full $true
+    if ($plan.Unknown.Count -ne 0) {throw "Shared GPU presentation ownership is missing: $path"}
+}
 $null=Expect-Plan @('src/engine/script/canvas_host/glyph_paint/shadow.rs') $canvas
 $null=Expect-Plan @('src\engine\script\bootstrap\canvas_text_shadow.js') $canvas
 $null=Expect-Plan @('tests/canvas/text-shadow-regions.js') $canvas
