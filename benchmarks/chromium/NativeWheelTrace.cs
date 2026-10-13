@@ -10,6 +10,8 @@ internal sealed class NativeWheelTrace : IDisposable
     private readonly object gate = new();
     private readonly IDisposable subscription;
     private readonly NativeWheelSamples samples = new();
+    private int? probeContext;
+    private readonly TaskCompletionSource probeRetired = NewCompletion();
     public NativeWheelResult Result => samples.Result;
     private TaskCompletionSource frameChanged = NewCompletion();
 
@@ -19,12 +21,31 @@ internal sealed class NativeWheelTrace : IDisposable
         this.stopwatch = stopwatch;
         subscription = cdp.Observe(root => {
             if (!root.TryGetProperty("method", out var method)) return;
-            if (method.GetString() is not ("Page.frameNavigated" or "Page.screencastFrame")) return;
-            var parameters = root.GetProperty("params");
+            if (method.GetString() is not ("Page.frameNavigated" or "Page.screencastFrame" or
+                "Runtime.executionContextDestroyed" or "Runtime.executionContextsCleared")) return;
+            root.TryGetProperty("params", out var parameters);
             lock (gate)
             {
-                if (method.GetString() == "Page.frameNavigated" && !parameters.GetProperty("frame").TryGetProperty("parentId", out _))
+                // Runtime can retire the isolated world before Page reports the
+                // committed replacement. Never evaluate or certify that old world.
+                // https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#event-executionContextDestroyed
+                if (probeContext is { } context && (method.GetString() == "Runtime.executionContextsCleared" ||
+                    method.GetString() == "Runtime.executionContextDestroyed" &&
+                    parameters.GetProperty("executionContextId").GetInt32() == context))
+                {
                     samples.Navigated();
+                    probeContext = null;
+                    probeRetired.TrySetResult();
+                }
+                if (method.GetString() == "Page.frameNavigated" && !parameters.GetProperty("frame").TryGetProperty("parentId", out _))
+                {
+                    samples.Navigated();
+                    if (probeContext is not null)
+                    {
+                        probeContext = null;
+                        probeRetired.TrySetResult();
+                    }
+                }
                 if (method.GetString() != "Page.screencastFrame") return;
                 var metadata = parameters.GetProperty("metadata");
                 samples.Frame(metadata.GetProperty("scrollOffsetY").GetDouble(), stopwatch.Elapsed.TotalMilliseconds,
@@ -45,6 +66,7 @@ internal sealed class NativeWheelTrace : IDisposable
             worldName = "breeze-native-wheel-diagnostics"
         }, timeout);
         var context = world.GetProperty("executionContextId").GetInt32();
+        lock (gate) probeContext = context;
         await EvaluateAsync(nextId++, context, ProbeScript, timeout);
         var anchor = pageReadyMs;
         var firstDelay = options.NextActionDelayMs();
@@ -111,7 +133,17 @@ internal sealed class NativeWheelTrace : IDisposable
                 verdict = NativeWheelVerdict.Parse(snapshot, sample.Sequence, sample.Input.Delta);
             }
             catch (TimeoutException) { break; }
-            catch (InvalidOperationException) when (Retired(sample)) { return (verdict, nextId); }
+            catch (InvalidOperationException)
+            {
+                // A destroyed-world reply can arrive before its retirement event.
+                // Use the existing observation deadline to await that evidence;
+                // unrelated diagnostic failures still propagate.
+                var remainingMs = observation.RemainingMs(stopwatch.Elapsed.TotalMilliseconds);
+                if (!Retired(sample) && remainingMs > 0)
+                    await Task.WhenAny(probeRetired.Task, Task.Delay(TimeSpan.FromMilliseconds(remainingMs)));
+                if (Retired(sample)) return (verdict, nextId);
+                throw;
+            }
             var now = stopwatch.Elapsed.TotalMilliseconds;
             if (observation.Accepts(verdict, now)) return (verdict, nextId);
             var delay = observation.PollDelayMs(now);

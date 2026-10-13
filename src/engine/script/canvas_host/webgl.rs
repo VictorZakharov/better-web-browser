@@ -13,6 +13,10 @@ impl Contexts {
     pub(crate) fn clear(&mut self) {}
     pub(crate) fn complete_task(&mut self) {}
     pub(crate) fn set_profiling(&mut self, _: bool) {}
+    pub(crate) fn resource_diagnostics(&mut self) -> Vec<String> {
+        // No native contexts exist on unsupported platforms.
+        Vec::new()
+    }
 }
 
 /// Accept only independent copies already made by the V8 value boundary.
