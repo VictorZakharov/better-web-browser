@@ -6,6 +6,7 @@ use crate::engine::MediaEnvironment;
 use crate::navigation::resolve_url;
 
 mod base_url;
+mod canvas_presentation;
 mod capture;
 mod cookies;
 mod csp;
@@ -76,6 +77,7 @@ pub(super) struct HostState {
     pub(super) media_images: super::media_host::images::MediaImages,
     pub(super) element_images: super::canvas_host::element_images::ElementImages,
     pub(super) webgl: super::canvas_host::webgl::Contexts,
+    pub(super) canvas_presentations: canvas_presentation::Transfers,
     pub(super) media_recorders: super::media_recorder::MediaRecorders,
     pub(super) text_decoders: super::text_encoding_host::TextDecoders,
     pub(super) navigation_url: Option<String>,
@@ -229,6 +231,7 @@ impl HostState {
             media_images: Default::default(),
             element_images: Default::default(),
             webgl: Default::default(),
+            canvas_presentations: Default::default(),
             media_recorders: Default::default(),
             text_decoders: Default::default(),
             navigation_url: None,

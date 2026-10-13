@@ -17,6 +17,7 @@ $full=@('full','selector')
 $null=Expect-Plan @('src/engine/script/canvas_host/glyph_paint/shadow.rs') $canvas
 $null=Expect-Plan @('src\engine\script\bootstrap\canvas_text_shadow.js') $canvas
 $null=Expect-Plan @('tests/canvas/text-shadow-regions.js') $canvas
+$null=Expect-Plan @('benchmarks/ui/fixtures/canvas-frame-publication.html') $canvas
 $null=Expect-Plan @('src/engine/script/bootstrap/webgl2_image_rows.js') $uploads
 $null=Expect-Plan @('src/engine/webgl/command_batch/uploads.rs') $webgl
 $null=Expect-Plan @('src/engine/script/engine/bridge.rs') $script

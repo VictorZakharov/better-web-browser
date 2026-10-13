@@ -8,6 +8,8 @@ mod fixtures;
 use fixtures::{input, retained_fixture, script_inputs, snapshot};
 
 mod broadcast_channel;
+#[cfg(windows)]
+mod canvas_presentation_native;
 mod clipboard;
 mod document_lifecycle;
 mod document_profile;

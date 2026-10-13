@@ -193,6 +193,14 @@
         webGlCall(state.context, 'resizeCanvas', [native.canvas.width, native.canvas.height]);
         native.dirty = true;
     };
+    const webGlPaintSnapshot = (state, owner) => {
+        const native = webGlContexts.get(state.context);
+        if (!native || native.lost || !native.dirty) return null;
+        flushWebGlCommands();
+        if (native.lost) return null;
+        const metadata = host('canvasWebGlPaintSnapshot', native.id, owner);
+        return metadata ? webGlWireParse(metadata) : null;
+    };
     const webGlPresented = state => {
         const native = webGlContexts.get(state.context);
         if (!native || native.lost) return;
