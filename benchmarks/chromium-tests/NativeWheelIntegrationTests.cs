@@ -48,13 +48,30 @@ internal static class NativeWheelIntegrationTests
             }, {capture:true,passive:true});
             """, "", new WheelPoint(600, 300, 600));
         Assert(retired.NativeWheel!.Samples.Single().Status == "retired_document" &&
-            retired.NativeWheel.Samples.Single().DefaultPrevented is null, "replacement document certified an old wheel");
+            retired.NativeWheel.Samples.Single().DefaultPrevented is null,
+            $"replacement document retained an old wheel: status={retired.NativeWheel.Samples.Single().Status}, error={retired.Error}");
         AssertNoFrame(retired, "retired document retained a frame latency");
-        Console.WriteLine("Six hidden trusted native-wheel fixture cases passed.");
+
+        var lateRetirement = await CaptureAsync(chrome, root, "late-retirement", """
+            addEventListener('wheel', event => {
+              event.stopImmediatePropagation();
+              setTimeout(() => location.replace('about:blank'), 1200);
+            }, {capture:true,passive:true});
+            """, "", 2000, new WheelPoint(600, 300, 600));
+        var lateSample = lateRetirement.NativeWheel!.Samples.Single();
+        Assert(lateRetirement.FinalUrl == "about:blank" && lateSample.Status == "retired_document" &&
+            lateSample.DefaultPrevented is null && lateSample.ListenerVerdictDeadlineReached,
+            $"navigation after the observation deadline retained an old wheel: status={lateSample.Status}, error={lateRetirement.Error}");
+        AssertNoFrame(lateRetirement, "late document retirement retained a frame latency");
+        Console.WriteLine("Seven hidden trusted native-wheel fixture cases passed.");
     }
 
     private static async Task<BenchmarkResult> CaptureAsync(
         string chrome, string root, string name, string script, string prefix, params WheelPoint[] inputs)
+        => await CaptureAsync(chrome, root, name, script, prefix, 100, inputs);
+
+    private static async Task<BenchmarkResult> CaptureAsync(
+        string chrome, string root, string name, string script, string prefix, int settleMs, params WheelPoint[] inputs)
     {
         var html = $$"""
             <!doctype html><html><head><style>body{margin:0}main{height:6000px;background:#dae7f8}</style></head><body>
@@ -65,7 +82,7 @@ internal static class NativeWheelIntegrationTests
             Output = Path.Combine(root, "native-wheel-" + name + ".json"), ChromePath = chrome,
             ViewportWidth = 1249, ViewportHeight = 548, DeviceScaleFactor = 1.25,
             InitialActionDelayMs = 1000, NavigationDelayMs = 1000,
-            WheelAfterReady = inputs, SettleMs = 100, TimeoutMs = 15000
+            WheelAfterReady = inputs, SettleMs = settleMs, TimeoutMs = 15000
         });
         Assert(result.Headless && result.UnifiedHeadless && result.FreshProfile && result.CleanupError is null,
             $"fixture launch/cleanup contract failed: {name}");

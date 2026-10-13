@@ -43,6 +43,15 @@ internal sealed class NativeWheelSamples
     public void Navigated()
     {
         if (pending is not null) { pending.Status = "retired_document"; ClearFrame(pending); }
+        // A missing verdict can reach its deadline before navigation commits.
+        // Retire those unresolved observations even after Finish clears pending;
+        // already certified samples keep their original document's evidence.
+        foreach (var sample in Result.Samples.Where(sample => sample.DocumentEpoch == DocumentEpoch &&
+            sample.Status == "listener_verdict_missing"))
+        {
+            sample.Status = "retired_document";
+            ClearFrame(sample);
+        }
         pending = null;
         LatestScrollY = null;
         DocumentEpoch++;

@@ -57,6 +57,11 @@ internal static class NativeWheelTests
         samples.Finish(missing, null, false);
         Assert(missing.Status == "listener_verdict_missing" && missing.EnqueueToCdpReplyMs == 3 && missing.DefaultPrevented is null && missing.EnqueueToFirstChangedCompositorFrameReceivedMs is null,
             "missing listener verdict was conflated with cancellation or paint latency");
+        samples.Navigated();
+        Assert(missing.Status == "retired_document" && missing.DefaultPrevented is null,
+            "navigation after a missing-verdict deadline left an unresolved old-document sample live");
+        Assert(down.Status == "compositor_motion_observed" && down.DefaultPrevented == false,
+            "later navigation discarded a previously certified observation");
         var superseded = samples.Begin(new(600, 300, 600), 7100, 7100)!;
         samples.Frame(40, 7101, null, null);
         var replacing = samples.Begin(new(600, 300, -600), 7102, 7102)!;
