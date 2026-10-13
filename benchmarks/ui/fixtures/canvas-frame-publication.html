@@ -1,0 +1,45 @@
+<!doctype html><meta charset="utf-8"><title>pending Canvas frame publication</title>
+<style>
+body{margin:16px;background:#182838;color:white;font:16px sans-serif}
+canvas{display:block;margin:8px 0;width:640px;height:352px;background:#804020}
+.small{display:inline-block;width:256px;height:128px}
+</style>
+<p id="result">Native Canvas frame publication</p>
+<canvas width="1382" height="760"></canvas>
+<canvas class="small" width="256" height="128"></canvas>
+<canvas class="small" width="256" height="128"></canvas>
+<script>
+(() => {
+  const surfaces=[...document.querySelectorAll('canvas')].map((canvas,index)=>{
+    const attributes=index===0?{alpha:false,premultipliedAlpha:true,preserveDrawingBuffer:false}:
+      {alpha:true,premultipliedAlpha:index===1,preserveDrawingBuffer:true};
+    const gl=canvas.getContext('webgl2',{...attributes,antialias:false});
+    if(!gl)throw Error('WebGL 2 unavailable');
+    return {canvas,gl,attributes};
+  });
+  let frame=0,previous=null;
+  const intervals=[];
+  const draw=now=>{
+    if(previous!==null)intervals.push(now-previous);
+    previous=now;
+    for(const {canvas,gl,attributes} of surfaces){
+      gl.disable(gl.SCISSOR_TEST);
+      const odd=frame%2;
+      gl.clearColor(odd?.25:.125,.125,0,.5);gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.enable(gl.SCISSOR_TEST);gl.scissor(0,canvas.height/2,canvas.width,canvas.height/2);
+      gl.clearColor(0,1,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
+      // Verify actual GL output without populating the public Canvas bitmap
+      // cache. This leaves the following paint checkpoint to export the frame.
+      const pixel=new Uint8Array(4);gl.readPixels(0,canvas.height-1,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);
+      if(pixel.join()!=='0,255,0,255'||gl.getError())throw Error('native frame result');
+    }
+    if(++frame<65){requestAnimationFrame(draw);return;}
+    const result=document.getElementById('result');
+    result.textContent='done: 65 frames, opaque and both alpha representations';
+    for(let offset=0;offset<intervals.length;offset+=16)
+      result.setAttribute('data-intervals-'+offset/16,JSON.stringify(intervals.slice(offset,offset+16)));
+    document.title='done Canvas publication frames='+frame+';pixels=0,255,0,255';
+  };
+  requestAnimationFrame(draw);
+})()
+</script>

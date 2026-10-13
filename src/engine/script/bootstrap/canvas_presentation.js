@@ -134,7 +134,7 @@
             const width = dimensions[0], height = dimensions[1];
             const previous = canvasPrivateWeakGet(presentedDimensions, canvas);
             if (previous?.[0] !== width || previous?.[1] !== height) {
-                stateForCanvas(canvas);
+                stateForCanvas(canvas, false, false);
                 canvasPrivateSetAdd(dirtyCanvases, canvas);
             }
             if (!canvasPrivateSetHas(dirtyCanvases, canvas)) continue;
@@ -154,10 +154,31 @@
                     continue;
                 }
             }
-            const state = stateForCanvas(canvas);
+            const state = stateForCanvas(canvas, false, false);
             const placeholder = state.placeholder;
             const output = placeholder && !canvasOffscreenDetached(placeholder)
-                ? stateForCanvas(placeholder) : state;
+                ? stateForCanvas(placeholder, false, false) : state;
+            // A dirty native WebGL frame needs no JavaScript pixel cache for
+            // painting. The embedder owns this bounded transfer until the hook
+            // returns; public bitmap/export consumers still snapshot independently.
+            const transfer = !canvasOffscreenDetached(placeholder) && width && height &&
+                output.mode === 'webgl' ? webGlPaintSnapshot(output, nodeId(canvas)) : null;
+            if (transfer) {
+                const length = transfer[0] * transfer[1] * 4;
+                if (bytes + length > MAX_PRESENTED_CANVAS_BYTES) {
+                    if (!deferred) host('canvasPaintDirty', nodeId(canvas));
+                    deferred = true;
+                    continue;
+                }
+                bytes += length;
+                canvasPrivatePush(snapshots, [nodeId(canvas), transfer[0], transfer[1], width, height, transfer[2]]);
+                webGlPresented(output);
+                canvasPrivateWeakSetAdd(exportedBitmaps, canvas);
+                canvasPrivateWeakSet(presentedDimensions, canvas, [width, height]);
+                canvasPrivateSetDelete(dirtyCanvases, canvas);
+                continue;
+            }
+            if (output.mode === 'webgl') synchronizeWebGlCanvas(output);
             let pixels = output.pixels;
             if (canvasOffscreenDetached(placeholder) || !output.width || !output.height ||
                 !width || !height || !pixels)

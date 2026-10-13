@@ -25,9 +25,14 @@ impl ScriptRuntime {
         let Some(context) = self.context.as_deref_mut() else {
             return Ok(Vec::new());
         };
-        let response = context
-            .call_global("__takeCanvasPresentation", &[])
-            .map_err(|error| format!("snapshot Canvas pixels: {error}"))?;
+        if !self.host.borrow_mut().canvas_presentations.begin() {
+            return Err("Canvas snapshot capture is already active".into());
+        }
+        let response = context.call_global("__takeCanvasPresentation", &[]);
+        // Always retire the transfer batch, including a hook exception or a
+        // malformed reply. Unreferenced native pixels drop with this local batch.
+        let mut native = self.host.borrow_mut().canvas_presentations.finish();
+        let response = response.map_err(|error| format!("snapshot Canvas pixels: {error}"))?;
         let JsValue::Array(records) = response else {
             return Err("Canvas snapshot hook returned an invalid batch".into());
         };
@@ -58,6 +63,17 @@ impl ScriptRuntime {
                 .node(handle)
                 .filter(|node| node.tag_name() == Some("canvas"))
                 .ok_or_else(|| "Canvas snapshot has no matching element".to_string())?;
+            let pixels = if matches!(pixels, JsValue::Number(_)) {
+                let token =
+                    unsigned(&pixels).ok_or("Canvas snapshot has an invalid transfer token")?;
+                JsValue::Bytes(
+                    native
+                        .take(token, node.id(), width, height)
+                        .ok_or("Canvas snapshot has no matching native transfer")?,
+                )
+            } else {
+                pixels
+            };
             let bytes = match pixels {
                 JsValue::Null => None,
                 JsValue::Bytes(value) => {

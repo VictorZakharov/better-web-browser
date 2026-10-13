@@ -25,7 +25,8 @@ function Get-TestImpactCatalog {
             'src/engine/script/canvas_host.rs','src/engine/script/canvas_host/*',
             'src/engine/script/engine/bridge/canvas_inspect.rs',
             'src/engine/script/engine/runtime/*canvas*tests.rs','src/engine/script/tests/canvas*',
-            'tests/canvas/*','benchmarks/ui/fixtures/canvas-label-atlas.html');
+            'tests/canvas/*','benchmarks/ui/fixtures/canvas-label-atlas.html',
+            'benchmarks/ui/fixtures/canvas-frame-publication.html');
             Groups=@('canvas-lib','canvas-renderer'); Consumers=@('webgl-images') }
         @{ Id='webgl-images'; Paths=@('src/engine/script/bootstrap/webgl2_image*.js',
             'src/engine/script/bootstrap/webgl_video_sources.js',

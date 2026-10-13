@@ -1,0 +1,41 @@
+# Native WebGL Canvas paint transfers
+
+The October 12 Last Stand report records a 17.3 FPS average and 100.5 ms frame p95, with 12.06 ms average work inside the application callback. This distinguishes application timing from the remaining rendering and publication work; missing GPU timing prevents assigning the gap entirely to CPU overhead. The application was in its menu with Auto already reduced to Low, so this is neither fixed-quality evidence nor sustained combat acceptance.
+
+A separate October 13 hidden diagnostic of the merged #235 executable renders the actual textured arena. Its retained steady-state tail includes roughly 11–17 ms WebGL snapshot bridge calls and 18–20 ms native paint replays. Those instrumented observations include GPU completion and shared-machine scheduling; they are not isolated CPU costs or visible FPS. The checkpoint diagnostics prove retained style/layout reuse in that tail. Aggregate checkpoint counters must not be read as evidence that every frame reconstructed geometry.
+
+## Ownership and compatibility
+
+Previously, an ordinary WebGL paint checkpoint moved its owned native RGBA snapshot into V8, retained it as the private Canvas bitmap, then copied that bitmap back into Rust. The renderer subsequently converted the independently owned RGBA bytes into its existing premultiplied BGRA image representation. This created a full V8 allocation and another full byte copy even when JavaScript never consumed the bitmap.
+
+The embedder now opens one native transfer batch before entering its captured Canvas presentation hook. A dirty connected WebGL Canvas can move the same owned straight-RGBA snapshot into that batch and return only scalar width, height and transfer metadata through V8. Rust validates the token, document-local node identity and natural extent before moving the allocation into the ordinary paint snapshot. The image conversion, image updates, renderer IPC and native painter retain their existing contracts. This removes the V8 allocation/copy route for eligible paint frames; it does not eliminate GPU readback, premultiplication, presentation IPC or native painting.
+
+The batch admits at most 64 records and 64 MiB of actual retained pixel capacity, with the existing per-surface pixel limit. It is active only during an embedder capture. Tokens never repeat during a document runtime, are consumed once, and cannot select a different node or extent. Finishing capture retires all unreferenced allocations, including hook errors and malformed replies. No author pixels, DOM nodes, GPU pointers or native objects are borrowed or retained by the batch. Metadata crosses as a scalar wire string parsed with the existing captured parser, avoiding inherited author Array setters while constructing a private native reply.
+
+The JavaScript bitmap remains dirty when the native transfer bypasses its pixel cache. Public `drawImage`, `createImageBitmap`, `toDataURL` and other bitmap consumers therefore retain independent current snapshots. A public consumer that already populated the cache takes the existing owned-copy paint fallback. Canvas 2D, bitmaprenderer, Worker-delivered pixels, failed native admission and unsupported platforms also retain their existing routes.
+
+The [WebGL drawing-buffer presentation rules](https://registry.khronos.org/webgl/specs/latest/1.0/#2.2) require completion before compositing and clearing an unpreserved buffer after presentation. A byte-limit-deferred frame remains dirty and is not retired; a never-exported Canvas keeps its existing priority over repeated earlier surfaces. FBO-only work cannot replace the last displayed bitmap. Resizes retain separate content-attribute and natural-bitmap extents, and stale content stamps still fail normal image admission. Straight-alpha recovery and the [Canvas premultiplied-alpha model](https://html.spec.whatwg.org/multipage/canvas.html#premultiplied-alpha-and-the-2d-rendering-context) are unchanged.
+
+## Reproducible checks
+
+The local contracts cover transfer allocation identity, single consumption, node/extent matching, abandoned batches, capacity and token exhaustion, public snapshots before/after painting, associated alpha, resize/removal/reattachment, context loss, same-realm OffscreenCanvas placeholders, mixed Canvas/GPU batch deferral and replaced author Array/JSON hooks. Existing Canvas privacy, WebGL retirement, FBO-only and pixel-consumer contracts remain part of verification.
+
+Run the ignored `canvas_paint_transfer_command_samples` library test from a compiled release test executable with `--ignored --nocapture --test-threads=1`. Compile first, then run alone without this agent's builds or heavy suites overlapping. The native tests use WARP and compare the ordinary byte-copy fallback with the native transfer in three rotated rounds, retaining 36 samples per route at 128×128, 1382×760 and 2048×1024. Draw preparation and `finish` are outside the clock; snapshot extraction includes completed native readback and owned result creation. Every resulting pixel is checked outside the clock against independently specified opaque and associated-alpha half-surfaces. These are elapsed command costs, not hardware-adapter measurements, isolated CPU time or gameplay FPS.
+
+[The publication fixture](../benchmarks/ui/fixtures/canvas-frame-publication.html) paints 65 changing frames through opaque and both alpha representations. Its GL pixel checks do not populate the public Canvas bitmap cache, leaving the following paint checkpoint to exercise native export. Retain the final screenshot and all callback intervals, and compare candidate/base content pixels at matched scale. Unified-headless Chromium provides a separate functionality reference. Hidden callback intervals and opt-in native painting are not DWM presentation or verified gameplay FPS.
+
+Unchanged Last Stand runs remain separate functionality checks, using fresh profiles, the existing opt-in Graphics budget and explicit quality selection through the application's controls. Auto remembers reductions and does not raise quality by itself, so use fixed quality when comparing builds. No game source, assets, quality policy, animation interval, watchdog, default memory limit, dependency or CI matrix changes are part of this optimization.
+
+## Release command measurements
+
+Three fresh release test processes each retain three rotated rounds of twelve samples per policy and size: 108 measurements per cell. The reference is the retained owned-byte fallback in the same compiled runtime, not a separately built merged-main executable or a PR-wide comparison. Its clock covers captured-hook extraction and the owned byte result; the candidate also includes the ordinary runtime's token/record validation. Pixel verification checks every channel of every returned pixel after the clock. No builds or heavy suites from this agent overlap these runs; other agents still share the workstation. All cold samples and scheduling outliers are retained.
+
+| Source size | Byte-copy median (range), ms | Native transfer median (range), ms |
+| --- | ---: | ---: |
+| 128×128 | 0.230 (0.176–0.955) | 0.185 (0.159–0.316) |
+| 1382×760 | 2.725 (2.442–4.704) | 2.248 (1.945–3.800) |
+| 2048×1024 | 5.288 (4.820–9.508) | 4.219 (3.817–4.769) |
+
+The reported game-sized command is 17.5% lower by these elapsed medians, saving about 0.48 ms; the larger command is 20.2% lower, saving about 1.07 ms. Ranges overlap for the smaller sizes, and this is not an every-run improvement guarantee. WARP command measurements do not establish hardware-driver readback cost, game frame tails or a visible FPS improvement. The existing native readback and painter remain substantial remaining work.
+
+All 648 release samples and the test binary identity remain on G: in ignored `target/frame-publication-performance-20261013/transfer-release-*.log` and `transfer-release-summary.json`. The separate optimized iteration pilot is retained too and is not substituted for these release measurements. The publication preview completed in merged #235 Breeze, candidate Breeze and unified-headless Chromium at 125% scale; the two Breeze screenshots have zero changed pixels. Final release functionality and standards results are reported in the pull request.
