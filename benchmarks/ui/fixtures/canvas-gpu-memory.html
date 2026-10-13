@@ -1,0 +1,43 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Canvas GPU memory running</title>
+<style>
+  html, body { margin: 0; height: 100vh; overflow: hidden; background: #183048; color: white; font: 16px Arial; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; }
+  .outline { position: fixed; inset: 12px; border: 2px solid; box-sizing: border-box; pointer-events: none; }
+  .missing { display: none; position: fixed; left: 0; top: 0; width: 6000px; height: 6000px;
+             mask-image: linear-gradient(black, black); }
+  .hidden-content { position: absolute; left: 40px; top: 40px; width: 160px; height: 160px; background: red; }
+  #result { position: fixed; left: 40px; bottom: 40px; background: #183048; padding: 10px; }
+</style>
+<canvas id="scene" width="1920" height="1080"></canvas>
+<div class="missing"><div style="opacity:.5"><div style="overflow:hidden">
+  <div class="hidden-content">This rejected mask must hide its content.</div>
+</div></div></div>
+<p id="result">Waiting for frames</p>
+<script>
+  if (location.search === '?mask') document.querySelector('.missing').style.display = 'block';
+  // Distinct opaque native borders used to retain one viewport-sized texture
+  // each. Their pixel coverage is small even on a full-resolution Canvas page.
+  for (let index = 0; index < 32; index++) {
+    const outline = document.createElement('div');
+    outline.className = 'outline';
+    outline.style.inset = (12 + index * 3) + 'px';
+    outline.style.borderColor = `rgb(${80 + index * 5}, ${200 - index * 3}, ${120 + index * 2})`;
+    document.body.appendChild(outline);
+  }
+  const canvas = document.getElementById('scene');
+  const gl = canvas.getContext('webgl2', {alpha:false, antialias:false, preserveDrawingBuffer:false});
+  if (!gl) throw Error('WebGL2 unavailable');
+  let frames = 0;
+  function draw() {
+    gl.clearColor(.125, .5, .75, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    if (++frames < 65) requestAnimationFrame(draw);
+    else {
+      document.getElementById('result').textContent = 'Passed: 65 full-resolution frames, 32 sparse borders, missing mask remains hidden';
+      document.title = 'done Canvas GPU memory';
+    }
+  }
+  requestAnimationFrame(draw);
+</script>

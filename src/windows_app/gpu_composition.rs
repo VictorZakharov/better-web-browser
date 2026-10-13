@@ -1,6 +1,7 @@
 //! GPU page composition owned by one native window; browser chrome remains native UI.
 mod backgrounds;
 mod borders;
+mod coverage;
 mod groups;
 mod images;
 mod integration;
@@ -25,6 +26,7 @@ pub(super) struct Compositor {
     frames: Frames,
     target: Target,
     images: images::Bitmaps,
+    coverage: coverage::Coverage,
     presentation: presentation::Presentation,
     document: DocumentId,
     active: bool,
@@ -39,6 +41,7 @@ impl Compositor {
         width: u32,
         height: u32,
         top: i32,
+        budget: better_web_browser::renderer_budget::RendererBudget,
     ) -> Result<Self, String> {
         let device = Device::hardware(Some((frame.frame.adapter_low, frame.frame.adapter_high)))?;
         let target = Target::new(&device, width, height)?;
@@ -47,7 +50,8 @@ impl Compositor {
             device,
             frames: Frames::default(),
             target,
-            images: images::Bitmaps::default(),
+            images: images::Bitmaps::new(budget),
+            coverage: coverage::Coverage::default(),
             presentation,
             document,
             active: false,

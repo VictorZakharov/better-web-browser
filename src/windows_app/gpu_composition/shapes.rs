@@ -29,29 +29,25 @@ pub(super) fn paint(
         "native-shape:{width}:{height}:{}:{widths:?}:{color:?}",
         radius.to_bits()
     );
+    // Opaque coverage can be filled directly; translucent shapes keep their
+    // pre-multiplied raster bytes and existing source-over rounding.
+    let coverage_key = format!(
+        "native-coverage:{width}:{height}:{}:{widths:?}",
+        radius.to_bits()
+    );
+    if color.alpha == 255
+        && coverage::large_shape(width, height)
+        && compositor
+            .coverage
+            .paint(&compositor.device, &coverage_key, bounds, color, || {
+                native_region(width, height, widths, radius)
+            })?
+    {
+        return Ok(());
+    }
     let bitmap = compositor.images.generated(&compositor.device, &key, || {
-        let rect = Rect {
-            left: 0,
-            top: 0,
-            right: width as i32,
-            bottom: height as i32,
-        };
-        let region = unsafe {
-            if let Some(widths) = widths {
-                super::super::paint_primitives::border_ring(&rect, widths, radius)
-            } else {
-                let diameter = (radius * 2.0).round().max(1.0) as i32;
-                CreateRoundRectRgn(0, 0, rect.right + 1, rect.bottom + 1, diameter, diameter)
-            }
-        };
-        if region.is_null() {
-            return Err("native GPU shape region is unavailable".into());
-        }
-        let result = pixels(region, width + 1, height + 1, color);
-        unsafe {
-            DeleteObject(region);
-        }
-        result
+        let region = native_region(width, height, widths, radius)?;
+        pixels(region.0, width + 1, height + 1, color)
     })?;
     primitives::draw(
         &compositor.device,
@@ -63,6 +59,33 @@ pub(super) fn paint(
         },
     );
     Ok(())
+}
+
+fn native_region(
+    width: u32,
+    height: u32,
+    widths: Option<[f32; 4]>,
+    radius: f32,
+) -> Result<coverage::Region, String> {
+    let rect = Rect {
+        left: 0,
+        top: 0,
+        right: width as i32,
+        bottom: height as i32,
+    };
+    let region = coverage::Region(unsafe {
+        if let Some(widths) = widths {
+            super::super::paint_primitives::border_ring(&rect, widths, radius)
+        } else {
+            let diameter = (radius * 2.0).round().max(1.0) as i32;
+            CreateRoundRectRgn(0, 0, rect.right + 1, rect.bottom + 1, diameter, diameter)
+        }
+    });
+    if region.0.is_null() {
+        Err("native GPU shape region is unavailable".into())
+    } else {
+        Ok(region)
+    }
 }
 
 fn pixels(region: Hrgn, width: u32, height: u32, color: Color) -> Result<DecodedImage, String> {

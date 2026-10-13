@@ -1,7 +1,7 @@
 use super::*;
 use std::collections::HashMap;
 
-const MAX_BYTES: usize = 64 * 1024 * 1024;
+const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 struct Entry {
     owner: Arc<[u8]>,
     width: u32,
@@ -9,14 +9,29 @@ struct Entry {
     bitmap: ID2D1Bitmap1,
     used: u64,
 }
-#[derive(Default)]
 pub(super) struct Bitmaps {
     entries: HashMap<(String, Option<[u8; 4]>), Entry>,
     epoch: u64,
     bytes: usize,
+    limit: usize,
+    high_water: usize,
 }
 
 impl Bitmaps {
+    pub(super) fn new(budget: better_web_browser::renderer_budget::RendererBudget) -> Self {
+        Self {
+            entries: HashMap::new(),
+            epoch: 0,
+            bytes: 0,
+            limit: budget.presentation_bitmap_bytes(),
+            high_water: 0,
+        }
+    }
+    pub(super) fn report(&self) -> serde_json::Value {
+        serde_json::json!({"pixel_bytes":self.bytes,"pixel_byte_limit":self.limit,
+            "pixel_bytes_high_water":self.high_water,"entries":self.entries.len(),
+            "scope":"cached bitmap pixel payloads; excludes driver allocation overhead"})
+    }
     pub(super) fn generated(
         &mut self,
         device: &Device,
@@ -57,10 +72,10 @@ impl Bitmaps {
             self.bytes -= entry.owner.len();
         }
         let bytes = image.bgra.len();
-        if bytes > MAX_BYTES {
+        if bytes > MAX_IMAGE_BYTES {
             return Err("GPU bitmap exceeds the 64 MiB cache limit".into());
         }
-        while self.bytes.saturating_add(bytes) > MAX_BYTES || self.entries.len() >= 4096 {
+        while self.bytes.saturating_add(bytes) > self.limit || self.entries.len() >= 4096 {
             let Some(key) = self
                 .entries
                 .iter()
@@ -68,7 +83,14 @@ impl Bitmaps {
                 .min_by_key(|(_, entry)| entry.used)
                 .map(|(key, _)| key.clone())
             else {
-                return Err("GPU page working set exceeds the bitmap cache limit".into());
+                return Err(format!(
+                    "GPU page working set exceeds the {} byte bitmap cache limit: {} resident bytes in {} entries, requested {}x{} / {bytes} bytes",
+                    self.limit,
+                    self.bytes,
+                    self.entries.len(),
+                    image.width,
+                    image.height,
+                ));
             };
             if let Some(entry) = self.entries.remove(&key) {
                 self.bytes -= entry.owner.len();
@@ -93,6 +115,7 @@ impl Bitmaps {
             tinted.as_deref().unwrap_or(&image.bgra),
         )?;
         self.bytes += bytes;
+        self.high_water = self.high_water.max(self.bytes);
         self.entries.insert(
             cache_key,
             Entry {

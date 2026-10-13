@@ -23,7 +23,8 @@ Renderer protocol version 18 carries a complete document-scoped set of GPU Canva
 | Presentation set | 64 canvases; 64 MiB of logical fronts |
 | Browser imported surfaces | 64 MiB and 192 entries |
 | Browser fronts | 64 MiB and 64 canvases |
-| Native bitmap cache | 64 MiB and 4096 entries |
+| Native bitmap cache | 64 MiB with the standard setting; 128 MiB with the graphics setting; 4096 entries; individual images remain limited to 64 MiB |
+| Native coverage cache | 65,536 source scan rectangles and 4096 entries; region extraction limited to 1 MiB |
 | Native composition target | 64 MiB |
 | Paint groups | Depth 64; 64 MiB of active layer bounds |
 | Queued native submissions | At most two incomplete completion fences |
@@ -38,6 +39,12 @@ When composition declines an unpreserved Canvas, the renderer recovers its retai
 Ordinary UI composition never waits for a completion fence, maps GPU pixels or waits for vertical refresh. It runs at the existing bounded paint opportunity after renderer installation and ready input have had their turn. A retry timer requests paint only; it does not advance the document clock. Explicit benchmark screenshots may wait briefly for completion and read back the owned composition target.
 
 Image bounds retain the native painter's independent rounding rule, while clip bounds retain its enclosing rule. Glyph rasters already have final physical DPI and are drawn at natural dimensions. Rounded native shapes reuse cached GDI region coverage. Opacity and mask composition uses Direct2D premultiplied blending; small integer-rounding differences from the retained GDI path are expected and are measured in pixel comparisons.
+
+Opaque native shapes and borders covering at least 16,384 physical box pixels at integral device coordinates cache Direct2D paths built from the existing GDI coverage rectangles. A thin border no longer retains a texture containing its entire transparent interior. Geometry keys omit color, so color changes reuse coverage. Small shapes, translucent shapes, fractional placement, scaling, rotation and reflection retain their existing raster route. Cache pressure can also select that route; both caches keep current-frame resources pinned until their draw batch ends. The coverage limit measures source geometry complexity, not driver allocation bytes.
+
+The bitmap cache uses the browser's active memory setting, so a pending settings change takes effect on restart together with the renderer choice. Its pixel-payload quota is outside the renderer Job and does not enlarge that Job or author-visible WebGL allocation limits. Composition diagnostics report cached bitmap pixel bytes, their high-water mark and coverage complexity; those figures exclude native driver overhead. Native GPU publication has its own opt-in owner timing category, separate from CPU readback.
+
+An unavailable mask hides its group, matching the retained native painter and the transparent-black failure behavior in [CSS Masking §7.1](https://www.w3.org/TR/css-masking-1/#the-mask-image). It does not disable GPU presentation for unrelated content. Nested clips, transforms and opacity groups inside the hidden group still consume their matching closing markers.
 
 ## Validation and measurement
 
@@ -68,6 +75,22 @@ The October 13, 2026 release comparison retained 36 samples per route at each ex
 The small Canvas workload adds about 0.022 ms at the median. The larger workloads benefit from avoiding CPU readback, conversion and upload. The 65-frame publication fixture matched the retained renderer's capture exactly. The mixed composition fixture had 33 pixels differing by more than one channel value, with a maximum difference of two, at opacity/mask edges. The patterned lifecycle fixture also matched exactly in the content area; resize, detach/reattach, context restoration, tab switching and Reader mode retained working presentation, while rotated placement exercised CPU recovery.
 
 The final local verification passed all-target/all-feature Clippy, 6,676 non-ignored tests, the opt-in hardware sharing and real AppContainer handoff tests, 583 WPT pages with 6,425 subtests, and 74 Khronos pages with 8,696 subtests. Browser functionality and capture checks run separately from the command timing workload.
+
+## Native border command follow-up, 2026-10-13
+
+The isolated `measure_completed_border_commands_with_exact_pixels` release test compares four opaque borders, using the previous GDI-derived bitmap route and the coverage path route on one hardware device. Cold samples include resource creation/upload and a completed draw; warm samples reuse resources and include a completed draw. Each route submits the same D3D completion query, waits for completion and verifies every captured pixel outside the clock. Neither route creates a window. These elapsed times exclude page loading, JavaScript, Canvas publication, IPC and DWM presentation.
+
+Four blocks alternate route order, with three predeclared warmups followed by nine measured samples per route. All 576 individual timings are retained, including 144 labeled warmups; the table uses 36 measured samples per route/case. No measured outliers were removed. This agent ran no build or heavy suite alongside the workload; other agents on the shared workstation can still affect scheduling.
+
+| Extent | Cold bitmap median (range), ms | Cold coverage median (range), ms | Warm bitmap median (range), ms | Warm coverage median (range), ms |
+| --- | --- | --- | --- | --- |
+| 128 × 128 | 0.202 (0.192–0.471) | 0.127 (0.123–0.310) | 0.066 (0.062–0.149) | 0.094 (0.093–0.099) |
+| 1382 × 760 | 5.793 (5.393–6.373) | 0.151 (0.139–0.259) | 0.110 (0.099–0.219) | 0.121 (0.103–0.209) |
+| 1920 × 1080 | 11.194 (10.757–13.275) | 0.165 (0.154–0.256) | 0.139 (0.118–0.238) | 0.133 (0.120–0.236) |
+
+The small warm workload adds about 0.028 ms for four borders, so production callers keep the bitmap route below the box-area threshold. The two large workloads show the cold allocation benefit; their warm ranges overlap. Four 1080p reference borders retain 32,131,344 bitmap pixel bytes, while the coverage input has 16 rectangles. Coverage complexity is not a native driver memory measurement, and these command times do not predict gameplay FPS.
+
+The 65-frame `canvas-gpu-memory.html` fixture uses a 1920 × 1080 Canvas and 32 large native borders. At a 1105.6 × 608 CSS viewport and DPR 1.25, the merged browser declines GPU composition on its bitmap working-set quota; the candidate stays active with 128 coverage rectangles and 24,480 cached bitmap pixel bytes. Its whole-window PNG is identical to the merged browser's CPU capture. The `?mask` variant also matches every RGB pixel while preserving hidden content behind its rejected mask and keeping unrelated Canvas presentation active.
 
 ## Primary references
 
