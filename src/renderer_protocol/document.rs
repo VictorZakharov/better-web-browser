@@ -28,6 +28,7 @@ pub struct PresentedViewport {
     pub style_width: f32,
     pub dpi: u32,
     pub prefers_dark_color_scheme: bool,
+    pub refresh_rate: crate::engine::rendering::RefreshRate,
 }
 
 /// HTML session-history scroll restoration is owned by each history entry.

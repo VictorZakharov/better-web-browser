@@ -33,6 +33,7 @@ impl ScriptRuntime {
             .map(|due| due.saturating_sub(now))
             .into_iter()
             .chain(child_due)
+            .chain(host.canvas_poll.delay(now, host.animation_frames.visible))
             .min()
     }
 
@@ -42,6 +43,10 @@ impl ScriptRuntime {
         let mut host = self.host.borrow_mut();
         let horizon = host.timers.now().saturating_add(advance);
         host.timers.advance_to(horizon);
+        if !advance.is_zero() {
+            host.animation_frames.clock_advanced(horizon);
+        }
+        host.wake_canvas_poll();
     }
 
     pub fn advance_time_with_loader(

@@ -215,6 +215,12 @@ impl DocumentRuntime {
                 }
                 let previous = lifecycle_name(self.lifecycle);
                 self.lifecycle = input.state;
+                if let Some(runtime) = self.script_runtime.as_mut() {
+                    runtime.set_rendering_environment(
+                        self.viewport.refresh_rate,
+                        input.state == DocumentLifecycle::Active,
+                    );
+                }
                 let result = self.dispatch_user_input(UserInputEvent::Lifecycle {
                     state: lifecycle_name(input.state),
                     previous,

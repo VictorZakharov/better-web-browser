@@ -117,6 +117,7 @@ windows-future = "0.3.2"
 # these Microsoft numeric types (MIT OR Apache-2.0).
 windows-numerics = "=0.3.1"
 windows-sys = { version = "0.61.2", features = [
+    "Win32_Devices_Display",
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_Security",
@@ -179,4 +180,4 @@ strip = "symbols"
 inherits = "release"
 lto = false
 codegen-units = 16
-incremental = true
+incremental = false

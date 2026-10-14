@@ -3,6 +3,7 @@ use super::*;
 use crate::engine::dom::NodeRef;
 use crate::engine::script::engine::JsValue;
 use crate::engine::script::{ScriptFetchOptions, ScriptKind};
+mod async_publication;
 mod command_samples;
 mod gpu_recovery;
 

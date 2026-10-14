@@ -198,6 +198,8 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/resize_observer.js"),
     include_str!("bootstrap/gamepads.js"),
     include_str!("bootstrap/detached_images.js"),
+    include_str!("bootstrap/timers.js"),
+    include_str!("bootstrap/animation_frames.js"),
     include_str!("bootstrap/tasks.js"),
     include_str!("bootstrap/web_audio_base.js"),
     include_str!("bootstrap/web_audio_buffer.js"),

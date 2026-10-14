@@ -5,7 +5,9 @@ use super::*;
 use crate::engine::MediaEnvironment;
 use crate::navigation::resolve_url;
 
+mod animation_frames;
 mod base_url;
+mod canvas_poll;
 mod canvas_presentation;
 mod capture;
 mod cookies;
@@ -78,6 +80,7 @@ pub(super) struct HostState {
     pub(super) element_images: super::canvas_host::element_images::ElementImages,
     pub(super) webgl: super::canvas_host::webgl::Contexts,
     pub(super) canvas_presentations: canvas_presentation::Transfers,
+    pub(super) canvas_poll: canvas_poll::CanvasPoll,
     pub(super) gpu_canvas_enabled: bool,
     pub(super) gpu_canvas_fallback: bool,
     pub(super) media_recorders: super::media_recorder::MediaRecorders,
@@ -146,6 +149,7 @@ pub(super) struct HostState {
     pub(super) font_environment: font_environment::FontEnvironment,
     pub(super) timers: EventLoopScheduler<u32>,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
+    pub(super) animation_frames: animation_frames::AnimationFrames,
     pub(super) idle_callbacks: super::idle_callbacks::IdleCallbacks,
     pub(super) computed_styles: Option<(u64, StyleSet)>,
     pub(super) css_animation_revision: u64,
@@ -234,6 +238,7 @@ impl HostState {
             element_images: Default::default(),
             webgl: Default::default(),
             canvas_presentations: Default::default(),
+            canvas_poll: Default::default(),
             gpu_canvas_enabled: false,
             gpu_canvas_fallback: false,
             media_recorders: Default::default(),
@@ -300,6 +305,7 @@ impl HostState {
             font_environment: Default::default(),
             timers: EventLoopScheduler::new(),
             timer_handles: HashMap::new(),
+            animation_frames: animation_frames::AnimationFrames::default(),
             idle_callbacks: Default::default(),
             computed_styles: None,
             css_animation_revision: 1,

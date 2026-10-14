@@ -51,7 +51,10 @@
         }
         toggle(token, force) {
             token = this._validated([token])[0];
-            if (arguments.length > 1) force = Boolean(force);
+            // Web IDL treats undefined as an omitted optional argument. Forwarding
+            // an optional force through a wrapper must retain ordinary toggle behavior.
+            // https://dom.spec.whatwg.org/#dom-domtokenlist-toggle
+            if (force !== undefined) force = Boolean(force);
             const present = this.contains(token);
             if (present) {
                 if (force === undefined || !force) { this.remove(token); return false; }

@@ -25,7 +25,7 @@ fn loop_error_mutation_waits_for_animation_frame_before_another_observer_cycle()
     }
     assert!(
         runtime
-            .advance_time(Duration::from_millis(16), 16)
+            .advance_time(Duration::from_nanos(16_666_667), 16)
             .errors
             .is_empty()
     );
@@ -60,7 +60,7 @@ fn cancelling_author_frame_does_not_cancel_skipped_observer_delivery() {
     assert_eq!(result(&dom), "1");
     assert!(
         runtime
-            .advance_time(Duration::from_millis(16), 16)
+            .advance_time(Duration::from_nanos(16_666_667), 16)
             .errors
             .is_empty()
     );

@@ -4,6 +4,13 @@ use super::*;
 use better_web_browser::renderer_protocol::{DocumentId, PresentationAcknowledgement};
 
 fn next_console(session: &RendererSession, document: DocumentId) -> Vec<String> {
+    next_console_and_delay(session, document).0
+}
+
+fn next_console_and_delay(
+    session: &RendererSession,
+    document: DocumentId,
+) -> (Vec<String>, Option<u64>) {
     loop {
         match session.wait_for_event(Duration::from_secs(3)).unwrap() {
             RendererEvent::Presentation(p) if p.document == document => {
@@ -16,11 +23,11 @@ fn next_console(session: &RendererSession, document: DocumentId) -> Vec<String> 
                         controls_applied: true,
                     })
                     .unwrap();
-                return p.runtime.console;
+                return (p.runtime.console, p.next_timer_micros);
             }
             RendererEvent::RuntimeUpdate(u) if u.document == document => {
                 assert!(u.runtime.errors.is_empty(), "{:?}", u.runtime.errors);
-                return u.runtime.console;
+                return (u.runtime.console, u.next_timer_micros);
             }
             RendererEvent::Diagnostic { .. } => {}
             event => panic!("unexpected observer event: {event:?}"),
@@ -100,14 +107,21 @@ fn resize_observer_loop_errors_defer_self_resize_to_another_frame() {
         ["log: resize:1", "log: loop error"]
     );
     // DCL/load and other non-rendering checkpoints must not retry skipped observations.
+    let mut next_frame = None;
     for _ in 0..3 {
         session
             .advance_time(initial.document, Duration::ZERO, 4)
             .unwrap();
-        assert!(next_console(&session, initial.document).is_empty());
+        let (console, delay) = next_console_and_delay(&session, initial.document);
+        assert!(console.is_empty());
+        next_frame = delay;
     }
     session
-        .advance_time(initial.document, Duration::from_millis(16), 4)
+        .advance_time(
+            initial.document,
+            Duration::from_micros(next_frame.expect("deferred observer frame")),
+            4,
+        )
         .unwrap();
     assert_eq!(
         next_console(&session, initial.document),
@@ -159,11 +173,18 @@ fn resize_observer_sees_animation_frame_mutations_before_its_paint() {
     );
     assert_eq!(initial.runtime.console, ["log: resize:100"]);
     let mut logs = Vec::new();
+    let mut next = initial.next_timer_micros;
     for _ in 0..4 {
         session
-            .advance_time(initial.document, Duration::from_millis(16), 4)
+            .advance_time(
+                initial.document,
+                Duration::from_micros(next.unwrap_or(0)),
+                4,
+            )
             .unwrap();
-        logs.extend(next_console(&session, initial.document));
+        let (console, delay) = next_console_and_delay(&session, initial.document);
+        logs.extend(console);
+        next = delay;
     }
     assert_eq!(logs, ["log: frame", "log: resize:200"]);
     session.shutdown().unwrap();

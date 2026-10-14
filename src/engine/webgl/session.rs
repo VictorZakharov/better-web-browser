@@ -33,7 +33,7 @@ enum Reply {
     Batch(Vec<u32>),
     Pixels(PixelReply),
     Snapshot(Option<Bitmap>),
-    GpuFrame(Result<Option<crate::gpu_frame::GpuFrame>, String>),
+    GpuFrame(Result<super::GpuFrameExport, String>),
     PaintFallback(Result<Option<Bitmap>, String>),
     TaskBoundary(Vec<u32>),
     ResourceDiagnostics(Vec<String>),

@@ -70,7 +70,14 @@ impl HostState {
         let next_task = self.timers.next_due_time();
         if next_task.is_some_and(|due| due <= now) {
             self.idle_callbacks.interrupt();
-            return self.take_ready_timer().map(Callback::Timer);
+            let pending_frame = self.animation_frames.pending_id();
+            return self.take_ready_timer().map(|id| {
+                if pending_frame == Some(id) {
+                    Callback::Rendering(id)
+                } else {
+                    Callback::Timer(id)
+                }
+            });
         }
         if self.idle_blocked() {
             self.idle_callbacks.interrupt();
@@ -97,6 +104,7 @@ impl HostState {
         let (id, repeating) = ready?;
         if !repeating {
             self.timer_handles.remove(&id);
+            self.animation_frame_taken(id);
         }
         Some(id)
     }

@@ -10,6 +10,7 @@ pub mod layout;
 pub(crate) mod owner_cpu;
 pub mod page;
 pub(crate) mod pattern_eval;
+pub mod rendering;
 pub mod scheduler;
 pub mod script;
 mod stylesheet;

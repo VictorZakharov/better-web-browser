@@ -155,6 +155,7 @@ pub(super) fn document_start(document: DocumentId, body_length: usize) -> Docume
             style_width: 800.0,
             dpi: 96,
             prefers_dark_color_scheme: false,
+            refresh_rate: Default::default(),
         },
         prefers_dark_color_scheme: false,
         notification_permission:

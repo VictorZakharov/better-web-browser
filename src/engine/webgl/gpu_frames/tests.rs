@@ -204,6 +204,12 @@ fn gpu_frames_do_not_wait_for_a_consumer_or_reuse_an_old_generation() {
             context.gpu_frame().unwrap().is_none(),
             "all slots are consumer-owned"
         );
+        let blocked = context.poll_gpu_frame().unwrap();
+        assert!(blocked.supported && blocked.pending && !blocked.submitted);
+        assert!(
+            context.surface.presentation_dirty,
+            "backpressure must retain the unsubmitted author image"
+        );
         unsafe {
             held[0].ReleaseSync(0).unwrap();
         }

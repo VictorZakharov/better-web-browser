@@ -31,13 +31,14 @@ pub(super) struct IdleInvocation {
 
 pub(super) enum Callback {
     Timer(u32),
+    Rendering(u32),
     Idle(IdleInvocation),
 }
 
 impl Callback {
     pub(super) fn id(&self) -> u32 {
         match self {
-            Self::Timer(id) => *id,
+            Self::Timer(id) | Self::Rendering(id) => *id,
             Self::Idle(task) => task.id,
         }
     }

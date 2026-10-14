@@ -10,7 +10,6 @@ use super::*;
 mod bindings;
 mod startup_tasks;
 
-const SCRIPT_TASK_TIMER_SLICE: Duration = Duration::from_millis(16);
 pub fn execute(document: NodeRef, document_url: &str, scripts: &[ScriptInput]) -> ScriptOutcome {
     execute_impl(document, document_url, scripts, None)
 }
@@ -101,6 +100,11 @@ pub(super) fn execute_inner(
         // task so animation-frame queues cannot grow without bound behind network execution.
         if script.node.attr("src").is_some() || script.kind == ScriptKind::Module {
             let mut no_dynamic_script_loader = None;
+            let script_task_timer_slice = host
+                .borrow()
+                .animation_frames
+                .rate
+                .next_after(Duration::ZERO);
             settle_timer_slice(
                 context,
                 host,
@@ -108,7 +112,7 @@ pub(super) fn execute_inner(
                 &mut no_dynamic_script_loader,
                 total_bytes,
                 TimerSlice {
-                    advance: SCRIPT_TASK_TIMER_SLICE,
+                    advance: script_task_timer_slice,
                     max_callbacks: 1,
                 },
                 None,

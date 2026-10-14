@@ -64,6 +64,8 @@ mod pointer_buttons;
 mod pointer_lock;
 #[path = "renderer_process/presentation.rs"]
 mod presentation;
+#[path = "renderer_process/rendering_cadence.rs"]
+mod rendering_cadence;
 #[path = "renderer_process/resize_observers.rs"]
 mod resize_observers;
 #[path = "renderer_process/runtime_reporting.rs"]

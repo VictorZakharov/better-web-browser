@@ -152,7 +152,10 @@ fn resize_observer_self_resize_reports_loop_error_without_recursive_delivery() {
     assert_eq!(result(&dom), "1:1");
     assert!(
         runtime
-            .advance_time(Duration::from_millis(16), 16)
+            .advance_time(
+                crate::engine::rendering::RefreshRate::FALLBACK.next_after(Duration::ZERO),
+                16
+            )
             .errors
             .is_empty()
     );

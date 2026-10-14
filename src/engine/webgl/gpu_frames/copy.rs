@@ -35,6 +35,7 @@ pub(super) struct Renderer {
     resolve_framebuffer: u32,
     blit: super::super::core_entries::Blit,
     read_buffer: super::super::core_entries::ReadBuffer,
+    pub(super) sync: super::super::sync_entries::Entries,
 }
 impl Renderer {
     pub(super) fn new(author: &NativeContext) -> Result<Self, String> {
@@ -51,6 +52,7 @@ impl Renderer {
             resolve_framebuffer: 0,
             blit: core.blit,
             read_buffer: core.read_buffer,
+            sync: core.sync,
         };
         let result = (|| {
             renderer.native.make_current()?;
@@ -87,6 +89,9 @@ impl Renderer {
         result?;
         restored?;
         Ok(renderer)
+    }
+    pub(super) fn make_current(&self) -> Result<(), String> {
+        self.native.make_current()
     }
     pub(super) fn resolve(
         &self,
@@ -140,7 +145,7 @@ impl Renderer {
         height: u32,
         alpha: bool,
         premultiplied: bool,
-    ) -> Result<(), String> {
+    ) -> Result<super::super::sync_entries::Handle, String> {
         self.native.make_surface_current(surface)?;
         unsafe {
             gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
@@ -160,17 +165,17 @@ impl Renderer {
             );
             gl::Uniform1i(self.height, height as i32);
             gl::DrawArrays(gl::TRIANGLES, 0, 3);
-            gl::Flush();
-            // ANGLE's surface/keyed-mutex extensions require completed EGL
-            // rendering before external D3D use. Synchronize only this native
-            // owner thread; the HWND consumer never waits for GPU completion.
-            gl::Finish();
             let error = gl::GetError();
             if error != gl::NO_ERROR {
                 return Err(format!("private GPU frame copy failed: GL {error:#x}"));
             }
+            let fence = (self.sync.fence)(0x9117, 0);
+            gl::Flush();
+            if fence.is_null() {
+                return Err("private GPU frame fence allocation failed".into());
+            }
+            Ok(fence)
         }
-        Ok(())
     }
 }
 fn shader(kind: u32, source: &CStr) -> Result<u32, String> {

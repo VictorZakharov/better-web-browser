@@ -64,6 +64,7 @@ fn presentation_bursts_keep_the_newest_revision_without_killing_the_renderer() {
                     style_width: 800.0 + step as f32,
                     dpi: 96,
                     prefers_dark_color_scheme: false,
+                    refresh_rate: Default::default(),
                 },
             )
             .unwrap();

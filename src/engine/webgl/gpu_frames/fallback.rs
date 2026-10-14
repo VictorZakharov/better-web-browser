@@ -12,9 +12,13 @@ impl WebGl {
     pub(in crate::engine::webgl) fn last_gpu_bitmap(
         &mut self,
     ) -> Result<Option<(u32, u32, Vec<u8>)>, String> {
-        let Some(pool) = self.gpu_frames.as_ref() else {
+        let Some(pool) = self.gpu_frames.as_mut() else {
             return Ok(None);
         };
+        let completed = pool.finish_pending();
+        let restored = self.native.make_current();
+        completed?;
+        restored?;
         let Some(index) = pool.latest else {
             return Ok(None);
         };

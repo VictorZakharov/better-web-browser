@@ -159,13 +159,13 @@ impl BackendContexts {
     pub(super) fn gpu_frame(
         &mut self,
         id: u32,
-    ) -> std::result::Result<Option<crate::gpu_frame::GpuFrame>, String> {
+    ) -> std::result::Result<super::GpuFrameExport, String> {
         let context = self
             .contexts
             .get_mut(&id)
             .ok_or("GPU Canvas context is unavailable")?;
         let sample = context.execution_profile.start();
-        let result = context.gpu_frame();
+        let result = context.poll_gpu_frame();
         context.execution_profile.finish(
             execution_profile::Category::GpuPresentation,
             sample,
