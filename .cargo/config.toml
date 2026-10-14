@@ -1,3 +1,8 @@
+[build]
+# Retain compiled artifacts without the much larger per-revision incremental graph.
+# Developers can opt in with CARGO_INCREMENTAL=1 when appropriate for their machine.
+incremental = false
+
 [env]
 # Hash of rusty_v8_release_x86_64-pc-windows-msvc.lib.gz for pinned v8 152.2.0.
 # The crate verifies this before decompression even when prepare-v8.ps1 is not used.
