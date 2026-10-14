@@ -132,6 +132,8 @@ pub(super) struct DocumentRuntime {
     pending_media_action: Option<media::PendingMediaAction>,
     graph_audio_stream: Option<u32>,
     graph_audio_last_stream_id: u32,
+    graph_audio_admitted_frames: u64,
+    graph_audio_health_reported: Option<Instant>,
     pending_graph_audio_chunk: Option<crate::engine::script::ScriptGraphAudioAction>,
     pending_graph_audio_start: Option<u32>,
     pending_graph_audio_close: Option<(u32, u64)>,

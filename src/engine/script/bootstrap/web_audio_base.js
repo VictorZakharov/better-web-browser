@@ -3,11 +3,11 @@
     'use strict';
     // The Web Audio rendering quantum is fixed at 128 sample frames.
     const AUDIO_QUANTUM = 128;
-    const MAX_AUDIO_BUFFER_BYTES = 16 * 1024 * 1024;
+    const MAX_AUDIO_BUFFER_BYTES = 256 * 1024 * 1024;
     const MAX_AUDIO_NODES = 256;
     const MAX_AUDIO_CONNECTIONS = 512;
     const MAX_AUDIO_DELAY_BYTES = 32 * 1024 * 1024;
-    const MAX_AUDIO_SOURCE_SNAPSHOT_BYTES = 64 * 1024 * 1024;
+    const MAX_AUDIO_SOURCE_SNAPSHOT_BYTES = 512 * 1024 * 1024;
     const MAX_AUDIO_AUTOMATION_CURVE_BYTES = 32 * 1024 * 1024;
     const audioWorkWithinLimit = (state, nodes) => {
         const work = audioGraphWork(state, nodes);

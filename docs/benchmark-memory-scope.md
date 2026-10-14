@@ -54,7 +54,7 @@ to observe whether memory plateaus or continues growing.
 
 Larger experimental budgets are diagnostic evidence, not permission to ship
 relaxed containment. The separately authorized opt-in 3D policy is a typed,
-persisted user choice, not an experimental global constant; its 2 GiB Job limit
+persisted user choice, not an experimental global constant; its 3 GiB Job limit
 must be reported alongside its GPU ledger ceilings. Restore any temporary
 experimental constants before final shipping verification.
 Report incomplete rendering, cleanup errors and mismatched sampling scopes as

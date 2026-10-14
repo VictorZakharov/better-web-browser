@@ -18,8 +18,10 @@ use std::sync::{
 };
 use std::thread;
 
-pub(super) const MAX_ENCODED_BYTES: usize = 8 * 1024 * 1024;
-pub(super) const MAX_DECODED_BYTES: usize = 16 * 1024 * 1024;
+pub(super) const MAX_ENCODED_BYTES: usize = 32 * 1024 * 1024;
+// A stereo 48 kHz music track needs 375 KiB per second. Keep complete-file
+// decoding bounded while admitting ten-minute tracks at ordinary music rates.
+pub(super) const MAX_DECODED_BYTES: usize = 256 * 1024 * 1024;
 const MAX_PENDING_DECODES: usize = 2;
 const FRAMES_PER_CHUNK: usize = 16_384;
 
@@ -72,7 +74,7 @@ impl AudioDecodes {
 
     pub(super) fn start(&mut self, bytes: Vec<u8>, sample_rate: f64) -> Result<u32, String> {
         if bytes.len() > MAX_ENCODED_BYTES {
-            return Err("encoded audio exceeds the 8 MiB decode limit".into());
+            return Err("encoded audio exceeds the 32 MiB decode limit".into());
         }
         if !sample_rate.is_finite() || !(8_000.0..=192_000.0).contains(&sample_rate) {
             return Err("the context sample rate is unsupported".into());

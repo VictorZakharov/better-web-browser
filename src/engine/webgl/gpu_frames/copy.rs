@@ -93,6 +93,24 @@ impl Renderer {
     pub(super) fn make_current(&self) -> Result<(), String> {
         self.native.make_current()
     }
+    pub(super) fn detach_sources(&self) -> Result<(), String> {
+        self.native.make_current()?;
+        unsafe {
+            gl::BindTexture(gl::TEXTURE_2D, 0);
+            gl::BindFramebuffer(0x8ca8, self.read_framebuffer);
+            gl::FramebufferRenderbuffer(0x8ca8, gl::COLOR_ATTACHMENT0, gl::RENDERBUFFER, 0);
+            gl::BindFramebuffer(0x8ca9, self.resolve_framebuffer);
+            gl::FramebufferTexture2D(0x8ca9, gl::COLOR_ATTACHMENT0, gl::TEXTURE_2D, 0, 0);
+            gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+            let error = gl::GetError();
+            if error != gl::NO_ERROR {
+                return Err(format!(
+                    "private GPU source retirement failed: GL {error:#x}"
+                ));
+            }
+        }
+        Ok(())
+    }
     pub(super) fn resolve(
         &self,
         renderbuffer: u32,

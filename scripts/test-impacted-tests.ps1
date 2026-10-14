@@ -14,6 +14,19 @@ $uploads=$images+@('webgl-renderer')
 $webgl=@('webgl-lib','webgl-renderer')
 $script=@('script-lib','renderer','live-runtime')
 $full=@('full','selector')
+$native=Expect-Plan @('build/angle_api.rs') $full $true
+if ($native.Unknown.Count -ne 0) { throw 'Native ANGLE ownership is missing.' }
+foreach ($path in @('src/media_process/child/audio/output/device.rs',
+    'src/engine/script/audio_render.rs','src/engine/script/audio_render/worker.rs',
+    'src/engine/script/bootstrap/web_audio_render_model.js',
+    'src/media_process/child/audio/output/graph/device_tests.rs',
+    'src/renderer_process/child/connection/media/graph/worker.rs',
+    'src/renderer_process/child/connection/media/graph/clock.rs',
+    'src/renderer_process/child/document/graph_audio.rs',
+    'src/media_protocol/types/graph.rs','benchmarks/ui/fixtures/audio-voice-churn.html')) {
+    $plan=Expect-Plan @($path) $full $true
+    if ($plan.Unknown.Count -ne 0) { throw "Audio-pipeline ownership is missing: $path" }
+}
 foreach ($path in @('src/engine/rendering.rs','src/engine/rendering/tests.rs',
     'src/windows_app/display_timing.rs','src/windows_app/display_timing/tests.rs','src/windows_app/window_dispatch/environment.rs',
     'src/engine/script/host_state/animation_frames.rs','src/engine/script/host_state/canvas_poll.rs',

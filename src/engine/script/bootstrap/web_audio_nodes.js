@@ -24,6 +24,7 @@
         const state = audioScheduledState.get(node);
         if (!state.ended) {
             state.ended = true;
+            retireAudioSource(node);
             audioTask(() => node.dispatchEvent(new AudioEvent('ended')));
         }
     };
@@ -206,7 +207,7 @@
         const output = silence(1, frames)[0];
         const source = audioScheduledState.get(node);
         const oscillator = audioOscillatorState.get(node);
-        if (source.start === null) return [output];
+        if (source.start === null || source.ended) return [output];
         for (let i = 0; i < frames; ++i) {
             const time = (frame + i) / node.context.sampleRate;
             if (time < source.start) continue;

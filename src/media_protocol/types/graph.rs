@@ -8,6 +8,26 @@ pub struct GraphPcmFormat {
     pub channels: u16,
 }
 
+/// Source-frame counters from the output voice, independent of the page's clock.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GraphPcmHealth {
+    pub submitted_frames: u64,
+    pub played_frames: u64,
+    pub underruns: u64,
+    pub playing: bool,
+}
+
+impl GraphPcmHealth {
+    pub(crate) fn validate(self) -> Result<Self, MediaProtocolError> {
+        if self.played_frames > self.submitted_frames {
+            return Err(MediaProtocolError::InvalidPayload(
+                "graph PCM playback clock",
+            ));
+        }
+        Ok(self)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum GraphPcmStatus {

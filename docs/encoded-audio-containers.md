@@ -51,7 +51,7 @@ commands are recorded in [the media fixture inventory](../tests/fixtures/media/R
 
 ## Behavior and limits
 
-- Web Audio retains its 8 MiB encoded-input and 16 MiB decoded/resampled-buffer
+- Web Audio uses 32 MiB encoded-input and 256 MiB decoded/resampled-buffer
   budgets, worker-thread cancellation, input detachment, and asynchronous promise
   and legacy callback completion. It resamples actual decoded channel samples.
 - Contained playback retains its encoded, packet, PCM, sample, duration and command

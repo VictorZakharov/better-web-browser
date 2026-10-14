@@ -58,7 +58,7 @@
         histories.length = count;
     };
     const audioInputBuses = (context, node, frame, frames, cache, input = 0) =>
-        [...audioNodeState.get(node).inputs[input]].map(edge =>
+        audioInputEdges(audioContextState.get(context), audioNodeState.get(node).inputs[input]).map(edge =>
             renderAudioNode(context, edge.source, frame, frames, cache, edge.output));
     const mixAudioInputs = (context, node, frame, frames, cache,
         channels, input = 0, interpretation) => {

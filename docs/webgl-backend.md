@@ -10,8 +10,8 @@ not by an assumed HTML5test score increase.
 ## Backend and provenance
 
 The Windows backend uses exactly pinned [`mozangle` 0.7.1](https://github.com/servo/mozangle),
-a BSD-3-Clause packaging of Mozilla's ANGLE fork. EGL and GLES are compiled from
-the locked Cargo source; there is no downloaded browser DLL, author-provided native
+a BSD-3-Clause packaging of Mozilla's ANGLE fork. Cargo fetches a [pinned fork commit](mozangle-patch.md) with a two-file D3D11 input-layout correction.
+EGL and GLES are compiled from the locked Git checkout; there is no downloaded browser DLL, author-provided native
 library, custom GLSL parser, or validation-only NULL renderer. ANGLE provides the
 GLSL compiler and D3D11 renderer. The initial policy uses D3D11 WARP, which performs
 actual software rendering and supports hidden CI without a native window.
@@ -41,8 +41,8 @@ against the pinned public header installs a renderer-owned Rust worker pool.
 Four workers are shared across all contexts, with 128 queued native closures and
 backpressure at that limit. Compiler tasks remain inside the renderer Job and its
 memory/process cancellation boundaries; native context operations stay on their
-single GPU owner. No third-party source/header is rewritten and no linker
-diagnostics are suppressed. See the [compiler scheduling contract](webgl-compiler-scheduling.md).
+single GPU owner. The worker integration does not rewrite third-party headers or
+suppress linker diagnostics. See the [compiler scheduling contract](webgl-compiler-scheduling.md).
 The actual EGL context
 requests WebGL compatibility, robust resource initialization and disabled client
 arrays. Backend failure must produce context-creation failure, not a fake context.

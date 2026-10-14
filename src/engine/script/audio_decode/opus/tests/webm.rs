@@ -153,20 +153,22 @@ fn webm_cancelled_job_has_no_late_result_and_does_not_reuse_job_identity() {
 }
 
 #[test]
-fn streaming_webm_can_exceed_audio_buffer_budget_without_whole_file_pcm_storage() {
-    let (bytes, frames) = remux(1, Some(5_000));
+fn streaming_webm_keeps_chunks_bounded_as_total_pcm_grows() {
+    // Stay within the container's independent framing complexity limit.
+    // A streaming consumer decodes small chunks even when total PCM is
+    // larger than the previous complete-file AudioBuffer allowance.
+    let (bytes, frames) = remux(2, Some(3_000));
     assert!(bytes.len() < 8 * 1024 * 1024);
-    assert!(frames * 4 > 16 * 1024 * 1024);
-    assert!(decode(&bytes, 48_000.0, &AtomicBool::new(false)).is_err());
+    assert!(frames * 2 * 4 > 16 * 1024 * 1024);
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut stream = Stream::open(bytes.into(), Limits::default(), None, deadline).unwrap();
     assert_eq!(stream.frames(), frames);
     let mut received = 0_u64;
     while let Some(chunk) = stream.next_pcm(None, deadline).unwrap() {
-        assert!(chunk.len() <= 5_760);
+        assert!(chunk.len() <= 5_760 * 2);
         received += chunk.len() as u64;
     }
-    assert_eq!(received, frames);
+    assert_eq!(received, frames * 2);
 }
 
 #[test]

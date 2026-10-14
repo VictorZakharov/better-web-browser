@@ -21,6 +21,9 @@ pub(super) struct Ledger {
     last_reclamation: Cell<Option<Instant>>,
     reclamations: Cell<u64>,
     observed_private_drop_bytes: Cell<usize>,
+    cooldown_skips: Cell<u64>,
+    reclamation_time: Cell<Duration>,
+    reclamation_maximum: Cell<Duration>,
 }
 
 impl Ledger {
@@ -30,6 +33,8 @@ impl Ledger {
             .get()
             .is_some_and(|previous| now.duration_since(previous) < Duration::from_millis(250))
         {
+            self.cooldown_skips
+                .set(self.cooldown_skips.get().saturating_add(1));
             return false;
         }
         self.last_reclamation.set(Some(now));
@@ -144,6 +149,7 @@ impl WebGl {
         if self.native.make_current().is_err() {
             return false;
         }
+        let started = Instant::now();
         // Only an otherwise-refused allocation waits for deferred GPU deletion.
         // DXGI Trim discards driver scratch without changing rendering state:
         // https://learn.microsoft.com/windows/win32/api/dxgi1_3/nf-dxgi1_3-idxgidevice3-trim
@@ -155,13 +161,26 @@ impl WebGl {
         }) {
             unsafe { device.Trim() };
         }
+        let elapsed = started.elapsed();
+        self.resource_diagnostics.reclamation_time.set(
+            self.resource_diagnostics
+                .reclamation_time
+                .get()
+                .saturating_add(elapsed),
+        );
+        self.resource_diagnostics.reclamation_maximum.set(
+            self.resource_diagnostics
+                .reclamation_maximum
+                .get()
+                .max(elapsed),
+        );
         true
     }
 
     fn resource_diagnostic(&self, id: u32) -> String {
         let (objects, pending, capacities) = self.objects.storage_summary();
         let mut message = format!(
-            "WebGL {id}: charged={} limit={} surface={} objects={} pending-delete={} capacities(buffer/texture/renderbuffer/shader)={}/{}/{}/{} admission-rejections={} driver-reclamation-attempts={} reclamation-observed-private-drop-bytes={}",
+            "WebGL {id}: charged={} limit={} surface={} objects={} pending-delete={} capacities(buffer/texture/renderbuffer/shader)={}/{}/{}/{} admission-rejections={} driver-reclamation-attempts={} reclamation-observed-private-drop-bytes={} reclamation-cooldown-skips={} reclamation-ms(total/max)={:.3}/{:.3}",
             self.resource_bytes,
             self.resource_limit,
             self.surface.bytes(),
@@ -174,6 +193,17 @@ impl WebGl {
             self.resource_diagnostics.rejections.get(),
             self.resource_diagnostics.reclamations.get(),
             self.resource_diagnostics.observed_private_drop_bytes.get(),
+            self.resource_diagnostics.cooldown_skips.get(),
+            self.resource_diagnostics
+                .reclamation_time
+                .get()
+                .as_secs_f64()
+                * 1000.,
+            self.resource_diagnostics
+                .reclamation_maximum
+                .get()
+                .as_secs_f64()
+                * 1000.,
         );
         for (label, failure) in [
             ("first", self.resource_diagnostics.first.get()),

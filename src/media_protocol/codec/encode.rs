@@ -349,10 +349,19 @@ pub(super) fn worker(message: WorkerMediaMessage) -> Result<(u16, Vec<u8>), Medi
             boolean(&mut payload, state.ended);
             WORKER_PLAYBACK_STATE
         }
-        WorkerMediaMessage::GraphPcmStatus { request_id, status } => {
+        WorkerMediaMessage::GraphPcmStatus {
+            request_id,
+            status,
+            health,
+        } => {
             require_nonzero(request_id, "graph PCM request")?;
+            health.validate()?;
             vec_u64(&mut payload, request_id);
             payload.push(status as u8);
+            vec_u64(&mut payload, health.submitted_frames);
+            vec_u64(&mut payload, health.played_frames);
+            vec_u64(&mut payload, health.underruns);
+            boolean(&mut payload, health.playing);
             WORKER_GRAPH_PCM_STATUS
         }
         WorkerMediaMessage::Restrictions(report) => {

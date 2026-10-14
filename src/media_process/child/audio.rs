@@ -8,6 +8,7 @@ use std::time::Duration;
 pub(super) mod graph;
 mod output;
 use output::AudioOutput;
+pub(super) use output::set_output_muted;
 
 const CLOCK_TICK: Duration = Duration::from_millis(5);
 

@@ -1,0 +1,76 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Audio voice lifetime and playback</title>
+<style>
+body { background: #13202a; color: #e7f6f8; font: 16px system-ui; margin: 24px; }
+canvas { display: block; background: #0b151e; margin-top: 16px; }
+button { padding: 8px 16px; background: #60d6d2; color: #08232c; border: 0; }
+</style>
+<h1>Audio voice lifetime and playback</h1>
+<button id="start">Start workload</button>
+<p id="status">Waiting for activation</p>
+<canvas width="640" height="240"></canvas>
+<script>
+'use strict';
+const options = new URLSearchParams(location.search);
+const voices = Math.min(1000, Math.max(0, Number(options.get('voices') ?? 100)));
+const stall = Math.min(200, Math.max(0, Number(options.get('stall') ?? 0)));
+const status = document.querySelector('#status');
+const canvas = document.querySelector('canvas');
+const paint = canvas.getContext('2d');
+let context, created = 0, ended = 0, failure = '', frame = 0;
+let startTime = 0, blocked = false;
+function update() {
+  status.textContent = 'created=' + created + ' ended=' + ended + ' error=' + failure;
+  document.title = status.textContent;
+}
+function animate(now) {
+  frame++;
+  paint.fillStyle = '#0b151e'; paint.fillRect(0, 0, 640, 240);
+  paint.strokeStyle = '#60d6d2'; paint.lineWidth = 2; paint.beginPath();
+  for (let x = 0; x < 640; x++) {
+    const y = 120 + 70 * Math.sin(x / 24 + frame / 10);
+    if (x) paint.lineTo(x, y); else paint.moveTo(x, y);
+  }
+  paint.stroke();
+  if (startTime && stall && !blocked && now - startTime >= 2500) {
+    blocked = true;
+    const until = performance.now() + stall;
+    while (performance.now() < until) { /* one controlled author-task interruption */ }
+    console.log('controlled author stall ' + stall + ' ms');
+  }
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+document.querySelector('#start').onclick = async () => {
+  if (context) return;
+  context = new AudioContext();
+  const music = context.createBuffer(2, 2048, context.sampleRate);
+  for (let channel = 0; channel < 2; channel++) {
+    const data = music.getChannelData(channel);
+    for (let i = 0; i < data.length; i++) data[i] = .015 * Math.sin(2 * Math.PI * i / 128);
+  }
+  const bed = context.createBufferSource();
+  bed.buffer = music; bed.loop = true; bed.connect(context.destination); bed.start();
+  await context.resume();
+  startTime = performance.now();
+  const timer = setInterval(() => {
+    if (created >= voices || failure) { clearInterval(timer); update(); return; }
+    try {
+      const source = context.createOscillator();
+      const gain = context.createGain();
+      const when = context.currentTime;
+      source.frequency.value = 220 + (created % 12) * 30;
+      gain.gain.setValueAtTime(.03, when);
+      gain.gain.linearRampToValueAtTime(0, when + .08);
+      source.connect(gain).connect(context.destination);
+      source.onended = () => { ended++; update(); };
+      source.start(when); source.stop(when + .08);
+      created++; update();
+    } catch (error) {
+      failure = error.name + ': ' + error.message; update();
+      console.error(failure);
+    }
+  }, 20);
+};
+</script>

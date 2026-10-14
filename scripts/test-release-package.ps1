@@ -52,7 +52,8 @@ try {
     }
     $codecNoticeRoot = Join-Path $packageRoot 'licenses'
     foreach ($notice in @('mozangle-0.7.1/LICENSE.native-angle', 'mozangle-0.7.1/LICENSE.chromium',
-        'mozangle-0.7.1/UPSTREAM', 'libz-sys-1.1.29/LICENSE.native-zlib',
+        'mozangle-0.7.1/UPSTREAM', 'mozangle-0.7.1/BREEZE_PATCHES.md',
+        'libz-sys-1.1.29/LICENSE.native-zlib',
         'mozangle-0.7.1/native-source-notices/src/common/third_party/xxhash/xxhash.h.txt',
         'mozangle-0.7.1/native-source-notices/src/common/third_party/smhasher/src/PMurHash.h.txt',
         'mozangle-0.7.1/native-source-notices/include/KHR/khrplatform.h.txt')) {

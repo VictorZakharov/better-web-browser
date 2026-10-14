@@ -22,6 +22,20 @@ function Get-TestImpactCatalog {
         'full' = @{ Target='all'; Filter=''; Covers=@() }
     }
     $owners = @(
+        # Native ANGLE changes can affect every WebGL draw and its renderer process.
+        @{ Id='native-angle'; Paths=@('build/angle_api.rs');
+            Groups=@('full'); Consumers=@() }
+        # Graph PCM clocks and ownership share the media control pipe with
+        # decode/playback. Keep their downstream gate broad while modules split.
+        @{ Id='audio-pipeline'; Paths=@('src/media_process/child/audio/*',
+            'src/engine/script/audio_render.rs','src/engine/script/audio_render/*',
+            'src/engine/script/bootstrap/web_audio_render_*.js',
+            'src/renderer_process/child/connection/media/graph.rs',
+            'src/renderer_process/child/connection/media/graph/*',
+            'src/renderer_process/child/document/graph_audio.rs',
+            'src/media_protocol/types/graph.rs','src/media_protocol/tests/graph_pcm.rs',
+            'benchmarks/ui/fixtures/audio-voice-churn.html');
+            Groups=@('full'); Consumers=@() }
         # Cadence connects document scheduling, wire state and native wakeups.
         # There is no isolated consumer gate for this shared policy yet.
         @{ Id='rendering-cadence'; Paths=@('src/engine/rendering.rs','src/engine/rendering/*',

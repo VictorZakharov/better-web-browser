@@ -94,6 +94,7 @@ pub(super) struct BenchmarkRun {
     pub(super) wheel_trace: wheel_timing::WheelTrace,
     pub(super) scroll_surface: Option<benchmark_capture::OffscreenSurface>,
     pub(super) native_paint: Option<native_paint::NativePaintTrace>,
+    pub(super) audio_output_probe: bool,
     pub(super) activity: BenchmarkActivity,
     pub(super) diagnostic_selectors: Vec<String>,
     pub(super) window_width_dip: i32,

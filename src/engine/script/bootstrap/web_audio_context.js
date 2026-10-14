@@ -9,7 +9,8 @@
                 connections: 0, graphRevision: 0, graphPlan: null,
                 renderStarted: false, onstatechange: null, oncomplete: null,
                 suspensions: new Map(), advance: null, delayBytes: 0,
-                sourceSnapshotBytes: 0, automationCurveBytes: 0 });
+                sourceSnapshotBytes: 0, automationCurveBytes: 0,
+                retiringVoices: new Set(), completedVoiceSources: new Set() });
             const state = audioContextState.get(this);
             state.scriptProcessors = new Set();
             state.scriptProcessorBytes = 0;
@@ -19,7 +20,18 @@
                 value: new AudioListener(audioListenerToken, this) });
         }
         get sampleRate() { return audioContextState.get(this).sampleRate; }
-        get currentTime() { return audioContextState.get(this).time; }
+        get currentTime() {
+            const state = audioContextState.get(this);
+            // The rendering clock is the next quantum to be processed, including
+            // PCM retained after backpressure. Scheduling at an already rendered
+            // accepted frame would discard a newly requested short sound.
+            if (state.live && state.state === 'running') {
+                if (state.live.threaded && state.live.phase === 'active')
+                    state.live.renderFrame = audioHost('audioRenderClock');
+                return state.live.renderFrame / state.sampleRate;
+            }
+            return state.time;
+        }
         get state() { return audioContextState.get(this).state; }
         get onstatechange() { return audioContextState.get(this).onstatechange; }
         set onstatechange(callback) {
@@ -87,6 +99,8 @@
 
     const renderAudioNode = (context, node, frame, frames, cache, output = 0) => {
         if (node === context.listener) return [];
+        if (!audioContextState.get(context).nodes.has(node))
+            return silence(audioOutputWidth(node, 1), frames);
         const rendered = cache.get(node);
         if (rendered?.has(output)) return rendered.get(output);
         // A residual AudioParam/listener cycle is already classified by the
@@ -135,6 +149,7 @@
                 renderAudioNode(context, node, frame, frames, cache);
         for (const delay of cache.plan.delays)
             if (!cache.plan.muted.has(delay)) writeDelayQuantum(delay, frame, frames, cache);
+        settleAudioVoiceTails(state);
         return samples;
     };
     class OfflineAudioContext extends BaseAudioContext {

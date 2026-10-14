@@ -92,6 +92,12 @@ The small warm workload adds about 0.028 ms for four borders, so production call
 
 The 65-frame `canvas-gpu-memory.html` fixture uses a 1920 × 1080 Canvas and 32 large native borders. At a 1105.6 × 608 CSS viewport and DPR 1.25, the merged browser declines GPU composition on its bitmap working-set quota; the candidate stays active with 128 coverage rectangles and 24,480 cached bitmap pixel bytes. Its whole-window PNG is identical to the merged browser's CPU capture. The `?mask` variant also matches every RGB pixel while preserving hidden content behind its rejected mask and keeping unrelated Canvas presentation active.
 
+## Fullscreen resource reuse, 2026-10-15
+
+Resizing the shared-frame pool now replaces only its size-dependent slots. It finishes outstanding private copies, detaches retired source attachments and retains the copy context and conversion program. Slot identities and byte reservations are renewed; the browser still receives distinct immutable generations. Author GL state remains in its separate context. This avoids recompiling the same private shaders on every fullscreen transition.
+
+The native visual commits its vertical position only when the toolbar offset changes. Ordinary frames update the swap chain without submitting an unchanged DirectComposition property transaction. F12's copied diagnostics include the existing GPU composition report so a slow/fallback presentation can be distinguished from document work. The resize pixel/state regression was added without executing it, in accordance with the maintainer's manual-verification request.
+
 ## Primary references
 
 - [EGL 1.5 specification](https://registry.khronos.org/EGL/specs/eglspec.1.5.pdf), context sharing in section 3.7.1.

@@ -27,6 +27,7 @@ impl MediaSession {
             WorkerMediaMessage::GraphPcmStatus {
                 request_id: actual,
                 status,
+                ..
             } if actual == request_id => {
                 Ok(status == crate::media_protocol::GraphPcmStatus::Accepted)
             }
@@ -54,6 +55,7 @@ impl MediaSession {
             WorkerMediaMessage::GraphPcmStatus {
                 request_id: actual,
                 status,
+                ..
             } if actual == request_id => {
                 Ok(status == crate::media_protocol::GraphPcmStatus::Accepted)
             }

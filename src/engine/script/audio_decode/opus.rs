@@ -13,10 +13,11 @@ pub(super) fn decode(
     cancelled: &AtomicBool,
 ) -> Result<DecodedAudio, String> {
     if bytes.is_empty() || bytes.len() > MAX_ENCODED_BYTES {
-        return Err("encoded Opus audio exceeds the 8 MiB decode limit".into());
+        return Err("encoded Opus audio exceeds the 32 MiB decode limit".into());
     }
     let deadline = Instant::now() + MEDIA_COMMAND_TIMEOUT;
     let limits = Limits {
+        max_encoded_bytes: MAX_ENCODED_BYTES,
         max_decoded_bytes: MAX_DECODED_BYTES,
         ..Limits::default()
     };
@@ -30,7 +31,7 @@ pub(super) fn decode(
             .and_then(|samples| samples.checked_mul(4))
             .is_none_or(|bytes| bytes > MAX_DECODED_BYTES)
     {
-        return Err("decoded Opus exceeds the 16 MiB AudioBuffer limit".into());
+        return Err("decoded Opus exceeds the 256 MiB AudioBuffer limit".into());
     }
     // Container admission removes pre-skip and Ogg EOS/WebM DiscardPadding.
     // Only presentation samples enter AudioBuffer/context-rate conversion.

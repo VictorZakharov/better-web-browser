@@ -17,7 +17,7 @@ pub(super) fn output_frames(
         .and_then(|samples| samples.checked_mul(4))
         .ok_or("decoded audio size overflow")?;
     if bytes > MAX_DECODED_BYTES {
-        return Err("decoded audio exceeds the 16 MiB AudioBuffer limit".into());
+        return Err("decoded audio exceeds the 256 MiB AudioBuffer limit".into());
     }
     Ok(frames)
 }

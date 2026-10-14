@@ -3,6 +3,8 @@
     let liveAudioContext = null;
     let nextLiveStreamId = 1;
     const MAX_LIVE_CHUNK_QUANTA = 7;
+    const LIVE_QUEUE_TARGET_MS = 120;
+    const MAX_INLINE_LIVE_REFILLS = 2;
     const liveError = (name, message) => new AudioDOMException(message, name);
     const settleLivePromises = (promises, error) => {
         for (const promise of promises.splice(0)) {
@@ -16,6 +18,7 @@
         live.sendScheduled = true;
         audioTask(() => {
             live.sendScheduled = false;
+            live.inlineRefills = 0;
             sendLiveChunk(context);
         }, delay);
     };
@@ -83,10 +86,12 @@
     const finishLiveClose = context => {
         const state = audioContextState.get(context);
         const live = state.live;
+        if (live.threaded && !live.finalClose) live.renderFrame = audioHost('audioRenderClock');
         live.phase = 'idle';
         live.streamId = 0;
         live.closeSubmitted = false;
         if (live.pending) live.pending.submitted = false;
+        if (state.state === 'running') state.time = live.renderFrame / state.sampleRate;
         if (live.finalClose) {
             retireAudioScriptProcessors(context);
             clearCaptureAudioForContext(context);
@@ -103,6 +108,10 @@
     };
     const stopLiveStream = context => {
         const live = audioContextState.get(context).live;
+        if (live.threaded) {
+            live.renderFrame = audioHost('audioRenderClock');
+            audioHost('audioRenderPause', live.finalClose);
+        }
         if (live.phase === 'idle') {
             audioTask(() => finishLiveClose(context));
         } else if (live.phase === 'active') {
@@ -125,7 +134,8 @@
         live.acceptedChunks = 0;
         live.nextDeadline = 0;
         state.renderStarted = true;
-        scheduleLiveSend(context);
+        if (live.threaded) startAudioRender(context);
+        else scheduleLiveSend(context);
     };
 
     class AudioContext extends BaseAudioContext {
@@ -143,14 +153,17 @@
             super(audioContextToken, 2, Infinity, sampleRate);
             audioContextState.get(this).live = {
                 phase: 'idle', streamId: 0, renderFrame: 0, acceptedFrame: 0,
+                threaded: !audioRenderThread && !!audioHost('audioRenderAvailable'),
                 pending: null, sendScheduled: false, closeScheduled: false,
                 closeSubmitted: false, userSuspended: false, finalClose: false,
                 chunkQuanta: Math.max(1, Math.min(MAX_LIVE_CHUNK_QUANTA,
                     Math.floor(sampleRate / (AUDIO_QUANTUM * 50)))),
-                acceptedChunks: 0, nextDeadline: 0,
+                acceptedChunks: 0, nextDeadline: 0, inlineRefills: 0,
                 resumePromises: [], suspendPromises: [], closePromises: []
             };
             liveAudioContext = this;
+            audioRenderLastGraph = '';
+            audioRenderKnownAssets = new Set();
             // Constructor auto-start, when policy permits, follows the current
             // script task so graph setup can happen before the first quantum.
             audioTask(() => tryStartLive(this));
@@ -208,7 +221,7 @@
         __notifyAudioActivation: { value: () => {
             if (liveAudioContext) tryStartLive(liveAudioContext);
         } },
-        __receiveAudioGraphStatus: { value: (streamId, status) => {
+        __receiveAudioGraphStatus: { value: (streamId, status, queuedFrames) => {
             const context = liveAudioContext;
             if (!context) return;
             const state = audioContextState.get(context);
@@ -227,13 +240,28 @@
                     // ScriptProcessor boundaries may shorten a transport chunk;
                     // pace using the actual accepted duration, not its maximum.
                     let delay = 0;
-                    if (live.acceptedChunks >= 4) {
+                    const deviceClock = typeof queuedFrames === 'number' &&
+                        Number.isFinite(queuedFrames) && queuedFrames >= 0;
+                    if (deviceClock) {
+                        // Include chunks waiting in the transport, and refill
+                        // from the device's consumed-frame counter. Wall-clock
+                        // pacing loses its safety margin after a slow game task.
+                        delay = Math.max(0, queuedFrames * 1000 / state.sampleRate -
+                            LIVE_QUEUE_TARGET_MS);
+                    } else if (live.acceptedChunks >= 4) {
                         const now = performance.now();
                         live.nextDeadline = live.acceptedChunks === 4 ?
                             now + chunkDuration : live.nextDeadline + chunkDuration;
                         delay = Math.max(0, live.nextDeadline - now);
                     }
-                    scheduleLiveSend(context, delay);
+                    // Two immediate refills amortize a renderer round trip
+                    // without monopolizing its control plane. Author audio
+                    // processing callbacks still cross their media-task boundary.
+                    if (deviceClock && delay === 0 && !state.scriptProcessors.size &&
+                        live.inlineRefills < MAX_INLINE_LIVE_REFILLS) {
+                        live.inlineRefills++;
+                        sendLiveChunk(context);
+                    } else scheduleLiveSend(context, delay);
                 }
             } else if (status === 'rejected' && live.phase === 'active') {
                 live.userSuspended = true;

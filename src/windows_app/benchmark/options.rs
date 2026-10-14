@@ -46,6 +46,7 @@ impl LaunchOptions {
         let mut scroll_samples = 0_usize;
         let mut early_scroll = false;
         let mut native_paint = false;
+        let mut audio_output_probe = false;
         let mut diagnostic_selectors = Vec::new();
         let mut navigation_targets = Vec::new();
         let mut navigation_delay_ms = 0_u64;
@@ -95,6 +96,7 @@ impl LaunchOptions {
                 }
                 "--early-scroll-trace" => early_scroll = true,
                 "--native-paint-trace" => native_paint = true,
+                "--audio-output-probe" => audio_output_probe = true,
                 "--window-width" => {
                     window_width_dip =
                         Some(number::<i32>(&mut arguments, &argument)?.clamp(320, 7680));
@@ -208,6 +210,7 @@ impl LaunchOptions {
             );
             benchmark.navigation_targets = navigation_targets;
             benchmark.native_paint = native_paint.then(Default::default);
+            benchmark.audio_output_probe = audio_output_probe;
             benchmark.navigation_delay = Duration::from_millis(navigation_delay_ms);
             benchmark.initial_action_delay = initial_action_delay_ms
                 .filter(|delay| *delay > 0)
@@ -245,6 +248,9 @@ impl LaunchOptions {
             }
             if native_paint {
                 return Err("--native-paint-trace requires --benchmark".into());
+            }
+            if audio_output_probe {
+                return Err("--audio-output-probe requires --benchmark".into());
             }
             if completion_marker.is_some() {
                 return Err("--completion-marker requires --benchmark".to_string());

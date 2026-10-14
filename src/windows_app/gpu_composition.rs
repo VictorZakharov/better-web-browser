@@ -76,6 +76,11 @@ impl Compositor {
     pub(super) fn belongs_to(&self, document: Option<DocumentId>) -> bool {
         document == Some(self.document)
     }
+    fn hide(&mut self) -> Result<(), String> {
+        self.presentation.hide()?;
+        self.active = false;
+        Ok(())
+    }
     pub(super) fn capture_bgra(&self) -> Result<(u32, u32, Vec<u8>), String> {
         Ok((
             self.target.width,

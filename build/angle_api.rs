@@ -7,7 +7,17 @@ pub fn build() {
     println!("cargo:rerun-if-env-changed=BREEZE_ANGLE_SOURCE_DIR");
     println!("cargo:rerun-if-env-changed=CARGO_HOME");
     let source = source_directory().expect(
-        "mozangle 0.7.1 headers not found; for vendored/custom registries set BREEZE_ANGLE_SOURCE_DIR to the resolved mozangle crate directory",
+        "pinned mozangle headers not found in the Cargo Git checkout; set BREEZE_ANGLE_SOURCE_DIR to the resolved crate directory",
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        source.join("Cargo.toml").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        source
+            .join("gfx/angle/checkout/include/platform/PlatformMethods.h")
+            .display()
     );
     let manifest = fs::read_to_string(source.join("Cargo.toml")).expect("read ANGLE manifest");
     let package = manifest
@@ -42,13 +52,24 @@ fn source_directory() -> Option<PathBuf> {
             .or_else(|| env::var_os("HOME"))
             .map(|home| PathBuf::from(home).join(".cargo"))
     })?;
-    let mut candidates: Vec<_> = fs::read_dir(cargo.join("registry/src"))
+    let mut candidates: Vec<_> = fs::read_dir(cargo.join("git/checkouts"))
         .ok()?
         .filter_map(Result::ok)
-        .map(|entry| entry.path().join("mozangle-0.7.1"))
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("mozangle-"))
+        .flat_map(|entry| {
+            fs::read_dir(entry.path())
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .map(|checkout| checkout.path())
+                .collect::<Vec<_>>()
+        })
         .filter(|path| {
-            path.join("gfx/angle/checkout/include/platform/PlatformMethods.h")
-                .is_file()
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("3bd11ac"))
+                && path
+                    .join("gfx/angle/checkout/include/platform/PlatformMethods.h")
+                    .is_file()
         })
         .collect();
     if candidates.len() == 1 {

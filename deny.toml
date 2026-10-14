@@ -37,5 +37,7 @@ skip-tree = []
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+required-git-spec = "rev"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+# The lockfile pins the reviewed two-file D3D11 fix until mozangle publishes it.
+allow-git = ["https://github.com/VictorZakharov/mozangle"]

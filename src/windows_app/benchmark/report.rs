@@ -195,6 +195,7 @@ impl BrowserState {
                 "{{\n",
                 "  \"browser\": {},\n",
                 "  \"headless\": true,\n",
+                "  \"audio_output_probe\": {},\n",
                 "  \"renderer_memory_budget\": {},\n",
                 "  \"device_scale_factor\": {:.3},\n",
                 "  \"requested_url\": {},\n",
@@ -280,6 +281,7 @@ impl BrowserState {
                 "}}\n"
             ),
             json_string(BENCHMARK_ID),
+            benchmark.audio_output_probe,
             json_string(self.app.active_memory_budget.setting()),
             self.page_scale(),
             json_string(&benchmark.requested_url),

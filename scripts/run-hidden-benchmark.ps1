@@ -19,6 +19,7 @@ param(
     [int] $ScrollSamples = 0,
     [switch] $EarlyScrollTrace,
     [switch] $NativePaintTrace,
+    [switch] $AudioOutputProbe,
     [ValidateRange(320, 7680)]
     [int] $WindowWidth = 1280,
     [ValidateRange(240, 4320)]
@@ -130,6 +131,7 @@ function ConvertTo-WindowsCommandLineArgument {
 $arguments = [System.Collections.Generic.List[string]]::new()
 $arguments.Add('--benchmark')
 $arguments.Add($Url)
+if ($AudioOutputProbe) { $arguments.Add('--audio-output-probe') }
 if ($PSBoundParameters.ContainsKey('DeviceScaleFactor')) {
     $arguments.Add('--device-scale-factor')
     $arguments.Add($DeviceScaleFactor.ToString([Globalization.CultureInfo]::InvariantCulture))

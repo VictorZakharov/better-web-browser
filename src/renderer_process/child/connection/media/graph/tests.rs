@@ -13,6 +13,9 @@ fn renderer_pcm_handoff_is_bounded_and_retires_document_before_dequeue() {
             generation: 1,
             worker_generation_seen: 0,
             worker_accepted_generation: 0,
+            health: GraphPcmHealth::default(),
+            health_observed: Instant::now(),
+            sample_rate: 0,
         })),
         fault: Arc::new(Mutex::new(None)),
     };
@@ -64,6 +67,9 @@ fn first_chunk_and_close_wait_for_worker_acknowledgements() {
             generation: 1,
             worker_generation_seen: 0,
             worker_accepted_generation: 0,
+            health: GraphPcmHealth::default(),
+            health_observed: Instant::now(),
+            sample_rate: 0,
         })),
         fault: Arc::new(Mutex::new(None)),
     };
@@ -137,6 +143,9 @@ fn stale_worker_fault_cannot_poison_the_next_document() {
         generation: 7,
         worker_generation_seen: 0,
         worker_accepted_generation: 0,
+        health: GraphPcmHealth::default(),
+        health_observed: Instant::now(),
+        sample_rate: 0,
     });
     let fault = Mutex::new(None);
     record_fault_if_current(&state, &fault, 11, 13, 6, "old failure".into());

@@ -104,12 +104,14 @@
             analyserState.get(this).smoothing = validAnalyserSmoothing(value);
         }
         getFloatTimeDomainData(array) {
+            refreshAudioRenderFeedback(this);
             if (!(array instanceof Float32Array))
                 throw new TypeError('getFloatTimeDomainData requires Float32Array');
             array.set(analyserTimeData(analyserState.get(this)).subarray(0,
                 Math.min(array.length, this.fftSize)));
         }
         getByteTimeDomainData(array) {
+            refreshAudioRenderFeedback(this);
             if (!(array instanceof Uint8Array))
                 throw new TypeError('getByteTimeDomainData requires Uint8Array');
             const data = analyserTimeData(analyserState.get(this));
@@ -117,6 +119,7 @@
                 array[i] = Math.max(0, Math.min(255, Math.floor(128 * (1 + data[i]))));
         }
         getFloatFrequencyData(array) {
+            refreshAudioRenderFeedback(this);
             if (!(array instanceof Float32Array))
                 throw new TypeError('getFloatFrequencyData requires Float32Array');
             const data = analyserFrequencyData(analyserState.get(this));
@@ -124,6 +127,7 @@
                 array[i] = 20 * Math.log10(data[i]);
         }
         getByteFrequencyData(array) {
+            refreshAudioRenderFeedback(this);
             if (!(array instanceof Uint8Array))
                 throw new TypeError('getByteFrequencyData requires Uint8Array');
             const state = analyserState.get(this);

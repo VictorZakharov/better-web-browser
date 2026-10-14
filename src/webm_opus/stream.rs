@@ -23,8 +23,11 @@ impl Stream {
         deadline: Instant,
     ) -> Result<Self, String> {
         packets::check(cancelled, deadline)?;
-        if source.is_empty() || source.len() > crate::limits::MAX_MEDIA_ENCODED_QUEUE_BYTES {
-            return Err("WebM Opus exceeds the 8 MiB complete-file limit".into());
+        if source.is_empty() || source.len() > limits.max_encoded_bytes {
+            return Err(format!(
+                "WebM Opus exceeds the {} MiB complete-file limit",
+                limits.max_encoded_bytes / (1024 * 1024)
+            ));
         }
         let metadata = metadata::inspect(&source, &mut Budget::new(cancelled))?;
         let admitted = packets::admit(source, &metadata, limits, cancelled, deadline)?;

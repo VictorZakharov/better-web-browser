@@ -1,10 +1,14 @@
 # Renderer memory pressure and engine boundaries
 
 The renderer remains inside a broker-enforced Windows Job limit: 1 GiB by
-default, or 2 GiB when the user selects the opt-in 3D budget in Options and
+default, or 3 GiB when the user selects the opt-in 3D budget in Options and
 restarts the browser. The selection is persisted in the browser profile and
 passed to the Job and child from the same typed launch policy; page code cannot
 change it. Each renderer has its own limit, not a shared browser-wide allowance.
+The graphics profile previously allowed 2 GiB. High-quality fullscreen captures
+reached 2,092,449,792 bytes of private commit and still refused render-target
+storage after driver cleanup. The 3 GiB process limit allows that transient
+overlap; the independent 1280 MiB GPU storage ledger remains unchanged.
 V8's individual heap limits cannot describe that process-wide budget: dedicated
 workers, native image/Canvas resources, ANGLE, shader compilation and IPC storage
 all consume the same process. This policy is an embedder signal to V8, not a
@@ -42,9 +46,17 @@ No URL, source, message payload, binary token, or author function name is logged
 The native GPU ledger remains a conservative storage reservation, not exact
 VRAM. Larger ledger ceilings require a fresh process-private headroom check
 before positive storage growth. The renderer leaves 1/8 of its selected process
-limit as emergency headroom (128 MiB by default). Reuse/retirement does not
+limit, capped at 128 MiB, as emergency headroom. Both current profiles therefore
+retain 128 MiB for non-GPU work. Reuse/retirement does not
 require new headroom.
 Unknown observations retain the old 64 MiB conservative allocation ceiling.
+
+The cap avoids doubling the reserve when the user selects the 2 GiB graphics
+profile. A High-quality fullscreen resize on 15 October 2026 recorded 43
+allocation refusals with the former 256 MiB reserve and visible resize corruption.
+The first refused 16,588,800-byte growth at 1,867,014,144 bytes of private commit,
+which still leaves over 128 MiB below the hard Job limit after admission.
+This changes the soft guard; the selected Job limit and GPU ledger stay enforced.
 
 An allocation that fits the ledger but lacks measured private headroom gets one
 bounded recovery attempt before refusal. The native owner finishes pending GL
@@ -57,7 +69,8 @@ the GPU.
 [DXGI Trim](https://learn.microsoft.com/windows/win32/api/dxgi1_3/nf-dxgi1_3-idxgidevice3-trim)
 preserves rendering state but can make subsequent rendering more expensive, so
 this is a last attempt under allocation pressure rather than a per-frame action.
-Bounded diagnostics report attempts and observed process-private drops; these
+Bounded diagnostics report attempts, cooldown skips, elapsed/max recovery time
+and observed process-private drops; these
 process-wide observations are not isolated driver allocation measurements.
 
 This is admission protection, not a peak-memory guarantee: a driver or compiler

@@ -4,6 +4,18 @@ use super::*;
 use crate::renderer_protocol::DocumentId;
 
 impl ChildConnection {
+    pub(in crate::renderer_process::child) fn graph_pcm_health(
+        &self,
+        document: DocumentId,
+        context_id: u64,
+    ) -> Option<crate::media_protocol::GraphPcmHealth> {
+        self.media
+            .as_ref()
+            .filter(|media| media.graph_document == document.get())
+            .and_then(|media| media.graph.as_ref())
+            .and_then(|graph| graph.health(document.get(), context_id))
+    }
+
     pub(in crate::renderer_process::child) fn activate_graph_pcm(&mut self, document: DocumentId) {
         if let Some(media) = self.media.as_mut() {
             media.graph_document = document.get();

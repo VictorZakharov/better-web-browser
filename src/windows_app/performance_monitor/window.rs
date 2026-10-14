@@ -111,6 +111,11 @@ impl BrowserState {
         let _ = writeln!(report, "Crashed: {}", tab.crashed);
         let _ = writeln!(
             report,
+            "GPU composition: {}",
+            self.gpu_composition_report_json()
+        );
+        let _ = writeln!(
+            report,
             "History: {} entries, index {}",
             tab.history.len(),
             tab.history_index

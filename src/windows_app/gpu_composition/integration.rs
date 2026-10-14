@@ -17,13 +17,23 @@ impl BrowserState {
             self.gpu_compositor = None;
             return false;
         };
-        if self.gpu_canvases.is_empty()
-            || self.gpu_canvas_disabled
+        if self.gpu_canvas_disabled
             || self.gpu_repair_pending
             || self.crashed
             || self.surface != Surface::Page
         {
             self.gpu_compositor = None;
+            return false;
+        }
+        if self.gpu_canvases.is_empty() {
+            // A resized canvas temporarily has no completed GPU descriptor.
+            // Unbind the old visual for CPU painting, but retain its native
+            // device/caches until the next frame instead of recreating D3D.
+            if let Some(compositor) = self.gpu_compositor.as_mut()
+                && compositor.hide().is_err()
+            {
+                self.gpu_compositor = None;
+            }
             return false;
         }
         let mut client: Rect = std::mem::zeroed();

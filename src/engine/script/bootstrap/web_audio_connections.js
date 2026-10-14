@@ -13,11 +13,11 @@
         return index;
     };
     const removeAudioEdge = (context, edge) => {
-        audioNodeState.get(edge.source).outputs[edge.output].delete(edge);
+        if (edge.source) audioNodeState.get(edge.source).outputs[edge.output].delete(edge);
         const param = audioParamState.get(edge.destination);
         if (param) param.inputs.delete(edge);
         else audioNodeState.get(edge.destination).inputs[edge.input].delete(edge);
-        context.connections--;
+        if (edge.counted) { edge.counted = false; context.connections--; }
         context.graphRevision++;
     };
     const connectAudioNode = (source, destination, output, input) => {
@@ -36,16 +36,29 @@
         const context = audioContextState.get(source.context);
         if (context.connections >= MAX_AUDIO_CONNECTIONS)
             throw new AudioDOMException('Audio graph connection limit reached', 'NotSupportedError');
-        const edge = { source, destination, output, input };
+        const added = [];
+        try {
+            activateAudioVoiceBranch(context, source, added);
+            activateAudioVoiceBranch(context, target.param?.owner ?? destination, added);
+            if (context.connections >= MAX_AUDIO_CONNECTIONS)
+                throw new AudioDOMException('Audio graph connection limit reached', 'NotSupportedError');
+        } catch (error) {
+            for (const node of added) deactivateAudioVoiceNode(context, node);
+            throw error;
+        }
+        const reference = new AudioSourceWeakRef(source);
+        const edge = { get source() { return derefAudioSource(reference); },
+            destination, output, input, counted: context.nodes.has(source) };
         port.add(edge);
         if (target.param) target.param.inputs.add(edge);
         else target.node.inputs[input].add(edge);
-        context.connections++;
+        if (edge.counted) context.connections++;
         context.graphRevision++;
         // Roll back both endpoint sets and budget ownership if a live graph
         // edit cannot be rendered. A failed call must not change audible PCM.
         if (context.renderStarted && !audioWorkWithinLimit(context, context.nodes.size)) {
             removeAudioEdge(context, edge);
+            for (const node of added) deactivateAudioVoiceNode(context, node);
             throw new AudioDOMException('Audio connection exceeds the rendering work limit',
                 'NotSupportedError');
         }

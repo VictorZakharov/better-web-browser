@@ -5,6 +5,7 @@ use crate::storage::{StorageAreaKind, StorageAreaSnapshot, StorageEntry};
 use std::rc::Rc;
 use std::time::Duration;
 mod fixtures;
+mod gc;
 use fixtures::{input, retained_fixture, script_inputs, snapshot};
 
 mod animation_frames;

@@ -5,6 +5,7 @@ use super::*;
 use better_web_browser::renderer_protocol::{
     DocumentId, FullscreenAction, FullscreenDisposition, FullscreenRequest, FullscreenResponse,
 };
+use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_NOMOVE, SWP_NOSIZE};
 
 const TRANSIENT_ACTIVATION_LIFETIME: Duration = Duration::from_secs(5);
 
@@ -27,11 +28,16 @@ struct SavedWindowState {
 pub(super) struct FullscreenState {
     owner: Option<FullscreenOwner>,
     saved: Option<SavedWindowState>,
+    changing_window: bool,
 }
 
 impl FullscreenState {
     pub(super) fn is_active(&self) -> bool {
         self.owner.is_some()
+    }
+
+    pub(super) fn is_changing_window(&self) -> bool {
+        self.changing_window
     }
 }
 
@@ -184,6 +190,7 @@ impl BrowserState {
             visible: IsWindowVisible(self.window) != 0,
         });
         self.fullscreen.owner = Some(owner);
+        self.fullscreen.changing_window = true;
         let fullscreen_style = ((style as u32 & !WS_OVERLAPPEDWINDOW) | WS_POPUP) as isize;
         SetWindowLongPtrW(self.window, GWL_STYLE, fullscreen_style);
         self.set_chrome_controls_visible(false);
@@ -218,20 +225,23 @@ impl BrowserState {
         let Some(saved) = self.fullscreen.saved.take() else {
             return;
         };
+        self.fullscreen.changing_window = true;
         SetWindowLongPtrW(self.window, GWL_STYLE, saved.style);
         SetWindowLongPtrW(self.window, GWL_EXSTYLE, saved.extended_style);
-        let normal = saved.placement.normal_position;
+        // Restore placement directly: forcing the normal rectangle first makes
+        // a maximized window perform an extra native resize during the toggle.
+        // https://devblogs.microsoft.com/oldnewthing/20100412-00/?p=14353
+        let placement = restored_placement(saved.placement, saved.visible);
+        SetWindowPlacement(self.window, &placement);
         SetWindowPos(
             self.window,
             null_mut(),
-            normal.left,
-            normal.top,
-            normal.width(),
-            normal.height(),
-            SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
         );
-        let placement = restored_placement(saved.placement, saved.visible);
-        SetWindowPlacement(self.window, &placement);
         if !saved.visible {
             ShowWindow(self.window, SW_HIDE);
         }
@@ -257,10 +267,16 @@ impl BrowserState {
     }
 
     unsafe fn finish_fullscreen_layout(&mut self) {
+        // Style and placement changes can send several synchronous size
+        // notifications. Publish only the final viewport so intermediate
+        // layouts cannot delay the renderer's live audio refills.
+        self.fullscreen.changing_window = false;
         self.reset_media_viewport_width();
+        self.mark_all_tab_layouts_dirty();
         self.resize_controls();
         self.rebuild_layout();
         self.sync_page_control_positions();
+        self.refresh_accessibility_full();
         InvalidateRect(self.window, null(), 1);
     }
 

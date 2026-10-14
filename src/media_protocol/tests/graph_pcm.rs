@@ -63,6 +63,7 @@ fn graph_pcm_and_decode_messages_share_a_sequenced_control_pipe() {
         .send_worker(&WorkerMediaMessage::GraphPcmStatus {
             request_id: 7,
             status: GraphPcmStatus::Backpressure,
+            health: Default::default(),
         })
         .unwrap();
     assert_eq!(
@@ -72,6 +73,7 @@ fn graph_pcm_and_decode_messages_share_a_sequenced_control_pipe() {
         WorkerMediaMessage::GraphPcmStatus {
             request_id: 7,
             status: GraphPcmStatus::Backpressure,
+            health: Default::default(),
         }
     );
 }
@@ -143,11 +145,46 @@ fn graph_pcm_reader_rejects_unknown_worker_status() {
         .send_worker(&WorkerMediaMessage::GraphPcmStatus {
             request_id: 7,
             status: GraphPcmStatus::Backpressure,
+            health: Default::default(),
         })
         .unwrap();
     bytes[40] = 3;
     assert!(matches!(
         MediaFrameReader::new(Cursor::new(bytes), session(3)).read_worker(),
         Err(MediaProtocolError::InvalidPayload("graph PCM status"))
+    ));
+}
+
+#[test]
+fn graph_pcm_health_round_trips_and_rejects_an_impossible_playback_clock() {
+    let health = GraphPcmHealth {
+        submitted_frames: 3584,
+        played_frames: 896,
+        underruns: 3,
+        playing: true,
+    };
+    let reply = WorkerMediaMessage::GraphPcmStatus {
+        request_id: 7,
+        status: GraphPcmStatus::Accepted,
+        health,
+    };
+    let mut bytes = Vec::new();
+    MediaFrameWriter::new(&mut bytes, session(3))
+        .send_worker(&reply)
+        .unwrap();
+    assert_eq!(
+        MediaFrameReader::new(Cursor::new(bytes.clone()), session(3))
+            .read_worker()
+            .unwrap(),
+        reply
+    );
+    // Header + request ID + status precede the two frame counters.
+    let played_offset = MEDIA_HEADER_LENGTH + 8 + 1 + 8;
+    bytes[played_offset..played_offset + 8].copy_from_slice(&3585_u64.to_le_bytes());
+    assert!(matches!(
+        MediaFrameReader::new(Cursor::new(bytes), session(3)).read_worker(),
+        Err(MediaProtocolError::InvalidPayload(
+            "graph PCM playback clock"
+        ))
     ));
 }

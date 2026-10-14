@@ -68,6 +68,7 @@
         for (const channel of state.output) channel.fill(0);
     };
     const queueAudioProcessing = (node, playbackFrame) => {
+        if (audioRenderThread) { queueAudioThreadProcessing(node, playbackFrame); return; }
         const state = scriptProcessorState(node);
         // A delayed callback cannot build an unbounded author-event queue or
         // retroactively fill audio that has already been submitted to a device.
@@ -98,6 +99,11 @@
     };
     const renderAudioScriptProcessor = (node, frame, frames, cache) => {
         const state = scriptProcessorState(node);
+        if (audioRenderThread && state.position === 0 && state.threadOutput &&
+            state.threadOutput.frame <= frame) {
+            if (state.threadOutput.frame === frame) state.output = state.threadOutput.channels;
+            state.threadOutput = null;
+        }
         if (!scriptProcessorConnected(node)) {
             resetAudioScriptProcessor(state);
             return silence(Math.max(1, state.outputChannels), frames);

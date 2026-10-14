@@ -60,13 +60,51 @@ impl Pool {
     fn new(context: &WebGl) -> Result<Self, String> {
         let width = context.surface.width;
         let height = context.surface.height;
-        let bytes = width as usize * height as usize * 4 * SLOTS;
-        let charge = Charge::reserve(bytes).ok_or("GPU frame slots exceed the renderer budget")?;
         let device = context.native.d3d_device()?;
         let dxgi: IDXGIDevice = device.cast().map_err(|error| error.to_string())?;
         let desc = unsafe { dxgi.GetAdapter().and_then(|adapter| adapter.GetDesc()) }
             .map_err(|error| error.to_string())?;
         let copy = copy::Renderer::new(&context.native)?;
+        let (slots, charge) = Self::allocate_slots(context, width, height)?;
+        Ok(Self {
+            slots,
+            width,
+            height,
+            adapter_low: desc.AdapterLuid.LowPart,
+            adapter_high: desc.AdapterLuid.HighPart,
+            latest: None,
+            sequence: 0,
+            _charge: charge,
+            copy,
+        })
+    }
+
+    fn resize(&mut self, context: &WebGl) -> Result<(), String> {
+        self.finish_pending()?;
+        // Extent changes replace storage, not the shared EGL context or its
+        // conversion program. Release private bindings to retired source data
+        // before allocating replacement slots within the same finite budget.
+        self.copy.detach_sources()?;
+        self.slots.clear();
+        self._charge = Charge(0);
+        self.latest = None;
+        let (width, height) = (context.surface.width, context.surface.height);
+        let (slots, charge) = Self::allocate_slots(context, width, height)?;
+        self.slots = slots;
+        self._charge = charge;
+        self.width = width;
+        self.height = height;
+        self.sequence = 0;
+        Ok(())
+    }
+
+    fn allocate_slots(
+        context: &WebGl,
+        width: u32,
+        height: u32,
+    ) -> Result<(Vec<Slot>, Charge), String> {
+        let bytes = width as usize * height as usize * 4 * SLOTS;
+        let charge = Charge::reserve(bytes).ok_or("GPU frame slots exceed the renderer budget")?;
         let mut slots = Vec::with_capacity(SLOTS);
         for _ in 0..SLOTS {
             let id = NEXT_SURFACE
@@ -80,17 +118,7 @@ impl Pool {
                 sequence: 0,
             });
         }
-        Ok(Self {
-            slots,
-            width,
-            height,
-            adapter_low: desc.AdapterLuid.LowPart,
-            adapter_high: desc.AdapterLuid.HighPart,
-            latest: None,
-            sequence: 0,
-            _charge: charge,
-            copy,
-        })
+        Ok((slots, charge))
     }
 }
 

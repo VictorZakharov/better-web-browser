@@ -4,7 +4,7 @@
     const AudioArrayBuffer = globalThis.ArrayBuffer;
     const AudioUint8Array = globalThis.Uint8Array;
     const AudioFloat32Array = globalThis.Float32Array;
-    const MAX_DECODE_INPUT_BYTES = 8 * 1024 * 1024;
+    const MAX_DECODE_INPUT_BYTES = 32 * 1024 * 1024;
     BaseAudioContext.prototype.decodeAudioData = function(
         audioData, successCallback = null, errorCallback = null) {
         if (!audioContextState.has(this))
@@ -38,7 +38,7 @@
                 return;
             }
             if (tooLarge) {
-                fail(new AudioDOMException('Encoded audio exceeds the 8 MiB decode limit',
+                fail(new AudioDOMException('Encoded audio exceeds the 32 MiB decode limit',
                     'NotSupportedError'));
                 return;
             }

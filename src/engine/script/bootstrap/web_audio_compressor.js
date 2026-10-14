@@ -67,6 +67,7 @@
                 renderDynamicsCompressor(this, frame, frames, cache);
         }
         get reduction() {
+            refreshAudioRenderFeedback(this);
             const state = audioCompressorState.get(this);
             if (!state) throw new TypeError('Illegal DynamicsCompressorNode invocation');
             return state.reduction;

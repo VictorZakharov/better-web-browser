@@ -3,8 +3,23 @@
 use super::*;
 
 impl ScriptRuntime {
+    /// Native embedders with a contained output bind a DSP agent instead of
+    /// receiving document-task PCM chunks in ScriptOutcome.
+    pub(crate) fn enable_audio_render_thread(&mut self) {
+        self.host.borrow_mut().audio_render_thread_available = true;
+    }
+
     /// Runs a private audio task after a renderer admission or worker close acknowledgement.
     pub fn deliver_graph_audio_status(&mut self, stream_id: u32, status: &str) -> ScriptOutcome {
+        self.deliver_graph_audio_status_with_queue(stream_id, status, None)
+    }
+
+    pub fn deliver_graph_audio_status_with_queue(
+        &mut self,
+        stream_id: u32,
+        status: &str,
+        queued_frames: Option<u64>,
+    ) -> ScriptOutcome {
         if !self.initialized {
             return lifecycle_error("the document's initial scripts have not executed");
         }
@@ -17,7 +32,11 @@ impl ScriptRuntime {
             let mut outcome = ScriptOutcome::default();
             if let Err(error) = context.call_global(
                 "__receiveAudioGraphStatus",
-                &[JsValue::from(stream_id), JsValue::from(status.to_owned())],
+                &[
+                    JsValue::from(stream_id),
+                    JsValue::from(status.to_owned()),
+                    queued_frames.map_or(JsValue::Undefined, |frames| JsValue::from(frames as f64)),
+                ],
             ) {
                 outcome
                     .errors

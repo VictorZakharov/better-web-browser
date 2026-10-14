@@ -241,7 +241,7 @@ fn audio_buffer_copies_samples_without_aliasing_and_enforces_limits() {
         const unchanged = new Float32Array([9, 9]);
         buffer.copyFromChannel(unchanged, 0, buffer.length);
         let limit = false, channel = false;
-        try { new AudioBuffer({numberOfChannels: 32, length: 1 << 20,
+        try { new AudioBuffer({numberOfChannels: 32, length: 1 << 22,
             sampleRate: 8000}); } catch (error) { limit = error.name === 'NotSupportedError'; }
         try { buffer.getChannelData(1); }
         catch (error) { channel = error.name === 'IndexSizeError'; }

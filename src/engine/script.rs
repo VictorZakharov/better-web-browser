@@ -13,6 +13,7 @@ use std::{
 mod attribute_host;
 mod audio_codecs;
 mod audio_decode;
+pub(crate) mod audio_render;
 mod binding_helpers;
 mod bootstrap;
 mod canvas_host;
@@ -74,7 +75,6 @@ pub(crate) use host_state::geometry::LayoutFlushCallback;
 pub use network::{ScriptFetchAction, ScriptFetchEvent};
 pub use public_types::*;
 pub use runtime::{ScriptCancellation, ScriptRuntime};
-pub use worker_host::WorkerSourceLoader;
 pub use worker_runtime::{WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome};
 #[cfg(test)]
 mod tests;

@@ -91,19 +91,32 @@ pub(crate) fn sniff(bytes: &[u8]) -> Option<Kind> {
 }
 
 pub(crate) fn validate(bytes: &[u8], kind: Kind) -> Result<(), String> {
-    validate_inner(bytes, kind, None)
+    validate_inner(
+        bytes,
+        kind,
+        None,
+        crate::limits::MAX_MEDIA_ENCODED_QUEUE_BYTES,
+    )
 }
 
 pub(crate) fn validate_with_cancel(
     bytes: &[u8],
     kind: Kind,
     cancelled: &AtomicBool,
+    max_encoded_bytes: usize,
 ) -> Result<(), String> {
-    validate_inner(bytes, kind, Some(cancelled))
+    validate_inner(bytes, kind, Some(cancelled), max_encoded_bytes)
 }
 
-fn validate_inner(bytes: &[u8], kind: Kind, cancelled: Option<&AtomicBool>) -> Result<(), String> {
-    if bytes.is_empty() || bytes.len() > crate::limits::MAX_MEDIA_ENCODED_QUEUE_BYTES {
+fn validate_inner(
+    bytes: &[u8],
+    kind: Kind,
+    cancelled: Option<&AtomicBool>,
+    max_encoded_bytes: usize,
+) -> Result<(), String> {
+    // Complete-file Web Audio and bounded media streaming own separate byte
+    // allowances; neither consumer changes container complexity admission.
+    if bytes.is_empty() || bytes.len() > max_encoded_bytes {
         return Err("encoded audio exceeds the shared complete-file limit".into());
     }
     let mut budget = Budget {
@@ -164,7 +177,7 @@ mod tests {
     #[test]
     fn admission_has_input_cancellation_and_complexity_bounds() {
         let cancelled = AtomicBool::new(true);
-        assert!(validate_with_cancel(b"ID3", Kind::Mp3, &cancelled).is_err());
+        assert!(validate_with_cancel(b"ID3", Kind::Mp3, &cancelled, 32 * 1024 * 1024).is_err());
         assert!(validate(&[], Kind::Mp3).is_err());
         let oversized = vec![0; crate::limits::MAX_MEDIA_ENCODED_QUEUE_BYTES + 1];
         assert!(validate(&oversized, Kind::VorbisWebm).is_err());
@@ -179,5 +192,20 @@ mod tests {
     fn legacy_admission_is_left_to_the_existing_consumers() {
         assert!(validate(b"ID3", Kind::Mp3).is_ok());
         assert!(validate(b"\0\0\0\x18ftyp", Kind::AacM4a).is_ok());
+    }
+
+    #[test]
+    fn web_audio_allowance_does_not_expand_media_streaming_admission() {
+        let mut bytes = vec![0; 12 * 1024 * 1024];
+        bytes[..3].copy_from_slice(b"ID3");
+        assert!(validate(&bytes, Kind::Mp3).is_err());
+        assert!(
+            validate_with_cancel(&bytes, Kind::Mp3, &AtomicBool::new(false), 32 * 1024 * 1024)
+                .is_ok()
+        );
+        assert!(
+            validate_with_cancel(&bytes, Kind::Mp3, &AtomicBool::new(true), 32 * 1024 * 1024)
+                .is_err()
+        );
     }
 }

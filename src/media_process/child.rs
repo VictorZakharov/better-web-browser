@@ -39,6 +39,7 @@ use startup::write_raw_header;
 
 pub(super) fn run(arguments: &[String]) -> Result<(), String> {
     let options = ChildOptions::parse(arguments)?;
+    audio::set_output_muted(options.muted_audio);
     let input_handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
     let output_handle = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
     if !valid_handle(input_handle) || !valid_handle(output_handle) {
@@ -308,8 +309,13 @@ fn command_loop(
                 let status = graph_audio
                     .queue(document_id, context_id, format, pcm)
                     .unwrap_or(crate::media_protocol::GraphPcmStatus::Rejected);
+                let health = graph_audio.health(document_id, context_id);
                 writer
-                    .send_worker(&WorkerMediaMessage::GraphPcmStatus { request_id, status })
+                    .send_worker(&WorkerMediaMessage::GraphPcmStatus {
+                        request_id,
+                        status,
+                        health,
+                    })
                     .map_err(|error| error.to_string())?;
             }
             BrowserMediaMessage::CloseGraphPcm {
@@ -323,7 +329,11 @@ fn command_loop(
                     crate::media_protocol::GraphPcmStatus::Rejected
                 };
                 writer
-                    .send_worker(&WorkerMediaMessage::GraphPcmStatus { request_id, status })
+                    .send_worker(&WorkerMediaMessage::GraphPcmStatus {
+                        request_id,
+                        status,
+                        health: Default::default(),
+                    })
                     .map_err(|error| error.to_string())?;
             }
             BrowserMediaMessage::Test(command) if test_mode => {
