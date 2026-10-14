@@ -16,7 +16,8 @@ $script=@('script-lib','renderer','live-runtime')
 $full=@('full','selector')
 foreach ($path in @('src/engine/webgl/gpu_frames/copy.rs','src/gpu_composition/frames.rs',
     'src/windows_app/gpu_composition/groups.rs','src/renderer_protocol/gpu/tests.rs',
-    'benchmarks/ui/fixtures/canvas-gpu-composition.html')) {
+    'benchmarks/ui/fixtures/canvas-gpu-composition.html','benchmarks/ui/fixtures/canvas-gpu-memory.html',
+    'src/windows_app/gpu_composition/coverage/tests/benchmark.rs')) {
     $plan=Expect-Plan @($path) $full $true
     if ($plan.Unknown.Count -ne 0) {throw "Shared GPU presentation ownership is missing: $path"}
 }

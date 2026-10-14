@@ -41,14 +41,26 @@ impl RendererBudget {
     pub(crate) const fn gpu_context_bytes(self) -> usize {
         match self {
             Self::Standard => 256 * 1024 * 1024,
-            Self::Graphics => 1024 * 1024 * 1024,
+            // Storage reservations count two copies and lifetime high-water
+            // capacities. Permit HiDPI render targets without enlarging the
+            // selected Job or bypassing the independent private-headroom guard.
+            Self::Graphics => 1280 * 1024 * 1024,
         }
     }
 
     pub(crate) const fn gpu_owner_bytes(self) -> usize {
         match self {
             Self::Standard => 512 * 1024 * 1024,
-            Self::Graphics => 1024 * 1024 * 1024,
+            Self::Graphics => self.gpu_context_bytes(),
+        }
+    }
+
+    /// Native page bitmaps live in the browser process, outside the renderer Job.
+    /// The graphics choice admits the larger decoded document plus its HUD rasters.
+    pub const fn presentation_bitmap_bytes(self) -> usize {
+        match self {
+            Self::Standard => 64 * 1024 * 1024,
+            Self::Graphics => 128 * 1024 * 1024,
         }
     }
 
@@ -80,6 +92,21 @@ pub(crate) fn current() -> RendererBudget {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_presentation_has_finite_separate_pixel_limits() {
+        assert_eq!(
+            RendererBudget::Standard.presentation_bitmap_bytes(),
+            64 * 1024 * 1024
+        );
+        assert_eq!(
+            RendererBudget::Graphics.presentation_bitmap_bytes(),
+            128 * 1024 * 1024
+        );
+        // This cache is outside the child Job; changing it cannot enlarge that Job.
+        assert_eq!(RendererBudget::Standard.bytes(), 1024 * 1024 * 1024);
+        assert_eq!(RendererBudget::Graphics.bytes(), 2 * 1024 * 1024 * 1024);
+    }
 
     #[test]
     fn absent_budget_is_standard_and_only_two_finite_modes_exist() {

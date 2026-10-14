@@ -175,7 +175,13 @@ impl Groups {
                     self.skipped = 1;
                     return Ok(true);
                 }
-                let mask = images.get(url).ok_or("GPU mask image is missing")?;
+                let Some(mask) = images.get(url) else {
+                    // Missing/over-budget masks hide their group in the native
+                    // painter too. They do not invalidate unrelated Canvas pixels.
+                    // https://www.w3.org/TR/css-masking-1/#the-mask-image
+                    self.skipped = 1;
+                    return Ok(true);
+                };
                 let bitmap = compositor.images.get(&compositor.device, url, mask, None)?;
                 let mut properties = D2D1_BRUSH_PROPERTIES {
                     opacity: 1.0,

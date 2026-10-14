@@ -12,6 +12,7 @@ impl Compositor {
         scroll: i32,
     ) -> Result<bool, String> {
         self.images.next_frame()?;
+        self.coverage.next_frame()?;
         unsafe {
             self.device.d2d.SetTarget(&self.target.bitmap);
             self.device

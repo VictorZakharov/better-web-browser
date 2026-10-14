@@ -34,6 +34,61 @@ pub(super) fn paint(
         "native-border:{width}:{height}:{}:{widths:?}:{colors:?}",
         radius.to_bits()
     );
+    let rect = Rect {
+        left: 0,
+        top: 0,
+        right: width as i32,
+        bottom: height as i32,
+    };
+    let ring = std::cell::OnceCell::new();
+    let mut covered = coverage::large_shape(width, height);
+    if covered {
+        for (side, color) in colors.iter().enumerate() {
+            if color.alpha == 0 || widths[side] == 0.0 {
+                continue;
+            }
+            let geometry_key = format!(
+                "native-border-coverage:{width}:{height}:{}:{widths:?}:{side}",
+                radius.to_bits()
+            );
+            if !compositor.coverage.paint(
+                &compositor.device,
+                &geometry_key,
+                bounds,
+                *color,
+                || {
+                    let ring = ring
+                        .get_or_init(|| {
+                            let region = coverage::Region(unsafe {
+                                super::super::paint_primitives::border_ring(&rect, widths, radius)
+                            });
+                            if region.0.is_null() {
+                                Err("native GPU border ring is unavailable".to_string())
+                            } else {
+                                Ok(region)
+                            }
+                        })
+                        .as_ref()
+                        .map_err(Clone::clone)?;
+                    let region = unsafe {
+                        super::super::paint_primitives::border_side_region(
+                            &rect, widths, side, ring.0,
+                        )
+                    };
+                    if region.is_null() {
+                        return Err("native GPU border side is unavailable".into());
+                    }
+                    Ok(coverage::Region(region))
+                },
+            )? {
+                covered = false;
+                break;
+            }
+        }
+    }
+    if covered {
+        return Ok(());
+    }
     let bitmap = compositor.images.generated(&compositor.device, &key, || {
         raster(width, height, widths, colors, radius)
     })?;
@@ -49,7 +104,7 @@ pub(super) fn paint(
     Ok(())
 }
 
-fn raster(
+pub(super) fn raster(
     width: u32,
     height: u32,
     widths: [f32; 4],

@@ -58,6 +58,17 @@ fn unavailable_cpu_is_not_reported_as_zero() {
 }
 
 #[test]
+fn gpu_publication_and_cpu_readback_have_independent_timing_categories() {
+    let mut profile = Profile::default();
+    profile.enable(true, 0);
+    profile.record(Category::GpuPresentation, Duration::from_millis(2), None, 4);
+    profile.record(Category::Readback, Duration::from_millis(7), None, 4);
+    let rows = profile.take(1).join("\n");
+    assert!(rows.contains("gpu-presentation: 1 calls, 2.000 ms elapsed"));
+    assert!(rows.contains("readback/presentation: 1 calls, 7.000 ms elapsed"));
+}
+
+#[test]
 fn arbitrary_commands_never_become_diagnostic_labels() {
     let mut profile = Profile::default();
     profile.enable(true, 0);

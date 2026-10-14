@@ -31,7 +31,7 @@ function Get-TestImpactCatalog {
             'src/renderer_protocol/codec/payload/gpu.rs','src/renderer_process/child/connection/gpu.rs',
             'src/windows_app/gpu_composition.rs','src/windows_app/gpu_composition/*',
             'tests/renderer_process/gpu_canvas.rs','benchmarks/ui/fixtures/canvas-gpu-composition.html',
-            'benchmarks/ui/fixtures/canvas-gpu-lifecycle.html');
+            'benchmarks/ui/fixtures/canvas-gpu-lifecycle.html','benchmarks/ui/fixtures/canvas-gpu-memory.html');
             Groups=@('full'); Consumers=@() }
         @{ Id='canvas'; Paths=@('src/engine/script/bootstrap/canvas*.js','src/engine/script/bootstrap/offscreen*.js',
             'src/engine/script/canvas_host.rs','src/engine/script/canvas_host/*',

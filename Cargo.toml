@@ -113,6 +113,9 @@ windows = { version = "0.62.2", features = [
 # Already used by windows 0.62; direct access lets async handlers initialize
 # their callback apartment before calling GetResults (MIT OR Apache-2.0).
 windows-future = "0.3.2"
+# Already locked through windows 0.62; its public Direct2D geometry API takes
+# these Microsoft numeric types (MIT OR Apache-2.0).
+windows-numerics = "=0.3.1"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

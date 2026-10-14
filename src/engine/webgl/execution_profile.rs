@@ -3,7 +3,7 @@
 use crate::engine::owner_cpu;
 use std::time::{Duration, Instant};
 
-const CATEGORIES: usize = 8;
+const CATEGORIES: usize = 9;
 
 #[derive(Clone, Copy)]
 pub(super) enum Category {
@@ -15,6 +15,7 @@ pub(super) enum Category {
     Draw,
     Readback,
     State,
+    GpuPresentation,
 }
 
 impl Category {
@@ -27,6 +28,7 @@ impl Category {
         Self::Draw,
         Self::Readback,
         Self::State,
+        Self::GpuPresentation,
     ];
 
     pub(super) fn command(operation: &str) -> Self {
@@ -84,6 +86,7 @@ impl Category {
             Self::Draw => "draw/clear",
             Self::Readback => "readback/presentation",
             Self::State => "state",
+            Self::GpuPresentation => "gpu-presentation",
         }
     }
 }

@@ -62,6 +62,7 @@ impl BrowserState {
                     width,
                     height,
                     top,
+                    self.app.active_memory_budget,
                 )?);
             }
             let scale = self.page_scale();
@@ -106,6 +107,8 @@ impl BrowserState {
     pub(in crate::windows_app) fn gpu_composition_report_json(&self) -> String {
         serde_json::json!({"active":self.gpu_content_active(),"frames_composed":self.gpu_frames_composed,
             "last_submit_ms":self.gpu_last_submit_ms,"fallback_reason":self.gpu_fallback_reason,
+            "bitmap_cache":self.gpu_compositor.as_ref().map(|compositor|compositor.images.report()),
+            "coverage_cache":self.gpu_compositor.as_ref().map(|compositor|compositor.coverage.report()),
             "scope":"native GPU submission; excludes GPU completion and DWM presentation"}).to_string()
     }
 

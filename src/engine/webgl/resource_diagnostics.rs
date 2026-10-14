@@ -1,6 +1,8 @@
 //! Embedder-only bounded allocation attribution. Never exposed by getParameter.
 use super::{BackendContexts, Kind, WebGl, gl};
 use std::cell::Cell;
+use std::time::{Duration, Instant};
+use windows::{Win32::Graphics::Dxgi::IDXGIDevice3, core::Interface};
 
 #[derive(Clone, Copy)]
 struct Failure {
@@ -16,9 +18,26 @@ pub(super) struct Ledger {
     rejections: Cell<u64>,
     first: Cell<Option<Failure>>,
     latest: Cell<Option<Failure>>,
+    last_reclamation: Cell<Option<Instant>>,
+    reclamations: Cell<u64>,
+    observed_private_drop_bytes: Cell<usize>,
 }
 
 impl Ledger {
+    fn begin_reclamation(&self, now: Instant) -> bool {
+        if self
+            .last_reclamation
+            .get()
+            .is_some_and(|previous| now.duration_since(previous) < Duration::from_millis(250))
+        {
+            return false;
+        }
+        self.last_reclamation.set(Some(now));
+        self.reclamations
+            .set(self.reclamations.get().saturating_add(1));
+        true
+    }
+
     #[cfg(test)]
     pub(super) fn reject(&self, charged: usize, additional: usize, limit: usize) -> u32 {
         self.reject_for(None, charged, additional, limit)
@@ -88,7 +107,23 @@ impl WebGl {
                 )
             })?;
         if additional != 0 {
-            let private = crate::process_memory::current().map(|sample| sample.private);
+            let mut private = crate::process_memory::current().map(|sample| sample.private);
+            if private.is_some()
+                && !super::process_headroom::admits(self.resource_bytes, additional, private)
+                && self.reclaim_driver_storage()
+            {
+                let after = crate::process_memory::current().map(|sample| sample.private);
+                if let (Some(before), Some(after)) = (private, after) {
+                    let reclaimed = before.saturating_sub(after);
+                    self.resource_diagnostics.observed_private_drop_bytes.set(
+                        self.resource_diagnostics
+                            .observed_private_drop_bytes
+                            .get()
+                            .saturating_add(reclaimed),
+                    );
+                }
+                private = after;
+            }
             if !super::process_headroom::admits(self.resource_bytes, additional, private) {
                 return Err(self.resource_diagnostics.reject_headroom(
                     kind,
@@ -102,10 +137,31 @@ impl WebGl {
         Ok(counter)
     }
 
+    fn reclaim_driver_storage(&self) -> bool {
+        if !self.resource_diagnostics.begin_reclamation(Instant::now()) {
+            return false;
+        }
+        if self.native.make_current().is_err() {
+            return false;
+        }
+        // Only an otherwise-refused allocation waits for deferred GPU deletion.
+        // DXGI Trim discards driver scratch without changing rendering state:
+        // https://learn.microsoft.com/windows/win32/api/dxgi1_3/nf-dxgi1_3-idxgidevice3-trim
+        unsafe { gl::Finish() };
+        if let Ok(device) = self.native.d3d_device().and_then(|device| {
+            device
+                .cast::<IDXGIDevice3>()
+                .map_err(|error| error.to_string())
+        }) {
+            unsafe { device.Trim() };
+        }
+        true
+    }
+
     fn resource_diagnostic(&self, id: u32) -> String {
         let (objects, pending, capacities) = self.objects.storage_summary();
         let mut message = format!(
-            "WebGL {id}: charged={} limit={} surface={} objects={} pending-delete={} capacities(buffer/texture/renderbuffer/shader)={}/{}/{}/{} admission-rejections={}",
+            "WebGL {id}: charged={} limit={} surface={} objects={} pending-delete={} capacities(buffer/texture/renderbuffer/shader)={}/{}/{}/{} admission-rejections={} driver-reclamation-attempts={} reclamation-observed-private-drop-bytes={}",
             self.resource_bytes,
             self.resource_limit,
             self.surface.bytes(),
@@ -116,6 +172,8 @@ impl WebGl {
             capacities[2],
             capacities[3],
             self.resource_diagnostics.rejections.get(),
+            self.resource_diagnostics.reclamations.get(),
+            self.resource_diagnostics.observed_private_drop_bytes.get(),
         );
         for (label, failure) in [
             ("first", self.resource_diagnostics.first.get()),
