@@ -62,8 +62,15 @@ function Get-HiddenBenchmarkActionArguments {
                 '--activate-selector-after-ready'
             }
             'browser' {
-                if ($value -notin @('new-tab','next-tab','previous-tab','close-tab','reader')) {
-                    throw 'Ordered browser action requires new-tab, next-tab, previous-tab, close-tab or reader.'
+                $resize = $value -match '^resize=(\d+)x(\d+)$'
+                if ($resize) {
+                    $width = 0; $height = 0
+                    if (-not [int]::TryParse($Matches[1], [ref] $width) -or -not [int]::TryParse($Matches[2], [ref] $height) -or
+                        $width -lt 320 -or $width -gt 7680 -or $height -lt 240 -or $height -gt 4320) {
+                        throw 'Ordered native resize requires WIDTHxHEIGHT within 320..7680 by 240..4320 DIP.'
+                    }
+                } elseif ($value -notin @('new-tab','next-tab','previous-tab','close-tab','reader','fullscreen')) {
+                    throw 'Ordered browser action requires a tab action, reader, fullscreen or resize=WIDTHxHEIGHT.'
                 }
                 '--browser-action-after-ready'
             }

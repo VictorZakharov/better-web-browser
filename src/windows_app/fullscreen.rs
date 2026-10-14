@@ -195,14 +195,21 @@ impl BrowserState {
             rectangle.top,
             rectangle.width(),
             rectangle.height(),
-            SWP_NOZORDER | SWP_FRAMECHANGED,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
         ) == 0
         {
             self.exit_fullscreen(false);
             return false;
         }
         self.finish_fullscreen_layout();
-        SetFocus(self.window);
+        if self
+            .fullscreen
+            .saved
+            .as_ref()
+            .is_some_and(|saved| saved.visible)
+        {
+            SetFocus(self.window);
+        }
         true
     }
 

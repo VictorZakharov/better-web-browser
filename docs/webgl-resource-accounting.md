@@ -74,6 +74,16 @@ the larger policy. These are functionality checks, not a controlled gameplay
 FPS comparison. A secondary logo Canvas in the Crypt check also encountered
 the private-headroom guard, preserving the game's existing link-failure fallback.
 
+A later native fullscreen check exposed a separate temporary allocation peak:
+the High scene became black while its HTML panels remained visible, with 24
+private-headroom refusals and no shader errors or renderer exit. The first
+refusal requested a 132,710,400-byte renderbuffer reservation at 1,799,397,376
+bytes of private commit. Completing pending GPU work and trimming unused driver
+storage before retrying admission preserved the existing Job, ledger, and
+emergency reserve. The same fullscreen transition then rendered the High
+1920 × 1080 scene with no admission refusals or shader errors. This check verifies
+resize functionality, not gameplay FPS.
+
 ## Opt-in attribution
 
 Existing runtime memory diagnostics also collect native-owner ledger snapshots.

@@ -46,6 +46,20 @@ limit as emergency headroom (128 MiB by default). Reuse/retirement does not
 require new headroom.
 Unknown observations retain the old 64 MiB conservative allocation ceiling.
 
+An allocation that fits the ledger but lacks measured private headroom gets one
+bounded recovery attempt before refusal. The native owner finishes pending GL
+work and asks DXGI to discard unused driver buffers, then samples private commit
+again and applies the same headroom guard. Recovery does not clear author errors,
+delete live objects, change bindings, or grant accounting credit. It is limited
+to once per context every 250 ms. Admissions with sufficient headroom, ledger
+failures, reuse, unknown observations, and diagnostic queries do not wait for
+the GPU.
+[DXGI Trim](https://learn.microsoft.com/windows/win32/api/dxgi1_3/nf-dxgi1_3-idxgidevice3-trim)
+preserves rendering state but can make subsequent rendering more expensive, so
+this is a last attempt under allocation pressure rather than a per-frame action.
+Bounded diagnostics report attempts and observed process-private drops; these
+process-wide observations are not isolated driver allocation measurements.
+
 This is admission protection, not a peak-memory guarantee: a driver or compiler
 may commit memory asynchronously after an accepted operation. Pressure hints,
 headroom checks and immutable worker envelopes address different parts of the

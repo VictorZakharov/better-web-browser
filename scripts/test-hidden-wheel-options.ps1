@@ -19,7 +19,7 @@ if ((@(Get-HiddenBenchmarkActionArguments @('key:Escape,Escape', 'pause:500', 'a
 foreach ($action in @('move:0,0', 'move:2147483647,2147483647', 'wheel:7680,4320,-10000', 'scroll:2147483647', 'pause:60000')) {
     if (@(Get-HiddenBenchmarkActionArguments -ActionSequence @($action)).Count -ne 2) { throw "Valid action rejected: $action" }
 }
-foreach ($name in @('new-tab','next-tab','previous-tab','close-tab','reader')) {
+foreach ($name in @('new-tab','next-tab','previous-tab','close-tab','reader','fullscreen','resize=1550x1036')) {
     $actual=@(Get-HiddenBenchmarkActionArguments @("browser:$name"))
     if (($actual -join '|') -ne "--browser-action-after-ready|$name") {throw "Browser action order changed: $name"}
 }
@@ -27,6 +27,8 @@ foreach ($action in @('', ' ', 'move:', 'move:-1,0', 'move:1,2,3', 'move:2147483
     'wheel:7681,0,1', 'wheel:0,4321,1', 'wheel:1,2,10001', 'wheel:1,2,-2147483648', 'wheel:1,2,NaN',
     'scroll:-1', 'scroll:2147483648', 'pause:-1', 'pause:60001', 'pause:1.5', 'pause:1e3', 'unknown:1',
     'browser:new-window','browser:close-window','browser:','browser:new-tab --task-manager',
+    'browser:resize=319x240','browser:resize=320x239','browser:resize=7681x4320','browser:resize=7680x4321',
+    'browser:resize=+320x240','browser:resize=320x240x240','browser:resize=2147483648x240',
     'pause:1;--task-manager', 'move:1,2 --screenshot', 'key:', 'key:Escape', 'key:a,b,c', 'activate:', 'activate:   ',
     ('key:' + ('a' * 257) + ',KeyA'), ('activate:' + ('#' * 4097)), "key:a,KeyA$([char]0)", "activate:#a$([char]0)")) {
     $rejected = $false
