@@ -25,6 +25,10 @@ pub(in crate::engine::script) struct Transfers {
 pub(crate) struct Batch(Vec<Record>);
 
 impl Transfers {
+    pub(in crate::engine::script) fn active(&self) -> bool {
+        self.active
+    }
+
     pub(in crate::engine::script) fn begin(&mut self) -> bool {
         if self.active {
             return false;

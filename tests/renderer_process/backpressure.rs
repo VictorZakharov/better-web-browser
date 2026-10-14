@@ -327,6 +327,7 @@ fn newest_viewport_survives_a_saturated_ordinary_command_queue() {
                     style_width: width,
                     dpi: 96,
                     prefers_dark_color_scheme: false,
+                    refresh_rate: Default::default(),
                 },
             )
             .expect("retain the newest viewport while ordinary commands are full");

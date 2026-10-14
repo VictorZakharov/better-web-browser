@@ -13,8 +13,10 @@ pub(super) struct BrowserWindowPlacement {
 impl BrowserWindowPlacement {
     pub(super) fn initial(width: i32, height: i32, dpi: u32, visible: bool) -> Self {
         Self {
-            x: CW_USEDEFAULT,
-            y: CW_USEDEFAULT,
+            // A hidden benchmark must not inherit Windows' cascading position
+            // and accidentally choose a different monitor on the next run.
+            x: if visible { CW_USEDEFAULT } else { 0 },
+            y: if visible { CW_USEDEFAULT } else { 0 },
             width: scale_dip(width, dpi),
             height: scale_dip(height, dpi),
             visible,
@@ -86,6 +88,17 @@ fn initial_window_style(visible: bool) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hidden_benchmark_placement_is_stable_and_interactive_placement_stays_native() {
+        let hidden = BrowserWindowPlacement::initial(1550, 867, 120, false);
+        assert_eq!((hidden.x, hidden.y), (0, 0));
+        assert!(!hidden.visible);
+        let interactive = BrowserWindowPlacement::initial(1550, 867, 120, true);
+        assert_eq!(
+            (interactive.x, interactive.y),
+            (CW_USEDEFAULT, CW_USEDEFAULT)
+        );
+    }
     #[test]
     fn empty_window_has_no_scrollbar_and_hidden_mode_has_no_visible_style() {
         assert_eq!(initial_window_style(false) & (WS_VSCROLL | WS_VISIBLE), 0);

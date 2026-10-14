@@ -7,6 +7,7 @@ use std::time::Duration;
 mod fixtures;
 use fixtures::{input, retained_fixture, script_inputs, snapshot};
 
+mod animation_frames;
 mod broadcast_channel;
 #[cfg(windows)]
 mod canvas_presentation_native;

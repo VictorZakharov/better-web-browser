@@ -14,6 +14,16 @@ $uploads=$images+@('webgl-renderer')
 $webgl=@('webgl-lib','webgl-renderer')
 $script=@('script-lib','renderer','live-runtime')
 $full=@('full','selector')
+foreach ($path in @('src/engine/rendering.rs','src/engine/rendering/tests.rs',
+    'src/windows_app/display_timing.rs','src/windows_app/display_timing/tests.rs','src/windows_app/window_dispatch/environment.rs',
+    'src/engine/script/host_state/animation_frames.rs','src/engine/script/host_state/canvas_poll.rs',
+    'src/engine/script/runtime/rendering_environment.rs','src/engine/script/runtime/tests/animation_frames.rs',
+    'src/engine/script/bootstrap/animation_frames.js','src/engine/script/bootstrap/timers.js',
+    'src/renderer_process/child/document/viewport.rs','src/renderer_process/child/document/scheduling/deadline.rs',
+    'src/renderer_protocol/tests/rendering_cadence.rs')) {
+    $plan=Expect-Plan @($path) $full $true
+    if ($plan.Unknown.Count -ne 0) {throw "Shared rendering-cadence ownership is missing: $path"}
+}
 foreach ($path in @('src/engine/webgl/gpu_frames/copy.rs','src/gpu_composition/frames.rs',
     'src/windows_app/gpu_composition/groups.rs','src/renderer_protocol/gpu/tests.rs',
     'benchmarks/ui/fixtures/canvas-gpu-composition.html','benchmarks/ui/fixtures/canvas-gpu-memory.html',

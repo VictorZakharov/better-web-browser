@@ -8,6 +8,20 @@ pub(super) fn dispatch(
     let value = match operation {
         "performanceNow" => JsValue::from(state.performance_clock.now()),
         "performanceTimeOrigin" => JsValue::from(state.performance_clock.time_origin()),
+        "animationFrameSchedule" => {
+            let id = argument_id(args, 1);
+            if id == 0 {
+                return Err(JsNativeError::range()
+                    .with_message("animation task identifiers must be positive integers")
+                    .into());
+            }
+            state.schedule_animation_frame(id);
+            JsValue::from(id)
+        }
+        "animationFrameCancel" => {
+            state.cancel_animation_frame(argument_id(args, 1));
+            JsValue::undefined()
+        }
         "performanceTaskSchedule" | "fontTaskSchedule" => {
             let id = argument_id(args, 1);
             if id == 0 {

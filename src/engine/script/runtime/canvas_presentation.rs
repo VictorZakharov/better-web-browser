@@ -37,6 +37,7 @@ impl ScriptRuntime {
         if !self.host.borrow_mut().canvas_presentations.begin() {
             return Err("Canvas snapshot capture is already active".into());
         }
+        self.host.borrow_mut().canvas_poll.clear();
         let fallback = self.host.borrow().gpu_canvas_fallback;
         let response =
             context.call_global("__takeCanvasPresentation", &[JsValue::Boolean(fallback)]);

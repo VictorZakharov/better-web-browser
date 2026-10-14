@@ -1,0 +1,52 @@
+<!doctype html><meta charset="utf-8"><title>pending GPU publication cadence</title>
+<style>body{margin:0}canvas{display:block;width:100vw;height:100vh}</style>
+<canvas id="result" width="1920" height="868"></canvas>
+<script>
+(() => {
+  const canvas=document.getElementById('result');
+  const gl=canvas.getContext('webgl2',{alpha:false,antialias:true,preserveDrawingBuffer:false});
+  if(!gl)throw Error('WebGL 2 unavailable');
+  const shader=(type,source)=>{
+    const value=gl.createShader(type);gl.shaderSource(value,source);gl.compileShader(value);
+    if(!gl.getShaderParameter(value,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(value));
+    return value;
+  };
+  const program=gl.createProgram();
+  gl.attachShader(program,shader(gl.VERTEX_SHADER,`#version 300 es
+    void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));gl_Position=vec4(p*2.0-1.0,0,1);}`));
+  gl.attachShader(program,shader(gl.FRAGMENT_SHADER,`#version 300 es
+    precision highp float;uniform float phase;out vec4 color;
+    void main(){
+      vec2 p=gl_FragCoord.xy/vec2(1920,868);float v=phase;
+      for(int i=0;i<48;i++){v=sin(v+p.x*1.73+p.y*2.31+float(i)*.013)*.47+.51;}
+      color=gl_FragCoord.x<4.0&&gl_FragCoord.y<4.0?vec4(0,1,0,1):vec4(v,p.x,phase,1);
+    }`));
+  gl.linkProgram(program);
+  if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));
+  const phase=gl.getUniformLocation(program,'phase');
+  const intervals=[],active=[];let previous=null,frames=0;
+  gl.disable(gl.DITHER);gl.viewport(0,0,canvas.width,canvas.height);gl.useProgram(program);
+  function frame(){
+    const started=performance.now();
+    if(previous!==null)intervals.push(started-previous);
+    previous=started;
+    gl.uniform1f(phase,++frames*.01);gl.drawArrays(gl.TRIANGLES,0,3);
+    active.push(performance.now()-started);
+    if(frames<65){requestAnimationFrame(frame);return;}
+    // This explicit readback is outside callback-cost samples. It verifies the
+    // authored image; the stopped application's displayed image is checked by
+    // the hidden screenshot after pending publication has completed.
+    const pixel=new Uint8Array(4);gl.readPixels(2,2,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);
+    if(pixel.join()!=='0,255,0,255'||gl.getError())throw Error('GPU result mismatch');
+    gl.readPixels(960,434,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);
+    if(pixel[2]!==166||pixel[3]!==255||gl.getError())throw Error('final generation mismatch');
+    for(let offset=0;offset<intervals.length;offset+=16)
+      canvas.setAttribute('data-intervals-'+offset/16,JSON.stringify(intervals.slice(offset,offset+16)));
+    const sorted=intervals.slice().sort((a,b)=>a-b);
+    const mean=values=>values.reduce((sum,value)=>sum+value,0)/values.length;
+    document.title='done GPU cadence;mean='+mean(intervals).toFixed(2)+';median='+sorted[32].toFixed(2)+
+      ';max='+sorted[63].toFixed(2)+';active='+mean(active).toFixed(2)+';pixel=0,255,0,255';
+  }
+  requestAnimationFrame(frame);
+})();
+</script>

@@ -27,6 +27,7 @@ mod reporting;
 mod resources;
 mod scheduling;
 mod text;
+mod viewport;
 mod wake_lock;
 mod workers;
 
@@ -190,38 +191,6 @@ impl DocumentRuntime {
         };
         text.reset_for_navigation();
         text
-    }
-
-    pub(super) fn resize(
-        &mut self,
-        viewport: crate::renderer_protocol::PresentedViewport,
-        connection: &mut ChildConnection,
-    ) -> Result<AdvanceResult, String> {
-        self.viewport = viewport.validate().map_err(|error| error.to_string())?;
-        self.apply_media_environment(viewport);
-        self.text.borrow_mut().set_dpi(viewport.dpi);
-        self.sync_script_layout_page();
-        let mut outcome = self
-            .dispatch_user_input(crate::engine::UserInputEvent::Viewport {
-                width: viewport.style_width,
-                height: viewport.height,
-                layout_width: viewport.width,
-                layout_height: viewport.height,
-                scale: viewport.dpi as f32 / 96.0,
-            })?
-            .outcome;
-        self.admit_user_input_outcome(&mut outcome, connection)?;
-        let style = self
-            .page
-            .refresh_resources_for_viewport(viewport.style_width, viewport.height);
-        self.start_presentational_preloads(connection)?;
-        let started = Instant::now();
-        self.rebuild_layout();
-        let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
-            layout_micros: micros(started.elapsed()),
-            ..PageLoadReport::default()
-        });
-        self.presentation(outcome, style, load, connection, None)
     }
 
     fn presentation(

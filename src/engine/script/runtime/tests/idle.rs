@@ -166,7 +166,8 @@ fn idle_reposts_yield_to_input_rendering_and_timers_and_keep_fifo_order() {
     tick(&mut runtime, 10);
     tick(&mut runtime, 0);
     tick(&mut runtime, 0);
-    tick(&mut runtime, 6);
+    let frame_delay = runtime.next_timer_delay().unwrap();
+    assert!(runtime.advance_time(frame_delay, 1).errors.is_empty());
     assert_eq!(
         body.attr("data-order").as_deref(),
         Some("first|microtask|input:0|timer|second|repost|frame")

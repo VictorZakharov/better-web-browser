@@ -1,6 +1,9 @@
 //! Nonblocking work selection and rendering checkpoints for a retained document.
 use super::*;
 
+mod deadline;
+use deadline::wake_micros;
+
 impl DocumentRuntime {
     pub(in crate::renderer_process::child) fn next_timer_micros(&mut self) -> Option<u64> {
         self.collect_document_stream_changes();
@@ -23,7 +26,7 @@ impl DocumentRuntime {
             .script_runtime
             .as_mut()
             .and_then(ScriptRuntime::next_timer_delay)
-            .map(|delay| delay.as_micros().min(u64::MAX as u128) as u64);
+            .map(wake_micros);
         let runtime_timer = if self.has_post_load_work() {
             Some(runtime_timer.unwrap_or(0).min(10_000))
         } else {

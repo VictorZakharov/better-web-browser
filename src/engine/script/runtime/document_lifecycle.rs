@@ -188,6 +188,7 @@ impl ScriptRuntime {
         host.resize_observers_deferred = false;
         host.resize_boxes.clear();
         host.timer_handles.clear();
+        host.animation_frames = Default::default();
         host.document_streams = Default::default();
         host.pending_dynamic_scripts.clear();
         host.module_jobs = Default::default();
@@ -209,6 +210,7 @@ impl ScriptRuntime {
         host.media_recorders = Default::default();
         host.audio_codecs.cancel_all();
         host.webgl.clear();
+        host.canvas_poll.clear();
         host.video_codecs.cancel_all();
         host.pending_sensor_actions.clear();
         host.pending_sensor_update = None;

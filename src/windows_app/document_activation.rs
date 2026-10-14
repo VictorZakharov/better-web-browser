@@ -142,6 +142,7 @@ impl BrowserState {
             },
             dpi: self.dpi,
             prefers_dark_color_scheme: self.app.prefers_dark_color_scheme.get(),
+            refresh_rate: self.display_timing.rate,
         }
     }
 

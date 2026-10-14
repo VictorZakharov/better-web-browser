@@ -92,6 +92,7 @@ fn html_css_and_javascript_produce_a_real_renderer_presentation() {
                     style_width: 640.0,
                     dpi: 96,
                     prefers_dark_color_scheme: false,
+                    refresh_rate: Default::default(),
                 },
                 prefers_dark_color_scheme: false,
                 notification_permission: NotificationPermission::Default,

@@ -71,6 +71,7 @@ pub(super) fn settle_timer_slice(
         };
         let timer_id = callback.id();
         let is_idle = callback.is_idle();
+        let is_rendering = matches!(&callback, super::idle_callbacks::Callback::Rendering(_));
         let in_idle_period = matches!(
             &callback,
             super::idle_callbacks::Callback::Idle(task) if !task.timed_out
@@ -102,7 +103,8 @@ pub(super) fn settle_timer_slice(
             .append_host_call_diagnostics(&mut outcome.diagnostics);
         let callback_started = Instant::now();
         let callback_result = match callback {
-            super::idle_callbacks::Callback::Timer(id) => {
+            super::idle_callbacks::Callback::Timer(id)
+            | super::idle_callbacks::Callback::Rendering(id) => {
                 context.call_global("__runTimer", &[id.into()])
             }
             super::idle_callbacks::Callback::Idle(task) => context.call_global(
@@ -163,7 +165,9 @@ pub(super) fn settle_timer_slice(
         // Expired idle callbacks execute outside an idle period as queued tasks. They can share
         // the ordinary bounded task slice, without inventing a render after each mutation.
         // https://w3c.github.io/requestidlecallback/#the-idledeadline-interface
-        if in_idle_period || slice_started.elapsed() >= TIMER_TASK_WALL_SLICE {
+        // Publish this rendering opportunity before later timer tasks, including
+        // timers queued inside rAF. Its callbacks and promise jobs have completed.
+        if is_rendering || in_idle_period || slice_started.elapsed() >= TIMER_TASK_WALL_SLICE {
             break;
         }
     }

@@ -22,6 +22,16 @@ function Get-TestImpactCatalog {
         'full' = @{ Target='all'; Filter=''; Covers=@() }
     }
     $owners = @(
+        # Cadence connects document scheduling, wire state and native wakeups.
+        # There is no isolated consumer gate for this shared policy yet.
+        @{ Id='rendering-cadence'; Paths=@('src/engine/rendering.rs','src/engine/rendering/*',
+            'src/windows_app/display_timing.rs','src/windows_app/display_timing/*','src/windows_app/window_dispatch/environment.rs',
+            'src/engine/script/host_state/animation_frames.rs','src/engine/script/host_state/canvas_poll.rs',
+            'src/engine/script/runtime/rendering_environment.rs','src/engine/script/runtime/tests/animation_frames.rs',
+            'src/engine/script/bootstrap/animation_frames.js','src/engine/script/bootstrap/timers.js',
+            'src/renderer_process/child/document/viewport.rs','src/renderer_process/child/document/scheduling/*',
+            'src/renderer_protocol/tests/rendering_cadence.rs');
+            Groups=@('full'); Consumers=@() }
         # Shared presentation modules cross the renderer/native boundary. No
         # isolated native consumer target replaces their broader contracts yet.
         @{ Id='gpu-presentation'; Paths=@('src/gpu_frame.rs','src/gpu_composition.rs','src/gpu_composition/*',
@@ -31,7 +41,9 @@ function Get-TestImpactCatalog {
             'src/renderer_protocol/codec/payload/gpu.rs','src/renderer_process/child/connection/gpu.rs',
             'src/windows_app/gpu_composition.rs','src/windows_app/gpu_composition/*',
             'tests/renderer_process/gpu_canvas.rs','benchmarks/ui/fixtures/canvas-gpu-composition.html',
-            'benchmarks/ui/fixtures/canvas-gpu-lifecycle.html','benchmarks/ui/fixtures/canvas-gpu-memory.html');
+            'src/engine/script/runtime/tests/canvas_presentation_native/async_publication.rs',
+            'benchmarks/ui/fixtures/canvas-gpu-lifecycle.html','benchmarks/ui/fixtures/canvas-gpu-memory.html',
+            'benchmarks/ui/fixtures/gpu-publication-cadence.html');
             Groups=@('full'); Consumers=@() }
         @{ Id='canvas'; Paths=@('src/engine/script/bootstrap/canvas*.js','src/engine/script/bootstrap/offscreen*.js',
             'src/engine/script/canvas_host.rs','src/engine/script/canvas_host/*',

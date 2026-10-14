@@ -31,6 +31,17 @@ pub(super) struct ChildRuntimes {
 }
 
 impl ScriptRuntime {
+    pub(super) fn set_child_rendering_environment(
+        &mut self,
+        rate: crate::engine::rendering::RefreshRate,
+        visible: bool,
+    ) {
+        if let Some(frames) = &mut self.frames {
+            for child in frames.children.values_mut() {
+                child.set_rendering_environment(rate, visible);
+            }
+        }
+    }
     pub(crate) fn dispatch_frame_input(
         &mut self,
         document: NodeId,
@@ -114,6 +125,12 @@ impl ScriptRuntime {
         match context.new_child_contexts(&known) {
             Ok(children) => {
                 for (id, host, context) in children {
+                    let root = self.host.borrow();
+                    host.borrow_mut().set_rendering_environment(
+                        root.animation_frames.rate,
+                        root.animation_frames.visible,
+                    );
+                    drop(root);
                     let total_script_bytes = Rc::clone(&host.borrow().script_bytes);
                     frames.children.insert(
                         id,

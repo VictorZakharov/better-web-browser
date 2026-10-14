@@ -116,7 +116,7 @@ pub use state::{
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
 // Presentation carries bounded GPU Canvas descriptors and document-scoped policy.
-pub const PROTOCOL_MAJOR: u16 = 18;
+pub const PROTOCOL_MAJOR: u16 = 19;
 pub const PROTOCOL_MINOR: u16 = 0;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 

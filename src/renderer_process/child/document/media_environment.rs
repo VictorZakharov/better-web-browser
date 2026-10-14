@@ -16,6 +16,10 @@ impl DocumentRuntime {
         self.page
             .set_layout_viewport(viewport.width, viewport.height);
         if let Some(runtime) = self.script_runtime.as_mut() {
+            runtime.set_rendering_environment(
+                viewport.refresh_rate,
+                self.lifecycle == crate::renderer_protocol::DocumentLifecycle::Active,
+            );
             runtime.set_media_environment(environment);
             runtime.set_layout_viewport(viewport.width, viewport.height);
         }

@@ -15,7 +15,7 @@ fn gpu_canvas_resize_reenters_gpu_after_its_geometry_snapshot() {
         "gl.clearColor(1,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);",
     );
     assert!(
-        runtime.take_canvas_presentation().unwrap()[0]
+        async_publication::take_gpu(&mut runtime)[0]
             .gpu_frame
             .is_some()
     );
@@ -27,7 +27,7 @@ fn gpu_canvas_resize_reenters_gpu_after_its_geometry_snapshot() {
     let frames = runtime.take_canvas_presentation().unwrap();
     assert!(frames[0].pixels.is_some());
     run(&mut runtime, &script, "gl.clear(gl.COLOR_BUFFER_BIT);");
-    let frames = runtime.take_canvas_presentation().unwrap();
+    let frames = async_publication::take_gpu(&mut runtime);
     let frame = frames[0]
         .gpu_frame
         .expect("resized native pool must be admitted again");
@@ -71,7 +71,7 @@ fn gpu_canvas_presentation_does_not_enter_active_author_transform_feedback() {
     "#,
     );
     assert!(
-        runtime.take_canvas_presentation().unwrap()[0]
+        async_publication::take_gpu(&mut runtime)[0]
             .gpu_frame
             .is_some()
     );
@@ -121,7 +121,7 @@ fn gpu_canvas_recovery_keeps_the_last_frame_after_unpreserved_clear() {
             &script,
             "gl.clearColor(.2,.4,.6,.5);gl.clear(gl.COLOR_BUFFER_BIT);",
         );
-        let frames = runtime.take_canvas_presentation().unwrap();
+        let frames = async_publication::take_gpu(&mut runtime);
         assert!(frames[0].gpu_frame.is_some());
         assert!(frames[0].pixels.is_none());
         run(

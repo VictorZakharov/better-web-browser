@@ -11,6 +11,7 @@
     const presentedDimensions = new WeakMap();
     const exportedBitmaps = new WeakSet();
     const gpuPresentedCanvases = new WeakSet();
+    const pendingGpuCanvases = new WeakSet();
     const placeholderOwners = new WeakMap();
 
     const forgetDetachedCanvases = () => {
@@ -21,6 +22,7 @@
             canvasPrivateSetDelete(dirtyCanvases, canvas);
             canvasPrivateWeakDelete(presentedDimensions, canvas);
             canvasPrivateWeakSetDelete(exportedBitmaps, canvas);
+            canvasPrivateWeakSetDelete(pendingGpuCanvases, canvas);
         });
         while (canvasPrivateSetSize(detachedCanvases) > MAX_PRESENTED_CANVASES) {
             let first;
@@ -141,7 +143,8 @@
                 stateForCanvas(canvas, false, false);
                 canvasPrivateSetAdd(dirtyCanvases, canvas);
             }
-            if (!canvasPrivateSetHas(dirtyCanvases, canvas)) continue;
+            const pendingGpu = canvasPrivateWeakSetHas(pendingGpuCanvases, canvas);
+            if (!canvasPrivateSetHas(dirtyCanvases, canvas) && !pendingGpu) continue;
             // Draw/clear wrappers conservatively schedule a checkpoint, including
             // FBO-only passes. Ask the native owner once here, after its ordered
             // command batch, rather than querying on every draw or trusting a
@@ -150,7 +153,7 @@
             const cached = canvasPrivateWeakGet(canvasStates, canvas);
             const backing = cached?.placeholder && !canvasOffscreenDetached(cached.placeholder)
                 ? canvasPrivateWeakGet(canvasStates, cached.placeholder) : cached;
-            if (!gpuFallback && canvasPrivateWeakSetHas(exportedBitmaps, canvas) && previous?.[0] === width && previous?.[1] === height &&
+            if (!gpuFallback && !pendingGpu && canvasPrivateWeakSetHas(exportedBitmaps, canvas) && previous?.[0] === width && previous?.[1] === height &&
                 backing?.mode === 'webgl') {
                 const native = webGlContexts.get(backing.context);
                 if (native && !native.lost && webGlCall(backing.context, 'drawingBufferDirty') === false) {
@@ -171,9 +174,22 @@
             // returns; public bitmap/export consumers still snapshot independently.
             const transfer = !canvasOffscreenDetached(placeholder) && width && height &&
                 output.mode === 'webgl' ? webGlPaintSnapshot(output, nodeId(canvas),
-                    canvasPrivateWeakSetHas(exportedBitmaps, canvas) && previous?.[0] === width && previous?.[1] === height, gpuFallback) : null;
+                    canvasPrivateWeakSetHas(exportedBitmaps, canvas) && previous?.[0] === width && previous?.[1] === height, gpuFallback, pendingGpu) : null;
             if (transfer) {
-                if (!transfer[0]) { host('canvasPaintDirty', nodeId(canvas)); continue; }
+                const asynchronous = transfer.length > 4;
+                if (asynchronous) {
+                    if (transfer[4]) canvasPrivateWeakSetAdd(pendingGpuCanvases, canvas);
+                    else canvasPrivateWeakSetDelete(pendingGpuCanvases, canvas);
+                    if (transfer[5]) {
+                        webGlPresented(output);
+                        canvasPrivateWeakSetAdd(gpuPresentedCanvases, canvas);
+                        canvasPrivateSetDelete(dirtyCanvases, canvas);
+                    }
+                    // No completed token yet: retain the last displayed bitmap.
+                    // The host wakes once at a future display opportunity, even
+                    // when the application stops requesting animation frames.
+                    if (!transfer[0]) continue;
+                } else if (!transfer[0]) { host('canvasPaintDirty', nodeId(canvas)); continue; }
                 const length = transfer[0] * transfer[1] * 4;
                 if (bytes + length > MAX_PRESENTED_CANVAS_BYTES) {
                     if (!deferred) host('canvasPaintDirty', nodeId(canvas));
@@ -182,12 +198,15 @@
                 }
                 bytes += length;
                 canvasPrivatePush(snapshots, [nodeId(canvas), transfer[0], transfer[1], width, height, transfer[2]]);
-                webGlPresented(output);
+                if (!asynchronous) {
+                    webGlPresented(output);
+                    canvasPrivateWeakSetDelete(pendingGpuCanvases, canvas);
+                }
                 if (transfer[3]) canvasPrivateWeakSetAdd(gpuPresentedCanvases, canvas);
                 else canvasPrivateWeakSetDelete(gpuPresentedCanvases, canvas);
                 canvasPrivateWeakSetAdd(exportedBitmaps, canvas);
                 canvasPrivateWeakSet(presentedDimensions, canvas, [width, height]);
-                canvasPrivateSetDelete(dirtyCanvases, canvas);
+                if (!asynchronous || transfer[5] || !transfer[4]) canvasPrivateSetDelete(dirtyCanvases, canvas);
                 continue;
             }
             if (output.mode === 'webgl') synchronizeWebGlCanvas(output);
@@ -213,6 +232,7 @@
             canvasPrivatePush(snapshots, [nodeId(canvas), output.width, output.height, width, height, pixels]);
             if (pixels && output.mode === 'webgl') webGlPresented(output);
             canvasPrivateWeakSetDelete(gpuPresentedCanvases, canvas);
+            canvasPrivateWeakSetDelete(pendingGpuCanvases, canvas);
             if (pixels) canvasPrivateWeakSetAdd(exportedBitmaps, canvas);
             canvasPrivateWeakSet(presentedDimensions, canvas, [width, height]);
             canvasPrivateSetDelete(dirtyCanvases, canvas);

@@ -93,6 +93,8 @@ pub(super) fn encode_viewport(writer: &mut WireWriter, viewport: PresentedViewpo
     writer.f32(viewport.style_width);
     writer.u32(viewport.dpi);
     writer.bool(viewport.prefers_dark_color_scheme);
+    writer.u32(viewport.refresh_rate.numerator());
+    writer.u32(viewport.refresh_rate.denominator());
 }
 
 pub(super) fn decode_viewport(
@@ -104,6 +106,8 @@ pub(super) fn decode_viewport(
         style_width: reader.f32()?,
         dpi: reader.u32()?,
         prefers_dark_color_scheme: reader.bool()?,
+        refresh_rate: crate::engine::rendering::RefreshRate::new(reader.u32()?, reader.u32()?)
+            .ok_or(ProtocolError::InvalidPayload("display refresh rate"))?,
     }
     .validate()
 }

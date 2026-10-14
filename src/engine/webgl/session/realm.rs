@@ -32,7 +32,7 @@ impl Contexts {
     pub(crate) fn gpu_frame(
         &mut self,
         id: u32,
-    ) -> Result<Option<crate::gpu_frame::GpuFrame>, String> {
+    ) -> Result<crate::engine::webgl::GpuFrameExport, String> {
         self.flush_pending();
         if !self.live.contains(&id) {
             return Err("GPU Canvas owner is unavailable".into());

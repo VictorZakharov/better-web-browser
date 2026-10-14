@@ -126,6 +126,7 @@ mod tests {
                 style_width: width,
                 dpi: 96,
                 prefers_dark_color_scheme: false,
+                refresh_rate: Default::default(),
             },
         }
     }

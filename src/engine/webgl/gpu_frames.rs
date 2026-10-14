@@ -10,7 +10,12 @@ const MAX_BYTES: usize = 64 * 1024 * 1024;
 const SLOTS: usize = 3;
 #[cfg(test)]
 mod command_samples;
+mod completion;
 mod copy;
+mod publication;
+pub(crate) use publication::Export;
+#[cfg(test)]
+mod async_tests;
 #[cfg(test)]
 mod tests;
 
@@ -36,6 +41,8 @@ struct Slot {
     surface: SharedSurface,
     id: u64,
     key: u64,
+    completion: Option<completion::Completion>,
+    sequence: u64,
 }
 pub(super) struct Pool {
     slots: Vec<Slot>,
@@ -44,6 +51,7 @@ pub(super) struct Pool {
     adapter_low: u32,
     adapter_high: i32,
     latest: Option<usize>,
+    sequence: u64,
     _charge: Charge,
     copy: copy::Renderer,
 }
@@ -68,6 +76,8 @@ impl Pool {
                 surface: context.native.shared_surface(width, height)?,
                 id,
                 key: 0,
+                completion: None,
+                sequence: 0,
             });
         }
         Ok(Self {
@@ -77,6 +87,7 @@ impl Pool {
             adapter_low: desc.AdapterLuid.LowPart,
             adapter_high: desc.AdapterLuid.HighPart,
             latest: None,
+            sequence: 0,
             _charge: charge,
             copy,
         })
@@ -85,93 +96,3 @@ impl Pool {
 
 #[path = "gpu_frames/fallback.rs"]
 mod fallback;
-
-impl WebGl {
-    pub(super) fn gpu_frame(&mut self) -> Result<Option<GpuFrame>, String> {
-        let extent = (self.surface.width, self.surface.height);
-        if self.gpu_unavailable_extent == Some(extent) {
-            return Ok(None);
-        }
-        let result = self.export_gpu_frame();
-        if result.is_err() {
-            self.gpu_unavailable_extent = Some(extent);
-        }
-        result
-    }
-
-    fn export_gpu_frame(&mut self) -> Result<Option<GpuFrame>, String> {
-        if self.options.api != super::ApiVersion::Two || self.objects.poisoned {
-            return Ok(None);
-        }
-        self.native.make_current()?;
-        if self.gpu_frames.as_ref().is_some_and(|pool| {
-            pool.width != self.surface.width || pool.height != self.surface.height
-        }) {
-            self.gpu_frames = None;
-            self.native.make_current()?;
-        }
-        if self.gpu_frames.is_none() {
-            self.gpu_frames = Some(Pool::new(self)?);
-        }
-        let pool = self.gpu_frames.as_mut().unwrap();
-        if let Some(source) = self.surface.presentation_resolve_source() {
-            unsafe {
-                gl::Flush();
-            }
-            let resolve = pool.copy.resolve(
-                source,
-                self.surface.presentation_texture(),
-                pool.width,
-                pool.height,
-            );
-            let restored = self.native.make_current();
-            resolve?;
-            restored?;
-            self.surface.mark_presentation_resolved();
-        }
-        for index in 0..pool.slots.len() {
-            // Keep the latest completed frame intact for a later bitmap fallback.
-            if pool.latest == Some(index) {
-                continue;
-            }
-            let slot = &mut pool.slots[index];
-            let next_key = slot.key.checked_add(1).ok_or("GPU frame key exhausted")?;
-            let acquired = try_acquire(&slot.surface.mutex, 0)?
-                || (slot.key != 0 && try_acquire(&slot.surface.mutex, slot.key)?);
-            if !acquired {
-                continue;
-            }
-            unsafe {
-                gl::Flush();
-            }
-            let copy = pool.copy.copy(
-                &slot.surface,
-                self.surface.presentation_texture(),
-                pool.width,
-                pool.height,
-                self.options.alpha,
-                self.options.premultiplied_alpha,
-            );
-            let restored = self.native.make_current();
-            if copy.is_err() || restored.is_err() {
-                unsafe { slot.surface.mutex.ReleaseSync(0) }.map_err(|error| error.to_string())?;
-                copy?;
-                restored?;
-            }
-            unsafe { slot.surface.mutex.ReleaseSync(next_key) }
-                .map_err(|error| error.to_string())?;
-            slot.key = next_key;
-            pool.latest = Some(index);
-            return Ok(Some(GpuFrame {
-                surface: slot.id,
-                handle: slot.surface.handle().0 as usize as u64,
-                key: slot.key,
-                width: pool.width,
-                height: pool.height,
-                adapter_low: pool.adapter_low,
-                adapter_high: pool.adapter_high,
-            }));
-        }
-        Ok(None)
-    }
-}

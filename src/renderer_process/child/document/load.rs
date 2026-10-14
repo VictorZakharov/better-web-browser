@@ -220,6 +220,11 @@ impl DocumentRuntime {
                 start.scroll_restoration,
             )?;
             runtime.script_runtime = Some(script_runtime);
+            runtime
+                .script_runtime
+                .as_mut()
+                .unwrap()
+                .set_rendering_environment(start.viewport.refresh_rate, true);
             runtime.dispatch_initial_media_selections()?;
             outcome = initial;
             runtime.advance_parser(connection, &mut outcome)?;

@@ -34,6 +34,7 @@ pub(crate) mod parser;
 pub(crate) mod parser_queue;
 mod permission;
 pub(crate) mod platform_info;
+mod rendering_environment;
 mod restart;
 mod scheduling;
 pub(crate) use restart::RestartState;

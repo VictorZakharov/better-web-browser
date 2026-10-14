@@ -137,6 +137,7 @@ mod framebuffer_invalidation_tests;
 mod framebuffer_queries;
 mod framebuffers;
 mod gpu_frames;
+pub(crate) use gpu_frames::Export as GpuFrameExport;
 mod image_uploads;
 #[cfg(test)]
 mod immutable_attachment_tests;

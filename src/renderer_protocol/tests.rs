@@ -8,6 +8,7 @@ mod input;
 mod media_capture;
 mod media_devices;
 mod permission;
+mod rendering_cadence;
 mod state;
 
 fn session() -> RendererSessionId {
@@ -179,6 +180,7 @@ fn document_start_diagnostic_selectors_round_trip_and_are_bounded() {
             style_width: 800.0,
             dpi: 96,
             prefers_dark_color_scheme: true,
+            refresh_rate: Default::default(),
         },
         prefers_dark_color_scheme: true,
         notification_permission: NotificationPermission::Granted,
