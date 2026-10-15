@@ -27,6 +27,8 @@ impl NativeContext {
         api: super::ApiVersion,
         backend: super::backend_policy::Backend,
     ) -> Result<Self, String> {
+        #[cfg(test)]
+        crate::test_resources::require_native_gpu();
         super::compiler_workers::before_display_initialization();
         let attributes = backend.attributes();
         // SAFETY: terminated integer attribute array; no native window/display pointer.

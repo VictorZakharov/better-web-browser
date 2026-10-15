@@ -38,8 +38,10 @@ function testCanvasTextShadowRegions(make,operators) {
     for(const opaque of [false,true])for(const operator of operators) {
         for(let scenario=0;scenario<9;scenario++){
             const actual=render(false,scenario,operator,opaque),expected=render(true,scenario,operator,opaque);
-            for(let i=0;i<actual.length;i++)assert(actual[i]===expected[i],
-                'text shadow '+operator+' scenario '+scenario+' opaque '+opaque+' byte '+i+': '+actual[i]+'/'+expected[i]);
+            for(let i=0;i<actual.length;i++) {
+                if(actual[i]!==expected[i]) throw Error(
+                    'text shadow '+operator+' scenario '+scenario+' opaque '+opaque+' byte '+i+': '+actual[i]+'/'+expected[i]);
+            }
             cases++;
         }
     }

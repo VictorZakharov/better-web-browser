@@ -33,7 +33,7 @@ if (($IsWindows -or $env:OS -eq 'Windows_NT') -and [IO.Path]::GetPathRoot($targe
 }
 $prior = @{}
 foreach ($name in @('CARGO_TARGET_DIR','CARGO_BUILD_JOBS','RUST_TEST_THREADS','TEMP','TMP',
-    'CARGO_PROFILE_DEV_DEBUG','CARGO_PROFILE_TEST_DEBUG')) {
+    'CARGO_PROFILE_DEV_DEBUG','CARGO_PROFILE_TEST_DEBUG','CARGO_INCREMENTAL')) {
     $prior[$name] = [Environment]::GetEnvironmentVariable($name,'Process')
 }
 Push-Location -LiteralPath $repo
@@ -41,6 +41,9 @@ try {
     $env:CARGO_TARGET_DIR=$target; $env:CARGO_BUILD_JOBS='4'; $env:RUST_TEST_THREADS='1'
     $env:TEMP=Join-Path $target 'impacted-tests/temp'; $env:TMP=$env:TEMP
     [IO.Directory]::CreateDirectory($env:TEMP) | Out-Null
+    # Reuse local compiler queries on G: across verification edits. An explicit
+    # CARGO_INCREMENTAL=0 keeps the smaller non-incremental storage policy.
+    if ([string]::IsNullOrWhiteSpace($prior['CARGO_INCREMENTAL'])) { $env:CARGO_INCREMENTAL='1' }
     # Match CI's correctness profiles without generating large local PDBs.
     # Debug assertions/overflow checks are unchanged; explicit debugger settings win.
     foreach ($name in @('CARGO_PROFILE_DEV_DEBUG','CARGO_PROFILE_TEST_DEBUG')) {
@@ -56,9 +59,12 @@ try {
         if ($command.Target -eq 'selector') {
             & (Join-Path $PSScriptRoot 'test-impacted-tests.ps1'); continue
         }
+        if ($command.Target -eq 'all') {
+            & (Join-Path $PSScriptRoot 'run-full-tests.ps1')
+            continue
+        }
         $arguments = @('test','--locked')
-        if ($command.Target -eq 'all') { $arguments += '--all-targets' }
-        elseif ($command.Target -eq 'lib') { $arguments += '--lib' }
+        if ($command.Target -eq 'lib') { $arguments += '--lib' }
         else { $arguments += @('--test',$command.Target) }
         if ($command.Filter) {
             $arguments += $command.Filter
@@ -71,10 +77,6 @@ try {
         }
         & cargo @arguments
         if ($LASTEXITCODE -ne 0) { throw "Test group $($command.Id) failed." }
-        if ($command.Target -eq 'all') {
-            & cargo test --doc --locked
-            if ($LASTEXITCODE -ne 0) { throw 'Doc tests failed.' }
-        }
     }
 } finally {
     foreach ($name in $prior.Keys) {

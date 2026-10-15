@@ -39,6 +39,7 @@ fn window_writes_are_visible_to_worker_storage_estimate() {
                 document.getElementById('state').textContent = document.title;
                 document.body.style.backgroundColor = 'rgb(17,170,34)';
                 worker.terminate();
+                console.info('__STORAGE_ESTIMATE_DONE__');
             };
         })().catch(fail);
         </script>"#
@@ -60,7 +61,12 @@ fn window_writes_are_visible_to_worker_storage_estimate() {
     });
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/storage-estimate");
-    let mut child = hidden_benchmark_with_fresh_profile_args(&url, &artifacts, 3500, &[]);
+    let mut child = hidden_benchmark_with_fresh_profile_args(
+        &url,
+        &artifacts,
+        100,
+        &["--completion-marker", "__STORAGE_ESTIMATE_DONE__"],
+    );
     let status = wait_for_child(&mut child, Duration::from_secs(25));
     server.join().unwrap().unwrap();
     assert!(status.success(), "hidden Breeze run failed: {status}");

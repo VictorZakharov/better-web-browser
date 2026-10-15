@@ -23,6 +23,7 @@ body { min-height: 100vh; }</style>
     document.getElementById('state').textContent = 'fetch and xhr complete';
     document.body.style.backgroundColor = 'rgb(17, 170, 34)';
     document.title = 'script network complete';
+    console.info('__NETWORK_DONE__');
   });
 </script>"#;
 const MODULE_HTML: &str = r#"<!doctype html>
@@ -50,6 +51,7 @@ body { min-height: 100vh; }</style>
     document.body.style.backgroundColor = 'rgb(17, 170, 34)';
     document.title = 'worker complete';
     worker.terminate();
+    console.info('__WORKER_DONE__');
   };
   worker.postMessage({ base: 40 });
 </script>"#;
@@ -71,6 +73,7 @@ body { min-height: 100vh; }</style>
     document.body.style.backgroundColor = 'rgb(17, 170, 34)';
     document.title = 'slow worker complete';
     worker.terminate();
+    console.info('__SLOW_WORKER_DONE__');
   };
 </script>"#;
 
@@ -92,7 +95,7 @@ fn fetch_and_xhr_complete_asynchronously_in_the_retained_realm() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/script-network");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 900);
+    let mut child = hidden_benchmark_until(&url, &artifacts, "__NETWORK_DONE__");
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     server
         .join()
@@ -178,7 +181,7 @@ fn module_worker_queues_messages_while_top_level_fetch_is_pending() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/worker-runtime");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 1100);
+    let mut child = hidden_benchmark_until(&url, &artifacts, "__WORKER_DONE__");
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     server
         .join()
@@ -210,7 +213,7 @@ fn slow_worker_script_fetch_does_not_block_the_page_renderer() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/slow-worker-runtime");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 5_500);
+    let mut child = hidden_benchmark_until(&url, &artifacts, "__SLOW_WORKER_DONE__");
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     server
         .join()
@@ -243,6 +246,7 @@ fn fetch_broker_follows_redirects_and_preserves_http_error_responses() {
           if (!results.every(Boolean)) throw new Error('Fetch outcome mismatch: ' + results);
           document.getElementById('state').style.backgroundColor = 'rgb(17, 170, 34)';
           document.title = 'Fetch outcomes complete';
+          console.info('__FETCH_OUTCOMES_DONE__');
         });
         </script>"#
         .to_string();
@@ -266,7 +270,7 @@ fn fetch_broker_follows_redirects_and_preserves_http_error_responses() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/fetch-outcomes");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 900);
+    let mut child = hidden_benchmark_until(&url, &artifacts, "__FETCH_OUTCOMES_DONE__");
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     server
         .join()
@@ -295,6 +299,7 @@ fn fetch_broker_rejects_network_failures_in_the_retained_realm() {
           error => {{
             if (!(error instanceof TypeError)) throw error;
             document.getElementById('state').style.backgroundColor = 'rgb(17, 170, 34)';
+            console.info('__FETCH_REJECTED__');
           }}
         );</script>"#
     );
@@ -306,7 +311,7 @@ fn fetch_broker_rejects_network_failures_in_the_retained_realm() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/network-failure");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 5000);
+    let mut child = hidden_benchmark_until(&url, &artifacts, "__FETCH_REJECTED__");
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     server
         .join()

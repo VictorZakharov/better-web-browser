@@ -1,5 +1,5 @@
 use super::support::{
-    FixtureResponse, TestArtifacts, assert_green_capture, hidden_benchmark,
+    FixtureResponse, TestArtifacts, assert_green_capture, hidden_benchmark_until_title,
     serve_parallel_fixtures, wait_for_child,
 };
 use std::fs;
@@ -74,7 +74,7 @@ fn dynamically_inserted_scripts_fetch_concurrently() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/dynamic-script-page");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 2200);
+    let mut child = hidden_benchmark_until_title(&url, &artifacts, "dynamic scripts complete");
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     let report = fs::read_to_string(&artifacts.json).expect("read benchmark report");
     assert!(
@@ -131,7 +131,8 @@ fn fetch_callback_dynamic_scripts_return_to_the_concurrent_loader() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/fetch-callback-dynamic-script-page");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 2200);
+    let mut child =
+        hidden_benchmark_until_title(&url, &artifacts, "Fetch callback dynamic scripts complete");
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     let report = fs::read_to_string(&artifacts.json).expect("read benchmark report");
     assert!(

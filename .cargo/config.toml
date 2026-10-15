@@ -1,6 +1,7 @@
 [build]
 # Retain compiled artifacts without the much larger per-revision incremental graph.
-# Developers can opt in with CARGO_INCREMENTAL=1 when appropriate for their machine.
+# The local verification runner opts in on G:; CARGO_INCREMENTAL=0 overrides it.
+# Other commands can opt in with CARGO_INCREMENTAL=1 when appropriate.
 incremental = false
 
 [env]

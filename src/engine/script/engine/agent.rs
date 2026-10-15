@@ -43,6 +43,14 @@ impl Agent {
         self.watchdog.cancellation()
     }
 
+    #[cfg(test)]
+    pub(super) fn replace_timeout_for_test(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> std::time::Duration {
+        self.watchdog.replace_timeout_for_test(timeout)
+    }
+
     pub(super) fn set_gc_profiling(&mut self, enabled: bool) {
         self.cpu_samples.enable(enabled);
         self.pressure_profile.enable(enabled);
@@ -135,6 +143,20 @@ impl Drop for Agent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_deadline_override_is_agent_local_and_restores_the_production_budget() {
+        use std::time::Duration;
+        super::super::runtime::initialize_v8();
+        let mut first = Agent::new(v8::Isolate::new(v8::CreateParams::default())).unwrap();
+        let mut second = Agent::new(v8::Isolate::new(v8::CreateParams::default())).unwrap();
+        let short = Duration::from_millis(100);
+        let original = first.replace_timeout_for_test(short);
+        assert_eq!(original, Duration::from_secs(10));
+        assert_eq!(second.replace_timeout_for_test(original), original);
+        assert_eq!(first.replace_timeout_for_test(original), short);
+        assert_eq!(first.replace_timeout_for_test(original), original);
+    }
 
     #[test]
     fn native_unwinding_disarms_watchdog_before_later_work() {

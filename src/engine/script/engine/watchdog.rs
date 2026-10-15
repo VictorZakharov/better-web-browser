@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 // Use the production deadline in tests too. A shorter test-only wall-clock
 // deadline can interrupt bounded DOM work when the hosted runner is busy.
+// Diagnostic-budget tests scope an override only around known infinite callbacks.
 // The author-task budget stays below the browser's independent 12-second hard
 // unresponsive-process backstop. Browser-owned cancellation can terminate the renderer
 // Job without waiting for this timer; extending the budget is not a UI fix.
@@ -62,6 +63,12 @@ impl Drop for IsolateEntry {
 }
 
 impl ExecutionWatchdog {
+    #[cfg(test)]
+    pub(super) fn replace_timeout_for_test(&mut self, timeout: Duration) -> Duration {
+        assert!(!timeout.is_zero());
+        std::mem::replace(&mut self.timeout, timeout)
+    }
+
     pub(super) fn cancellation(&self) -> ScriptCancellation {
         self.cancellation.clone()
     }

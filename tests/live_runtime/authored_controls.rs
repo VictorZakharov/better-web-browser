@@ -17,8 +17,13 @@ fn authored_flex_button_paints_children_and_delivers_trusted_submit() {
     let mut child = hidden_benchmark_with_args(
         &url,
         &artifacts,
-        1200,
-        &["--activate-selector-after-ready", "button"],
+        100,
+        &[
+            "--activate-selector-after-ready",
+            "button",
+            "--completion-marker",
+            "authored submit reached",
+        ],
     );
     assert!(wait_for_child(&mut child, Duration::from_secs(20)).success());
     server.join().unwrap().unwrap();

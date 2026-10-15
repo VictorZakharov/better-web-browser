@@ -6,6 +6,34 @@ use std::{fs, net::TcpListener, thread, time::Duration};
 const COMPLETION: &str = "DOM_RESULTS_COMPLETE:";
 
 #[test]
+fn title_completion_waits_for_the_exact_result_and_its_paint() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        serve_fixtures(listener, 1, |_| {
+            r#"<!doctype html><title>READY suffix</title>
+            <style>html,body{margin:0;background:rgb(180,0,0)}</style>
+            <script>console.log('READY');setTimeout(()=>{
+              document.documentElement.style.backgroundColor='rgb(17,170,34)';
+              document.body.style.backgroundColor='rgb(17,170,34)';
+              document.title='READY';
+            },50);</script>"#
+        })
+    });
+    let artifacts = TestArtifacts::new();
+    let mut child =
+        hidden_benchmark_until_title(&format!("http://{address}/"), &artifacts, "READY");
+    assert!(wait_for_child(&mut child, Duration::from_secs(20)).success());
+    server.join().unwrap().unwrap();
+    let report: Value =
+        serde_json::from_str(&fs::read_to_string(&artifacts.json).unwrap()).unwrap();
+    assert_eq!(report["titles"]["document_title"], "READY", "{report}");
+    assert_eq!(report["javascript_errors"], json!([]), "{report}");
+    assert!(report["error"].is_null(), "{report}");
+    assert_green_capture(&artifacts, "exact title must capture the terminal paint");
+}
+
+#[test]
 fn hidden_result_build_waits_for_all_rows_and_paints_the_score() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();

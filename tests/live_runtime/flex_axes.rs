@@ -14,8 +14,17 @@ fn column_drawer_keeps_content_visible_after_an_empty_spacer() {
     let url = format!("http://{}/drawer", listener.local_addr().unwrap());
     let server = thread::spawn(move || serve_fixtures(listener, 1, |_| HTML));
     let artifacts = TestArtifacts::new();
-    let mut child =
-        hidden_benchmark_with_args(&url, &artifacts, 1000, &["--click-after-ready", "80,70"]);
+    let mut child = hidden_benchmark_with_args(
+        &url,
+        &artifacts,
+        100,
+        &[
+            "--click-after-ready",
+            "80,70",
+            "--completion-marker",
+            "drawer entry activated",
+        ],
+    );
     assert!(wait_for_child(&mut child, Duration::from_secs(20)).success());
     server.join().unwrap().unwrap();
     let report = fs::read_to_string(&artifacts.json).unwrap();

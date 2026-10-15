@@ -10,7 +10,7 @@ before reload</div>"#;
 const FINAL_HTML: &str = r#"<!doctype html>
 <title>reload generation two</title>
 <div style="width:100%;height:600px;background-color:rgb(17,170,34)">
-after reload</div>"#;
+after reload</div><script>console.info('__RELOAD_DONE__');</script>"#;
 
 #[test]
 fn reload_replaces_a_settled_document_without_stalling() {
@@ -31,7 +31,7 @@ fn reload_replaces_a_settled_document_without_stalling() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/reload");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 5000);
+    let mut child = hidden_benchmark_until(&url, &artifacts, "__RELOAD_DONE__");
     reload_when_title_contains(&child, "reload generation one", Duration::from_secs(10));
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     server
@@ -62,15 +62,20 @@ fn overlapping_reloads_keep_the_replacement_renderer_alive() {
     let server = thread::spawn(move || {
         serve_parallel_fixtures(listener, RELOADS + 1, move |_| {
             let generation = served.fetch_add(1, Ordering::SeqCst);
+            let completion = if generation == RELOADS {
+                "console.info('__RELOAD_STRESS_DONE__');"
+            } else {
+                ""
+            };
             FixtureResponse::html(format!(
-                "<!doctype html><title>reload stress</title><script>globalThis.generation = {generation};</script><div style=\"width:100%;height:600px;background:rgb(17,170,34)\">generation {generation}</div>"
+                "<!doctype html><title>reload stress</title><script>globalThis.generation = {generation};{completion}</script><div style=\"width:100%;height:600px;background:rgb(17,170,34)\">generation {generation}</div>"
             ))
         })
     });
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/reload-stress");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 5_000);
+    let mut child = hidden_benchmark_until(&url, &artifacts, "__RELOAD_STRESS_DONE__");
     reload_repeatedly_when_title_contains(
         &child,
         "reload stress",

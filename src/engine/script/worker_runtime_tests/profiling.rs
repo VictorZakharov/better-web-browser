@@ -86,11 +86,28 @@ fn repeated_failed_tasks_have_one_reserved_sample_after_success_budget_is_used()
     for _ in 0..8 {
         assert_sample(&runtime.dispatch_message("123"), 2);
     }
+    fn failed_task(runtime: &mut WorkerRuntime) -> WorkerRuntimeOutcome {
+        // This test checks six diagnostic-budget transitions, not deadline length.
+        // Keep real watchdog failures, scoped to these known infinite callbacks;
+        // normal bootstrap/tasks and the production-deadline tests remain unchanged.
+        let original = runtime
+            .context
+            .replace_timeout_for_test(Duration::from_millis(100));
+        let outcome = runtime.dispatch_message("\"private author payload\"");
+        runtime.context.replace_timeout_for_test(original);
+        assert!(
+            outcome
+                .errors
+                .iter()
+                .any(|error| error.contains("execution time limit"))
+        );
+        outcome
+    }
     // Use a real watchdog failure: ordinary listener exceptions are reported
     // by event dispatch rather than returned as failed V8 execution tasks.
     for index in 0..4 {
         runtime.set_execution_diagnostics(true);
-        let outcome = runtime.dispatch_message("\"private author payload\"");
+        let outcome = failed_task(&mut runtime);
         assert!(!outcome.errors.is_empty());
         assert_sample(&outcome, if index == 0 { 2 } else { 0 });
         assert!(
@@ -102,13 +119,8 @@ fn repeated_failed_tasks_have_one_reserved_sample_after_success_budget_is_used()
     }
     assert!(runtime.dispatch_message("456").diagnostics.is_empty());
     runtime.set_execution_diagnostics(false);
-    assert!(
-        runtime
-            .dispatch_message("\"private author payload\"")
-            .diagnostics
-            .is_empty()
-    );
+    assert!(failed_task(&mut runtime).diagnostics.is_empty());
     runtime.set_execution_diagnostics(true);
-    assert_sample(&runtime.dispatch_message("\"private author payload\""), 2);
+    assert_sample(&failed_task(&mut runtime), 2);
     assert_sample(&runtime.dispatch_message("789"), 2);
 }

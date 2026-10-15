@@ -1,6 +1,7 @@
 use super::*;
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -103,6 +104,8 @@ fn capture_case(path: &str, linger: Duration) -> Vec<String> {
     listener.set_nonblocking(true).unwrap();
     let received = Arc::new(Mutex::new(Vec::new()));
     let records = Arc::clone(&received);
+    let browser_finished = Arc::new(AtomicBool::new(false));
+    let finished = Arc::clone(&browser_finished);
     let server = thread::spawn(move || {
         let deadline = Instant::now() + linger;
         let mut workers = Vec::new();
@@ -116,6 +119,11 @@ fn capture_case(path: &str, linger: Duration) -> Vec<String> {
                     if error.kind() == std::io::ErrorKind::WouldBlock
                         || error.raw_os_error() == Some(10035) =>
                 {
+                    // Observe the entire browser lifetime, then drain queued
+                    // connections. A completed process cannot admit new work.
+                    if finished.load(Ordering::Acquire) {
+                        break;
+                    }
                     thread::sleep(Duration::from_millis(10));
                 }
                 Err(error) => panic!("accept state-order fixture: {error}"),
@@ -128,6 +136,7 @@ fn capture_case(path: &str, linger: Duration) -> Vec<String> {
     let artifacts = TestArtifacts::new();
     let mut child = hidden_benchmark(&format!("http://{address}{path}"), &artifacts, 1500);
     let status = wait_for_child(&mut child, Duration::from_secs(12));
+    browser_finished.store(true, Ordering::Release);
     server.join().expect("state-order fixture server panicked");
     assert!(status.success(), "hidden Breeze run failed: {status}");
     received.lock().unwrap().clone()
@@ -206,6 +215,8 @@ fn aborted_keepalive_is_not_admitted_during_navigation() {
     listener.set_nonblocking(true).unwrap();
     let received = Arc::new(Mutex::new(Vec::new()));
     let records = Arc::clone(&received);
+    let browser_finished = Arc::new(AtomicBool::new(false));
+    let finished = Arc::clone(&browser_finished);
     let server = thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut workers = Vec::new();
@@ -219,6 +230,9 @@ fn aborted_keepalive_is_not_admitted_during_navigation() {
                     if error.kind() == std::io::ErrorKind::WouldBlock
                         || error.raw_os_error() == Some(10035) =>
                 {
+                    if finished.load(Ordering::Acquire) {
+                        break;
+                    }
                     thread::sleep(Duration::from_millis(10));
                 }
                 Err(error) => panic!("accept keepalive fixture: {error}"),
@@ -231,6 +245,7 @@ fn aborted_keepalive_is_not_admitted_during_navigation() {
     let artifacts = TestArtifacts::new();
     let mut child = hidden_benchmark(&format!("http://{address}/abort-entry"), &artifacts, 1500);
     let status = wait_for_child(&mut child, Duration::from_secs(10));
+    browser_finished.store(true, Ordering::Release);
     server.join().expect("keepalive fixture server panicked");
     assert!(status.success(), "hidden Breeze run failed: {status}");
     let records = received.lock().unwrap();

@@ -11,7 +11,10 @@ let wheelOrdinal=0;
 const activeBacklog=location.search==='?active=1';
 addEventListener('wheel',event=>{
   const ordinal=++wheelOrdinal;
-  if(ordinal===(activeBacklog?2:1)){
+  // The next injected input after the eighth forward wheel is the reversal.
+  // Blocking here avoids requiring seven other browser steps to beat our timer.
+  // Earlier acknowledgements have already established real native animation.
+  if(ordinal===(activeBacklog?8:1)){
     console.log('backlog busy begin');
     const started=performance.now();
     const duration=activeBacklog?250:100;

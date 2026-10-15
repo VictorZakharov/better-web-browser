@@ -39,6 +39,7 @@ fn dedicated_worker_and_page_share_browser_owned_indexed_db() {
                 document.getElementById('state').textContent = document.title;
                 document.body.style.backgroundColor = 'rgb(17,170,34)';
                 worker.terminate();
+                console.info('__WORKER_IDB_DONE__');
             } else fail('unexpected worker message');
         };
         </script>"#
@@ -71,7 +72,12 @@ fn dedicated_worker_and_page_share_browser_owned_indexed_db() {
     });
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/page");
-    let mut child = hidden_benchmark_with_fresh_profile_args(&url, &artifacts, 3500, &[]);
+    let mut child = hidden_benchmark_with_fresh_profile_args(
+        &url,
+        &artifacts,
+        100,
+        &["--completion-marker", "__WORKER_IDB_DONE__"],
+    );
     let status = wait_for_child(&mut child, Duration::from_secs(25));
     server.join().unwrap().unwrap();
     assert!(status.success(), "hidden Breeze run failed: {status}");
@@ -96,6 +102,7 @@ fn indexed_db_secondary_indexes_and_upgrade_work_in_hidden_browser() {
             document.title = 'index complete';
             document.getElementById('state').textContent = document.title;
             document.body.style.backgroundColor = 'rgb(17,170,34)';
+            console.info('__INDEX_DONE__');
         };
         const opened = indexedDB.open('index-runtime', 1);
         opened.onupgradeneeded = () => {
@@ -162,7 +169,12 @@ fn indexed_db_secondary_indexes_and_upgrade_work_in_hidden_browser() {
     });
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/page");
-    let mut child = hidden_benchmark_with_fresh_profile_args(&url, &artifacts, 3500, &[]);
+    let mut child = hidden_benchmark_with_fresh_profile_args(
+        &url,
+        &artifacts,
+        100,
+        &["--completion-marker", "__INDEX_DONE__"],
+    );
     let status = wait_for_child(&mut child, Duration::from_secs(25));
     server.join().unwrap().unwrap();
     assert!(status.success(), "hidden Breeze run failed: {status}");
@@ -242,6 +254,7 @@ fn indexed_db_upgrade_write_and_read_complete_in_hidden_browser() {
                         document.getElementById('state').textContent = 'indexed db complete';
                         document.body.style.backgroundColor = 'rgb(17,170,34)';
                         document.title = 'indexed db complete';
+                        console.info('__IDB_DONE__');
                     }, fail);
                 };
             };
@@ -253,7 +266,12 @@ fn indexed_db_upgrade_write_and_read_complete_in_hidden_browser() {
     });
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/page");
-    let mut child = hidden_benchmark_with_fresh_profile_args(&url, &artifacts, 2500, &[]);
+    let mut child = hidden_benchmark_with_fresh_profile_args(
+        &url,
+        &artifacts,
+        100,
+        &["--completion-marker", "__IDB_DONE__"],
+    );
     let status = wait_for_child(&mut child, Duration::from_secs(25));
     server.join().unwrap().unwrap();
     assert!(status.success(), "hidden Breeze run failed: {status}");
@@ -276,7 +294,7 @@ fn indexed_db_persists_after_hidden_browser_restarts_with_the_same_profile() {
         request.onsuccess = () => {
             const tx = request.result.transaction('items', 'readwrite');
             tx.objectStore('items').put({ value: 123 }, 'persisted');
-            tx.oncomplete = () => { document.title = 'write complete'; };
+            tx.oncomplete = () => { document.title = 'write complete'; console.info('__IDB_WRITE_DONE__'); };
         };
         </script>"#
         .to_string();
@@ -289,6 +307,7 @@ fn indexed_db_persists_after_hidden_browser_restarts_with_the_same_profile() {
             record.onsuccess = () => {
                 document.title = record.result?.value === 123 ?
                     'persisted across restart' : 'record lost';
+                console.info('__IDB_READ_DONE__');
             };
         };
         </script>"#
@@ -304,12 +323,22 @@ fn indexed_db_persists_after_hidden_browser_restarts_with_the_same_profile() {
     });
     let artifacts = TestArtifacts::new();
     let write_url = format!("http://{address}/write");
-    let mut first = hidden_benchmark_with_reused_profile(&write_url, &artifacts, 1500);
+    let mut first = hidden_benchmark_with_reused_profile(
+        &write_url,
+        &artifacts,
+        100,
+        &["--completion-marker", "__IDB_WRITE_DONE__"],
+    );
     assert!(wait_for_child(&mut first, Duration::from_secs(20)).success());
     let first_report = fs::read_to_string(&artifacts.json).unwrap();
     assert!(first_report.contains("write complete"), "{first_report}");
     let read_url = format!("http://{address}/read");
-    let mut second = hidden_benchmark_with_reused_profile(&read_url, &artifacts, 1500);
+    let mut second = hidden_benchmark_with_reused_profile(
+        &read_url,
+        &artifacts,
+        100,
+        &["--completion-marker", "__IDB_READ_DONE__"],
+    );
     assert!(wait_for_child(&mut second, Duration::from_secs(20)).success());
     server.join().unwrap().unwrap();
     let second_report = fs::read_to_string(&artifacts.json).unwrap();

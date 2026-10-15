@@ -16,7 +16,12 @@ fn intersection_observers_use_clipped_geometry_and_queued_snapshots() {
         })
     });
     let artifacts = TestArtifacts::new();
-    let mut child = hidden_benchmark_with_fresh_profile_args(&url, &artifacts, 1800, &[]);
+    let mut child = hidden_benchmark_with_fresh_profile_args(
+        &url,
+        &artifacts,
+        100,
+        &["--completion-marker", "__INTERSECTION_OBSERVERS_DONE__"],
+    );
     assert!(wait_for_child(&mut child, Duration::from_secs(20)).success());
     server.join().unwrap().unwrap();
     let report: serde_json::Value =

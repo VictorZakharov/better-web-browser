@@ -84,6 +84,7 @@ pub(super) struct BenchmarkRun {
     pub(super) script_runtime_stopped: bool,
     pub(super) runtime_timeline: runtime_timeline::RuntimeTimeline,
     pub(super) completion_marker: Option<String>,
+    pub(super) completion_title: Option<String>,
     pub(super) completion_observed: bool,
     pub(super) finish_scheduled: bool,
     pub(super) renderer_wait_deadline: Option<Instant>,
@@ -117,7 +118,7 @@ impl BrowserState {
         // A completion marker describes the page's actual finished state. The
         // initial presentation can precede timer-driven result construction.
         if self.benchmark.as_ref().is_some_and(|benchmark| {
-            benchmark.completion_marker.is_some()
+            (benchmark.completion_marker.is_some() || benchmark.completion_title.is_some())
                 && !benchmark.completion_observed
                 && benchmark.error.is_none()
         }) {

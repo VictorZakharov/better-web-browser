@@ -89,6 +89,7 @@ impl BenchmarkRun {
             script_runtime_stopped: false,
             runtime_timeline: runtime_timeline::RuntimeTimeline::default(),
             completion_marker,
+            completion_title: None,
             completion_observed: false,
             finish_scheduled: false,
             renderer_wait_deadline: None,
@@ -105,6 +106,17 @@ impl BenchmarkRun {
             window_width_dip,
             window_height_dip,
         }
+    }
+
+    pub(in crate::windows_app) fn record_document_title(&mut self, title: &str) -> bool {
+        self.titles.record_document_title(title);
+        let completed = !self.completion_observed
+            && self
+                .completion_title
+                .as_deref()
+                .is_some_and(|expected| expected == title);
+        self.completion_observed |= completed;
+        completed
     }
 
     pub(in crate::windows_app) fn record_script_console(&mut self, messages: &[String]) -> bool {

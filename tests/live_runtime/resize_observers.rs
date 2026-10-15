@@ -7,7 +7,7 @@ fn resize_observer_responsive_component_passes_in_hidden_browser() {
     let url = format!("http://{}/resize-observer", listener.local_addr().unwrap());
     let server = thread::spawn(move || serve_fixtures(listener, 1, |_| HTML));
     let artifacts = TestArtifacts::new();
-    let mut child = hidden_benchmark(&url, &artifacts, 1200);
+    let mut child = hidden_benchmark_until(&url, &artifacts, "resize-fixture:PASS");
     assert!(wait_for_child(&mut child, Duration::from_secs(20)).success());
     server.join().unwrap().unwrap();
     let report: serde_json::Value =

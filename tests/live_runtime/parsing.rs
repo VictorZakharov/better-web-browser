@@ -5,6 +5,7 @@ use std::{fs, net::TcpListener, thread, time::Duration};
 #[test]
 fn parser_inserted_declarative_shadow_script_runs_at_its_parser_checkpoint() {
     let report = super::parser_writes::run(
+        r#"["shadow",true,true,true]"#,
         r#"<!doctype html><body>
         <script>window.order=[];</script>
         <div id=host><template shadowrootmode=open>

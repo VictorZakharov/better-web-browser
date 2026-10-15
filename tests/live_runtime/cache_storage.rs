@@ -10,6 +10,7 @@ fn cache_storage_persists_after_hidden_browser_restarts() {
             const cache = await caches.open('restart-test');
             await cache.put('/entry', new Response('persisted body'));
             document.title = 'cache write complete';
+            console.info('__CACHE_WRITE_DONE__');
         })().catch(error => { document.title = 'cache write failed ' + error.name; });
         </script>"#
         .to_string();
@@ -19,6 +20,7 @@ fn cache_storage_persists_after_hidden_browser_restarts() {
             const response = await cache.match('/entry');
             document.title = response && await response.text() === 'persisted body' ?
                 'cache persisted across restart' : 'cache entry lost';
+            console.info('__CACHE_READ_DONE__');
         })().catch(error => { document.title = 'cache read failed ' + error.name; });
         </script>"#
         .to_string();
@@ -33,7 +35,12 @@ fn cache_storage_persists_after_hidden_browser_restarts() {
     });
     let artifacts = TestArtifacts::new();
     let write_url = format!("http://{address}/write");
-    let mut first = hidden_benchmark_with_reused_profile(&write_url, &artifacts, 2500);
+    let mut first = hidden_benchmark_with_reused_profile(
+        &write_url,
+        &artifacts,
+        100,
+        &["--completion-marker", "__CACHE_WRITE_DONE__"],
+    );
     assert!(wait_for_child(&mut first, Duration::from_secs(25)).success());
     let first_report = fs::read_to_string(&artifacts.json).unwrap();
     assert!(
@@ -41,7 +48,12 @@ fn cache_storage_persists_after_hidden_browser_restarts() {
         "{first_report}"
     );
     let read_url = format!("http://{address}/read");
-    let mut second = hidden_benchmark_with_reused_profile(&read_url, &artifacts, 2500);
+    let mut second = hidden_benchmark_with_reused_profile(
+        &read_url,
+        &artifacts,
+        100,
+        &["--completion-marker", "__CACHE_READ_DONE__"],
+    );
     assert!(wait_for_child(&mut second, Duration::from_secs(25)).success());
     server.join().unwrap().unwrap();
     let second_report = fs::read_to_string(&artifacts.json).unwrap();
@@ -82,6 +94,7 @@ fn dedicated_worker_and_window_share_browser_owned_cache_storage() {
                     document.getElementById('state').textContent = document.title;
                     document.body.style.backgroundColor = 'rgb(17,170,34)';
                     worker.terminate();
+                    console.info('__WORKER_CACHE_DONE__');
                 } else fail('unexpected worker message: ' + event.data);
             } catch (error) { fail(error); }
         };
@@ -112,7 +125,12 @@ fn dedicated_worker_and_window_share_browser_owned_cache_storage() {
     });
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/worker-cache");
-    let mut child = hidden_benchmark_with_fresh_profile_args(&url, &artifacts, 3500, &[]);
+    let mut child = hidden_benchmark_with_fresh_profile_args(
+        &url,
+        &artifacts,
+        100,
+        &["--completion-marker", "__WORKER_CACHE_DONE__"],
+    );
     let status = wait_for_child(&mut child, Duration::from_secs(25));
     server.join().unwrap().unwrap();
     assert!(status.success(), "hidden Breeze run failed: {status}");

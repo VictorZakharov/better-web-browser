@@ -66,7 +66,7 @@ fn repeated_document_navigations_do_not_inherit_stale_renderer_work() {
                     r#"<!doctype html>
 <title>navigation hop {hop}</title>
 <div style="width:100%;height:600px;background-color:rgb(17,170,34)">
-navigation chain committed</div>"#
+navigation chain committed</div><script>console.info('__NAVIGATION_CHAIN_DONE__');</script>"#
                 ))
             } else {
                 let next = hop + 1;
@@ -82,7 +82,7 @@ navigation chain committed</div>"#
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/hop/0");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 7000);
+    let mut child = hidden_benchmark_until(&url, &artifacts, "__NAVIGATION_CHAIN_DONE__");
     let status = wait_for_child(&mut child, Duration::from_secs(25));
     server
         .join()
