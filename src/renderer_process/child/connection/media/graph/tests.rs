@@ -1,24 +1,31 @@
 use super::*;
 use std::cell::Cell;
 
-#[test]
-fn renderer_pcm_handoff_is_bounded_and_retires_document_before_dequeue() {
+fn test_pump(document_id: u64) -> (GraphPcmPump, mpsc::Receiver<GraphCommand>) {
     let (commands, receiver) = mpsc::sync_channel(MAX_PENDING_GRAPH_CHUNKS);
     let pump = GraphPcmPump {
-        commands,
-        state: Arc::new(Mutex::new(GraphState {
-            document_id: 11,
-            context_id: 0,
-            last_context_id: 0,
-            generation: 1,
-            worker_generation_seen: 0,
-            worker_accepted_generation: 0,
-            health: GraphPcmHealth::default(),
-            health_observed: Instant::now(),
-            sample_rate: 0,
-        })),
-        fault: Arc::new(Mutex::new(None)),
+        inner: Arc::new(GraphControl {
+            commands,
+            state: Arc::new(Mutex::new(GraphState {
+                document_id,
+                context_id: 0,
+                last_context_id: 0,
+                generation: 1,
+                worker_generation_seen: 0,
+                worker_accepted_generation: 0,
+                health: GraphPcmHealth::default(),
+                health_observed: Instant::now(),
+                sample_rate: 0,
+            })),
+            fault: Arc::new(Mutex::new(None)),
+        }),
     };
+    (pump, receiver)
+}
+
+#[test]
+fn renderer_pcm_handoff_is_bounded_and_retires_document_before_dequeue() {
+    let (pump, receiver) = test_pump(11);
     let format = GraphPcmFormat {
         sample_rate: 48_000,
         channels: 2,
@@ -57,22 +64,7 @@ fn renderer_pcm_handoff_is_bounded_and_retires_document_before_dequeue() {
 
 #[test]
 fn first_chunk_and_close_wait_for_worker_acknowledgements() {
-    let (commands, _receiver) = mpsc::sync_channel(MAX_PENDING_GRAPH_CHUNKS);
-    let pump = GraphPcmPump {
-        commands,
-        state: Arc::new(Mutex::new(GraphState {
-            document_id: 11,
-            context_id: 0,
-            last_context_id: 0,
-            generation: 1,
-            worker_generation_seen: 0,
-            worker_accepted_generation: 0,
-            health: GraphPcmHealth::default(),
-            health_observed: Instant::now(),
-            sample_rate: 0,
-        })),
-        fault: Arc::new(Mutex::new(None)),
-    };
+    let (pump, _receiver) = test_pump(11);
     let format = GraphPcmFormat {
         sample_rate: 48_000,
         channels: 2,

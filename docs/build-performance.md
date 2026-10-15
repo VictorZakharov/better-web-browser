@@ -6,6 +6,8 @@ only to shorten the local optimized edit/build loop.
 
 ## Local optimized rebuild
 
+These August measurements describe an older source tree and profile configuration. They are historical evidence, not current rebuild estimates for the much larger October browser. The current `performance` profile disables incremental compilation; see [PR feedback time](pr-feedback-time.md) for the current pipeline measurements and build entry point.
+
 Measurements were collected on the Windows development host on 2026-08-16. The edited-source case
 touches a frequently changed top-level Windows coordinator and rebuilds without changing the
 dependency graph.
@@ -17,7 +19,7 @@ dependency graph.
 | Canonical `release` verification build | 99.72 s | included a broader rebuild |
 
 The optimized edit path is **32.8x faster** than the recorded baseline. It keeps optimization but
-disables release LTO, uses parallel code generation, and enables incremental compilation. The
+disabled release LTO, used parallel code generation, and enabled incremental compilation at that revision. The
 canonical release profile retains thin LTO, one code-generation unit, symbol stripping, and its
 existing panic behavior.
 

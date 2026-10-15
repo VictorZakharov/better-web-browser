@@ -176,6 +176,11 @@ codegen-units = 1
 panic = "unwind"
 strip = "symbols"
 
+# Parallelize this large workspace package while preserving existing dependency
+# artifacts and ThinLTO. See docs/pr-feedback-time.md for the measured samples.
+[profile.release.package.better-web-browser]
+codegen-units = 16
+
 # Optimized local iteration without release LTO's whole-crate rebuild cost. Published binaries and
 # benchmark claims continue to use `release`; this profile favors edit/build feedback.
 [profile.performance]
