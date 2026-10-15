@@ -31,7 +31,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 style,
                 &mut self.output.fixed_layers,
             );
-        if self.emit_paint && (style.position == Position::Sticky || retained_fixed) {
+        if self.emit_paint
+            && (style.position == Position::Sticky
+                || retained_fixed
+                || (style.opacity < 1.0 && !node.is_generated_pseudo()))
+        {
             self.output.items.insert(
                 start,
                 DisplayItem::NodeBoundary {

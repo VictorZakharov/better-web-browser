@@ -41,9 +41,13 @@ pub(in crate::engine::layout) fn capture(
         }
     }
     let mut members = HashSet::new();
+    let mut elements = HashSet::new();
     for member in Node::shadow_including_descendants(node) {
         if !insert(&member, &mut members) {
             return false;
+        }
+        if member.element().is_some() {
+            elements.insert(member.id());
         }
     }
     let dom_members = members.clone();
@@ -69,6 +73,7 @@ pub(in crate::engine::layout) fn capture(
         node.id(),
         FixedLayer {
             dom_members,
+            elements,
             members,
             z_index: style.z_index,
         },

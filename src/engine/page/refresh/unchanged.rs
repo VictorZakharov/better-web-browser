@@ -1,5 +1,5 @@
-//! Inline CSS changes need a cascade, but exact unchanged output needs no
-//! resource rediscovery or box reconstruction. This is not paint equivalence.
+//! Exact unchanged styles and opacity-only updates need no resource rediscovery.
+//! Paint ownership is verified separately before retaining box geometry.
 use super::*;
 use crate::engine::dom::NodeData;
 #[cfg(test)]
@@ -13,10 +13,11 @@ impl Page {
         invalidation: &RenderInvalidation,
     ) -> (StyleRefreshStats, bool) {
         if !self.can_refresh_style_only(width, height, invalidation) {
-            return (
-                self.refresh_resources_after_invalidation_for_viewport(width, height, invalidation),
-                false,
-            );
+            let mut stats =
+                self.refresh_resources_after_invalidation_for_viewport(width, height, invalidation);
+            // SVG and other resource-producing trees need their normal paint path.
+            stats.opacity_only = false;
+            return (stats, false);
         }
         self.resource_profile.reset();
         let started = self.resource_profile.start();
@@ -27,7 +28,9 @@ impl Page {
             && !stats.layout_changed
             && !stats.non_deferable_paint_changes
             && !stats.full_rebuild;
-        if unchanged {
+        if unchanged || (stats.opacity_only && !stats.full_rebuild) {
+            // An exact opacity-only change cannot introduce resource inputs. Its
+            // retained group may be repainted after the caller verifies ownership.
             self.cached_styles = Some((width.max(1.0), height.max(1.0), styles));
         } else {
             // Do not refresh the cascade twice: that would erase the first

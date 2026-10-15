@@ -56,6 +56,7 @@ impl FixedLayers {
 #[derive(Clone, Debug)]
 struct FixedLayer {
     dom_members: HashSet<NodeId>,
+    elements: HashSet<NodeId>,
     members: HashSet<NodeId>,
     z_index: Option<i32>,
 }
@@ -70,13 +71,16 @@ impl LayoutOutput {
         invalidation: &crate::engine::invalidation::RenderInvalidation,
         measurer: &mut M,
     ) -> bool {
+        let local_content =
+            invalidation.impact.is_local_content_only() && !invalidation.impact.is_style_only();
         if self.fixed_layers.viewport != viewport
             || self.fixed_layers.layers.is_empty()
             || !self.sticky_layers.is_empty()
-            || !invalidation.impact.is_style_only()
-            || invalidation.impact.affects_intrinsic_size()
+            || !(invalidation.impact.is_style_only() || local_content)
+            || (invalidation.impact.affects_intrinsic_size() && !local_content)
             || invalidation.rebuild_style_rules
-            || !invalidation.removed_nodes.is_empty()
+            || !(invalidation.removed_nodes.is_empty()
+                || local_content && invalidation.removals_are_local)
             || invalidation.roots.is_empty()
             || !self.fixed_layers.image_inputs.matches(page)
         {
@@ -86,6 +90,7 @@ impl LayoutOutput {
             return false;
         };
         if !styles.can_scope_inline_style_to_target()
+            || (local_content && !styles.can_scope_fixed_content(invalidation.impact))
             || Node::shadow_including_descendants(&page.dom.document).any(|node| {
                 node.is_fullscreen()
                     || node.is_popover_open()
@@ -106,7 +111,20 @@ impl LayoutOutput {
             };
             owners.insert(owner);
         }
+        if invalidation.removed_nodes.iter().any(|id| {
+            !owners
+                .iter()
+                .any(|owner| self.fixed_layers.layers[owner].members.contains(id))
+        }) {
+            return false;
+        }
         let mut replacements = Vec::new();
+        let mut total_members: usize = self
+            .fixed_layers
+            .layers
+            .values()
+            .map(|layer| layer.members.len())
+            .sum();
         let mut first_line = self.fragments.next_line;
         for owner in owners {
             let Some(root) = page.dom.find_node(owner) else {
@@ -137,7 +155,13 @@ impl LayoutOutput {
             let Some(new) = layer.fixed_layers.layers.get(&owner) else {
                 return false;
             };
-            if new.dom_members != old.dom_members
+            let members = if local_content {
+                &new.members
+            } else {
+                &old.members
+            };
+            if (new.dom_members != old.dom_members && !local_content)
+                || new.elements != old.elements
                 || !layer.sticky_layers.is_empty()
                 || layer.items.iter().any(|item| {
                     matches!(
@@ -145,8 +169,14 @@ impl LayoutOutput {
                         DisplayItem::Control(_) | DisplayItem::EmbeddedFrame { .. }
                     )
                 })
-                || layer.node_bounds.keys().any(|id| !old.members.contains(id))
+                || layer.node_bounds.keys().any(|id| !members.contains(id))
             {
+                return false;
+            }
+            total_members = total_members
+                .saturating_sub(old.members.len())
+                .saturating_add(new.members.len());
+            if total_members > MAX_TOTAL_MEMBERS {
                 return false;
             }
             first_line = layer.fragments.next_line;

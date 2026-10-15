@@ -112,6 +112,18 @@ pub(super) fn cross_tree_or_scoped(rules: &[Rule]) -> bool {
 }
 
 impl StyleSet {
+    pub(crate) fn can_scope_fixed_content(
+        &self,
+        impact: crate::engine::invalidation::InvalidationImpact,
+    ) -> bool {
+        !self.compiled.cross_tree_or_scoped
+            && impact.is_local_content_only()
+            && !self
+                .compiled
+                .nonlocal_dependencies
+                .needs_document_refresh(impact)
+    }
+
     pub(crate) fn can_scope_inline_style_to_target(&self) -> bool {
         // A declaration can affect inherited descendants and geometry, but
         // only attribute selectors can observe the authored style text. Scope,

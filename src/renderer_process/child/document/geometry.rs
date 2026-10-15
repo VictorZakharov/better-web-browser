@@ -222,14 +222,14 @@ impl DocumentRuntime {
     pub(super) fn rebuild_layout_for_invalidation(
         &mut self,
         invalidation: Option<&crate::engine::invalidation::RenderInvalidation>,
-    ) {
+    ) -> bool {
         self.sync_script_layout_page();
         // A blocked rendering opportunity does not need a paintable display list.
         // Keep the CSSOM snapshot current: explicit geometry reads still flush it
         // synchronously, independent of this deferred presentation path.
         if self.rendering_is_blocked() {
             self.rendering.dirty = true;
-            return;
+            return false;
         }
         self.page.prune_detached_canvas_images();
         self.install_canvas_presentation();
@@ -286,5 +286,6 @@ impl DocumentRuntime {
             self.geometry_observers_pending = true;
             self.resize_observers_pending = true;
         }
+        refreshed
     }
 }

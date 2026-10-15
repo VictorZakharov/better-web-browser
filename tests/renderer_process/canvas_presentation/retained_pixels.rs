@@ -1,6 +1,10 @@
 //! Same-size pixels can reuse paint; DOM/resize/first publication cannot.
 use super::*;
 use better_web_browser::engine::RectF;
+#[path = "retained_pixels/fixed_content.rs"]
+mod fixed_content;
+#[path = "retained_pixels/opacity_styles.rs"]
+mod opacity_styles;
 #[path = "retained_pixels/unchanged_styles.rs"]
 mod unchanged_styles;
 
