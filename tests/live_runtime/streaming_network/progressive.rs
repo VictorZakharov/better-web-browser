@@ -26,6 +26,7 @@ const SCRIPT: &str = r#"
             document.body.style.backgroundColor = 'rgb(17, 170, 34)';
             document.title = '34 progressive response clones complete';
             worker.terminate();
+            console.info('__PROGRESSIVE_DONE__');
         }).catch(error => console.error('progressive failure', error));
     }
 "#;
@@ -52,7 +53,11 @@ fn progressive_fetch_headers_and_clones_do_not_starve_behind_idle_bodies() {
         })
     });
     let artifacts = TestArtifacts::new();
-    let mut child = hidden_benchmark(&format!("http://{address}/progressive"), &artifacts, 12000);
+    let mut child = hidden_benchmark_until(
+        &format!("http://{address}/progressive"),
+        &artifacts,
+        "__PROGRESSIVE_DONE__",
+    );
     let status = wait_for_child(&mut child, Duration::from_secs(30));
     server.join().unwrap().unwrap();
     assert!(status.success());

@@ -92,6 +92,7 @@ const STREAMING_HTML: &str = r#"<!doctype html>
       'streaming complete ' + Math.round(measuredRate) + ' bps';
     document.body.style.backgroundColor = 'rgb(17, 170, 34)';
     document.title = 'streaming complete';
+    console.info('__STREAMING_DONE__');
   });
 </script>"#;
 
@@ -139,9 +140,9 @@ fn eight_streams_report_progress_and_an_abort_can_retry_without_blocking() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/streaming-network");
 
-    // CI isolates this peak-memory measurement from other hidden browser trees.
-    // Retain deterministic settle headroom for the complete 25 MiB finite stream.
-    let mut child = hidden_benchmark(&url, &artifacts, 15000);
+    // The marker follows every stream, abort and retry. OS peak working set
+    // retains the full transfer's high-water mark without a fixed idle tail.
+    let mut child = hidden_benchmark_until(&url, &artifacts, "__STREAMING_DONE__");
     let status = wait_for_child(&mut child, Duration::from_secs(35));
     server
         .join()

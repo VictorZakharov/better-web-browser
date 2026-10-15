@@ -13,6 +13,7 @@ param(
     [int] $FilmstripDurationMs = 10000,
     [ValidateRange(100, 600000)]
     [int] $SettleMs = 2000,
+    [string] $CompletionTitle,
     [ValidateRange(5, 600)]
     [int] $TimeoutSeconds = 120,
     [ValidateRange(0, 120)]
@@ -131,6 +132,10 @@ function ConvertTo-WindowsCommandLineArgument {
 $arguments = [System.Collections.Generic.List[string]]::new()
 $arguments.Add('--benchmark')
 $arguments.Add($Url)
+if ($PSBoundParameters.ContainsKey('CompletionTitle')) {
+    $arguments.Add('--completion-title')
+    $arguments.Add($CompletionTitle)
+}
 if ($AudioOutputProbe) { $arguments.Add('--audio-output-probe') }
 if ($PSBoundParameters.ContainsKey('DeviceScaleFactor')) {
     $arguments.Add('--device-scale-factor')

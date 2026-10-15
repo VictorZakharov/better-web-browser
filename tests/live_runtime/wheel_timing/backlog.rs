@@ -126,7 +126,7 @@ fn assert_backlog(report: &serde_json::Value, direction: i32, cancelled: bool, b
             first_received < reverse_enqueued,
             "fixture did not start the first native animation before reversal: {trace}"
         );
-        1
+        FORWARD_INPUTS - 1
     } else {
         0
     };

@@ -78,7 +78,7 @@ $failClippy=$false
 $priorNativeExitCode=$global:LASTEXITCODE
 function cargo {
     $calls.Add(@($args))
-    $debugSettings.Add(@($env:CARGO_PROFILE_DEV_DEBUG,$env:CARGO_PROFILE_TEST_DEBUG))
+    $debugSettings.Add(@($env:CARGO_PROFILE_DEV_DEBUG,$env:CARGO_PROFILE_TEST_DEBUG,$env:CARGO_INCREMENTAL))
     $global:LASTEXITCODE=0
     if ($failClippy -and $args[0] -eq 'clippy') { $global:LASTEXITCODE=7; return }
     if ($args -contains '--list' -and -not $emptyListing) { 'contract_case: test' }
@@ -90,20 +90,22 @@ $priorTemp=$env:TEMP
 $priorTmp=$env:TMP
 $priorDevDebug=$env:CARGO_PROFILE_DEV_DEBUG
 $priorTestDebug=$env:CARGO_PROFILE_TEST_DEBUG
+$priorIncremental=$env:CARGO_INCREMENTAL
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 try {
     $env:CARGO_TARGET_DIR=Join-Path $root 'target'
-    Remove-Item -LiteralPath Env:CARGO_PROFILE_DEV_DEBUG,Env:CARGO_PROFILE_TEST_DEBUG -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath Env:CARGO_PROFILE_DEV_DEBUG,Env:CARGO_PROFILE_TEST_DEBUG,Env:CARGO_INCREMENTAL -ErrorAction SilentlyContinue
     & (Join-Path $PSScriptRoot 'run-impacted-tests.ps1') -ChangedPath src/engine/webgl/command_batch/uploads.rs -Run
     if ($calls.Count -ne 4 -or $calls[0] -notcontains '--lib' -or
         $calls[2] -notcontains 'renderer_process' -or $calls[1] -contains '--all-targets') {
         throw 'A narrow WebGL edit ran unrelated targets or omitted its downstream contract.'
     }
-    if (@($debugSettings | Where-Object { $_[0] -ne '0' -or $_[1] -ne '0' }).Count) {
+    if (@($debugSettings | Where-Object { $_[0] -ne '0' -or $_[1] -ne '0' -or $_[2] -ne '1' }).Count) {
         throw 'Verification did not default to the CI debug-info settings.'
     }
     if ($null -ne [Environment]::GetEnvironmentVariable('CARGO_PROFILE_DEV_DEBUG','Process') -or
-        $null -ne [Environment]::GetEnvironmentVariable('CARGO_PROFILE_TEST_DEBUG','Process')) {
+        $null -ne [Environment]::GetEnvironmentVariable('CARGO_PROFILE_TEST_DEBUG','Process') -or
+        $null -ne [Environment]::GetEnvironmentVariable('CARGO_INCREMENTAL','Process')) {
         throw 'Runner leaked verification debug-info settings.'
     }
     if ([string]$env:CARGO_BUILD_JOBS -ne [string]$priorJobs -or [string]$env:RUST_TEST_THREADS -ne [string]$priorWorkers -or
@@ -117,8 +119,9 @@ try {
     }
     $emptyListing=$false; $calls.Clear(); $debugSettings.Clear()
     $env:CARGO_PROFILE_DEV_DEBUG='1'; $env:CARGO_PROFILE_TEST_DEBUG='2'
+    $env:CARGO_INCREMENTAL='0'
     & (Join-Path $PSScriptRoot 'run-impacted-tests.ps1') -ChangedPath src/engine/webgl/command_batch/uploads.rs -Run
-    if (@($debugSettings | Where-Object { $_[0] -ne '1' -or $_[1] -ne '2' }).Count -or
+    if (@($debugSettings | Where-Object { $_[0] -ne '1' -or $_[1] -ne '2' -or $_[2] -ne '0' }).Count -or
         $env:CARGO_PROFILE_DEV_DEBUG -ne '1' -or $env:CARGO_PROFILE_TEST_DEBUG -ne '2') {
         throw 'Explicit debugger settings were overridden or leaked.'
     }
@@ -132,7 +135,7 @@ try {
 } finally {
     $global:LASTEXITCODE=$priorNativeExitCode
     [Environment]::SetEnvironmentVariable('CARGO_TARGET_DIR',$priorTarget,'Process')
-    foreach ($setting in @(@('CARGO_PROFILE_DEV_DEBUG',$priorDevDebug),@('CARGO_PROFILE_TEST_DEBUG',$priorTestDebug))) {
+    foreach ($setting in @(@('CARGO_PROFILE_DEV_DEBUG',$priorDevDebug),@('CARGO_PROFILE_TEST_DEBUG',$priorTestDebug),@('CARGO_INCREMENTAL',$priorIncremental))) {
         if ($null -eq $setting[1]) { Remove-Item -LiteralPath ('Env:'+$setting[0]) -ErrorAction SilentlyContinue }
         else { [Environment]::SetEnvironmentVariable($setting[0],$setting[1],'Process') }
     }

@@ -2,6 +2,16 @@
 use super::*;
 
 impl Context {
+    // Only deliberate infinite-loop fixtures opt in, after realm startup. Other
+    // tests keep the production budget, including its real-deadline regression.
+    #[cfg(test)]
+    pub(in crate::engine::script) fn replace_timeout_for_test(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> std::time::Duration {
+        self.agent.borrow_mut().replace_timeout_for_test(timeout)
+    }
+
     #[cfg(test)]
     pub(in crate::engine::script) fn collect_garbage_for_testing(&mut self) -> JsResult<()> {
         self.agent.borrow_mut().run(|isolate| {

@@ -19,6 +19,8 @@ pub mod renderer_budget;
 pub mod renderer_protocol;
 pub mod storage;
 pub mod storage_manager;
+#[cfg(test)]
+mod test_resources;
 pub(crate) mod text_decode;
 
 #[cfg(target_os = "windows")]

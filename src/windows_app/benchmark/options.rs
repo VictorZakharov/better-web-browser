@@ -43,6 +43,7 @@ impl LaunchOptions {
         let mut filmstrip_duration_ms = None;
         let mut settle_ms = 2_000_u64;
         let mut completion_marker = None;
+        let mut completion_title = None;
         let mut scroll_samples = 0_usize;
         let mut early_scroll = false;
         let mut native_paint = false;
@@ -90,6 +91,13 @@ impl LaunchOptions {
                         return Err("--completion-marker cannot be empty".to_string());
                     }
                     completion_marker = Some(marker);
+                }
+                "--completion-title" => {
+                    let title = required(&mut arguments, &argument)?;
+                    if title.len() > diagnostics::MAX_DIAGNOSTIC_TITLE_BYTES {
+                        return Err("--completion-title exceeds the diagnostic title limit".into());
+                    }
+                    completion_title = Some(title);
                 }
                 "--scroll-samples" => {
                     scroll_samples = number::<usize>(&mut arguments, &argument)?.clamp(1, 120);
@@ -191,6 +199,11 @@ impl LaunchOptions {
             }
         }
 
+        if completion_title.is_some() && completion_marker.is_some() {
+            return Err(
+                "Choose one completion condition: --completion-title or --completion-marker".into(),
+            );
+        }
         let benchmark = if let Some(url) = benchmark_url {
             let output = output
                 .ok_or_else(|| "benchmark mode requires --output <result.json>".to_string())?;
@@ -209,6 +222,7 @@ impl LaunchOptions {
                 process_started,
             );
             benchmark.navigation_targets = navigation_targets;
+            benchmark.completion_title = completion_title;
             benchmark.native_paint = native_paint.then(Default::default);
             benchmark.audio_output_probe = audio_output_probe;
             benchmark.navigation_delay = Duration::from_millis(navigation_delay_ms);
@@ -254,6 +268,9 @@ impl LaunchOptions {
             }
             if completion_marker.is_some() {
                 return Err("--completion-marker requires --benchmark".to_string());
+            }
+            if completion_title.is_some() {
+                return Err("--completion-title requires --benchmark".into());
             }
             if early_scroll {
                 return Err("--early-scroll-trace requires --benchmark".to_string());

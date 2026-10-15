@@ -35,6 +35,24 @@ pub(super) fn hidden_benchmark_with_args(
     spawn_hidden_benchmark(url, artifacts, settle_ms, extra_arguments, Some(&profile))
 }
 
+/// Finish on the fixture's terminal result, retaining the outer failure timeout.
+/// The marker must follow every observable operation asserted by the test.
+pub(super) fn hidden_benchmark_until(
+    url: &str,
+    artifacts: &TestArtifacts,
+    marker: &str,
+) -> std::process::Child {
+    hidden_benchmark_with_args(url, artifacts, 100, &["--completion-marker", marker])
+}
+
+pub(super) fn hidden_benchmark_until_title(
+    url: &str,
+    artifacts: &TestArtifacts,
+    title: &str,
+) -> std::process::Child {
+    hidden_benchmark_with_args(url, artifacts, 100, &["--completion-title", title])
+}
+
 pub(super) fn hidden_benchmark_with_fresh_profile_args(
     url: &str,
     artifacts: &TestArtifacts,
@@ -50,10 +68,11 @@ pub(super) fn hidden_benchmark_with_reused_profile(
     url: &str,
     artifacts: &TestArtifacts,
     settle_ms: u64,
+    extra_arguments: &[&str],
 ) -> std::process::Child {
     let profile = artifacts.root.join("profile");
     fs::create_dir_all(&profile).expect("create hidden Breeze profile");
-    spawn_hidden_benchmark(url, artifacts, settle_ms, &[], Some(&profile))
+    spawn_hidden_benchmark(url, artifacts, settle_ms, extra_arguments, Some(&profile))
 }
 
 fn spawn_hidden_benchmark(

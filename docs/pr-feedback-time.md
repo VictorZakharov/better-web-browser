@@ -68,7 +68,7 @@ The final `-Final -Run` sample took 15m 37s, including full-target Clippy, all t
 | Live-runtime test execution | 5m 52s |
 | Renderer-process test execution | 1m 36s |
 
-Execution is sequential with one test worker, retaining native GPU and browser isolation. Library and live-runtime execution dominate this sample; reducing build time alone does not put the full gate under five minutes. Further work should measure individual test startup, reusable fixtures and safe CPU-only scheduling without relaxing compatibility contracts.
+That baseline used one sequential test worker. Library and live-runtime execution dominate the sample; reducing build time alone does not put the full gate under five minutes. [Complete local test runtime](test-runtime.md) documents the subsequent scheduler, resource ownership, finite-fixture completion and measurements.
 
 Two unsuccessful setup/gate attempts remain part of the investigation evidence: missing CMake failed after 53.93s, and inherited Clippy/test-constructor failures after 3m 23s. The build helper now discovers the installed Visual Studio CMake component; the Clippy repair preserves behavior and the two audio transport fixtures construct the existing shared control object without changing assertions. An earlier missing-LLVM experiment also failed and is excluded from warm build comparisons. The PR description records all final verification and build results.
 

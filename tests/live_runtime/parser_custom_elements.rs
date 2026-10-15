@@ -2,7 +2,9 @@ use super::run;
 
 #[test]
 fn network_constructor_and_reaction_jobs_run_before_parser_resumption() {
-    let report = run(r#"<!doctype html><body><script>
+    let report = run(
+        r#"["construct",["construct job","",false],"id",["id job",false,0],"data-value",["data-value job",false,0],"connect",["connect job",0],"script"]"#,
+        r#"<!doctype html><body><script>
       window.order=[];
       customElements.define('checkpoint-test',class extends HTMLElement {
         static observedAttributes=['id','data-value'];
@@ -15,7 +17,8 @@ fn network_constructor_and_reaction_jobs_run_before_parser_resumption() {
       });
     </script><checkpoint-test id=one data-value=ok><b>child</b></checkpoint-test><script>
       order.push('script');document.title=JSON.stringify(order);
-    </script>"#);
+    </script>"#,
+    );
     assert_eq!(
         report["titles"]["document_title"],
         r#"["construct",["construct job","",false],"id",["id job",false,0],"data-value",["data-value job",false,0],"connect",["connect job",0],"script"]"#,
@@ -25,7 +28,9 @@ fn network_constructor_and_reaction_jobs_run_before_parser_resumption() {
 
 #[test]
 fn written_custom_elements_construct_before_attributes_connection_and_children() {
-    let report = run(r#"<!doctype html><body><script>
+    let report = run(
+        r#"[["constructor",0,false,0],["data-value",null,"ok","one",false,0],["id",null,"one","one",false,0],["connected","one",0],["returned","child"]]"#,
+        r#"<!doctype html><body><script>
       window.order=[];
       customElements.define('parser-test',class extends HTMLElement {
         static observedAttributes=['data-value','id'];
@@ -36,7 +41,8 @@ fn written_custom_elements_construct_before_attributes_connection_and_children()
       document.write('<parser-test data-value=ok id=one><b>child</b></parser-test>');
       order.push(['returned',document.getElementById('one').textContent]);
       document.title=JSON.stringify(order);
-    </script>"#);
+    </script>"#,
+    );
     assert_eq!(
         report["titles"]["document_title"],
         r#"[["constructor",0,false,0],["data-value",null,"ok","one",false,0],["id",null,"one","one",false,0],["connected","one",0],["returned","child"]]"#,
@@ -46,7 +52,9 @@ fn written_custom_elements_construct_before_attributes_connection_and_children()
 
 #[test]
 fn network_custom_elements_run_before_their_child_tokens() {
-    let report = run(r#"<!doctype html><body><script>
+    let report = run(
+        r#"[["constructor","",true],["connected","one",0],["constructor","",true],["connected","two",0]]"#,
+        r#"<!doctype html><body><script>
       window.order=[];
       customElements.define('network-test',class extends HTMLElement {
         constructor(){super(); order.push(['constructor',this.id,this.parentNode===null]);}
@@ -54,7 +62,8 @@ fn network_custom_elements_run_before_their_child_tokens() {
       });
     </script><network-test id=one><network-test id=two>child</network-test></network-test><script>
       document.title=JSON.stringify(order);
-    </script>"#);
+    </script>"#,
+    );
     assert_eq!(
         report["titles"]["document_title"],
         r#"[["constructor","",true],["connected","one",0],["constructor","",true],["connected","two",0]]"#,
@@ -64,7 +73,9 @@ fn network_custom_elements_run_before_their_child_tokens() {
 
 #[test]
 fn scoped_declarative_shadow_definition_constructs_before_parser_insertion() {
-    let report = run(r#"<!doctype html><body><script>
+    let report = run(
+        "[true,1,true,true]",
+        r#"<!doctype html><body><script>
         window.order=[];
         window.scoped=new CustomElementRegistry();
         window.scoped.define('x-stream-scope',class extends HTMLElement {
@@ -95,7 +106,8 @@ fn scoped_declarative_shadow_definition_constructs_before_parser_insertion() {
         document.title=JSON.stringify([before,window.globalConstructed,
           scopedNode instanceof window.scoped.get('x-stream-scope'),
           document.getElementById('host').shadowRoot.customElementRegistry===window.scoped]);
-      </script>"#);
+      </script>"#,
+    );
     assert_eq!(
         report["titles"]["document_title"], "[true,1,true,true]",
         "{report}"
@@ -104,7 +116,9 @@ fn scoped_declarative_shadow_definition_constructs_before_parser_insertion() {
 
 #[test]
 fn parser_attribute_reactions_reject_dynamic_markup_and_templates_stay_inert() {
-    let report = run(r#"<!doctype html><body><script>
+    let report = run(
+        r#"["x","constructor","InvalidStateError","connected"]"#,
+        r#"<!doctype html><body><script>
       window.order=[];
       customElements.define('guard-test',class extends HTMLElement {
         static observedAttributes=['data-value'];
@@ -116,7 +130,8 @@ fn parser_attribute_reactions_reject_dynamic_markup_and_templates_stay_inert() {
       order.push(document.getElementById('t').content.firstChild.getAttribute('data-value'));
       document.write('<guard-test data-value=x></guard-test>');
       document.title=JSON.stringify(order);
-    </script>"#);
+    </script>"#,
+    );
     assert_eq!(
         report["titles"]["document_title"],
         r#"["x","constructor","InvalidStateError","connected"]"#,
@@ -126,7 +141,9 @@ fn parser_attribute_reactions_reject_dynamic_markup_and_templates_stay_inert() {
 
 #[test]
 fn a_failed_parser_constructor_inserts_a_distinct_unknown_element() {
-    let report = run(r#"<!doctype html><body><script>
+    let report = run(
+        r#"[["NotSupportedError"],true,true,false,"child",true]"#,
+        r#"<!doctype html><body><script>
       window.leaked=null; window.errors=[];
       window.onerror=(m,s,l,c,e)=>{errors.push(e.name);return true};
       customElements.define('failing-test',class extends HTMLElement {
@@ -136,7 +153,8 @@ fn a_failed_parser_constructor_inserts_a_distinct_unknown_element() {
       const fallback=document.getElementById('fallback');
       document.title=JSON.stringify([errors,fallback instanceof HTMLUnknownElement,
         fallback!==leaked,fallback.hasAttribute('bad'),fallback.textContent,leaked.parentNode===null]);
-    </script>"#);
+    </script>"#,
+    );
     assert_eq!(
         report["titles"]["document_title"],
         r#"[["NotSupportedError"],true,true,false,"child",true]"#,
@@ -146,13 +164,16 @@ fn a_failed_parser_constructor_inserts_a_distinct_unknown_element() {
 
 #[test]
 fn connected_callback_writes_use_the_current_parser_insertion_point() {
-    let report = run(r#"<!doctype html><body><script>
+    let report = run(
+        "<i>callback</i><b>source</b>",
+        r#"<!doctype html><body><script>
       customElements.define('writer-test',class extends HTMLElement {
         connectedCallback(){document.write('<i>callback</i>');}
       });
       document.write('<writer-test id=one><b>source</b></writer-test>');
       document.title=document.getElementById('one').innerHTML;
-    </script>"#);
+    </script>"#,
+    );
     assert_eq!(
         report["titles"]["document_title"], "<i>callback</i><b>source</b>",
         "{report}"

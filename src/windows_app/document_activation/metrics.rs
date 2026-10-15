@@ -176,7 +176,7 @@ impl BrowserState {
         let Some(benchmark) = self.benchmark.as_mut() else {
             return false;
         };
-        benchmark.titles.record_document_title(&presentation.title);
+        let title_completed = benchmark.record_document_title(&presentation.title);
         if !first && presentation.runtime.render_requested {
             benchmark.render_checkpoints = benchmark.render_checkpoints.saturating_add(1);
             benchmark.render_mutations = benchmark
@@ -202,6 +202,6 @@ impl BrowserState {
                 .full_paint_repaints
                 .saturating_add(usize::from(damage.full_repaint));
         }
-        benchmark_completed
+        benchmark_completed || title_completed
     }
 }

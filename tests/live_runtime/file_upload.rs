@@ -67,7 +67,11 @@ fn hidden_browser_sends_binary_file_in_multipart_form_navigation() {
         panic!("browser did not submit multipart form before timeout");
     });
     let artifacts = TestArtifacts::new();
-    let mut child = hidden_benchmark(&format!("http://{address}/entry"), &artifacts, 1600);
+    let mut child = hidden_benchmark_until_title(
+        &format!("http://{address}/entry"),
+        &artifacts,
+        "Multipart upload complete",
+    );
     let status = wait_for_child(&mut child, Duration::from_secs(25));
     server.join().expect("upload fixture server panicked");
     assert!(status.success(), "hidden Breeze run failed: {status}");
@@ -135,7 +139,11 @@ fn hidden_dedicated_worker_serializes_formdata_file_upload() {
         panic!("worker did not submit FormData before timeout");
     });
     let artifacts = TestArtifacts::new();
-    let mut child = hidden_benchmark(&format!("http://{address}/entry"), &artifacts, 2300);
+    let mut child = hidden_benchmark_until_title(
+        &format!("http://{address}/entry"),
+        &artifacts,
+        "Worker upload ok",
+    );
     let status = wait_for_child(&mut child, Duration::from_secs(25));
     server
         .join()

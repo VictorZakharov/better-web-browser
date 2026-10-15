@@ -13,6 +13,8 @@ pub struct Device {
 
 impl Device {
     pub fn hardware(adapter_id: Option<(u32, i32)>) -> Result<Self, String> {
+        #[cfg(test)]
+        crate::test_resources::require_native_gpu();
         let factory: IDXGIFactory1 =
             unsafe { CreateDXGIFactory1() }.map_err(|error| error.to_string())?;
         let adapter: Option<IDXGIAdapter> = if let Some((low, high)) = adapter_id {

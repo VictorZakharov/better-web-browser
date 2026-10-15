@@ -2,12 +2,12 @@
 use super::super::support::*;
 use std::{fs, net::TcpListener, thread, time::Duration};
 
-fn run(source: &'static str) -> serde_json::Value {
+fn run(title: &str, source: &'static str) -> serde_json::Value {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/streams", listener.local_addr().unwrap());
     let server = thread::spawn(move || serve_fixtures(listener, 1, |_| source));
     let artifacts = TestArtifacts::new();
-    let mut child = hidden_benchmark(&url, &artifacts, 900);
+    let mut child = hidden_benchmark_until_title(&url, &artifacts, title);
     assert!(wait_for_child(&mut child, Duration::from_secs(20)).success());
     server.join().unwrap().unwrap();
     let report: serde_json::Value =
@@ -20,12 +20,16 @@ fn run(source: &'static str) -> serde_json::Value {
     report["titles"]["document_title"].clone()
 }
 
-fn run_resources(count: usize, response: fn(&str) -> FixtureResponse) -> serde_json::Value {
+fn run_resources(
+    title: &str,
+    count: usize,
+    response: fn(&str) -> FixtureResponse,
+) -> serde_json::Value {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/streams", listener.local_addr().unwrap());
     let server = thread::spawn(move || serve_parallel_fixtures(listener, count, response));
     let artifacts = TestArtifacts::new();
-    let mut child = hidden_benchmark(&url, &artifacts, 1400);
+    let mut child = hidden_benchmark_until_title(&url, &artifacts, title);
     assert!(wait_for_child(&mut child, Duration::from_secs(20)).success());
     server.join().unwrap().unwrap();
     let report: serde_json::Value =
@@ -40,7 +44,7 @@ fn run_resources(count: usize, response: fn(&str) -> FixtureResponse) -> serde_j
 
 #[test]
 fn failed_written_script_unblocks_the_stream_and_load() {
-    let title = run_resources(2, |request| {
+    let title = run_resources(r#"[1,"tail"]"#, 2, |request| {
         if request.starts_with("GET /missing.js") {
             FixtureResponse::script("", Duration::from_millis(100)).status(404, "Not Found")
         } else {
@@ -60,7 +64,7 @@ fn failed_written_script_unblocks_the_stream_and_load() {
 
 #[test]
 fn replacement_cancels_old_parser_script_owners() {
-    let title = run_resources(2, |request| {
+    let title = run_resources("true", 2, |request| {
         if request.starts_with("GET /old.js") {
             FixtureResponse::script("window.stale=true", Duration::from_millis(250))
         } else {
@@ -77,7 +81,7 @@ fn replacement_cancels_old_parser_script_owners() {
 
 #[test]
 fn deferred_external_script_cannot_destructively_write() {
-    let title = run_resources(2, |request| {
+    let title = run_resources("true", 2, |request| {
         if request.starts_with("GET /defer.js") {
             FixtureResponse::script(
                 "document.write('<p>wrong</p>'); document.title=String(!!document.getElementById('keep'));",
@@ -94,7 +98,7 @@ fn deferred_external_script_cannot_destructively_write() {
 
 #[test]
 fn replacement_stylesheet_blocks_written_script_and_new_load() {
-    let title = run_resources(2, |request| {
+    let title = run_resources(r#"[true,"rgb(1, 2, 3)","tail"]"#, 2, |request| {
         if request.starts_with("GET /new.css") {
             FixtureResponse::resource(
                 "#probe{color:rgb(1,2,3)}",
@@ -119,7 +123,9 @@ fn replacement_stylesheet_blocks_written_script_and_new_load() {
 #[test]
 fn replacing_again_from_readiness_does_not_finish_the_new_stream() {
     assert_eq!(
-        run(r#"<!doctype html><script>
+        run(
+            r#"["loading",true]"#,
+            r#"<!doctype html><script>
       onload=()=>{document.open();document.write('<p>first</p>');
         document.onreadystatechange=()=>{if(document.readyState==='interactive'){
           document.open();document.write('<p id=second>second</p>');
@@ -127,7 +133,8 @@ fn replacing_again_from_readiness_does_not_finish_the_new_stream() {
         }};
         document.close();
       };
-    </script>"#),
+    </script>"#
+        ),
         r#"["loading",true]"#
     );
 }
@@ -135,19 +142,24 @@ fn replacing_again_from_readiness_does_not_finish_the_new_stream() {
 #[test]
 fn inert_stream_quirks_are_reset_and_recomputed() {
     assert_eq!(
-        run(r#"<!doctype html><script>
+        run(
+            r#"["CSS1Compat","BackCompat","CSS1Compat","CSS1Compat"]"#,
+            r#"<!doctype html><script>
       const d=document.implementation.createHTMLDocument(),log=[];
       d.open();log.push(d.compatMode);d.write('<p>quirks');d.close();log.push(d.compatMode);
       d.open();log.push(d.compatMode);d.write('<!doctype html><p>standards');d.close();log.push(d.compatMode);
       document.title=JSON.stringify(log);
-    </script>"#),
+    </script>"#
+        ),
         r#"["CSS1Compat","BackCompat","CSS1Compat","CSS1Compat"]"#
     );
 }
 
 #[test]
 fn open_reuses_document_erases_listeners_and_reaches_a_new_load() {
-    let title = run(r#"<!doctype html><body><p id=old>old</p><script>
+    let title = run(
+        r#"[true,true,"loading","detached","fresh",false,"interactive","returned","dcl","complete","load"]"#,
+        r#"<!doctype html><body><p id=old>old</p><script>
     window.onload = () => {
         const doc=document, old=document.getElementById('old'), log=[];
         const detached=document.createElement('div');
@@ -164,7 +176,8 @@ fn open_reuses_document_erases_listeners_and_reaches_a_new_load() {
         window.onload=()=>{log.push('load');document.title=JSON.stringify(log)};
         document.close(); log.push('returned');
     };
-    </script>"#);
+    </script>"#,
+    );
     assert_eq!(
         title,
         r#"[true,true,"loading","detached","fresh",false,"interactive","returned","dcl","complete","load"]"#
@@ -173,20 +186,25 @@ fn open_reuses_document_erases_listeners_and_reaches_a_new_load() {
 
 #[test]
 fn post_load_write_replaces_and_split_tokens_are_synchronous() {
-    let title = run(r#"<!doctype html><body><p id=old>old</p><script>
+    let title = run(
+        r#"[true,"A&B"]"#,
+        r#"<!doctype html><body><p id=old>old</p><script>
     window.onload=()=>{
         document.write('<body><p id=ne'); document.write('w>A&am'); document.write('p;B</p>');
         const log=[document.getElementById('old')===null,document.getElementById('new').textContent];
         document.writeln('line'); document.close();
         document.title=JSON.stringify(log);
     };
-    </script>"#);
+    </script>"#,
+    );
     assert_eq!(title, r#"[true,"A&B"]"#);
 }
 
 #[test]
 fn parser_open_close_are_noops_and_xml_methods_throw() {
-    let title = run(r#"<!doctype html><body><p id=old>old</p><script>
+    let title = run(
+        r#"[true,true,"loading","InvalidStateError","InvalidStateError","InvalidStateError","InvalidStateError"]"#,
+        r#"<!doctype html><body><p id=old>old</p><script>
       const log=[document.open()===document,!!document.getElementById('old')];
       document.close(); log.push(document.readyState);
       const xml=document.implementation.createDocument('','root');
@@ -194,7 +212,8 @@ fn parser_open_close_are_noops_and_xml_methods_throw() {
         try { xml[method]('text'); } catch(e) { log.push(e.name); }
       }
       document.title=JSON.stringify(log);
-    </script><p id=tail>tail</p>"#);
+    </script><p id=tail>tail</p>"#,
+    );
     assert_eq!(
         title,
         r#"[true,true,"loading","InvalidStateError","InvalidStateError","InvalidStateError","InvalidStateError"]"#
@@ -203,18 +222,23 @@ fn parser_open_close_are_noops_and_xml_methods_throw() {
 
 #[test]
 fn inert_document_streams_do_not_replace_primary_or_execute_scripts() {
-    let title = run(r#"<!doctype html><body><script>
+    let title = run(
+        r#"["A&B",true]"#,
+        r#"<!doctype html><body><script>
       const other=document.implementation.createHTMLDocument();
       other.open(); other.write('<body><p id=x>A&amp;B</p><script>throw new Error("inert")<\/script>');
       other.close();
       document.title=JSON.stringify([other.getElementById('x').textContent,document.getElementById('x')===null]);
-    </script>"#);
+    </script>"#,
+    );
     assert_eq!(title, r#"["A&B",true]"#);
 }
 
 #[test]
 fn close_inside_nested_script_finishes_only_after_remaining_written_input() {
-    let title = run(r#"<!doctype html><body><script>
+    let title = run(
+        r#"["loading","tail","interactive"]"#,
+        r#"<!doctype html><body><script>
       window.onload=()=>{
         window.order=[];
         document.open();
@@ -222,7 +246,8 @@ fn close_inside_nested_script_finishes_only_after_remaining_written_input() {
         order.push(document.getElementById('tail').textContent,document.readyState);
         document.title=JSON.stringify(order);
       };
-    </script>"#);
+    </script>"#,
+    );
     assert_eq!(title, r#"["loading","tail","interactive"]"#);
 }
 
@@ -254,7 +279,11 @@ fn replacement_waits_for_external_script_and_preserves_nested_write_order() {
         })
     });
     let artifacts = TestArtifacts::new();
-    let mut child = hidden_benchmark(&url, &artifacts, 1400);
+    let mut child = hidden_benchmark_until_title(
+        &url,
+        &artifacts,
+        r#"[true,"loading","external","child","tail"]"#,
+    );
     assert!(wait_for_child(&mut child, Duration::from_secs(20)).success());
     server.join().unwrap().unwrap();
     let report: serde_json::Value =

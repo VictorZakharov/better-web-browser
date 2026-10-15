@@ -91,5 +91,6 @@ const setup = '<div class="port" id="root"><div class="spacer"></div><div class=
   document.getElementById('status').textContent=`${facts.filter(f=>f.passed).length}/${facts.length} contracts passed`;
   document.getElementById('main').setAttribute('data-facts',JSON.stringify(facts));
   document.documentElement.setAttribute('data-fixture-ready','true');
+  console.info('__INTERSECTION_OBSERVERS_DONE__');
 })().catch(error => { document.title='Intersection observers FAIL'; document.getElementById('status').textContent=String(error); });
 </script>

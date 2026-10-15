@@ -7,7 +7,7 @@ use better_web_browser::renderer_protocol::MediaRuntimeReport;
 
 use crate::windows_app::json_string;
 
-const MAX_DIAGNOSTIC_TITLE_BYTES: usize = 512;
+pub(super) const MAX_DIAGNOSTIC_TITLE_BYTES: usize = 512;
 
 #[derive(Default)]
 pub(in crate::windows_app) struct PageTitles {

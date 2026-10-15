@@ -17,6 +17,7 @@ fn terminating_workers_retires_uncommitted_browser_sessions() {
             document.title = 'worker retirement complete';
             document.getElementById('state').textContent = document.title;
             document.body.style.backgroundColor = 'rgb(17,170,34)';
+            console.info('__WORKER_RETIREMENT_DONE__');
         };
         const opened = indexedDB.open('worker-retirement', 1);
         opened.onupgradeneeded = () => opened.result.createObjectStore('items');
@@ -85,7 +86,12 @@ fn terminating_workers_retires_uncommitted_browser_sessions() {
     });
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/page");
-    let mut child = hidden_benchmark_with_fresh_profile_args(&url, &artifacts, 8000, &[]);
+    let mut child = hidden_benchmark_with_fresh_profile_args(
+        &url,
+        &artifacts,
+        100,
+        &["--completion-marker", "__WORKER_RETIREMENT_DONE__"],
+    );
     let status = wait_for_child(&mut child, Duration::from_secs(30));
     let report = fs::read_to_string(&artifacts.json).unwrap_or_default();
     let served = server.join().unwrap();

@@ -35,7 +35,7 @@ fn dynamic_modules_fetch_without_blocking_and_settle_native_import_promises() {
         })
     });
     let artifacts = TestArtifacts::new();
-    let mut child = hidden_benchmark(&url, &artifacts, 1200);
+    let mut child = hidden_benchmark_until_title(&url, &artifacts, "Dynamic modules PASS");
     assert!(wait_for_child(&mut child, Duration::from_secs(20)).success());
     server.join().unwrap().unwrap();
     let report: serde_json::Value =
@@ -95,7 +95,7 @@ fn dynamic_import_idle_wakeup_redirect_base_and_failed_fetch_retry() {
         })
     });
     let artifacts = TestArtifacts::new();
-    let mut child = hidden_benchmark(&url, &artifacts, 1000);
+    let mut child = hidden_benchmark_until_title(&url, &artifacts, "Redirect and retry PASS");
     assert!(wait_for_child(&mut child, Duration::from_secs(20)).success());
     server.join().unwrap().unwrap();
     let report: serde_json::Value =
