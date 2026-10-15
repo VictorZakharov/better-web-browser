@@ -1,6 +1,7 @@
 //! Private commit is an extra admission signal, not a replacement for GPU
 //! accounting or the broker's hard Job. Leave room for JS, compiler and IPC work.
 const UNKNOWN_SAMPLE_CEILING: usize = 64 * 1024 * 1024;
+const MAX_EMERGENCY_RESERVE: usize = 128 * 1024 * 1024;
 
 pub(super) fn available(ceiling: usize, private: Option<usize>) -> usize {
     available_for(crate::renderer_budget::current(), ceiling, private)
@@ -12,8 +13,12 @@ fn available_for(
     private: Option<usize>,
 ) -> usize {
     let limit = budget.bytes();
+    // Reserve bounded space for JS/compiler/IPC work. Scaling this reserve
+    // with the opt-in graphics Job needlessly doubled it to 256 MiB: HiDPI
+    // render-target replacement then failed below the unchanged hard limit.
+    let reserve = (limit / 8).min(MAX_EMERGENCY_RESERVE);
     match private {
-        Some(private) => ceiling.min(limit.saturating_sub(limit / 8).saturating_sub(private)),
+        Some(private) => ceiling.min(limit.saturating_sub(reserve).saturating_sub(private)),
         None => ceiling.min(UNKNOWN_SAMPLE_CEILING),
     }
 }
@@ -53,22 +58,39 @@ mod tests {
         let charged = 1100 * MIB;
         let growth = 32 * MIB;
         assert!(charged + growth < Graphics.gpu_context_bytes());
-        assert!(admits_for(Graphics, charged, growth, Some(1760 * MIB)));
-        assert!(!admits_for(Graphics, charged, growth + 1, Some(1760 * MIB)));
-        assert!(!admits_for(Graphics, charged, 1, Some(1792 * MIB)));
+        assert!(admits_for(Graphics, charged, growth, Some(2912 * MIB)));
+        assert!(!admits_for(Graphics, charged, growth + 1, Some(2912 * MIB)));
+        assert!(!admits_for(Graphics, charged, 1, Some(2944 * MIB)));
         assert!(!admits_for(Graphics, charged, growth, None));
         assert!(admits_for(Graphics, charged, 0, None));
     }
 
     #[test]
-    fn graphics_mode_uses_its_selected_limit_and_the_same_reserve_fraction() {
+    fn graphics_mode_retains_the_standard_emergency_reserve_inside_its_job() {
         use crate::renderer_budget::RendererBudget::Graphics;
         assert_eq!(
-            available_for(Graphics, 1024 * MIB, Some(1200 * MIB)),
-            592 * MIB
+            available_for(Graphics, 3 * 1024 * MIB, Some(1200 * MIB)),
+            1744 * MIB
         );
-        assert_eq!(available_for(Graphics, 1024 * MIB, Some(1792 * MIB)), 0);
+        assert_eq!(available_for(Graphics, 1024 * MIB, Some(2944 * MIB)), 0);
         assert_eq!(available_for(Graphics, 1024 * MIB, None), 64 * MIB);
+    }
+
+    #[test]
+    fn graphics_resize_can_replace_storage_without_spending_emergency_space() {
+        use crate::renderer_budget::RendererBudget::Graphics;
+        // A measured failing fullscreen allocation: the old fractional reserve
+        // refused 16 MiB with almost 268 MiB still below the 2 GiB Job limit.
+        let private = 1_867_014_144;
+        let growth = 16_588_800;
+        assert!(admits_for(Graphics, 1_184_073_496, growth, Some(private)));
+        assert!(Graphics.bytes() - private - growth >= MAX_EMERGENCY_RESERVE);
+        // Even the capped reserve still refused later target replacements in
+        // the old 2 GiB process. The opt-in 3 GiB Job covers that measured peak.
+        let peak = 2_092_449_792;
+        assert!(admits_for(Graphics, 1_260_077_464, growth, Some(peak)));
+        assert!(Graphics.bytes() - peak - growth >= MAX_EMERGENCY_RESERVE);
+        assert!(!admits_for(Graphics, 0, 1, Some(Graphics.bytes())));
     }
 
     #[test]

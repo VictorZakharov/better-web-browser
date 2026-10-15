@@ -310,10 +310,10 @@ fn native_stream_summary(
     read_stream(&reader, stream, name, limits.max_decoded_frame_bytes)
 }
 
-struct ComApartment;
+pub(super) struct ComApartment;
 
 impl ComApartment {
-    fn initialize() -> Result<Self, i32> {
+    pub(super) fn initialize() -> Result<Self, i32> {
         let status = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
         if status.is_ok() {
             Ok(Self)

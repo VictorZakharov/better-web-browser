@@ -20,6 +20,17 @@ fn wave(encoding: u16, bits: u16, channels: u16, rate: u32, samples: &[u8]) -> V
 }
 
 #[test]
+fn music_length_stereo_pcm_fits_but_excess_output_is_rejected() {
+    let frames = 600 * 48_000;
+    assert_eq!(
+        resample::output_frames(frames, 2, 48_000, 48_000.0).unwrap(),
+        frames
+    );
+    assert!(resample::output_frames(MAX_DECODED_BYTES / 8 + 1, 2, 48_000, 48_000.0).is_err());
+    assert!(resample::output_frames(frames, 8, 48_000, 192_000.0).is_err());
+}
+
+#[test]
 fn pcm16_stereo_decodes_to_separate_float_channels() {
     let mut pcm = Vec::new();
     for value in [0_i16, 16_384, -32_768, 32_767] {

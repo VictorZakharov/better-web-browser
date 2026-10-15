@@ -58,6 +58,7 @@ impl DisplayTiming {
 impl BrowserState {
     pub(super) unsafe fn refresh_display_timing(&mut self, force: bool) {
         if self.display_timing.refresh(self.window, force)
+            && !self.fullscreen.is_changing_window()
             && let (Some(document), Some(session)) = (
                 self.navigation.active_document(),
                 self.renderer_session.as_ref(),

@@ -285,6 +285,10 @@ pub struct ScriptMediaAction {
 
 #[derive(Debug, Clone)]
 pub enum ScriptGraphAudioAction {
+    Render {
+        stream_id: u32,
+        renderer: super::audio_render::AudioRenderControl,
+    },
     Queue {
         stream_id: u32,
         format: crate::media_protocol::GraphPcmFormat,

@@ -21,6 +21,11 @@ function Copy-NativeGraphicsNotices {
         throw 'ANGLE upstream provenance changed; review licensing before packaging.'
     }
     Copy-ReleaseText $upstream (Join-Path $Destination 'UPSTREAM')
+    $patchNotice = Join-Path $RepositoryRoot 'docs/mozangle-patch.md'
+    if (-not (Test-Path -LiteralPath $patchNotice -PathType Leaf)) {
+        throw 'Pinned mozangle patch/provenance notice is missing.'
+    }
+    Copy-ReleaseText $patchNotice (Join-Path $Destination 'BREEZE_PATCHES.md')
     $nativeRoot = Join-Path $SourceDirectory 'gfx/angle/checkout'
     Copy-ReleaseText (Join-Path $nativeRoot 'LICENSE') (Join-Path $Destination 'LICENSE.native-angle')
     # Chromium-derived files reference its BSD license. Retain the full license together with

@@ -100,8 +100,11 @@ impl WebGl {
         if self.gpu_frames.as_ref().is_some_and(|pool| {
             (pool.width, pool.height) != (self.surface.width, self.surface.height)
         }) {
-            self.gpu_frames = None;
+            let mut pool = self.gpu_frames.take().unwrap();
+            let resized = pool.resize(self);
             self.native.make_current()?;
+            resized?;
+            self.gpu_frames = Some(pool);
         }
         if self.gpu_frames.is_none() {
             self.gpu_frames = Some(Pool::new(self)?);

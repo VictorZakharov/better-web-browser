@@ -143,7 +143,11 @@ impl BrowserState {
         });
 
         let tab_router = self.app.tab_router.clone();
-        let silent_audio = self.benchmark.is_some();
+        let probe_audio = self
+            .benchmark
+            .as_ref()
+            .is_some_and(|benchmark| benchmark.audio_output_probe);
+        let silent_audio = self.benchmark.is_some() && !probe_audio;
         let user_agent_mode = self.app.active_user_agent_mode;
         let memory_budget = self.app.active_memory_budget;
         let (sender, receiver) = mpsc::channel();
@@ -155,6 +159,7 @@ impl BrowserState {
                     options.memory_budget = memory_budget;
                     options.enable_media = true;
                     options.silent_audio = silent_audio;
+                    options.muted_audio = probe_audio;
                     options.browsing_context = BrowsingContextId::new(id.get())
                         .map_err(|error| format!("allocate browsing context: {error}"))?;
                     RendererSession::launch(options)

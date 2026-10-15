@@ -16,16 +16,16 @@ pub use codec::{MediaFrameReader, MediaFrameWriter, MediaProtocolError};
 pub use decode_report::MediaDecodeReport;
 pub(crate) use types::MAX_GRAPH_PCM_FRAMES;
 pub use types::{
-    BrowserMediaMessage, GraphPcmFormat, GraphPcmStatus, MediaCapabilityReport, MediaCodecFamily,
-    MediaLimits, MediaPlaybackState, MediaRestrictionReport, MediaSessionId, MediaTestCommand,
-    WorkerMediaMessage,
+    BrowserMediaMessage, GraphPcmFormat, GraphPcmHealth, GraphPcmStatus, MediaCapabilityReport,
+    MediaCodecFamily, MediaLimits, MediaPlaybackState, MediaRestrictionReport, MediaSessionId,
+    MediaTestCommand, WorkerMediaMessage,
 };
 
 pub use crate::renderer_protocol::{ContainmentReport, Nonce};
 
 pub const MEDIA_MAGIC: [u8; 4] = *b"BRM1";
 pub const MEDIA_HEADER_LENGTH: usize = 32;
-pub const MEDIA_PROTOCOL_MAJOR: u16 = 1;
+pub const MEDIA_PROTOCOL_MAJOR: u16 = 2;
 pub const MEDIA_PROTOCOL_MINOR: u16 = 9;
 
 #[cfg(test)]

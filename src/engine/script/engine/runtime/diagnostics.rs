@@ -2,6 +2,14 @@
 use super::*;
 
 impl Context {
+    #[cfg(test)]
+    pub(in crate::engine::script) fn collect_garbage_for_testing(&mut self) -> JsResult<()> {
+        self.agent.borrow_mut().run(|isolate| {
+            isolate.low_memory_notification();
+            Ok(())
+        })
+    }
+
     pub(in crate::engine::script) fn take_cpu_task_diagnostics(&mut self) -> Vec<String> {
         self.agent.borrow_mut().take_cpu_diagnostics()
     }

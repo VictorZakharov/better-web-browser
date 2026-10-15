@@ -1,0 +1,7 @@
+# Pinned mozangle D3D11 correction
+
+Breeze uses BSD-3-Clause [mozangle 0.7.1](https://github.com/servo/mozangle/tree/v0.7.1) at [fork commit `3bd11ac73c7472e6e62d5e3cf203ec6322e3433b`](https://github.com/VictorZakharov/mozangle/commit/3bd11ac73c7472e6e62d5e3cf203ec6322e3433b). The fork starts at upstream tag `v0.7.1` (`eb6c6601ceffc6f3025aa6dd8ab8b95c3e6c8999`) and changes two C++ files, `gfx/angle/checkout/src/libANGLE/renderer/d3d/ProgramD3D.cpp` and `gfx/angle/checkout/src/libANGLE/renderer/d3d/d3d11/StateManager11.cpp` (22 insertions, 2 deletions). It also retains the same diff in `patches/d3d11-input-layout.patch` so the correction can be applied to a later ANGLE source import.
+
+The native source records Firefox `FIREFOX_153_3_0esr_RELEASE` revision `861fdeb0d32fe1bd101fea886687e680f612d735`. `ProgramD3D` no longer consumes a TEXCOORD semantic for built-in vertex inputs, which DynamicHLSL emits as system-value inputs. Otherwise, a program using `gl_VertexID` or `gl_InstanceID` can assign a later user attribute a semantic index absent from the compiled vertex shader and D3D11 rejects the input layout. The input-layout sorter also compacts empty translated-attribute slots while retaining their D3D semantic indices. A Last Stand renderer crash dump showed `InputLayoutCache::createInputLayout` dereferencing one such null slot on an instanced draw.
+
+Remove the Git override when an upstream mozangle release contains the correction and passes the native WebGL suite and hidden Last Stand startup check.

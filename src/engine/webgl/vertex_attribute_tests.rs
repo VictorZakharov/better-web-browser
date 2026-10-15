@@ -67,6 +67,42 @@ fn red(context: &mut WebGl) {
 }
 
 #[test]
+fn webgl2_instanced_system_inputs_keep_user_attribute_layout_and_pixels() {
+    session::run_native_test(|| {
+        let mut context = version_two();
+        let vertex = "#version 300 es\nin vec4 data;out vec4 color;void main(){int i=gl_VertexID;vec2 p=vec2(float((i<<1)&2),float(i&2));gl_Position=vec4(p*2.0-1.0+vec2(float(gl_InstanceID)*0.1),0,1);color=data;}";
+        let fragment = "#version 300 es\nprecision highp float;in vec4 color;out vec4 result;void main(){result=color;}";
+        let program = program(&mut context, vertex, fragment);
+        let index = call(&mut context, "getAttribLocation", &[program as i64], "data")
+            .as_i64()
+            .unwrap();
+        input(&mut context, &[255, 0, 0, 255].repeat(3));
+        call(
+            &mut context,
+            "vertexAttribPointer",
+            &[index, 4, gl::UNSIGNED_BYTE as i64, 1, 0, 0],
+            "",
+        );
+        call(&mut context, "enableVertexAttribArray", &[index], "");
+        call(
+            &mut context,
+            "drawArraysInstanced",
+            &[gl::TRIANGLES as i64, 0, 3, 1],
+            "",
+        );
+        assert!(
+            context
+                .surface
+                .snapshot()
+                .unwrap()
+                .chunks_exact(4)
+                .all(|pixel| pixel == [255, 0, 0, 255])
+        );
+        assert_eq!(call(&mut context, "getError", &[], ""), json!(0));
+    });
+}
+
+#[test]
 fn webgl2_integer_vertex_pointers_render_signed_and_unsigned_buffer_values() {
     session::run_native_test(|| {
         let mut context = version_two();

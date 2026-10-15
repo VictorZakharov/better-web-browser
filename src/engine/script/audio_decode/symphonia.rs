@@ -40,7 +40,7 @@ pub(super) fn decode(
     kind: Kind,
 ) -> Result<DecodedAudio, String> {
     if bytes.is_empty() || bytes.len() > MAX_ENCODED_BYTES {
-        return Err("encoded audio exceeds the 8 MiB decode limit".into());
+        return Err("encoded audio exceeds the 32 MiB decode limit".into());
     }
     if cancelled.load(Ordering::Relaxed) {
         return Err("audio decoding was cancelled".into());
@@ -48,7 +48,7 @@ pub(super) fn decode(
     if !target_rate.is_finite() || !(8_000.0..=192_000.0).contains(&target_rate) {
         return Err("the context sample rate is unsupported".into());
     }
-    crate::encoded_audio::validate_with_cancel(bytes, kind, cancelled)?;
+    crate::encoded_audio::validate_with_cancel(bytes, kind, cancelled, MAX_ENCODED_BYTES)?;
     let extension = kind.extension();
     // Symphonia currently returns decoded AAC packets rather than applying
     // the track's edit list. Preserve the container's presentation window so
@@ -140,7 +140,7 @@ pub(super) fn decode(
             .and_then(|samples| samples.checked_mul(4))
             .ok_or("decoded audio size overflow")?;
         if source_bytes > MAX_DECODED_BYTES {
-            return Err("decoded audio exceeds the 16 MiB AudioBuffer limit".into());
+            return Err("decoded audio exceeds the 256 MiB AudioBuffer limit".into());
         }
         if frames > 0 {
             resample::output_frames(frames, channels, packet_rate, target_rate)?;

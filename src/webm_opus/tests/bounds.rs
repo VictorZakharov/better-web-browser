@@ -108,7 +108,8 @@ fn raw_predictive_work_and_presentation_byte_limits_are_independent() {
                 Limits {
                     max_decoded_bytes: required,
                     max_packets: 21,
-                    max_duration_frames: 20_160
+                    max_duration_frames: 20_160,
+                    ..Default::default()
                 }
             )
             .is_ok()

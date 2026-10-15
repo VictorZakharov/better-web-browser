@@ -279,6 +279,7 @@ mod web_audio_filter_layouts;
 mod web_audio_iir;
 mod web_audio_interfaces;
 mod web_audio_live;
+mod web_audio_live_timing;
 mod web_audio_modulation;
 mod web_audio_periodic_wave;
 mod web_audio_processor_channels;
@@ -294,6 +295,7 @@ mod web_audio_spatial;
 mod web_audio_spatial_options;
 mod web_audio_speaker_matrix;
 mod web_audio_suspend;
+mod web_audio_voice_lifetime;
 mod web_audio_waveshaper;
 mod web_audio_waveshaper_oversample;
 #[cfg(windows)]

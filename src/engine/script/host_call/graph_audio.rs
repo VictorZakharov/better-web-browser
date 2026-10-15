@@ -2,6 +2,7 @@
 
 use super::super::*;
 use crate::media_protocol::GraphPcmFormat;
+mod rendering;
 
 fn positive_integer(args: &[JsValue], index: usize, name: &str) -> JsResult<u32> {
     let value = args
@@ -21,6 +22,9 @@ pub(super) fn dispatch(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if let Some(reply) = rendering::dispatch(operation, args, state)? {
+        return Ok(Some(reply));
+    }
     match operation {
         "audioContextAllowed" => Ok(Some(JsValue::from(
             state.audio_activated && !state.embedded,

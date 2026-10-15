@@ -3,7 +3,7 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `eb17110bb1cb60724bb50c825a4a8aca1057251dab02a9f9f1c4db3acfe06959`
+- Cargo.lock SHA-256: `8cfe1b9a0f7da5e4ffae93949e41412ef49172d96e46ce55f916e264b0fe0fb8`
 - Third-party packages: 309
 
 | Package | Version | License expression | Source |
@@ -321,7 +321,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 ## Bundled sources and data
 
 - `usvg` 0.48.1 (MIT OR Apache-2.0), already used through `resvg`, is vendored with a documented SVG text-length layout correction. Its pinned package checksum, upstream revision, retained licenses, modified-file inventory and compatibility limits are recorded in `vendor/usvg/BREEZE_PATCHES.md`. Imported upstream lines are reported separately from original Breeze work. Filesystem font/image loaders remain disabled or replaced with bounded browser-owned resolvers.
-- `mozangle` 0.7.1 statically builds ANGLE GLES/EGL and its GLSL ES compiler from the published Mozilla/Servo package (BSD-3-Clause). Its pinned `UPSTREAM` revision, native ANGLE license, Chromium BSD notice, and original bundled third-party notice-bearing text are retained in release archives. `libz-sys` statically builds stock zlib (Zlib license), whose native notice is retained separately from its Rust wrapper. No native graphics implementation is copied into Breeze source. See `docs/webgl-backend.md` for scope, limits, build policy, and provenance.
+- `mozangle` 0.7.1 (BSD-3-Clause) is fetched from a pinned Git fork of upstream tag `v0.7.1` with a two-file D3D11 input-layout correction recorded in `docs/mozangle-patch.md`. Its pinned `UPSTREAM` revision, native ANGLE license, Chromium BSD notice, and original bundled third-party notice-bearing text are retained in release archives. `libz-sys` statically builds stock zlib (Zlib license), whose native notice is retained separately from its Rust wrapper. See `docs/webgl-backend.md` for scope, limits, build policy, and provenance.
 - `psl2` embeds a compact Mozilla Public Suffix List snapshot. The crate is MIT OR Apache-2.0; the list data is MPL-2.0. The crate and list versions are pinned by `Cargo.lock` and `psl2::psl_version()`.
 - The AccessKit crates are MIT OR Apache-2.0 and contain portions derived from Chromium under a BSD license. The required upstream notice is preserved at `third_party/accesskit/LICENSE.chromium` and copied beside every AccessKit package notice in release archives.
 - `opus` 0.4.0 is the MIT OR Apache-2.0 safe Rust API. `opusic-sys` 0.7.5 statically builds bundled libopus 1.6.1 (BSD-3-Clause), not a downloaded system codec. Its package `LICENSE` is the complete upstream libopus `COPYING` notice; release packaging verifies that equality and retains the notice beside the Rust wrapper licenses. Native decoder code executes only in contained audio jobs. See `docs/ogg-opus.md` for provenance, build policy, and supported formats.

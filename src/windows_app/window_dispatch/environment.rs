@@ -58,6 +58,11 @@ pub(super) unsafe fn dispatch(
                 state.retire_capture_for_window();
                 state.retire_wake_locks_for_window();
             }
+            if state.fullscreen.is_changing_window() {
+                // The native transition can send several synchronous WM_SIZE
+                // messages. Its owner publishes one final layout afterwards.
+                return Some(0);
+            }
             state.track_media_viewport_resize();
             state.mark_all_tab_layouts_dirty();
             state.resize_controls();

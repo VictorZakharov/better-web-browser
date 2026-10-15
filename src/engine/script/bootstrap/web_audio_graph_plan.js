@@ -7,6 +7,8 @@
         for (const node of state.nodes) {
             for (const port of audioNodeState.get(node).outputs) for (const edge of port) {
                 const parameter = audioParamState.get(edge.destination);
+                const destination = parameter?.owner ?? edge.destination;
+                if (destination !== context.listener && !state.nodes.has(destination)) continue;
                 edges.push({ source: node, destination: parameter?.owner ?? edge.destination,
                     parameter: !!parameter });
             }
@@ -75,7 +77,8 @@
             let changed = false;
             for (const node of nodes) {
                 const state = audioNodeState.get(node);
-                const input = computedAudioChannels(state, [...(state.inputs[0] ?? [])]
+                const input = computedAudioChannels(state,
+                    audioInputEdges(audioContextState.get(context), state.inputs[0] ?? [])
                     .map(edge => widths.get(edge.source)));
                 const width = audioOutputWidth(node, input);
                 if (width !== widths.get(node)) { widths.set(node, width); changed = true; }
@@ -120,7 +123,7 @@
                 width = Math.max(width, audioWaveShaperState.get(node).oversampleDsp?.lanes.length || 0);
             // Include input matrix work even when a wide source downmixes to
             // a narrow processor. AudioParam edges are separate from inputs.
-            const mixing = state.inputs.reduce((cost, port) => cost + [...port]
+            const mixing = state.inputs.reduce((cost, port) => cost + audioInputEdges(contextState, port)
                 .reduce((sum, edge) => sum + Math.max(width, widths.get(edge.source)), 0), 0);
             const portWork = Math.max(width * Math.max(1, state.outputs.length), mixing) +
                 (modulationWork.get(node) || 0);

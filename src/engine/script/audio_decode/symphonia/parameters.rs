@@ -36,7 +36,7 @@ pub(super) fn validate(
             .flatten()
         {
             if frames > (MAX_DECODED_BYTES / (channels.count() * 4)) as u64 {
-                return Err("decoded audio exceeds the 16 MiB AudioBuffer limit".into());
+                return Err("decoded audio exceeds the 256 MiB AudioBuffer limit".into());
             }
             if let Some(rate) = params.sample_rate
                 && frames > 0

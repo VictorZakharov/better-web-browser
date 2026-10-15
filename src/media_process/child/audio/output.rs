@@ -11,7 +11,20 @@ use windows::Win32::Media::Audio::XAudio2::{
 use windows::Win32::Media::Audio::{AudioCategory_Media, WAVE_FORMAT_PCM, WAVEFORMATEX};
 use windows::core::PCWSTR;
 
+mod device;
 mod graph;
+
+static OUTPUT_MUTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub(in crate::media_process::child) fn set_output_muted(muted: bool) {
+    OUTPUT_MUTED.store(muted, std::sync::atomic::Ordering::Relaxed);
+}
+fn output_volume(volume: f32) -> f32 {
+    if OUTPUT_MUTED.load(std::sync::atomic::Ordering::Relaxed) {
+        0.0
+    } else {
+        volume
+    }
+}
 
 const QUEUED_AUDIO_SAMPLES: usize = 4;
 const NTDDI_WIN10: u32 = 0x0a00_0000;
@@ -168,6 +181,10 @@ pub(super) struct XAudioOutput {
     playing: bool,
     position_base_100ns: u64,
     sample_origin: u64,
+    graph_frames_submitted: u64,
+    graph_underruns: u64,
+    // Declared after the engine so COM outlives voice destruction and release.
+    _apartment: crate::media_process::backend::ComApartment,
 }
 
 enum DeviceOutputError {
@@ -176,85 +193,6 @@ enum DeviceOutputError {
 }
 
 impl XAudioOutput {
-    fn new(sample_rate: u32, channels: u16) -> Result<Self, DeviceOutputError> {
-        let format = pcm_format(sample_rate, channels).map_err(DeviceOutputError::Fatal)?;
-        let mut engine = None;
-        unsafe {
-            XAudio2CreateWithVersionInfo(&mut engine, 0, XAUDIO2_DEFAULT_PROCESSOR, NTDDI_WIN10)
-        }
-        .map_err(|error| DeviceOutputError::Fatal(format!("create XAudio2 engine: {error}")))?;
-        let engine = engine
-            .ok_or_else(|| DeviceOutputError::Fatal("XAudio2 returned no engine".to_string()))?;
-        let mut mastering = None;
-        if let Err(error) = unsafe {
-            engine.CreateMasteringVoice(
-                &mut mastering,
-                XAUDIO2_DEFAULT_CHANNELS,
-                XAUDIO2_DEFAULT_SAMPLERATE,
-                0,
-                PCWSTR::null(),
-                None,
-                AudioCategory_Media,
-            )
-        } {
-            unsafe { engine.StopEngine() };
-            return if missing_default_audio_endpoint(error.code()) {
-                Err(DeviceOutputError::EndpointUnavailable)
-            } else {
-                Err(DeviceOutputError::Fatal(format!(
-                    "create XAudio2 mastering voice: {error}"
-                )))
-            };
-        }
-        let Some(mastering) = mastering else {
-            unsafe { engine.StopEngine() };
-            return Err(DeviceOutputError::Fatal(
-                "XAudio2 returned no mastering voice".to_string(),
-            ));
-        };
-        let mut source = None;
-        if let Err(error) = unsafe {
-            engine.CreateSourceVoice(
-                &mut source,
-                &raw const format,
-                0,
-                XAUDIO2_DEFAULT_FREQ_RATIO,
-                None::<&IXAudio2VoiceCallback>,
-                None,
-                None,
-            )
-        } {
-            unsafe {
-                mastering.DestroyVoice();
-                engine.StopEngine();
-            }
-            return Err(DeviceOutputError::Fatal(format!(
-                "create XAudio2 source voice: {error}"
-            )));
-        }
-        let Some(source) = source else {
-            unsafe {
-                mastering.DestroyVoice();
-                engine.StopEngine();
-            }
-            return Err(DeviceOutputError::Fatal(
-                "XAudio2 returned no source voice".to_string(),
-            ));
-        };
-        Ok(Self {
-            engine,
-            mastering,
-            source,
-            sample_rate,
-            queued: VecDeque::with_capacity(QUEUED_AUDIO_SAMPLES),
-            queued_bytes: 0,
-            input_ended: false,
-            playing: false,
-            position_base_100ns: 0,
-            sample_origin: 0,
-        })
-    }
-
     fn set_playback(
         &mut self,
         playing: bool,
@@ -262,8 +200,10 @@ impl XAudioOutput {
         decoder: &mut AudioDecoderQueue,
     ) -> Result<(), String> {
         unsafe {
-            self.source
-                .SetVolume(f32::from(volume_millis) / 1_000.0, XAUDIO2_COMMIT_NOW)
+            self.source.SetVolume(
+                output_volume(f32::from(volume_millis) / 1_000.0),
+                XAUDIO2_COMMIT_NOW,
+            )
         }
         .map_err(|error| format!("set XAudio2 volume: {error}"))?;
         if playing == self.playing {

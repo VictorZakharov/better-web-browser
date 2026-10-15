@@ -2,7 +2,7 @@
 
 The standard renderer policy admits at most 256 MiB per context and 512 MiB
 per native owner, inside the default 1 GiB Windows Job limit. The opt-in 3D
-policy admits at most 1280 MiB per context and owner, inside a 2 GiB Job limit.
+policy admits at most 1280 MiB per context and owner, inside a 3 GiB Job limit.
 Both policies reserve process-private emergency headroom before storage growth;
 see [renderer pressure and headroom](renderer-memory-pressure.md). User selection
 requires a restart and does not grant any new JavaScript capability.
@@ -50,10 +50,10 @@ texture image and renderbuffer retains its lifetime high-water reservation and
 the conservative two-copy multiplier. Raising this finite reservation ceiling
 preserves retirement, copy accounting and individual allocation validation.
 The same 1280 MiB ceiling bounds the aggregate owner across peer contexts;
-the renderer Job remains 2 GiB.
+the renderer Job allows 3 GiB, including native ANGLE overhead and target replacement.
 
-The independent private-commit guard still reserves one eighth of the selected
-Job limit before new storage growth. Unknown samples retain the 64 MiB
+The independent private-commit guard reserves one eighth of the selected
+Job limit, capped at 128 MiB, before new storage growth. Unknown samples retain the 64 MiB
 conservative baseline; reuse without growth remains possible under pressure.
 Tests exercise graphics growth above the old ledger ceiling and reject it when
 private headroom is insufficient, including the exact headroom boundary. Correct

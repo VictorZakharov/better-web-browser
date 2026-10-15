@@ -10,6 +10,7 @@ pub(super) struct Presentation {
     target: IDCompositionTarget,
     visual: IDCompositionVisual,
     bound: bool,
+    top: i32,
 }
 
 impl Presentation {
@@ -61,16 +62,22 @@ impl Presentation {
             target,
             visual,
             bound: false,
+            top,
         })
     }
 
-    pub(super) fn position(&self, top: i32) -> Result<(), String> {
+    pub(super) fn position(&mut self, top: i32) -> Result<(), String> {
+        if self.top == top {
+            return Ok(());
+        }
         unsafe {
             self.visual
                 .SetOffsetY2(top as f32)
                 .and_then(|_| self.device.Commit())
         }
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+        self.top = top;
+        Ok(())
     }
 
     pub(super) fn resize(&self, width: u32, height: u32) -> Result<(), String> {
@@ -84,6 +91,15 @@ impl Presentation {
             )
         }
         .map_err(|error| error.to_string())
+    }
+
+    pub(super) fn hide(&mut self) -> Result<(), String> {
+        if self.bound {
+            unsafe { self.target.SetRoot(None).and_then(|_| self.device.Commit()) }
+                .map_err(|error| error.to_string())?;
+            self.bound = false;
+        }
+        Ok(())
     }
 
     pub(super) fn present(&mut self, device: &Device, target: &Target) -> Result<bool, String> {

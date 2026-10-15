@@ -28,6 +28,7 @@
         state.events.push(event);
         state.events.sort((a, b) => a.time - b.time || a.order - b.order);
         contextState.automationCurveBytes += curveBytes;
+        state.curveLedger.bytes += curveBytes;
         state.timelineDirty = true;
         return param;
     };
@@ -105,7 +106,8 @@
             // §1.5.5 connect(AudioParam): each connected output downmixes to
             // mono before summing with other outputs and intrinsic automation.
             if (!cache.has(param)) {
-                const buses = [...state.inputs].map(edge => renderAudioNode(state.context,
+                const buses = audioInputEdges(audioContextState.get(state.context), state.inputs)
+                    .map(edge => renderAudioNode(state.context,
                     edge.source, frame, frames, cache, edge.output));
                 cache.set(param, mixAudioBuses(buses, 1, frames, 'speakers')[0]);
             }
@@ -124,7 +126,8 @@
             audioParamState.set(this,
                 { context, intrinsic: defaultValue, minValue, maxValue,
                     events: [], checkpoints: [], timelineDirty: false,
-                    rate, fixedRate, inputs: new Set(), owner: null });
+                    rate, fixedRate, inputs: new Set(), owner: null,
+                    curveLedger: audioCurveLedger(this, context) });
             Object.defineProperties(this, {
                 defaultValue: { enumerable: true, value: defaultValue },
                 minValue: { enumerable: true, value: minValue },
@@ -209,8 +212,10 @@
             state.events = state.events.filter(event => {
                 const keep = event.time < cancelTime &&
                     (event.type !== 'curve' || event.time + event.duration < cancelTime);
-                if (!keep && event.type === 'curve')
+                if (!keep && event.type === 'curve') {
                     contextState.automationCurveBytes -= event.values.byteLength;
+                    state.curveLedger.bytes -= event.values.byteLength;
+                }
                 return keep;
             });
             state.timelineDirty = true;
@@ -227,8 +232,10 @@
             const contextState = audioContextState.get(state.context);
             state.events = state.events.filter(event => {
                 const keep = event.time <= cancelTime;
-                if (!keep && event.type === 'curve')
+                if (!keep && event.type === 'curve') {
                     contextState.automationCurveBytes -= event.values.byteLength;
+                    state.curveLedger.bytes -= event.values.byteLength;
+                }
                 return keep;
             });
             if (curve) curve.holdTime = cancelTime;

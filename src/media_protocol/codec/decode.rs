@@ -10,9 +10,9 @@ use super::{
     WORKER_SHUTDOWN_COMPLETE,
 };
 use crate::media_protocol::{
-    BrowserMediaMessage, ContainmentReport, GraphPcmFormat, GraphPcmStatus, MediaCapabilityReport,
-    MediaCodecFamily, MediaDecodeReport, MediaLimits, MediaPlaybackState, MediaRestrictionReport,
-    Nonce, WorkerMediaMessage,
+    BrowserMediaMessage, ContainmentReport, GraphPcmFormat, GraphPcmHealth, GraphPcmStatus,
+    MediaCapabilityReport, MediaCodecFamily, MediaDecodeReport, MediaLimits, MediaPlaybackState,
+    MediaRestrictionReport, Nonce, WorkerMediaMessage,
 };
 
 pub(super) fn browser(
@@ -268,6 +268,13 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
         WORKER_GRAPH_PCM_STATUS => WorkerMediaMessage::GraphPcmStatus {
             request_id: cursor.nonzero_u64("graph PCM request")?,
             status: GraphPcmStatus::from_wire(cursor.byte()?)?,
+            health: GraphPcmHealth {
+                submitted_frames: cursor.u64()?,
+                played_frames: cursor.u64()?,
+                underruns: cursor.u64()?,
+                playing: cursor.boolean()?,
+            }
+            .validate()?,
         },
         WORKER_RESTRICTIONS => WorkerMediaMessage::Restrictions(MediaRestrictionReport {
             child_launch_denied: cursor.boolean()?,

@@ -98,7 +98,7 @@ fn snapshot_budget_failure_does_not_schedule_the_source() {
         r#"<body><script>
         const context = new OfflineAudioContext(1, 128, 8000);
         const buffer = context.createBuffer(1, 4194304, 8000);
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 32; i++) {
             const source = context.createBufferSource();
             source.buffer = buffer;
             source.start();

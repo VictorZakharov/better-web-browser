@@ -99,6 +99,7 @@ impl BenchmarkRun {
             wheel_trace: Default::default(),
             scroll_surface: None,
             native_paint: None,
+            audio_output_probe: false,
             activity: BenchmarkActivity::default(),
             diagnostic_selectors,
             window_width_dip,

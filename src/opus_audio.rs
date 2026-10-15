@@ -23,6 +23,7 @@ const MAX_DURATION_FRAMES: u64 = SAMPLE_RATE as u64 * 3_600;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Limits {
+    pub(crate) max_encoded_bytes: usize,
     pub(crate) max_decoded_bytes: usize,
     pub(crate) max_packets: usize,
     pub(crate) max_duration_frames: u64,
@@ -31,6 +32,7 @@ pub(crate) struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
+            max_encoded_bytes: crate::limits::MAX_MEDIA_ENCODED_QUEUE_BYTES,
             max_decoded_bytes: crate::limits::MAX_MEDIA_DECODED_SOURCE_BYTES as usize,
             max_packets: MAX_PACKETS,
             max_duration_frames: MAX_DURATION_FRAMES,
@@ -75,8 +77,11 @@ impl OggStream {
     ) -> Result<Self, String> {
         let mut budget = Budget::new(cancelled, deadline);
         budget.step()?;
-        if source.is_empty() || source.len() > crate::limits::MAX_MEDIA_ENCODED_QUEUE_BYTES {
-            return Err("Ogg Opus exceeds the 8 MiB complete-file source limit".into());
+        if source.is_empty() || source.len() > limits.max_encoded_bytes {
+            return Err(format!(
+                "Ogg Opus exceeds the {} MiB complete-file source limit",
+                limits.max_encoded_bytes / (1024 * 1024)
+            ));
         }
         let admitted = admission::validate(&source, limits, &mut budget)?;
         budget.step()?;

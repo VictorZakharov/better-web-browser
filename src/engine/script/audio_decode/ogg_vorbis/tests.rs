@@ -59,7 +59,10 @@ fn rejects_truncated_corrupt_and_chained_ogg() {
 fn obeys_cancellation_and_decoded_byte_limit() {
     let bytes = fixture();
     assert!(decode(&bytes, 44_100.0, &AtomicBool::new(true)).is_err());
-    assert!(resample::output_frames(4_194_305, 1, 44_100, 44_100.0).is_err());
+    assert!(
+        resample::output_frames(super::super::MAX_DECODED_BYTES / 4 + 1, 1, 44_100, 44_100.0)
+            .is_err()
+    );
 }
 
 #[test]

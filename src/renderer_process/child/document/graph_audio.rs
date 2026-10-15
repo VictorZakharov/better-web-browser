@@ -12,6 +12,9 @@ impl DocumentRuntime {
         connection: &mut ChildConnection,
     ) -> Result<(), String> {
         let mut processed = 0;
+        if let Some(stream_id) = self.graph_audio_stream {
+            self.report_graph_audio_health(outcome, connection, stream_id);
+        }
         loop {
             self.poll_graph_audio_close(outcome, connection);
             let actions = std::mem::take(&mut outcome.graph_audio_actions);
@@ -55,10 +58,11 @@ impl DocumentRuntime {
                 }
             }
             for action in queues {
-                let ScriptGraphAudioAction::Queue { stream_id, .. } = &action else {
-                    unreachable!();
+                let stream_id = match &action {
+                    ScriptGraphAudioAction::Queue { stream_id, .. }
+                    | ScriptGraphAudioAction::Render { stream_id, .. } => *stream_id,
+                    ScriptGraphAudioAction::Close { .. } => unreachable!(),
                 };
-                let stream_id = *stream_id;
                 if closed.contains(&stream_id)
                     || !self.media_activation.allows(1_000)
                     || self.pending_graph_audio_close.is_some()
@@ -71,7 +75,20 @@ impl DocumentRuntime {
                     self.deliver_graph_audio_status(outcome, stream_id, "rejected");
                     continue;
                 }
-                self.pending_graph_audio_chunk = Some(action);
+                if let ScriptGraphAudioAction::Render { renderer, .. } = action {
+                    match connection.audio_render_output(self.id) {
+                        Ok(output) => {
+                            renderer.attach(output);
+                            self.graph_audio_stream = Some(stream_id);
+                            self.graph_audio_last_stream_id = stream_id;
+                        }
+                        Err(error) => {
+                            self.reject_graph_audio(outcome, connection, stream_id, error)
+                        }
+                    }
+                } else {
+                    self.pending_graph_audio_chunk = Some(action);
+                }
             }
             self.retry_graph_audio_chunk(outcome, connection);
             self.poll_graph_audio_start(outcome, connection);
@@ -102,6 +119,12 @@ impl DocumentRuntime {
         match result {
             Ok(true) => {
                 let first_chunk = self.graph_audio_stream.is_none();
+                let frames = pcm.len() as u64 / u64::from(format.channels) / 2;
+                if first_chunk {
+                    self.graph_audio_admitted_frames = 0;
+                }
+                self.graph_audio_admitted_frames =
+                    self.graph_audio_admitted_frames.saturating_add(frames);
                 self.graph_audio_stream = Some(stream_id);
                 self.graph_audio_last_stream_id = stream_id;
                 self.pending_graph_audio_chunk = None;
@@ -109,7 +132,7 @@ impl DocumentRuntime {
                     // resume() waits for the media worker to allocate a real output voice.
                     self.pending_graph_audio_start = Some(stream_id);
                 } else {
-                    self.deliver_graph_audio_status(outcome, stream_id, "accepted");
+                    self.deliver_graph_audio_acceptance(outcome, connection, stream_id);
                 }
             }
             Ok(false) => {} // Retry the same bytes on the next 10 ms document clock tick.
@@ -128,7 +151,7 @@ impl DocumentRuntime {
         match connection.graph_pcm_first_chunk_status(self.id, u64::from(stream_id)) {
             Ok(Some(())) => {
                 self.pending_graph_audio_start = None;
-                self.deliver_graph_audio_status(outcome, stream_id, "accepted");
+                self.deliver_graph_audio_acceptance(outcome, connection, stream_id);
             }
             Ok(None) => {} // The worker has not acknowledged output allocation yet.
             Err(error) => self.reject_graph_audio(outcome, connection, stream_id, error),
@@ -179,6 +202,46 @@ impl DocumentRuntime {
         if let Some(runtime) = self.script_runtime.as_mut() {
             let delivered = runtime.deliver_graph_audio_status(stream_id, status);
             merge_outcome(outcome, delivered, self.page.dom.document.id());
+        }
+    }
+
+    fn deliver_graph_audio_acceptance(
+        &mut self,
+        outcome: &mut ScriptOutcome,
+        connection: &ChildConnection,
+        stream_id: u32,
+    ) {
+        let health = connection.graph_pcm_health(self.id, u64::from(stream_id));
+        self.report_graph_audio_health(outcome, connection, stream_id);
+        let queued_frames = health.map(|health| {
+            self.graph_audio_admitted_frames
+                .saturating_sub(health.played_frames)
+        });
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            let delivered =
+                runtime.deliver_graph_audio_status_with_queue(stream_id, "accepted", queued_frames);
+            merge_outcome(outcome, delivered, self.page.dom.document.id());
+        }
+    }
+
+    fn report_graph_audio_health(
+        &mut self,
+        outcome: &mut ScriptOutcome,
+        connection: &ChildConnection,
+        stream_id: u32,
+    ) {
+        let health = connection.graph_pcm_health(self.id, u64::from(stream_id));
+        if !self.diagnostic_selectors.is_empty()
+            && self
+                .graph_audio_health_reported
+                .is_none_or(|reported| reported.elapsed() >= Duration::from_secs(1))
+            && let Some(health) = health
+        {
+            outcome.diagnostics.push(format!(
+                "Web Audio output: submitted={} played={} underruns={} playing={}",
+                health.submitted_frames, health.played_frames, health.underruns, health.playing
+            ));
+            self.graph_audio_health_reported = Some(Instant::now());
         }
     }
 }

@@ -19,7 +19,7 @@ impl RendererBudget {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Standard => "Renderer: 1 GiB (default)",
-            Self::Graphics => "Renderer: 2 GiB (3D workloads)",
+            Self::Graphics => "Renderer: 3 GiB (3D workloads)",
         }
     }
 
@@ -34,7 +34,10 @@ impl RendererBudget {
     pub const fn bytes(self) -> usize {
         match self {
             Self::Standard => crate::limits::RENDERER_MEMORY_LIMIT_BYTES,
-            Self::Graphics => 2 * 1024 * 1024 * 1024,
+            // This process also owns ANGLE and its transient target storage.
+            // A measured High-quality fullscreen workload exceeded 2 GiB's
+            // soft headroom despite fitting the independent GPU ledger.
+            Self::Graphics => 3 * 1024 * 1024 * 1024,
         }
     }
 
@@ -105,7 +108,7 @@ mod tests {
         );
         // This cache is outside the child Job; changing it cannot enlarge that Job.
         assert_eq!(RendererBudget::Standard.bytes(), 1024 * 1024 * 1024);
-        assert_eq!(RendererBudget::Graphics.bytes(), 2 * 1024 * 1024 * 1024);
+        assert_eq!(RendererBudget::Graphics.bytes(), 3 * 1024 * 1024 * 1024);
     }
 
     #[test]
@@ -121,7 +124,7 @@ mod tests {
             assert_eq!(RendererBudget::parse(invalid), None);
         }
         assert_eq!(RendererBudget::Standard.bytes(), 1024 * 1024 * 1024);
-        assert_eq!(RendererBudget::Graphics.bytes(), 2 * 1024 * 1024 * 1024);
+        assert_eq!(RendererBudget::Graphics.bytes(), 3 * 1024 * 1024 * 1024);
         assert_eq!(
             RendererBudget::Standard.decoded_image_bytes(),
             64 * 1024 * 1024

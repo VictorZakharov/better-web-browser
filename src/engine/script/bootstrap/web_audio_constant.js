@@ -14,7 +14,7 @@
             audioNodeState.get(this).render = (frame, frames, cache) => {
                 const output = silence(1, frames)[0];
                 const schedule = audioScheduledState.get(this);
-                if (schedule.start === null) return [output];
+                if (schedule.start === null || schedule.ended) return [output];
                 for (let i = 0; i < frames; ++i) {
                     const time = (frame + i) / this.context.sampleRate;
                     if (time < schedule.start) continue;

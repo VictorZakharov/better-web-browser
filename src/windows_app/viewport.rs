@@ -27,6 +27,10 @@ pub(super) enum Surface {
 
 impl BrowserState {
     pub(super) unsafe fn rebuild_layout(&mut self) -> DisplayListDamage {
+        if self.fullscreen.is_changing_window() {
+            self.layout_dirty = true;
+            return DisplayListDamage::default();
+        }
         if self.surface == Surface::Page {
             let Some(document) = self.navigation.active_document() else {
                 // The pending document carries the current viewport when it enters the renderer.

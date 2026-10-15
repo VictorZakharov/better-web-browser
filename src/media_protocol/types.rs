@@ -7,7 +7,7 @@ use crate::limits::{
 };
 
 mod graph;
-pub use graph::{GraphPcmFormat, GraphPcmStatus, MAX_GRAPH_PCM_FRAMES};
+pub use graph::{GraphPcmFormat, GraphPcmHealth, GraphPcmStatus, MAX_GRAPH_PCM_FRAMES};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MediaSessionId(u64);
@@ -353,6 +353,7 @@ pub enum WorkerMediaMessage {
     GraphPcmStatus {
         request_id: u64,
         status: GraphPcmStatus,
+        health: GraphPcmHealth,
     },
     Restrictions(MediaRestrictionReport),
 }

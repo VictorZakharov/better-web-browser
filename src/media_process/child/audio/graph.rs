@@ -1,5 +1,7 @@
 use super::output::AudioOutput;
+use crate::media_protocol::GraphPcmHealth;
 use crate::media_protocol::{GraphPcmFormat, GraphPcmStatus};
+use std::time::Instant;
 
 /// A separate voice from decoded media. Only one graph stream is admitted per media worker.
 pub(in crate::media_process::child) struct GraphAudio {
@@ -12,6 +14,8 @@ struct GraphStream {
     context_id: u64,
     format: GraphPcmFormat,
     output: AudioOutput,
+    silent_started: Instant,
+    silent_submitted_frames: u64,
 }
 
 impl GraphAudio {
@@ -43,6 +47,8 @@ impl GraphAudio {
                 context_id,
                 format,
                 output,
+                silent_started: Instant::now(),
+                silent_submitted_frames: 0,
             });
         }
         let active = self.active.as_mut().expect("graph stream initialized");
@@ -52,7 +58,12 @@ impl GraphAudio {
         {
             return Ok(GraphPcmStatus::Rejected);
         }
-        let result = active.output.queue_graph_pcm(pcm);
+        let frames = pcm.len() / usize::from(format.channels) / 2;
+        let result = active.output.queue_graph_pcm(pcm, format.channels);
+        if matches!(result, Ok(true)) {
+            active.silent_submitted_frames =
+                active.silent_submitted_frames.saturating_add(frames as u64);
+        }
         if result.is_err() {
             self.active = None;
         }
@@ -63,6 +74,31 @@ impl GraphAudio {
                 GraphPcmStatus::Backpressure
             }
         })
+    }
+
+    pub(in crate::media_process::child) fn health(
+        &self,
+        document_id: u64,
+        context_id: u64,
+    ) -> GraphPcmHealth {
+        let Some(active) = self
+            .active
+            .as_ref()
+            .filter(|active| active.document_id == document_id && active.context_id == context_id)
+        else {
+            return GraphPcmHealth::default();
+        };
+        active
+            .output
+            .graph_health()
+            .unwrap_or_else(|| GraphPcmHealth {
+                submitted_frames: active.silent_submitted_frames,
+                played_frames: (active.silent_started.elapsed().as_secs_f64()
+                    * f64::from(active.format.sample_rate))
+                .min(active.silent_submitted_frames as f64) as u64,
+                underruns: 0,
+                playing: true,
+            })
     }
 
     pub(in crate::media_process::child) fn close(

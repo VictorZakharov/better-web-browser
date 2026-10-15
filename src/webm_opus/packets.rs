@@ -90,7 +90,7 @@ pub(super) fn admit(
             }
             encoded_total = encoded_total
                 .checked_add(packet.data.len())
-                .filter(|n| *n <= crate::limits::MAX_MEDIA_ENCODED_QUEUE_BYTES)
+                .filter(|n| *n <= limits.max_encoded_bytes)
                 .ok_or("WebM Opus packet storage exceeds source limit")?;
             opus::packet::parse(&packet.data)
                 .map_err(|error| format!("invalid WebM Opus packet: {error}"))?;

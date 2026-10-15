@@ -17,7 +17,7 @@ PCM, linearly resamples to the context sample rate, and resolves an
 formats with `EncodingError`; the caller's `ArrayBuffer` is detached before the
 method returns. Navigation cancels document-owned decode jobs.
 
-The encoded input cap is 8 MiB, the decoded buffer cap is 16 MiB, and at most
+The encoded input cap is 32 MiB, the decoded buffer cap is 256 MiB, and at most
 two jobs can be active per document. Codec metadata, channels, rate, decoded
 sample growth, and requested resampled output are checked against those bounds
 before accepting output. Ogg/Vorbis requires a complete single logical stream.

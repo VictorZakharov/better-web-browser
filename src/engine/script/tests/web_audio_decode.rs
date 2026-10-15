@@ -107,7 +107,7 @@ fn decode_audio_data_rejects_unsupported_bytes_and_detached_input() {
             console.log('detached audio rejected');
         });
 
-        const oversized = new ArrayBuffer(8 * 1024 * 1024 + 1);
+        const oversized = new ArrayBuffer(32 * 1024 * 1024 + 1);
         context.decodeAudioData(oversized).catch(error => {
             if (error.name !== 'NotSupportedError')
                 throw Error('oversized audio should reject before copying');

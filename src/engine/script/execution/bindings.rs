@@ -25,6 +25,7 @@ pub(super) fn initialize(context: &mut Context) -> Result<(), String> {
         "__receiveMediaCaptureFrame",
         "__receiveMediaCaptureAudioFrame",
         "__completeWorkerEvent",
+        "__flushAudioRender",
     ] {
         context
             .capture_hook(name)

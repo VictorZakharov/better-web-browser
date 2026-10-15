@@ -5,6 +5,7 @@
     const audioCaptureSources = new WeakMap();
     const audioCaptureState = new WeakMap();
     const clearCaptureAudio = state => {
+        state.generation = (state.generation ?? 0) + 1;
         state.packets.length = 0;
         state.offset = 0;
         state.lastSequence = null;

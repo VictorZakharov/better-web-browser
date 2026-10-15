@@ -161,6 +161,8 @@ impl DocumentRuntime {
             pending_media_action: None,
             graph_audio_stream: None,
             graph_audio_last_stream_id: 0,
+            graph_audio_admitted_frames: 0,
+            graph_audio_health_reported: None,
             pending_graph_audio_chunk: None,
             pending_graph_audio_start: None,
             pending_graph_audio_close: None,
@@ -206,6 +208,7 @@ impl DocumentRuntime {
                     runtime.script_layout_flush_callback(),
                 )
                 .map_err(|error| error.to_string())?;
+            script_runtime.enable_audio_render_thread();
             if let Some(state) = runtime
                 .navigation
                 .as_mut()

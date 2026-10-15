@@ -1,5 +1,5 @@
 use super::*;
-use crate::media_protocol::{GraphPcmFormat, GraphPcmStatus};
+use crate::media_protocol::{GraphPcmFormat, GraphPcmHealth, GraphPcmStatus};
 
 impl MediaClient {
     pub(crate) fn queue_graph_pcm(
@@ -8,7 +8,7 @@ impl MediaClient {
         context_id: u64,
         format: GraphPcmFormat,
         pcm: Vec<u8>,
-    ) -> Result<GraphPcmStatus, String> {
+    ) -> Result<(GraphPcmStatus, GraphPcmHealth), String> {
         format
             .validate(pcm.len())
             .map_err(|error| error.to_string())?;
@@ -35,15 +35,19 @@ impl MediaClient {
             context_id,
         })?;
         self.receive_graph_pcm_status(request_id)
-            .map(|status| status == GraphPcmStatus::Accepted)
+            .map(|(status, _)| status == GraphPcmStatus::Accepted)
     }
 
-    fn receive_graph_pcm_status(&self, request_id: u64) -> Result<GraphPcmStatus, String> {
+    fn receive_graph_pcm_status(
+        &self,
+        request_id: u64,
+    ) -> Result<(GraphPcmStatus, GraphPcmHealth), String> {
         match self.receive("graph PCM")? {
             WorkerMediaMessage::GraphPcmStatus {
                 request_id: actual,
                 status,
-            } if actual == request_id => Ok(status),
+                health,
+            } if actual == request_id => Ok((status, health)),
             _ => Err("media worker returned stale graph PCM status".into()),
         }
     }
