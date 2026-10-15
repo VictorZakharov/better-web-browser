@@ -1,6 +1,7 @@
 use super::*;
 mod audio_output;
 mod completion_title;
+mod held_keys;
 mod initial_action_delay;
 mod native_paint;
 

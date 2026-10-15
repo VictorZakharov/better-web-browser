@@ -9,6 +9,26 @@ use super::*;
 use crate::engine::DisplayItem;
 
 impl DocumentRuntime {
+    pub(super) fn refresh_style_paint(
+        &mut self,
+        outcome: &ScriptOutcome,
+    ) -> (StyleRefreshStats, bool) {
+        let viewport = [
+            self.viewport.width,
+            self.viewport.height,
+            self.viewport.style_width,
+        ];
+        let (stats, unchanged) =
+            self.page
+                .refresh_presentation_styles(viewport[2], viewport[1], &outcome.invalidation);
+        let opacity_repaint = !unchanged
+            && self
+                .layout
+                .try_refresh_opacity(&self.page, viewport, &outcome.invalidation, &stats);
+        let retained = (unchanged || opacity_repaint) && self.install_canvas_presentation();
+        (stats, retained)
+    }
+
     pub(in crate::renderer_process::child) fn set_gpu_canvas_enabled(&mut self, enabled: bool) {
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_gpu_canvas_enabled(enabled);

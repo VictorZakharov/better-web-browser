@@ -3,7 +3,10 @@
 use super::super::*;
 use super::{BenchmarkRun, diagnostics, navigation::BenchmarkNavigation};
 mod input;
-use input::{control_value_input, key_input, pause_input, point_input, scroll_input, wheel_input};
+use input::{
+    control_value_input, key_input, key_state_input, pause_input, point_input, scroll_input,
+    wheel_input,
+};
 
 pub(in crate::windows_app) struct LaunchOptions {
     pub(in crate::windows_app) startup_url: Option<String>,
@@ -161,6 +164,12 @@ impl LaunchOptions {
                 }
                 "--key-after-ready" => {
                     navigation_targets.push(key_input(&required(&mut arguments, &argument)?)?);
+                }
+                "--key-down-after-ready" | "--key-up-after-ready" => {
+                    navigation_targets.push(key_state_input(
+                        &required(&mut arguments, &argument)?,
+                        argument == "--key-down-after-ready",
+                    )?);
                 }
                 "--set-control-value-after-ready" => {
                     let selector = required(&mut arguments, &argument)?;

@@ -19,13 +19,38 @@ pub(in crate::windows_app) enum BenchmarkNavigation {
     Browser(BrowserAction),
     ActivateLink(String),
     ActivateSelector(String),
-    ClickPoint { x: i32, y: i32 },
-    MovePoint { x: i32, y: i32 },
-    ScrollTo { y: i32 },
-    Wheel { x: i32, y: i32, delta: i32 },
-    Pause { milliseconds: u64 },
-    Key { key: String, code: String },
-    SetControlValue { selector: String, value: String },
+    ClickPoint {
+        x: i32,
+        y: i32,
+    },
+    MovePoint {
+        x: i32,
+        y: i32,
+    },
+    ScrollTo {
+        y: i32,
+    },
+    Wheel {
+        x: i32,
+        y: i32,
+        delta: i32,
+    },
+    Pause {
+        milliseconds: u64,
+    },
+    Key {
+        key: String,
+        code: String,
+    },
+    KeyState {
+        key: String,
+        code: String,
+        down: bool,
+    },
+    SetControlValue {
+        selector: String,
+        value: String,
+    },
 }
 
 impl BrowserState {
@@ -102,6 +127,14 @@ impl BrowserState {
                 }
                 BenchmarkNavigation::Key { key, code } => {
                     let result = self.press_benchmark_key(key, code);
+                    if result.is_ok() {
+                        self.continue_or_finish_benchmark_actions();
+                    }
+                    result
+                }
+                BenchmarkNavigation::KeyState { key, code, down } => {
+                    let phase = if down { KeyPhase::Down } else { KeyPhase::Up };
+                    let result = self.send_benchmark_key(key, code, phase);
                     if result.is_ok() {
                         self.continue_or_finish_benchmark_actions();
                     }
@@ -290,24 +323,34 @@ impl BrowserState {
 
     fn press_benchmark_key(&mut self, key: String, code: String) -> Result<(), String> {
         for phase in [KeyPhase::Down, KeyPhase::Up] {
-            let (document, sequence) = self
-                .next_renderer_input()
-                .ok_or_else(|| "benchmark key has no active renderer document".to_string())?;
-            if !self.submit_renderer_input(DocumentInput::Keyboard(KeyboardInput {
-                document,
-                sequence,
-                phase,
-                key: key.clone(),
-                code: code.clone(),
-                repeat: false,
-                modifiers: InputModifiers::default(),
-                target: None,
-            })) {
-                return Err("benchmark key was rejected by the renderer".into());
-            }
-            if phase == KeyPhase::Down {
-                self.transient_activation = Some((document, Instant::now()));
-            }
+            self.send_benchmark_key(key.clone(), code.clone(), phase)?;
+        }
+        Ok(())
+    }
+
+    fn send_benchmark_key(
+        &mut self,
+        key: String,
+        code: String,
+        phase: KeyPhase,
+    ) -> Result<(), String> {
+        let (document, sequence) = self
+            .next_renderer_input()
+            .ok_or_else(|| "benchmark key has no active renderer document".to_string())?;
+        if !self.submit_renderer_input(DocumentInput::Keyboard(KeyboardInput {
+            document,
+            sequence,
+            phase,
+            key,
+            code,
+            repeat: false,
+            modifiers: InputModifiers::default(),
+            target: None,
+        })) {
+            return Err("benchmark key was rejected by the renderer".into());
+        }
+        if phase == KeyPhase::Down {
+            self.transient_activation = Some((document, Instant::now()));
         }
         Ok(())
     }

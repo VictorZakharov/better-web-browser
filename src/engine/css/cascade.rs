@@ -38,6 +38,9 @@ pub struct StyleRefreshStats {
     pub layout_changed: bool,
     /// Changes outside color/background/underline, including unknown or generated paint.
     pub non_deferable_paint_changes: bool,
+    /// Every changed computed style differs only in opacity below one; no pseudo paint changed.
+    pub(crate) opacity_only: bool,
+    pub(crate) first_changed_node: Option<NodeId>,
     pub full_rebuild: bool,
     pub element_style_time: std::time::Duration,
     pub pseudo_style_time: std::time::Duration,

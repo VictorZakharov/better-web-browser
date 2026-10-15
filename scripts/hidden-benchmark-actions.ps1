@@ -4,7 +4,7 @@ function Get-HiddenBenchmarkActionArguments {
     $result = [System.Collections.Generic.List[string]]::new()
     foreach ($action in $ActionSequence) {
         if ([string]::IsNullOrWhiteSpace($action) -or $action -notmatch '^([a-z]+):(.*)$') {
-            throw '-ActionSequence values require move:x,y, wheel:x,y,delta, scroll:y, pause:milliseconds, key:key,code, or activate:selector.'
+            throw '-ActionSequence values require move:x,y, wheel:x,y,delta, scroll:y, pause:milliseconds, key/keydown/keyup:key,code, or activate:selector.'
         }
         $kind, $value = $Matches[1], $Matches[2]
         $option = switch ($kind) {
@@ -49,11 +49,15 @@ function Get-HiddenBenchmarkActionArguments {
                 }
                 '--pause-after-ready'
             }
-            'key' {
+            { $_ -in @('key','keydown','keyup') } {
                 if ($value -notmatch '^[^,]+,[^,]+$' -or $value.Length -gt 256 -or $value.Contains([char]0)) {
                     throw 'Ordered key requires a bounded key,code pair without NUL.'
                 }
-                '--key-after-ready'
+                switch ($kind) {
+                    'keydown' { '--key-down-after-ready' }
+                    'keyup' { '--key-up-after-ready' }
+                    default { '--key-after-ready' }
+                }
             }
             'activate' {
                 if ([string]::IsNullOrWhiteSpace($value) -or $value.Length -gt 4096 -or $value.Contains([char]0)) {

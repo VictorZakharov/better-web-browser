@@ -12,6 +12,10 @@ $expected = @('--scroll-after-ready', '5000', '--move-after-ready', '500,5300', 
 $actual = @(Get-HiddenBenchmarkActionArguments -ActionSequence $actions)
 if (($actual -join '|') -ne ($expected -join '|')) { throw 'Ordered actions lost their original order or values.' }
 if (@(Get-HiddenBenchmarkActionArguments).Count -ne 0) { throw 'Empty ordered actions invented an argument.' }
+if ((@(Get-HiddenBenchmarkActionArguments @('keydown:w,KeyW','pause:1000','keyup:w,KeyW')) -join '|') -ne
+    '--key-down-after-ready|w,KeyW|--pause-after-ready|1000|--key-up-after-ready|w,KeyW') {
+    throw 'Held keyboard actions lost their phases or pause order.'
+}
 if ((@(Get-HiddenBenchmarkActionArguments @('key:Escape,Escape', 'pause:500', 'activate:#options input', 'key:Escape,Escape')) -join '|') -ne
     '--key-after-ready|Escape,Escape|--pause-after-ready|500|--activate-selector-after-ready|#options input|--key-after-ready|Escape,Escape') {
     throw 'Ordered keyboard and selector actions lost order or selector whitespace.'
@@ -29,7 +33,7 @@ foreach ($action in @('', ' ', 'move:', 'move:-1,0', 'move:1,2,3', 'move:2147483
     'browser:new-window','browser:close-window','browser:','browser:new-tab --task-manager',
     'browser:resize=319x240','browser:resize=320x239','browser:resize=7681x4320','browser:resize=7680x4321',
     'browser:resize=+320x240','browser:resize=320x240x240','browser:resize=2147483648x240',
-    'pause:1;--task-manager', 'move:1,2 --screenshot', 'key:', 'key:Escape', 'key:a,b,c', 'activate:', 'activate:   ',
+    'pause:1;--task-manager', 'move:1,2 --screenshot', 'key:', 'key:Escape', 'key:a,b,c', 'keydown:', 'keyup:a', 'activate:', 'activate:   ',
     ('key:' + ('a' * 257) + ',KeyA'), ('activate:' + ('#' * 4097)), "key:a,KeyA$([char]0)", "activate:#a$([char]0)")) {
     $rejected = $false
     try { [void] (Get-HiddenBenchmarkActionArguments -ActionSequence @($action)) } catch { $rejected = $true }

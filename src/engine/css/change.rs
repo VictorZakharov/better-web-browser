@@ -3,6 +3,16 @@
 use super::{ComputedStyle, Display};
 
 impl ComputedStyle {
+    pub(crate) fn retained_opacity_equivalent(&self, other: &Self) -> bool {
+        // Crossing one creates/removes a stacking context (CSS Color 4 §3.3).
+        if self.opacity >= 1.0 || other.opacity >= 1.0 {
+            return false;
+        }
+        let mut normalized = other.clone();
+        normalized.opacity = self.opacity;
+        self == &normalized
+    }
+
     /// A deferred full repaint may reuse current geometry, but not topology-changing
     /// inline decoration. Exact equality also rejects future non-color properties.
     pub(crate) fn deferred_paint_equivalent(&self, other: &Self) -> bool {

@@ -2,6 +2,7 @@
 use super::*;
 
 mod deadline;
+mod diagnostics;
 use deadline::wake_micros;
 
 impl DocumentRuntime {
@@ -270,7 +271,7 @@ impl DocumentRuntime {
             resource_style_changed,
             media_changed,
         );
-        let mut unchanged_style_repaint = false;
+        let mut retained_style_repaint = false;
         let style = if canvas_repaint {
             StyleRefreshStats::default()
         } else if self.can_refresh_style_without_geometry(
@@ -279,12 +280,8 @@ impl DocumentRuntime {
             resource_style_changed,
             media_changed,
         ) {
-            let (stats, unchanged) = self.page.refresh_presentation_styles(
-                self.viewport.style_width,
-                self.viewport.height,
-                &outcome.invalidation,
-            );
-            unchanged_style_repaint = unchanged && self.install_canvas_presentation();
+            let (stats, retained) = self.refresh_style_paint(&outcome);
+            retained_style_repaint = retained;
             stats
         } else if outcome.render_requested {
             connection.report_renderer_task_stage(format!(
@@ -322,7 +319,7 @@ impl DocumentRuntime {
             || (self.rendering.dirty && !self.rendering_is_blocked())
             || (outcome.render_requested
                 && !canvas_repaint
-                && !unchanged_style_repaint
+                && !retained_style_repaint
                 && !self
                     .page
                     .invalidation_is_nonrendered(&outcome.invalidation, &style))
@@ -332,40 +329,26 @@ impl DocumentRuntime {
                 self.page.source_url
             ))?;
             let independent_styles = self.can_reuse_fixed_layout(resources_changed, &style);
-            self.rebuild_layout_for_invalidation(
+            if self.rebuild_layout_for_invalidation(
                 independent_styles.then_some(&outcome.invalidation),
-            );
+            ) && !self.diagnostic_selectors.is_empty()
+            {
+                outcome
+                    .diagnostics
+                    .push("Layout checkpoint refreshed independent fixed layers".into());
+            }
         }
         needs_present |= self.deliver_geometry_observers(&mut outcome, connection)?;
         let layout_time = layout_started.elapsed();
-        if needs_present && !self.diagnostic_selectors.is_empty() {
-            if let Some(diagnostic) = self.page.take_resource_diagnostic() {
-                outcome.diagnostics.push(diagnostic);
-            }
-            if canvas_repaint {
-                outcome
-                    .diagnostics
-                    .push("Canvas pixel checkpoint reused retained style and layout".into());
-            }
-            if unchanged_style_repaint {
-                outcome
-                    .diagnostics
-                    .push("Style checkpoint retained exactly unchanged geometry and paint".into());
-            }
-            outcome.diagnostics.push(format!(
-                "render checkpoint: style/resources {:.3} ms (elements {:.3}, pseudos {:.3}), layout {:.3} ms; styles {}/{} changed, full rebuild {}, dirty roots {} {:?}, removed styles {}, local removals {}",
-                style_time.as_secs_f64() * 1000.0,
-                style.element_style_time.as_secs_f64() * 1000.0,
-                style.pseudo_style_time.as_secs_f64() * 1000.0,
-                layout_time.as_secs_f64() * 1000.0,
-                style.changed_styles,
-                style.recomputed_styles,
-                style.full_rebuild,
-                outcome.invalidation.roots.len(),
-                outcome.invalidation.roots.iter().take(8).map(|id| self.page.dom.find_node(*id).and_then(|n| n.tag_name().map(str::to_owned))).collect::<Vec<_>>(),
-                style.removed_styles,
-                outcome.invalidation.removals_are_local,
-            ));
+        if needs_present {
+            self.record_render_checkpoint(
+                &mut outcome,
+                &style,
+                style_time,
+                layout_time,
+                canvas_repaint,
+                retained_style_repaint,
+            );
         }
         let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             script_micros: micros(script_time),

@@ -2,6 +2,7 @@ use super::*;
 use crate::engine::invalidation::{MutationKind, RenderInvalidation};
 use crate::engine::layout::test_support::FixedMeasurer;
 mod benchmark;
+mod content;
 mod fallbacks;
 mod multiple;
 mod work;

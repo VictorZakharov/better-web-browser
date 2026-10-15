@@ -49,7 +49,10 @@ impl StyleSet {
         } else {
             normalized_roots(document, requested_roots)
         };
-        let mut stats = StyleRefreshStats::default();
+        let mut stats = StyleRefreshStats {
+            opacity_only: true,
+            ..StyleRefreshStats::default()
+        };
         for root in roots {
             if self.has_deferred_ancestor(&root) {
                 stats.removed_styles += self.forget_deferred_styles(&root, true);
@@ -82,9 +85,12 @@ impl StyleSet {
             .filter(|node| !connected_nodes.contains(node))
             .copied()
             .collect::<HashSet<_>>();
-        stats.non_deferable_paint_changes |= self.remove_generated_pseudos(&removed_origins);
+        let removed_pseudos = self.remove_generated_pseudos(&removed_origins);
+        stats.non_deferable_paint_changes |= removed_pseudos;
         self.refresh_deferred_fullscreen_roots(&fullscreen, &mut stats);
         stats.non_deferable_paint_changes |= stats.removed_styles != 0;
+        stats.opacity_only &=
+            !stats.layout_changed && stats.removed_styles == 0 && !removed_pseudos;
         stats.total_styles = self.styles.len();
         stats
     }
@@ -138,15 +144,19 @@ impl StyleSet {
             stats.recomputed_styles += 1;
             match self.styles.get(&node_id(&node)) {
                 Some(previous) if previous != &style => {
+                    stats.first_changed_node.get_or_insert(node.id());
                     stats.changed_styles += 1;
                     stats.layout_changed |= !previous.layout_equivalent(&style);
                     stats.non_deferable_paint_changes |=
                         !previous.deferred_paint_equivalent(&style);
+                    stats.opacity_only &= previous.retained_opacity_equivalent(&style);
                 }
                 None => {
+                    stats.first_changed_node.get_or_insert(node.id());
                     stats.changed_styles += 1;
                     stats.layout_changed = true;
                     stats.non_deferable_paint_changes = true;
+                    stats.opacity_only = false;
                 }
                 _ => {}
             }
@@ -157,6 +167,10 @@ impl StyleSet {
             let pseudo_changes = self.sync_generated_pseudos(&node, &style);
             stats.layout_changed |= pseudo_changes.layout_changed;
             stats.non_deferable_paint_changes |= pseudo_changes.paint_changed;
+            stats.opacity_only &= !pseudo_changes.paint_changed;
+            if pseudo_changes.paint_changed {
+                stats.first_changed_node.get_or_insert(node.id());
+            }
             stats.pseudo_style_time += pseudo_started.elapsed();
             if !self.defer_nonrendered_descendants || style.display != Display::None {
                 pending.extend(Node::composed_children(&node).into_iter().rev());

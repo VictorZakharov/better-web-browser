@@ -1,0 +1,84 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Retained HUD workload</title>
+<style>
+body{margin:16px;background:#101922;color:#dfebe4;font:14px sans-serif}
+#start{position:fixed;right:20px;top:16px;z-index:3}
+#scene{position:fixed;left:16px;top:65px;width:640px;height:360px;background:#21382c}
+#panel{position:fixed;left:680px;top:65px;width:300px;height:500px;overflow:hidden;display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+.card{border:1px solid #748875;padding:4px}.card:hover{background:#534536}
+.card span{display:block}.indicator{animation:pulse 1s infinite alternate}
+@keyframes pulse{to{opacity:.5}}
+#stats{position:fixed;top:440px;left:16px;width:640px;display:flex;flex-wrap:wrap;gap:8px}
+#graph{position:fixed;top:520px;left:16px;width:640px;height:120px}
+#probe{position:fixed;left:600px;top:470px;width:40px;height:40px;background:red;opacity:.8}
+</style>
+<button id="start">Start workload</button>
+<canvas id="scene" width="640" height="360"></canvas><div id="panel"></div>
+<div id="stats"></div><canvas id="graph" width="640" height="120"></canvas><div id="probe"></div>
+<script>
+'use strict';
+// Original reproducible HUD: no game assets or third-party code. Movement is
+// synthetic document input; the unchanged game is a separate functionality check.
+const params=new URLSearchParams(location.search);
+const updateMs=Math.max(0,Math.min(1000,Number(params.get('updateMs')??250)));
+const panel=document.querySelector('#panel'), stats=document.querySelector('#stats');
+panel.innerHTML=Array.from({length:300},(_,i)=>'<div class="card"><span'+(i<8?' class="indicator"':'')+'>Item '+i+'</span><span>Value '+i+'</span><span>Detail</span></div>').join('');
+if(params.get('animations')==='0')for(const node of panel.querySelectorAll('.indicator'))node.classList.remove('indicator');
+stats.innerHTML=Array.from({length:18},(_,i)=>'<span>Stat '+i+'</span>').join('');
+if(params.get('svg')==='1')stats.insertAdjacentHTML('beforeend','<svg width="160" height="40" viewBox="0 0 160 40"><path id="line" stroke="#75e0ab" fill="none" d="M0 20L160 20"/></svg>');
+const counters=[...stats.querySelectorAll('span')], scene=document.querySelector('#scene'), ink=scene.getContext('2d');
+const line=document.querySelector('#line');
+const graph=document.querySelector('#graph').getContext('2d');
+let phase='quiet-before',running=false,origin=0,last=0,painted=0,lastStats=0,inputTimer;
+const frames=new Map(), inputCosts=[], keys=[];let held=false,heldFrames=0;
+for(const type of ['keydown','keyup'])document.addEventListener(type,event=>{
+  if(event.code!=='KeyW')return;
+  held=type==='keydown';if(keys.length<16)keys.push({type,trusted:event.isTrusted,time:performance.now()});
+});
+function summary(values){
+  const a=values.slice().sort((a,b)=>a-b),sum=a.reduce((a,b)=>a+b,0);
+  return{count:a.length,mean:sum/a.length||0,p95:a[Math.floor((a.length-1)*.95)]||0,max:a.at(-1)||0,fps:sum?1000*a.length/sum:0};
+}
+function checkGeometry(){const r=scene.getBoundingClientRect();if(r.width!==640||r.height!==360)throw Error('Geometry changed unexpectedly');}
+function setPhase(name){phase=name;frames.set(name,[]);checkGeometry();}
+document.addEventListener('mousemove',()=>{
+  const before=performance.now();if(params.get('geometry')==='1')checkGeometry();
+  inputCosts.push(performance.now()-before);
+});
+function frame(now){
+  if(!running)return;
+  if(held)heldFrames++;
+  if(last&&now-origin>500)frames.get(phase).push(now-last);last=now;
+  if(now-lastStats>updateMs){
+    lastStats=now;for(let i=0;i<counters.length;i++)counters[i].textContent='Stat '+i+': '+Math.floor(now+i);
+    if(line)line.setAttribute('d','M0 20L40 '+(10+Math.floor(now/100)%20)+'L80 10L120 30L160 20');
+  }
+  if(now-painted>250){
+    painted=now;ink.fillStyle='#21382c';ink.fillRect(0,0,640,360);
+    ink.fillStyle='#eec979';ink.fillRect(0,0,4,4);ink.fillStyle='#dfebe4';ink.fillText(phase,16,30);
+    graph.fillStyle='#101922';graph.fillRect(0,0,640,120);graph.strokeStyle='#75e0ab';graph.beginPath();
+    frames.get(phase).slice(-120).forEach((v,i)=>{const x=i*5,y=115-Math.min(110,1000/v*.6);if(i)graph.lineTo(x,y);else graph.moveTo(x,y);});graph.stroke();
+  }
+  requestAnimationFrame(frame);
+}
+document.querySelector('#start').onclick=()=>{
+  if(running)return;running=true;origin=performance.now();setPhase('quiet-before');requestAnimationFrame(frame);
+  setTimeout(()=>{
+    setPhase('moving');let n=0;
+    inputTimer=setInterval(()=>document.dispatchEvent(new MouseEvent('mousemove',{clientX:300+(n++%100),clientY:200})),8);
+  },2500);
+  setTimeout(()=>setPhase('active'),5500);
+  setTimeout(()=>{clearInterval(inputTimer);setPhase('quiet-after');},8500);
+  setTimeout(()=>{
+    running=false;
+    console.log('HUD_REPORT '+JSON.stringify({phases:Object.fromEntries([...frames].map(([k,v])=>[k,summary(v)])),input:summary(inputCosts),keys,heldFrames}));
+    const pixel=[...ink.getImageData(0,0,1,1).data];
+    if(pixel.join()!=='238,201,121,255')throw Error('Canvas pixel marker mismatch');
+    // Settle a known retained opacity update for screenshot pixel verification.
+    document.querySelector('#probe').style.opacity='.5';
+    console.log('HUD_PIXEL '+pixel.join());
+    requestAnimationFrame(()=>{document.title='Retained HUD complete';});
+  },11000);
+};
+</script>

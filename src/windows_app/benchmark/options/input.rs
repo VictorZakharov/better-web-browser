@@ -93,6 +93,13 @@ pub(super) fn key_input(value: &str) -> Result<BenchmarkNavigation, String> {
     })
 }
 
+pub(super) fn key_state_input(value: &str, down: bool) -> Result<BenchmarkNavigation, String> {
+    let BenchmarkNavigation::Key { key, code } = key_input(value)? else {
+        unreachable!("key_input constructs a key action")
+    };
+    Ok(BenchmarkNavigation::KeyState { key, code, down })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

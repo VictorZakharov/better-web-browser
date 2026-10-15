@@ -2,6 +2,8 @@
 
 use super::*;
 
+mod retained;
+
 pub(super) fn display_item_bounds(item: &DisplayItem) -> Option<RectF> {
     match item {
         DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. } => None,
