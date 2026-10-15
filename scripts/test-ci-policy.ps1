@@ -52,7 +52,7 @@ foreach ($policy in @(
 # Test the actual workflow as well as the result gate. A runtime libtest filter
 # does not save compilation of the full test tree; CI must use its small target.
 $workflow = Get-Content (Join-Path $PSScriptRoot '../.github/workflows/ci.yml') -Raw
-if ($workflow -notmatch 'cargo test --locked --no-default-features --test ci_smoke -- --test-threads=1' -or
+if ($workflow -notmatch 'cargo test --locked --no-default-features --test ci_smoke --timings -- --test-threads=1' -or
     $workflow -notmatch '(?m)^  CARGO_BUILD_JOBS: 8\r?$' -or
     $workflow -notmatch '(?m)^    name: windows\r?$' -or
     $workflow -notmatch '(?m)^    name: Linear PR history\r?$') {
@@ -70,6 +70,16 @@ if ($cargo -notmatch 'default = \["wpt-harness"\]' -or
 $nativeAction = Get-Content (Join-Path $PSScriptRoot '../.github/actions/windows-rust/action.yml') -Raw
 if ($nativeAction -notmatch 'run: ./scripts/prepare-native-cache.ps1') {
     throw 'The Windows action must configure the native compiler cache.'
+}
+if ($nativeAction -notmatch '~/.cargo/git/db' -or $nativeAction -notmatch '~/.cargo/git/checkouts' -or
+    $workflow -notmatch 'path: target/cargo-timings/\*\.html') {
+    throw 'Locked Git dependency sources and compilation timing evidence must be retained.'
+}
+if ($workflow -notmatch 'cancel-in-progress: \$\{\{ github.event_name == ''pull_request'' \}\}' -or
+    $workflow -notmatch 'github.event.pull_request.number \|\| github.run_id' -or
+    $nativeAction -notmatch 'if: steps.sources.outputs.cache-matched-key != ''''' -or
+    $nativeAction -notmatch 'if: steps.sources.outputs.cache-matched-key == ''''') {
+    throw 'Only superseded PR runs may be cancelled; restored source images must be mounted, never recreated.'
 }
 $angleSetup = Get-Content (Join-Path $PSScriptRoot 'prepare-angle.ps1') -Raw
 if ($angleSetup -notmatch '\$env:CLANG_PATH = Join-Path \$selected ''clang.exe''' -or

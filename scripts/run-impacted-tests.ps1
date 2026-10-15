@@ -22,6 +22,7 @@ if ($plan.Full) { Write-Host 'Full local tests selected (final gate or conservat
 foreach ($command in $plan.Commands) {
     Write-Host "Test group $($command.Id): target=$($command.Target) filter=$($command.Filter)"
 }
+if ($Final) { Write-Host 'Final gate also runs full-target Clippy before the complete test plan.' }
 if (-not $Run) { Write-Host 'Plan only. Add -Run to execute; subsets do not replace the final PR gate.'; return }
 
 # Fail before Cargo if this Windows workstation would emit artifacts on C:.
@@ -31,7 +32,8 @@ if (($IsWindows -or $env:OS -eq 'Windows_NT') -and [IO.Path]::GetPathRoot($targe
     throw 'Set CARGO_TARGET_DIR to an absolute G: directory before running local tests.'
 }
 $prior = @{}
-foreach ($name in @('CARGO_TARGET_DIR','CARGO_BUILD_JOBS','RUST_TEST_THREADS','TEMP','TMP')) {
+foreach ($name in @('CARGO_TARGET_DIR','CARGO_BUILD_JOBS','RUST_TEST_THREADS','TEMP','TMP',
+    'CARGO_PROFILE_DEV_DEBUG','CARGO_PROFILE_TEST_DEBUG')) {
     $prior[$name] = [Environment]::GetEnvironmentVariable($name,'Process')
 }
 Push-Location -LiteralPath $repo
@@ -39,6 +41,17 @@ try {
     $env:CARGO_TARGET_DIR=$target; $env:CARGO_BUILD_JOBS='4'; $env:RUST_TEST_THREADS='1'
     $env:TEMP=Join-Path $target 'impacted-tests/temp'; $env:TMP=$env:TEMP
     [IO.Directory]::CreateDirectory($env:TEMP) | Out-Null
+    # Match CI's correctness profiles without generating large local PDBs.
+    # Debug assertions/overflow checks are unchanged; explicit debugger settings win.
+    foreach ($name in @('CARGO_PROFILE_DEV_DEBUG','CARGO_PROFILE_TEST_DEBUG')) {
+        if ([string]::IsNullOrWhiteSpace($prior[$name])) {
+            [Environment]::SetEnvironmentVariable($name,'0','Process')
+        }
+    }
+    if ($Final) {
+        & cargo clippy --locked --all-targets -- -D warnings
+        if ($LASTEXITCODE -ne 0) { throw 'Full-target Clippy failed.' }
+    }
     foreach ($command in $plan.Commands) {
         if ($command.Target -eq 'selector') {
             & (Join-Path $PSScriptRoot 'test-impacted-tests.ps1'); continue
@@ -64,6 +77,9 @@ try {
         }
     }
 } finally {
-    foreach ($name in $prior.Keys) { [Environment]::SetEnvironmentVariable($name,$prior[$name],'Process') }
+    foreach ($name in $prior.Keys) {
+        if ($null -eq $prior[$name]) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
+        else { [Environment]::SetEnvironmentVariable($name,$prior[$name],'Process') }
+    }
     Pop-Location
 }

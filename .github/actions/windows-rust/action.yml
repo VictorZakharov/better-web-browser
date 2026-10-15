@@ -23,6 +23,16 @@ runs:
         key: windows-cargo-registry-v4-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
           windows-cargo-registry-v4-
+    # The locked ANGLE fork is a Git dependency, outside the registry image.
+    - name: Restore Cargo Git sources
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/.cargo/git/db
+          ~/.cargo/git/checkouts
+        key: windows-cargo-git-v1-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          windows-cargo-git-v1-
     # Keep the 24,000 small source files inside one filesystem image: extracting
     # them separately on every Windows VM dominates warm dependency preparation.
     - name: Restore Cargo source volume
@@ -30,13 +40,19 @@ runs:
       uses: actions/cache/restore@v6
       with:
         path: ${{ runner.temp }}/cargo-source-volume/registry.vhdx
-        key: windows-cargo-volume-v2-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'scripts/cargo-source-volume*.ps1') }}
+        key: windows-cargo-volume-v3-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'scripts/cargo-source-volume*.ps1') }}
+        # v2 uses the same validated NTFS image layout; migrate without extraction.
+        restore-keys: |
+          windows-cargo-volume-v3-
+          windows-cargo-volume-v2-
     - name: Mount Cargo source volume
-      if: steps.sources.outputs.cache-hit == 'true'
+      # A compatible older image avoids extracting every source after a lock edit.
+      # Cargo adds missing locked packages before the new exact image is published.
+      if: steps.sources.outputs.cache-matched-key != ''
       shell: pwsh
       run: ./scripts/cargo-source-volume.ps1 -Mode Mount
     - name: Create missing Cargo source volume
-      if: steps.sources.outputs.cache-hit != 'true'
+      if: steps.sources.outputs.cache-matched-key == ''
       shell: pwsh
       run: ./scripts/cargo-source-volume.ps1 -Mode Create
     - name: Prepare V8 build path

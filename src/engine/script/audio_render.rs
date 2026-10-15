@@ -173,11 +173,11 @@ impl AudioRenderControl {
         let mut arrays = Vec::new();
         for packet in std::mem::take(&mut state.packets) {
             if let JsValue::Array(mut parts) = packet {
-                if let Some(JsValue::String(description)) = parts.first() {
-                    if let Ok(mut packet) = serde_json::from_str::<serde_json::Value>(description) {
-                        packet["arrayOffset"] = arrays.len().into();
-                        packets.push(packet);
-                    }
+                if let Some(JsValue::String(description)) = parts.first()
+                    && let Ok(mut packet) = serde_json::from_str::<serde_json::Value>(description)
+                {
+                    packet["arrayOffset"] = arrays.len().into();
+                    packets.push(packet);
                 }
                 arrays.extend(parts.drain(1..));
             }

@@ -15,6 +15,12 @@ on:
       - main
   pull_request:
 
+concurrency:
+  # Superseded PR revisions should yield their runners to the newest revision.
+  # Main runs have unique groups and are never cancelled by this policy.
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   changes:
     name: Classify changes
@@ -98,7 +104,15 @@ jobs:
         # just to select a handful with libtest's runtime filters.
         # The only default feature owns the auxiliary WPT CLI. Browser code,
         # native graphics, codecs and containment remain unchanged.
-        run: cargo test --locked --no-default-features --test ci_smoke -- --test-threads=1
+        run: cargo test --locked --no-default-features --test ci_smoke --timings -- --test-threads=1
+      - name: Retain compilation stage timings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-smoke-cargo-timings
+          path: target/cargo-timings/*.html
+          if-no-files-found: warn
+          retention-days: 7
 
   harness:
     name: Chromium harness self-tests

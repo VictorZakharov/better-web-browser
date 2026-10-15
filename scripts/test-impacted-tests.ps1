@@ -72,10 +72,15 @@ Write-Host 'Impacted-test ownership, downstream closure, overlap, unknown/delete
 # Exercise runner orchestration without compiling or launching any browser.
 # The mocks exist only in this script's scope, not the user's shell/profile.
 $calls=[Collections.Generic.List[object]]::new()
+$debugSettings=[Collections.Generic.List[object]]::new()
 $emptyListing=$false
+$failClippy=$false
+$priorNativeExitCode=$global:LASTEXITCODE
 function cargo {
     $calls.Add(@($args))
+    $debugSettings.Add(@($env:CARGO_PROFILE_DEV_DEBUG,$env:CARGO_PROFILE_TEST_DEBUG))
     $global:LASTEXITCODE=0
+    if ($failClippy -and $args[0] -eq 'clippy') { $global:LASTEXITCODE=7; return }
     if ($args -contains '--list' -and -not $emptyListing) { 'contract_case: test' }
 }
 $priorTarget=$env:CARGO_TARGET_DIR
@@ -83,13 +88,23 @@ $priorJobs=$env:CARGO_BUILD_JOBS
 $priorWorkers=$env:RUST_TEST_THREADS
 $priorTemp=$env:TEMP
 $priorTmp=$env:TMP
+$priorDevDebug=$env:CARGO_PROFILE_DEV_DEBUG
+$priorTestDebug=$env:CARGO_PROFILE_TEST_DEBUG
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 try {
     $env:CARGO_TARGET_DIR=Join-Path $root 'target'
+    Remove-Item -LiteralPath Env:CARGO_PROFILE_DEV_DEBUG,Env:CARGO_PROFILE_TEST_DEBUG -ErrorAction SilentlyContinue
     & (Join-Path $PSScriptRoot 'run-impacted-tests.ps1') -ChangedPath src/engine/webgl/command_batch/uploads.rs -Run
     if ($calls.Count -ne 4 -or $calls[0] -notcontains '--lib' -or
         $calls[2] -notcontains 'renderer_process' -or $calls[1] -contains '--all-targets') {
         throw 'A narrow WebGL edit ran unrelated targets or omitted its downstream contract.'
+    }
+    if (@($debugSettings | Where-Object { $_[0] -ne '0' -or $_[1] -ne '0' }).Count) {
+        throw 'Verification did not default to the CI debug-info settings.'
+    }
+    if ($null -ne [Environment]::GetEnvironmentVariable('CARGO_PROFILE_DEV_DEBUG','Process') -or
+        $null -ne [Environment]::GetEnvironmentVariable('CARGO_PROFILE_TEST_DEBUG','Process')) {
+        throw 'Runner leaked verification debug-info settings.'
     }
     if ([string]$env:CARGO_BUILD_JOBS -ne [string]$priorJobs -or [string]$env:RUST_TEST_THREADS -ne [string]$priorWorkers -or
         [string]$env:TEMP -ne [string]$priorTemp -or [string]$env:TMP -ne [string]$priorTmp) { throw 'Runner leaked environment changes.' }
@@ -100,7 +115,26 @@ try {
     if (-not $rejected -or $calls.Count -ne 1 -or $env:TEMP -ne $priorTemp) {
         throw 'An empty filter silently passed or failed to restore its environment.'
     }
+    $emptyListing=$false; $calls.Clear(); $debugSettings.Clear()
+    $env:CARGO_PROFILE_DEV_DEBUG='1'; $env:CARGO_PROFILE_TEST_DEBUG='2'
+    & (Join-Path $PSScriptRoot 'run-impacted-tests.ps1') -ChangedPath src/engine/webgl/command_batch/uploads.rs -Run
+    if (@($debugSettings | Where-Object { $_[0] -ne '1' -or $_[1] -ne '2' }).Count -or
+        $env:CARGO_PROFILE_DEV_DEBUG -ne '1' -or $env:CARGO_PROFILE_TEST_DEBUG -ne '2') {
+        throw 'Explicit debugger settings were overridden or leaked.'
+    }
+    $failClippy=$true; $calls.Clear(); $rejected=$false
+    try { & (Join-Path $PSScriptRoot 'run-impacted-tests.ps1') -ChangedPath README.md -Final -Run }
+    catch { $rejected=$_.Exception.Message -eq 'Full-target Clippy failed.' }
+    if (-not $rejected -or $calls.Count -ne 1 -or $calls[0][0] -ne 'clippy' -or
+        $calls[0] -notcontains '--all-targets' -or $env:CARGO_PROFILE_TEST_DEBUG -ne '2') {
+        throw 'The final gate did not reject Clippy failure before running its expensive tests.'
+    }
 } finally {
+    $global:LASTEXITCODE=$priorNativeExitCode
     [Environment]::SetEnvironmentVariable('CARGO_TARGET_DIR',$priorTarget,'Process')
+    foreach ($setting in @(@('CARGO_PROFILE_DEV_DEBUG',$priorDevDebug),@('CARGO_PROFILE_TEST_DEBUG',$priorTestDebug))) {
+        if ($null -eq $setting[1]) { Remove-Item -LiteralPath ('Env:'+$setting[0]) -ErrorAction SilentlyContinue }
+        else { [Environment]::SetEnvironmentVariable($setting[0],$setting[1],'Process') }
+    }
 }
 Write-Host 'Impacted-test runner selection, zero-match rejection and environment restoration tests passed (Cargo mocked).'
