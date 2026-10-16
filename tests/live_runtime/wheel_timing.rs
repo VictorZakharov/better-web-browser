@@ -37,6 +37,31 @@ fn run_html_capture(
 }
 
 #[test]
+fn horizontal_root_overflow_keeps_wheel_scroll_pixels_visible() {
+    let (report, capture) = run_html_capture(
+        include_str!("../fixtures/wheel-root-overflow.html"),
+        &[
+            "--wheel-after-ready",
+            "350,350,400",
+            "--navigation-delay-ms",
+            "100",
+        ],
+    );
+    let samples = report["wheel_input_trace"]["samples"].as_array().unwrap();
+    assert_eq!(samples.len(), 1);
+    assert_eq!(samples[0]["decision"], "viewport");
+    assert_eq!(samples[0]["status"], "painted");
+    let lower_pixels = capture
+        .pixels()
+        .filter(|pixel| pixel[0] < 20 && pixel[1] < 20 && pixel[2] > 180)
+        .count();
+    assert!(
+        lower_pixels > 10_000,
+        "scrolled lower content vanished: {lower_pixels}"
+    );
+}
+
+#[test]
 fn asynchronous_nested_reset_does_not_replace_the_owning_first_motion_paint() {
     let (report, capture) = run_html_capture(
         include_str!("../fixtures/wheel-timing-reset.html"),

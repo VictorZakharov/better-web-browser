@@ -55,3 +55,20 @@ fn overflow_hidden_wraps_descendant_paint_in_the_padding_box() {
     assert!(wide_rect.right() > expected.right());
     assert!(begin < wide_paint && wide_paint < end);
 }
+
+#[test]
+fn horizontal_root_overflow_does_not_clip_scrolled_vertical_pixels() {
+    let page = Page::parse(
+        "<style>html{height:100%;overflow-x:hidden;overflow-y:auto}body{margin:0}</style><main style='height:1200px;background:red'></main>",
+        "https://example.com/",
+    );
+    let root = page.dom.elements_named("html").next().unwrap();
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let root_rect = output.node_bounds[&root.id()];
+    assert_eq!(output.content_height, 1200.0);
+    assert!(
+        !output.items.iter().any(|item| {
+            matches!(item, DisplayItem::BeginClip { bounds } if *bounds == root_rect)
+        })
+    );
+}

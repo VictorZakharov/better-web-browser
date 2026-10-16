@@ -70,6 +70,22 @@ fn nested_block_intrinsic_width_does_not_use_descendant_flex_basis() {
 }
 
 #[test]
+fn inline_flex_columns_include_list_links_in_intrinsic_width() {
+    let page = Page::parse(
+        "<style>body{margin:0}.columns{display:inline-flex;gap:40px}.column{flex:1}h3,ul{margin:0;padding:0}li{display:block}a{white-space:nowrap}</style><div class=columns><div class=column><h3>Learn</h3><ul><li><a>Compare Privacy</a></li><li><a>Search Shortcuts</a></li></ul></div><div class=column><h3>More</h3><ul><li><a>Email Protection</a></li><li><a>Collaborations</a></li></ul></div></div>",
+        "https://example.test/",
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let links = page.dom.elements_named("a").collect::<Vec<_>>();
+    let first = output.node_bounds[&links[0].id()];
+    let next_column = output.node_bounds[&links[2].id()];
+    assert!(
+        first.x + first.width + 40.0 <= next_column.x,
+        "link content must fit before the next column: {first:?}, {next_column:?}"
+    );
+}
+
+#[test]
 fn cyclic_percentage_maximum_does_not_erase_intrinsic_button_width() {
     for maximum in ["100%", "calc(100% - 2px)"] {
         let page = Page::parse(

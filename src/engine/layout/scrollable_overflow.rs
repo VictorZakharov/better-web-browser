@@ -1,5 +1,6 @@
 //! Vertical viewport overflow is distinct from the root's normal-flow block height.
 use super::*;
+use crate::engine::css::Overflow;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn scrollable_overflow_bottom(&self, root: &NodeRef) -> f32 {
@@ -22,7 +23,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     bottom = bottom.max(rect.bottom().min(clip_bottom));
                 }
             }
-            let child_clip = if style.overflow_hidden {
+            // Root/body overflow propagates to the viewport. In particular,
+            // overflow-x:hidden can compute overflow-y to auto; the latter
+            // must retain the document's vertical scrollable extent.
+            // https://drafts.csswg.org/css-overflow-3/#overflow-viewport
+            let clips_descendants = if matches!(node.tag_name(), Some("html" | "body")) {
+                matches!(style.overflow_axes().1, Overflow::Hidden | Overflow::Clip)
+            } else {
+                style.overflow_axes().1 != Overflow::Visible
+            };
+            let child_clip = if clips_descendants {
                 bounds.map_or(clip_bottom, |rect| clip_bottom.min(rect.bottom()))
             } else {
                 clip_bottom
@@ -81,6 +91,26 @@ mod tests {
         assert_eq!(
             height(
                 "<main style='height:40px;overflow:hidden'><div style='height:1200px'></div></main>"
+            ),
+            600.0
+        );
+    }
+
+    #[test]
+    fn horizontal_root_clipping_preserves_vertical_viewport_scroll_range() {
+        assert_eq!(
+            height(
+                "<style>html{height:100%;overflow-x:hidden;overflow-y:auto}body{overflow-x:hidden}</style><main style='height:1200px'></main>"
+            ),
+            1200.0
+        );
+    }
+
+    #[test]
+    fn hidden_root_vertical_overflow_does_not_extend_viewport_scroll_range() {
+        assert_eq!(
+            height(
+                "<style>html{height:100%;overflow-y:hidden}</style><main style='height:1200px'></main>"
             ),
             600.0
         );

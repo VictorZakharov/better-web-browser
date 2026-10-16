@@ -2,6 +2,72 @@
 use super::super::*;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    /// CSS Flexbox 9.9.1: a single-line row sums item min-content contributions;
+    /// a wrapping row or column uses the largest contribution in the inline axis.
+    pub(in crate::engine::layout) fn flex_container_min_content_width(
+        &mut self,
+        node: &NodeRef,
+        style: &ComputedStyle,
+        percentage_basis: Option<f32>,
+    ) -> f32 {
+        let available_width = percentage_basis.unwrap_or(0.0);
+        let mut contributions = Vec::new();
+        let mut anonymous_atoms = Vec::new();
+        let mut pending_space = None;
+        for child in self.box_children(node) {
+            if child.element().is_none() {
+                if matches!(&child.data, NodeData::Text(text) | NodeData::Cdata(text) if !text.borrow().trim().is_empty())
+                {
+                    self.collect_inline_root(
+                        &child,
+                        &mut anonymous_atoms,
+                        &mut pending_space,
+                        false,
+                        InlineContainingBlock {
+                            width: available_width,
+                            height: None,
+                        },
+                    );
+                }
+                continue;
+            }
+            if !anonymous_atoms.is_empty() {
+                contributions.push(
+                    self.float_inline_widths(
+                        &std::mem::take(&mut anonymous_atoms),
+                        percentage_basis,
+                    )
+                    .0,
+                );
+                pending_space = None;
+            }
+            let child_style = self.styles.get(&child);
+            if child_style.display == Display::None
+                || matches!(child_style.position, Position::Absolute | Position::Fixed)
+                || style_collapses_overflow(child_style, self.viewport)
+            {
+                continue;
+            }
+            contributions.push(self.float_intrinsic_widths(&child, percentage_basis).0);
+        }
+        if !anonymous_atoms.is_empty() {
+            contributions.push(
+                self.float_inline_widths(&anonymous_atoms, percentage_basis)
+                    .0,
+            );
+        }
+        if style.flex_direction.is_row() && !style.flex_wrap {
+            let gap = style
+                .grid_column_gap
+                .resolve(available_width, style.font_size)
+                .unwrap_or(0.0)
+                .max(0.0);
+            contributions.iter().sum::<f32>() + gap * contributions.len().saturating_sub(1) as f32
+        } else {
+            contributions.into_iter().fold(0.0, f32::max)
+        }
+    }
+
     pub(super) fn block_container_intrinsic_width(
         &mut self,
         node: &NodeRef,
@@ -58,7 +124,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         widest
     }
 
-    pub(super) fn flex_container_intrinsic_width(
+    pub(in crate::engine::layout) fn flex_container_intrinsic_width(
         &mut self,
         node: &NodeRef,
         style: &ComputedStyle,
