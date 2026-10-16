@@ -79,7 +79,23 @@ impl BrowserState {
                 let mut paint_groups = PaintGroups::default();
                 let mut clip_stack = ClipStack::default();
                 for range in tab.paint_index.visible_ranges(visible_top, visible_bottom) {
-                    for item in &tab.page_layout.items[range] {
+                    let mut indexes = range.clone();
+                    while let Some(index) = indexes.next() {
+                        let item = &tab.page_layout.items[index];
+                        if let DisplayItem::BeginClip { bounds } = item {
+                            let dc = paint_groups.dc(dc);
+                            let rect = screen_rect(*bounds, tab.scroll_y, toolbar_height, scale);
+                            // A clip excludes every descendant when its own bounds miss the
+                            // current native update region. Skip the balanced subtree before
+                            // creating hundreds of GDI clip states on long pages.
+                            if !visibility::drawable(dc, rect)
+                                && let Some(end) = tab.paint_index.matching_clip_end(index)
+                                && end < range.end
+                            {
+                                indexes.start = end + 1;
+                                continue;
+                            }
+                        }
                         let _timing = profile::ItemTiming::start(item);
                         if paint_groups.handle(
                             item,

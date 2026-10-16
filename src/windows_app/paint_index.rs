@@ -8,6 +8,7 @@ const ITEMS_PER_CHUNK: usize = 128;
 #[derive(Default)]
 pub(super) struct PaintIndex {
     chunks: Vec<PaintChunk>,
+    clip_ends: Vec<Option<usize>>,
 }
 
 struct PaintChunk {
@@ -19,16 +20,26 @@ struct PaintChunk {
 impl PaintIndex {
     pub(super) fn rebuild(&mut self, items: &[DisplayItem]) {
         self.chunks.clear();
+        self.clip_ends = vec![None; items.len()];
         let mut start = 0;
         let mut depth = 0_usize;
+        let mut open_clips = Vec::new();
         for (index, item) in items.iter().enumerate() {
             match item {
-                DisplayItem::BeginClip { .. }
-                | DisplayItem::BeginOpacity { .. }
+                DisplayItem::BeginClip { .. } => {
+                    depth += 1;
+                    open_clips.push(index);
+                }
+                DisplayItem::BeginOpacity { .. }
                 | DisplayItem::BeginTransform { .. }
                 | DisplayItem::BeginMask { .. } => depth += 1,
-                DisplayItem::EndClip { .. }
-                | DisplayItem::EndOpacity { .. }
+                DisplayItem::EndClip { .. } => {
+                    depth = depth.saturating_sub(1);
+                    if let Some(begin) = open_clips.pop() {
+                        self.clip_ends[begin] = Some(index);
+                    }
+                }
+                DisplayItem::EndOpacity { .. }
                 | DisplayItem::EndTransform { .. }
                 | DisplayItem::EndMask { .. } => {
                     depth = depth.saturating_sub(1);
@@ -75,6 +86,10 @@ impl PaintIndex {
             .iter()
             .filter(move |chunk| chunk.bottom >= top && chunk.top <= bottom)
             .map(|chunk| chunk.range.clone())
+    }
+
+    pub(super) fn matching_clip_end(&self, begin: usize) -> Option<usize> {
+        self.clip_ends.get(begin).copied().flatten()
     }
 }
 
@@ -202,6 +217,8 @@ mod tests {
             index.visible_ranges(1_000.0, 1_100.0).collect::<Vec<_>>(),
             vec![0..302]
         );
+        assert_eq!(index.matching_clip_end(0), Some(301));
+        assert_eq!(index.matching_clip_end(301), None);
     }
 
     #[test]
