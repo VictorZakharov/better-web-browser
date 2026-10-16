@@ -10,16 +10,26 @@ impl StyleSet {
 
 pub(super) fn collect(
     inputs: &[Rc<SheetInput>],
+    parsed: &[Rc<parsed::ParsedSheet>],
     environment: MediaEnvironment,
 ) -> Vec<crate::engine::font::WebFontFace> {
+    let parsed_by_input = parsed
+        .iter()
+        .map(|sheet| (Rc::as_ptr(&sheet.input), sheet.as_ref()))
+        .collect::<std::collections::HashMap<_, _>>();
     inputs
         .iter()
         .filter(|input| matches!(input.scope, RuleScope::Document | RuleScope::Shadow(_)))
         .flat_map(|input| {
-            crate::engine::css::stylesheet::font_faces::collect(
-                &input.source,
-                &input.base_url,
-                environment,
+            parsed_by_input.get(&Rc::as_ptr(input)).map_or_else(
+                || {
+                    crate::engine::css::stylesheet::font_faces::collect(
+                        &input.source,
+                        &input.base_url,
+                        environment,
+                    )
+                },
+                |sheet| sheet.font_faces(environment).clone(),
             )
         })
         .take(64)

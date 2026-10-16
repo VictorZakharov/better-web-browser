@@ -28,6 +28,26 @@ fn coalesced_scroll_requests_keep_the_latest_offset_including_zero() {
 }
 
 #[test]
+fn wheel_fast_path_safety_uses_latest_known_listener_and_layout_snapshots() {
+    let first = RuntimeReport {
+        wheel_has_blocking_listeners: Some(false),
+        wheel_has_nested_scroll: Some(false),
+        ..RuntimeReport::default()
+    };
+    let merged = first.coalesce(RuntimeReport::default()).unwrap();
+    assert_eq!(merged.wheel_has_blocking_listeners, Some(false));
+    assert_eq!(merged.wheel_has_nested_scroll, Some(false));
+    let merged = merged
+        .coalesce(RuntimeReport {
+            wheel_has_blocking_listeners: Some(true),
+            ..RuntimeReport::default()
+        })
+        .unwrap();
+    assert_eq!(merged.wheel_has_blocking_listeners, Some(true));
+    assert_eq!(merged.wheel_has_nested_scroll, Some(false));
+}
+
+#[test]
 fn wheel_deltas_accumulate_until_an_absolute_scroll_supersedes_them() {
     let wheel = |delta| RuntimeReport {
         viewport_wheel_delta_y: delta,

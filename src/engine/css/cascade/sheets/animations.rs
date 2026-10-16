@@ -7,27 +7,43 @@ mod tests;
 
 pub(super) fn collect(
     inputs: &[Rc<SheetInput>],
+    parsed: &[Rc<parsed::ParsedSheet>],
     environment: MediaEnvironment,
 ) -> Vec<KeyframeDefinition> {
     let mut output = Vec::new();
     let mut registries = std::collections::HashMap::<RuleScope, LayerRegistry>::new();
     let mut assignments = Vec::new();
+    let parsed_by_input = parsed
+        .iter()
+        .map(|sheet| (Rc::as_ptr(&sheet.input), sheet.as_ref()))
+        .collect::<std::collections::HashMap<_, _>>();
     for (occurrence, input) in inputs.iter().enumerate() {
         let registry = registries.entry(input.scope).or_default();
         if let Some(path) = &input.declared_layer {
             registry.declare(path);
         }
-        let collection = crate::engine::css::stylesheet::keyframes::collect_with_layers(
-            &input.source,
-            environment,
-            input.scope,
-        );
-        for path in collection.layers {
+        let cached = parsed_by_input
+            .get(&Rc::as_ptr(input))
+            .map(|sheet| sheet.keyframes(environment));
+        let fallback = cached.is_none().then(|| {
+            crate::engine::css::stylesheet::keyframes::collect_with_layers(
+                &input.source,
+                environment,
+                input.scope,
+            )
+        });
+        let (definitions, layers) = if let Some(cached) = cached {
+            (&cached.0, &cached.1)
+        } else {
+            let fallback = fallback.as_ref().expect("uncached keyframe collection");
+            (&fallback.definitions, &fallback.layers)
+        };
+        for path in layers {
             let mut full = input.layer_prefix.clone();
-            full.extend(occurrence_path(&path, occurrence as u32));
+            full.extend(occurrence_path(path, occurrence as u32));
             registry.declare(&full);
         }
-        for mut definition in collection.definitions {
+        for mut definition in definitions.iter().cloned() {
             if output.len() == MAX_KEYFRAME_DEFINITIONS {
                 break;
             }

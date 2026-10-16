@@ -34,6 +34,10 @@ impl BrowserState {
         }
         let move_key = PendingRendererInputs::move_key(&input);
         let scroll_key = PendingRendererInputs::scroll_key(&input);
+        let wheel_key = match &input {
+            DocumentInput::Wheel(wheel) => Some((wheel.document, wheel.sequence)),
+            _ => None,
+        };
         // The broker discards inputs for documents that are not active yet.
         // Continuous inputs sent there cannot supply a completion signal.
         if move_key.or(scroll_key).is_some_and(|(document, _)| {
@@ -53,6 +57,9 @@ impl BrowserState {
         };
         match result {
             Ok(None) => {
+                if let Some((document, sequence)) = wheel_key {
+                    self.record_benchmark_wheel_sent(document, sequence);
+                }
                 self.pending_renderer_inputs.note_direct_keyboard(keyboard);
                 self.pending_renderer_inputs.note_sent(move_key);
                 self.pending_renderer_inputs.note_scroll_sent(scroll_key);
@@ -62,6 +69,9 @@ impl BrowserState {
             Ok(Some(input)) => match self.pending_renderer_inputs.enqueue(input) {
                 QueueResult::Queued | QueueResult::Coalesced => {
                     self.note_renderer_input_activity();
+                    if wheel_key.is_some() {
+                        unsafe { self.flush_renderer_inputs_for(self.id) };
+                    }
                     true
                 }
                 QueueResult::Full => {
@@ -109,32 +119,41 @@ impl BrowserState {
                 }
                 let move_key = PendingRendererInputs::move_key(&input);
                 let scroll_key = PendingRendererInputs::scroll_key(&input);
+                let wheel_key = match &input {
+                    DocumentInput::Wheel(wheel) => Some((wheel.document, wheel.sequence)),
+                    _ => None,
+                };
                 let input_key = (input.document(), input.sequence());
                 let result = tab
                     .renderer_session
                     .as_ref()
                     .ok_or_else(|| "renderer session is unavailable".to_string())
                     .and_then(|session| session.try_send_input_retained(input));
-                (result, move_key, scroll_key, input_key)
+                (result, move_key, scroll_key, wheel_key, input_key)
             };
             match delivery {
-                (Ok(None), move_key, scroll_key, input_key) => {
+                (Ok(None), move_key, scroll_key, wheel_key, input_key) => {
                     if let Some(tab) = self.tabs.get_mut(id) {
                         tab.pending_renderer_inputs
                             .note_delivered(input_key.0, input_key.1);
                         tab.pending_renderer_inputs.note_sent(move_key);
                         tab.pending_renderer_inputs.note_scroll_sent(scroll_key);
                     }
+                    if id == self.tabs.active_id()
+                        && let Some((document, sequence)) = wheel_key
+                    {
+                        self.record_benchmark_wheel_sent(document, sequence);
+                    }
                     made_room = true;
                 }
-                (Ok(Some(input)), _, _, _) => {
+                (Ok(Some(input)), _, _, _, _) => {
                     if let Some(tab) = self.tabs.get_mut(id) {
                         tab.pending_renderer_inputs.restore_front(input);
                         tab.renderer_input_poll_budget = RENDERER_INPUT_POLL_BUDGET;
                     }
                     break;
                 }
-                (Err(error), _, _, _) => {
+                (Err(error), _, _, _, _) => {
                     self.contain_page_engine_failure(
                         id,
                         format!("could not deliver document input: {error}"),

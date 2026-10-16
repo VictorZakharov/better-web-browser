@@ -17,6 +17,7 @@ impl DocumentRuntime {
                 || self.pending_async_outcome.render_requested,
         );
         if self.has_pending_geometry_observers()
+            || (self.pending_viewport_scroll_event && !self.rendering_is_blocked())
             || self.resource_render_pending
             || self.resource_event_pending
             || (self.rendering.dirty && !self.rendering_is_blocked())
@@ -111,9 +112,12 @@ impl DocumentRuntime {
         }
         let mut resources_changed = std::mem::take(&mut self.resource_render_pending);
         let mut resource_style_changed = std::mem::take(&mut self.resource_style_refresh_pending);
+        let mut non_style_resources_changed =
+            std::mem::take(&mut self.resource_non_style_render_pending);
         if let Some(changes) = self.finish_ready_resource_preloads(connection)? {
             resources_changed |= changes.render;
             resource_style_changed |= changes.style;
+            non_style_resources_changed |= changes.non_style;
         }
         merge_outcome(
             &mut outcome,
@@ -163,6 +167,14 @@ impl DocumentRuntime {
         // Earlier script/resource callbacks may have introduced new load-delaying resources.
         // Discover them at this checkpoint before permitting the later window-load task.
         self.publish_document_load_readiness(resources_changed || outcome.render_requested);
+        let scroll_event =
+            !self.rendering_is_blocked() && std::mem::take(&mut self.pending_viewport_scroll_event);
+        if scroll_event {
+            let (x, y) = self.page.dom.document.scroll_offset.get();
+            let result =
+                self.dispatch_user_input(crate::engine::UserInputEvent::Scroll { x, y })?;
+            merge_outcome(&mut outcome, result.outcome, self.page.dom.document.id());
+        }
         if let Some(runtime) = self.script_runtime.as_mut() {
             connection.report_renderer_task_stage(format!(
                 "settling timers and promise jobs for {}",
@@ -170,8 +182,12 @@ impl DocumentRuntime {
             ))?;
             let timer_started = Instant::now();
             let callback_limit = max_callbacks.min(MAX_POST_LOAD_TIMER_CALLBACKS as u32) as usize;
-            let timed = if runtime.has_ready_dynamic_scripts() && !runtime.has_ready_document_task()
-            {
+            let timed = if scroll_event {
+                // The scroll dispatch and its microtask checkpoint used this task's
+                // author-script opportunity. Keep the clock current, then yield to input.
+                runtime.elapse_time(elapsed);
+                ScriptOutcome::default()
+            } else if runtime.has_ready_dynamic_scripts() && !runtime.has_ready_document_task() {
                 advance_dynamic_script_slice(runtime, document_root, elapsed, callback_limit)
             } else {
                 let document_url = self.page.source_url.clone();
@@ -311,7 +327,13 @@ impl DocumentRuntime {
         let layout_started = Instant::now();
         // Reuse only box geometry. A hidden DOM change can still update the document title
         // or an accessibility name, so keep the regular presentation/metadata path.
-        if resources_changed
+        if (resources_changed
+            && (!resource_style_changed
+                || non_style_resources_changed
+                || style.changed_styles != 0
+                || style.removed_styles != 0
+                || style.layout_changed
+                || style.non_deferable_paint_changes))
             || self
                 .script_runtime
                 .as_ref()

@@ -8,11 +8,48 @@ use crate::limits::{MAX_CSS_RULES_PER_STYLESHEET, MAX_PAGE_CSS_RULES};
 
 #[derive(Debug)]
 pub(super) struct ParsedSheet {
-    input: Rc<SheetInput>,
+    pub(super) input: Rc<SheetInput>,
     rules: Vec<Rule>,
     events: Vec<LayerEvent>,
+    keyframes: std::cell::OnceCell<(
+        Vec<crate::engine::css::stylesheet::keyframes::KeyframeDefinition>,
+        Vec<crate::engine::css::layers::LayerPath>,
+    )>,
+    font_faces: std::cell::OnceCell<Vec<crate::engine::font::WebFontFace>>,
     // Reaching this budget may have truncated the source; expanding it requires reparsing.
     budget: usize,
+}
+
+impl ParsedSheet {
+    pub(super) fn keyframes(
+        &self,
+        environment: MediaEnvironment,
+    ) -> &(
+        Vec<crate::engine::css::stylesheet::keyframes::KeyframeDefinition>,
+        Vec<crate::engine::css::layers::LayerPath>,
+    ) {
+        self.keyframes.get_or_init(|| {
+            let collection = crate::engine::css::stylesheet::keyframes::collect_with_layers(
+                &self.input.source,
+                environment,
+                self.input.scope,
+            );
+            (collection.definitions, collection.layers)
+        })
+    }
+
+    pub(super) fn font_faces(
+        &self,
+        environment: MediaEnvironment,
+    ) -> &Vec<crate::engine::font::WebFontFace> {
+        self.font_faces.get_or_init(|| {
+            crate::engine::css::stylesheet::font_faces::collect(
+                &self.input.source,
+                &self.input.base_url,
+                environment,
+            )
+        })
+    }
 }
 
 pub(super) fn assemble(
@@ -72,6 +109,8 @@ fn assemble_with_limit(
                         input: Rc::clone(input),
                         rules: sheet.rules[..budget].to_vec(),
                         events: sheet.events[..=last].to_vec(),
+                        keyframes: std::cell::OnceCell::new(),
+                        font_faces: std::cell::OnceCell::new(),
                         budget,
                     })
                 }
@@ -94,6 +133,8 @@ fn assemble_with_limit(
                         input: Rc::clone(input),
                         rules,
                         events,
+                        keyframes: std::cell::OnceCell::new(),
+                        font_faces: std::cell::OnceCell::new(),
                         budget,
                     });
                     available.insert(Rc::clone(input), Rc::clone(&sheet));

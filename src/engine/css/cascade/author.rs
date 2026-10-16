@@ -30,6 +30,22 @@ pub(super) struct AuthorCascadeInput<'a> {
 }
 
 impl StyleSet {
+    fn inherited_variables_may_revert_layer(
+        &self,
+        custom_properties: &Arc<HashMap<String, String>>,
+    ) -> bool {
+        if let Some((cached, result)) = self.revert_layer_variables.borrow().as_ref()
+            && Arc::ptr_eq(cached, custom_properties)
+        {
+            return *result;
+        }
+        let result = custom_properties
+            .values()
+            .any(|value| might_revert_layer(value));
+        *self.revert_layer_variables.borrow_mut() = Some((Arc::clone(custom_properties), result));
+        result
+    }
+
     pub(super) fn apply_author_cascade(
         &self,
         style: &mut ComputedStyle,
@@ -241,10 +257,7 @@ impl StyleSet {
 
         let needs_snapshot = needs_snapshot
             || (cascaded.iter().any(|item| item.declaration.may_use_var)
-                && style
-                    .custom_properties
-                    .values()
-                    .any(|value| might_revert_layer(value)));
+                && self.inherited_variables_may_revert_layer(&style.custom_properties));
         if element_presentation {
             svg_presentation::apply(
                 node,

@@ -8,6 +8,32 @@ fn status_after_script(body: &str) -> String {
 }
 
 #[test]
+fn wheel_listener_snapshot_tracks_cancelable_listeners_after_removal_and_dispatch() {
+    for (script, expected) in [
+        ("addEventListener('wheel', () => {}, {passive:true})", false),
+        ("addEventListener('wheel', () => {})", true),
+        ("onwheel = () => {}", true),
+        ("onwheel = () => {}; onwheel = null", false),
+        (
+            "const f=()=>{}; addEventListener('wheel',f); removeEventListener('wheel',f)",
+            false,
+        ),
+        (
+            "addEventListener('wheel',()=>{}, {once:true}); dispatchEvent(new Event('wheel'))",
+            false,
+        ),
+    ] {
+        let (_, outcome) = execute_html(&format!("<script>{script}</script>"));
+        assert!(outcome.errors.is_empty(), "{script}: {:?}", outcome.errors);
+        assert_eq!(
+            outcome.wheel_has_blocking_listeners,
+            Some(expected),
+            "{script}"
+        );
+    }
+}
+
+#[test]
 fn dom_exception_exposes_web_idl_legacy_codes_and_constants() {
     let status = status_after_script(
         r#"<script>

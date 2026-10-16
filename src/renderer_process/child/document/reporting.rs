@@ -25,6 +25,12 @@ pub(super) fn merge_outcome(
     target.errors.append(&mut source.errors);
     target.console.append(&mut source.console);
     target.diagnostics.append(&mut source.diagnostics);
+    if source.wheel_has_blocking_listeners.is_some() {
+        target.wheel_has_blocking_listeners = source.wheel_has_blocking_listeners;
+    }
+    if source.wheel_has_nested_scroll.is_some() {
+        target.wheel_has_nested_scroll = source.wheel_has_nested_scroll;
+    }
     if source.navigation_url.is_some() {
         target.navigation_url = source.navigation_url;
         target.navigation_options = source.navigation_options;
@@ -144,6 +150,8 @@ pub(super) fn runtime_report_with_wheel(
         viewport_scroll_y: outcome.viewport_scroll_y,
         viewport_wheel_delta_y: outcome.viewport_wheel_delta_y,
         wheel_acknowledgements: wheel.into_iter().collect(),
+        wheel_has_blocking_listeners: outcome.wheel_has_blocking_listeners,
+        wheel_has_nested_scroll: outcome.wheel_has_nested_scroll,
         history_actions: outcome
             .history_actions
             .into_iter()

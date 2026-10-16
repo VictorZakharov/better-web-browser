@@ -85,6 +85,7 @@
     Element.prototype.scroll = Element.prototype.scrollTo = function(...args) { elementScroll(this, args, false); };
     Element.prototype.scrollBy = function(...args) { elementScroll(this, args, true); };
     let viewportScrollEventPending = false;
+    let nativeViewportScrollEventPending = false;
     let viewportScrollDelay = 0;
     function queueViewportScrollEvent() {
         const previousEnd = scrollEndTimers.get(document);
@@ -108,6 +109,14 @@
         viewportScrollY = y;
         return true;
     }
+    Object.defineProperty(globalThis, '__setNativeViewportScrollOffsets', {
+        configurable: false,
+        value(x, y) {
+            nativeViewportScrollEventPending =
+                setViewportScrollOffsets(Number(x) || 0, Number(y) || 0) ||
+                nativeViewportScrollEventPending;
+        }
+    });
     function scrollViewport(y) {
         y = finiteScrollValue(y);
         if (y === viewportScrollY) return;

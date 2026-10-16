@@ -26,6 +26,13 @@ impl ScriptRuntime {
                 .errors
                 .push(format!("finish document task: {error}"));
         }
+        outcome.wheel_has_blocking_listeners = Some(
+            self.context
+                .as_deref_mut()
+                .and_then(|context| context.call_global("__hasBlockingWheelListeners", &[]).ok())
+                .and_then(|value| value.as_boolean())
+                .unwrap_or(true),
+        );
         self.append_memory_diagnostic(&mut outcome);
         if let Some(context) = self.context.as_deref_mut() {
             outcome

@@ -54,6 +54,8 @@ pub struct StyleSet {
     generated_styles: HashMap<NodeId, ComputedStyle>,
     compiled: std::rc::Rc<sheets::CompiledRules>,
     ancestor_filters: std::cell::RefCell<super::selector_match::AncestorFilterCache>,
+    // A shared inherited variable map is inspected by every descendant with var() rules.
+    revert_layer_variables: std::cell::RefCell<InheritedLayerRevertCache>,
     defer_nonrendered_descendants: bool,
     deferred_fullscreen_roots: HashSet<NodeId>,
     document_base_url: String,
@@ -62,7 +64,20 @@ pub struct StyleSet {
     resolution_dppx: f32,
 }
 
+type InheritedLayerRevertCache = Option<(Arc<HashMap<String, String>>, bool)>;
+
+/// Keeps immutable parsed sheets available while a stylesheet change invalidates computed styles.
+#[derive(Debug)]
+pub(crate) struct RetainedRuleCompilation {
+    _compiled: std::rc::Rc<sheets::CompiledRules>,
+}
+
 impl StyleSet {
+    pub(crate) fn retain_rule_compilation(&self) -> RetainedRuleCompilation {
+        RetainedRuleCompilation {
+            _compiled: std::rc::Rc::clone(&self.compiled),
+        }
+    }
     pub fn from_dom(dom: &Dom, external_stylesheets: &[String], viewport_width: f32) -> Self {
         let sources = external_stylesheets
             .iter()
@@ -178,6 +193,7 @@ impl StyleSet {
             generated_styles: HashMap::new(),
             compiled,
             ancestor_filters: std::cell::RefCell::default(),
+            revert_layer_variables: std::cell::RefCell::default(),
             defer_nonrendered_descendants: false,
             deferred_fullscreen_roots: HashSet::new(),
             document_base_url: document_base_url.to_string(),

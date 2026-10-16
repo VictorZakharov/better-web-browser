@@ -155,3 +155,80 @@ fn tab_suspension_retires_pending_defaults_without_reusing_an_old_sequence() {
         126.0
     );
 }
+
+#[test]
+fn fast_path_requires_both_renderer_safety_facts_and_reconciles_each_verdict() {
+    let mut gesture = WheelGesture::default();
+    assert!(!gesture.preapply(1, 126.0, 126, 126, 1.0));
+    gesture.viewport_delta(&RuntimeReport {
+        wheel_has_blocking_listeners: Some(false),
+        ..RuntimeReport::default()
+    });
+    assert!(!gesture.preapply(1, 126.0, 126, 126, 1.0));
+    gesture.viewport_delta(&RuntimeReport {
+        wheel_has_nested_scroll: Some(false),
+        ..RuntimeReport::default()
+    });
+    assert!(gesture.preapply(1, 126.0, 126, 126, 1.0));
+    assert_eq!(
+        gesture.viewport_delta(&report(&[(1, WheelDecision::Viewport, 126.0)])),
+        0.0,
+        "the eventual viewport verdict must not scroll twice"
+    );
+    assert!(gesture.preapply(2, 126.0, 126, 126, 1.0));
+    assert_eq!(
+        gesture.viewport_delta(&report(&[(2, WheelDecision::Cancelled, 0.0)])),
+        -126.0,
+        "a newly installed listener can revoke a speculative scroll"
+    );
+    assert!(gesture.preapply(3, 126.0, 126, 126, 1.0));
+    assert_eq!(
+        gesture.viewport_delta(&report(&[(3, WheelDecision::NestedScroll, 0.0)])),
+        -126.0,
+        "a newly installed scrollport can revoke viewport ownership"
+    );
+    gesture.viewport_delta(&RuntimeReport {
+        wheel_has_blocking_listeners: Some(true),
+        ..RuntimeReport::default()
+    });
+    assert!(!gesture.preapply(4, 126.0, 126, 126, 1.0));
+}
+
+#[test]
+fn absolute_scroll_replaces_preapplied_target_and_tab_reset_forgets_eligibility() {
+    let mut gesture = WheelGesture::default();
+    gesture.viewport_delta(&RuntimeReport {
+        wheel_has_blocking_listeners: Some(false),
+        wheel_has_nested_scroll: Some(false),
+        ..RuntimeReport::default()
+    });
+    assert!(gesture.preapply(7, 126.0, 126, 126, 1.0));
+    let mut absolute = report(&[(7, WheelDecision::Viewport, 126.0)]);
+    absolute.viewport_scroll_y = Some(300.0);
+    assert_eq!(gesture.viewport_delta(&absolute), 126.0);
+    gesture.retire_before(8);
+    assert!(!gesture.preapply(7, 126.0, 126, 126, 1.0));
+    assert!(!WheelGesture::default().preapply(8, 126.0, 126, 126, 1.0));
+}
+
+#[test]
+fn edge_clamping_never_speculates_zero_motion_and_retracts_only_painted_distance() {
+    let mut gesture = WheelGesture::default();
+    gesture.viewport_delta(&RuntimeReport {
+        wheel_has_blocking_listeners: Some(false),
+        wheel_has_nested_scroll: Some(false),
+        ..RuntimeReport::default()
+    });
+    assert!(!gesture.preapply(1, 126.0, 126, 0, 1.0));
+    assert!(gesture.preapply(2, 126.0, 126, 20, 1.0));
+    assert_eq!(
+        gesture.reconcile(&report(&[(2, WheelDecision::Cancelled, 0.0)])),
+        [WheelAdjustment::Correction(-20)]
+    );
+    assert!(gesture.preapply(3, 126.0, 126, 20, 1.0));
+    assert_eq!(
+        gesture.reconcile(&report(&[(3, WheelDecision::Viewport, 126.0)])),
+        [WheelAdjustment::Correction(106)],
+        "new scroll range must admit the rest of the accepted wheel"
+    );
+}

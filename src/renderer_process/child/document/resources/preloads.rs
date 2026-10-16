@@ -169,6 +169,13 @@ impl DocumentRuntime {
                 self.resource_render_pending |= render;
                 self.resource_style_refresh_pending |=
                     render && matches!(resource, PageResource::Stylesheet { .. });
+                self.resource_non_style_render_pending |= render
+                    && matches!(
+                        resource,
+                        PageResource::Image { .. }
+                            | PageResource::Media { .. }
+                            | PageResource::Font { .. }
+                    );
                 continue;
             }
             let key = PreloadKey::for_resource(&self.page, &resource);

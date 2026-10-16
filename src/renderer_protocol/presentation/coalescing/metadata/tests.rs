@@ -43,6 +43,8 @@ fn detailed_report() -> RuntimeReport {
             viewport_delta_y: 126.0,
             dispatch_micros: 250,
         }],
+        wheel_has_blocking_listeners: Some(false),
+        wheel_has_nested_scroll: Some(false),
         cookie_updates: vec!["name=value".into()],
         navigation_url: Some("https://example.test/post".into()),
         navigation_options: NavigationOptions {

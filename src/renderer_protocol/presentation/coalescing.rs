@@ -105,6 +105,12 @@ impl RuntimeReport {
                 (self.viewport_wheel_delta_y as f64 + next.viewport_wheel_delta_y as f64)
                     .clamp(-(f32::MAX as f64), f32::MAX as f64) as f32;
         }
+        if next.wheel_has_blocking_listeners.is_none() {
+            next.wheel_has_blocking_listeners = self.wheel_has_blocking_listeners;
+        }
+        if next.wheel_has_nested_scroll.is_none() {
+            next.wheel_has_nested_scroll = self.wheel_has_nested_scroll;
+        }
         self.history_actions.append(&mut next.history_actions);
         next.history_actions = self.history_actions;
         if next.history_traversal_ack.is_none() {

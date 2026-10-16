@@ -15,6 +15,10 @@ pub struct ScriptOutcome {
     pub viewport_scroll_y: Option<f32>,
     /// Unconsumed wheel default, applied relative to the browser's current animation target.
     pub viewport_wheel_delta_y: f32,
+    /// Latest document-wide non-passive wheel listener state, when observed.
+    pub wheel_has_blocking_listeners: Option<bool>,
+    /// Whether committed layout has a user-scrollable nested vertical box.
+    pub wheel_has_nested_scroll: Option<bool>,
     pub history_actions: Vec<ScriptHistoryAction>,
     pub cookie_updates: Vec<String>,
     pub storage_updates: Vec<StorageWrite>,

@@ -18,7 +18,8 @@ impl WheelTrace {
                 format!(
                     concat!(
                         "{{\"document\":{},\"sequence\":{},\"delta_y_css_px\":{},\"enqueue_offset_ms\":{},",
-                        "\"decision\":{},\"status\":{},\"enqueue_to_decision_received_ms\":{},",
+                        "\"decision\":{},\"status\":{},\"enqueue_to_renderer_send_ms\":{},\"enqueue_to_decision_received_ms\":{},",
+                    "\"renderer_task_at_enqueue\":{},\"renderer_task_elapsed_at_enqueue_ms\":{},\"renderer_commands_at_enqueue\":{},",
                     "\"renderer_dispatch_ms\":{},\"enqueue_to_first_paint_ms\":{},\"first_paint_path\":{},",
                     "\"viewport_y_before_request_css_px\":{},\"viewport_y_at_first_paint_css_px\":{}}}"
                     ),
@@ -28,7 +29,11 @@ impl WheelTrace {
                     millis(self.animation.offset(sample.enqueued)),
                     json_string(decision),
                     json_string(sample.status),
+                    millis(sample.sent),
                     millis(sample.decision_received),
+                    sample.renderer_task_at_enqueue.as_deref().map(json_string).unwrap_or_else(|| "null".into()),
+                    millis(sample.renderer_task_elapsed_at_enqueue),
+                    sample.renderer_commands_at_enqueue.map(|count| count.to_string()).unwrap_or_else(|| "null".into()),
                     millis(sample.dispatch),
                 millis(sample.first_paint),
                 sample.paint_path.map(json_string).unwrap_or_else(|| "null".into()),

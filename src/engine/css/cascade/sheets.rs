@@ -198,8 +198,8 @@ pub(super) fn collect(
     let potential_transition_index =
         RuleIndex::for_indices(&rules, &potential_transition_rule_indices);
     let animation_rule_indices = animations::rule_indices(&rules);
-    let keyframes = animations::collect(&inputs, environment);
-    let font_faces = fonts::collect(&inputs, environment);
+    let keyframes = animations::collect(&inputs, &parsed, environment);
+    let font_faces = fonts::collect(&inputs, &parsed, environment);
     let nonlocal_dependencies = dependencies::NonlocalDependencies::for_rules(&rules);
     let cross_tree_or_scoped = dependencies::cross_tree_or_scoped(&rules);
     let compiled = Rc::new(CompiledRules {

@@ -13,6 +13,7 @@ impl DocumentRuntime {
         connection: &mut ChildConnection,
     ) -> Result<Option<AdvanceResult>, String> {
         let needs_present = wheel.is_some() || force_accessibility_update
+            || self.pending_viewport_scroll_event
             || outcome.render_requested
             || outcome.executed > 0
             || !outcome.errors.is_empty()

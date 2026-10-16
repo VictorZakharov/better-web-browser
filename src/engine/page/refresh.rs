@@ -198,9 +198,12 @@ impl Page {
             .collect::<HashSet<_>>()
             .len();
         let cached = self.cached_styles.take();
+        let stale = cached.is_none() && self.previous_styles.is_some();
+        let cached = cached.or_else(|| self.previous_styles.take());
         match cached {
             Some((cached_width, cached_height, mut styles))
-                if !invalidation.rebuild_style_rules
+                if !stale
+                    && !invalidation.rebuild_style_rules
                     && (cached_width - viewport_width).abs() < 0.5
                     && (cached_height - viewport_height).abs() < 0.5 =>
             {

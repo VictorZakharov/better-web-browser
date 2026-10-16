@@ -94,6 +94,17 @@ impl PendingRendererInputs {
     }
 
     pub(super) fn enqueue(&mut self, input: DocumentInput) -> QueueResult {
+        if let (DocumentInput::Wheel(wheel), Some(DocumentInput::Scroll(pending))) =
+            (&input, self.inputs.back())
+            && wheel.document == pending.document
+            && pending.x == 0.0
+        {
+            // The wheel carries the browser's newer viewport Y. CSSOM View queues
+            // one document scroll event for the next rendering update, so the
+            // unsent position need not block this discrete, cancelable input.
+            // A preceding discrete input remains an ordering barrier.
+            self.inputs.pop_back();
+        }
         if let (DocumentInput::Pointer(newer), Some(DocumentInput::Pointer(previous))) =
             (&input, self.inputs.back_mut())
             && newer.phase == PointerPhase::LockedMove

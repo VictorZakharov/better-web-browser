@@ -136,7 +136,17 @@ fn edge_bytes(value: &RuntimeReport) -> usize {
 
 fn snapshot_bytes(previous: &RuntimeReport, next: &RuntimeReport) -> usize {
     // Fixed fields and vector prefixes in encode_runtime, excluding optional bodies.
-    let mut bytes = 52_usize;
+    let mut bytes = 54_usize;
+    bytes = bytes.saturating_add(usize::from(
+        next.wheel_has_blocking_listeners
+            .or(previous.wheel_has_blocking_listeners)
+            .is_some(),
+    ));
+    bytes = bytes.saturating_add(usize::from(
+        next.wheel_has_nested_scroll
+            .or(previous.wheel_has_nested_scroll)
+            .is_some(),
+    ));
     if let Some(rejection) = next
         .native_text_rejection
         .as_ref()

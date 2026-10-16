@@ -5,6 +5,7 @@ mod json;
 #[cfg(test)]
 mod tests;
 
+use better_web_browser::renderer_process::RendererSnapshot;
 use better_web_browser::renderer_protocol::{DocumentId, WheelAcknowledgement, WheelDecision};
 use std::time::{Duration, Instant};
 
@@ -29,6 +30,10 @@ struct Sample {
     sequence: u64,
     delta: i32,
     enqueued: Instant,
+    sent: Option<Duration>,
+    renderer_task_at_enqueue: Option<String>,
+    renderer_task_elapsed_at_enqueue: Option<Duration>,
+    renderer_commands_at_enqueue: Option<usize>,
     decision_received: Option<Duration>,
     dispatch: Option<Duration>,
     decision: Option<WheelDecision>,
@@ -59,6 +64,10 @@ impl WheelTrace {
             sequence,
             delta,
             enqueued: now,
+            sent: None,
+            renderer_task_at_enqueue: None,
+            renderer_task_elapsed_at_enqueue: None,
+            renderer_commands_at_enqueue: None,
             decision_received: None,
             dispatch: None,
             decision: None,
@@ -78,6 +87,44 @@ impl WheelTrace {
             .find(|sample| sample.document == document && sample.sequence == sequence)
         {
             sample.status = "input_rejected";
+        }
+    }
+
+    pub(super) fn renderer_state_at_enqueue(
+        &mut self,
+        document: DocumentId,
+        sequence: u64,
+        snapshot: &RendererSnapshot,
+    ) {
+        if let Some(sample) = self
+            .samples
+            .iter_mut()
+            .find(|sample| sample.document == document && sample.sequence == sequence)
+        {
+            sample.renderer_task_at_enqueue = snapshot.active_task.clone();
+            sample.renderer_task_elapsed_at_enqueue = snapshot.active_task_elapsed;
+            sample.renderer_commands_at_enqueue = Some(snapshot.queues.browser_commands);
+        }
+    }
+
+    pub(super) fn sent(&mut self, document: DocumentId, sequence: u64, now: Instant) {
+        if let Some(sample) = self
+            .samples
+            .iter_mut()
+            .find(|sample| sample.document == document && sample.sequence == sequence)
+        {
+            sample.sent = Some(now.saturating_duration_since(sample.enqueued));
+        }
+    }
+
+    pub(in crate::windows_app) fn preapplied(&mut self, document: DocumentId, sequence: u64) {
+        if let Some(sample) = self.samples.iter_mut().find(|sample| {
+            sample.document == document
+                && sample.sequence == sequence
+                && sample.status == "unacknowledged"
+        }) {
+            sample.status = "awaiting_viewport_paint";
+            self.current_viewport_request = Some((document, sequence));
         }
     }
 
@@ -111,7 +158,10 @@ impl WheelTrace {
             let Some(sample) = self.samples.iter_mut().find(|sample| {
                 sample.document == document
                     && sample.sequence == value.sequence
-                    && sample.status == "unacknowledged"
+                    && matches!(
+                        sample.status,
+                        "unacknowledged" | "awaiting_viewport_paint" | "painted" | "no_motion"
+                    )
             }) else {
                 self.unmatched_acknowledgements = self.unmatched_acknowledgements.saturating_add(1);
                 continue;
@@ -119,6 +169,7 @@ impl WheelTrace {
             sample.decision_received = Some(now.saturating_duration_since(sample.enqueued));
             sample.dispatch = Some(Duration::from_micros(value.dispatch_micros));
             sample.decision = Some(value.decision);
+            let painted_early = sample.status == "painted";
             sample.status = match value.decision {
                 WheelDecision::Cancelled => "cancelled",
                 WheelDecision::NoMotion => "no_motion",
@@ -130,6 +181,7 @@ impl WheelTrace {
                     "awaiting_nested_paint"
                 }
                 WheelDecision::NestedScroll => "missing_nested_presentation",
+                WheelDecision::Viewport if painted_early => "painted",
                 WheelDecision::Viewport => "awaiting_viewport_paint",
             };
             if sample.status == "awaiting_viewport_paint" {

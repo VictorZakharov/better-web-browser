@@ -1,4 +1,4 @@
-mod cascade;
+pub(crate) mod cascade;
 mod change;
 pub(crate) mod clip_path;
 mod color_parser;

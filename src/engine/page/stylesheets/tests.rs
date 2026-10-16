@@ -53,3 +53,31 @@ fn redirect_response_base_is_used_for_descendant_imports() {
         url: "https://cdn.test/styles/child.css".into()
     }));
 }
+
+#[test]
+fn new_stylesheet_reconciles_against_private_previous_styles() {
+    let mut page = Page::parse("<p>result</p>", "https://example.test/");
+    let paragraph = page.dom.elements_named("p").next().unwrap();
+    page.add_stylesheet_from("https://example.test/first.css", "p{color:red}".into());
+    page.refresh_resources_for_viewport(800.0, 600.0);
+    assert_eq!(
+        page.cached_styles.as_ref().unwrap().2.get(&paragraph).color,
+        crate::engine::css::Color::rgb(255, 0, 0)
+    );
+
+    page.add_stylesheet_from("https://example.test/second.css", "p{color:blue}".into());
+    assert!(page.cached_style_for_viewport(800.0, 600.0).is_none());
+    assert!(page.previous_styles.is_some());
+    let paint_only = page.refresh_resources_for_viewport(800.0, 600.0);
+    assert!(paint_only.changed_styles > 0);
+    assert!(!paint_only.layout_changed);
+    assert!(page.previous_styles.is_none());
+    assert_eq!(
+        page.cached_styles.as_ref().unwrap().2.get(&paragraph).color,
+        crate::engine::css::Color::rgb(0, 0, 255)
+    );
+
+    page.add_stylesheet_from("https://example.test/third.css", "p{width:200px}".into());
+    let geometry = page.refresh_resources_for_viewport(800.0, 600.0);
+    assert!(geometry.layout_changed);
+}
