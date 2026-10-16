@@ -34,6 +34,7 @@ pub(super) struct PendingResourceFetch {
 pub(super) struct ResourceChanges {
     pub(super) render: bool,
     pub(super) style: bool,
+    pub(super) non_style: bool,
 }
 
 impl PendingResourceFetch {
@@ -212,6 +213,7 @@ impl DocumentRuntime {
         let render = changes.as_ref().is_some_and(|changes| changes.render)
             || (self.rendering.dirty && !self.rendering_is_blocked());
         let style = changes.as_ref().is_some_and(|changes| changes.style);
+        let non_style = changes.as_ref().is_some_and(|changes| changes.non_style);
         let dynamic_ready = self
             .script_runtime
             .as_ref()
@@ -240,6 +242,7 @@ impl DocumentRuntime {
         // first and all completed resources share one layout.
         self.resource_render_pending |= render;
         self.resource_style_refresh_pending |= style;
+        self.resource_non_style_render_pending |= non_style;
         Ok(Some(crate::renderer_protocol::RendererRuntimeUpdate {
             document: self.id,
             clock_advanced: false,
@@ -267,6 +270,19 @@ impl DocumentRuntime {
                         .get(&response.head.request_id)
                         .is_some_and(|resource| matches!(resource, PageResource::Stylesheet { .. }))
                 });
+                let non_style = responses.iter().any(|response| {
+                    pending
+                        .by_request
+                        .get(&response.head.request_id)
+                        .is_some_and(|resource| {
+                            matches!(
+                                resource,
+                                PageResource::Image { .. }
+                                    | PageResource::Media { .. }
+                                    | PageResource::Font { .. }
+                            )
+                        })
+                });
                 let render = self.install_resource_responses(
                     connection,
                     responses,
@@ -277,9 +293,11 @@ impl DocumentRuntime {
                 let changes = changed.get_or_insert(ResourceChanges {
                     render: false,
                     style: false,
+                    non_style: false,
                 });
                 changes.render |= render;
                 changes.style |= render && style;
+                changes.non_style |= render && non_style;
             }
             if !pending.batch.is_empty() {
                 self.pending_resource_preloads.push(pending);

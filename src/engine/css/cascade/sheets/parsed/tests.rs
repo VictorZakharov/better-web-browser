@@ -27,6 +27,11 @@ fn compile(
         index: RuleIndex::new(&rules),
         nonlocal_dependencies: super::super::dependencies::NonlocalDependencies::for_rules(&rules),
         cross_tree_or_scoped: super::super::dependencies::cross_tree_or_scoped(&rules),
+        attribute_dependencies:
+            super::super::attribute_dependencies::AttributeDependencies::for_rules(&rules),
+        transition_setting_dependencies: Default::default(),
+        potential_transition_rule_indices: Vec::new(),
+        potential_transition_index: RuleIndex::default(),
         rules,
         transition_rule_indices: Vec::new(),
         animation_index: RuleIndex::default(),

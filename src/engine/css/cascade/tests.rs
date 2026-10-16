@@ -143,6 +143,68 @@ fn incremental_styles_reuse_only_equal_custom_property_maps() {
 }
 
 #[test]
+fn inherited_variables_refresh_across_layer_keyword_candidates() {
+    let mut html = String::from(
+        "<style>p { color: var(--tone) }</style><main style='--tone: red; --marker: plain'>",
+    );
+    for _ in 0..24 {
+        html.push_str("<p>result</p>");
+    }
+    html.push_str("</main>");
+    let dom = dom::parse(&html);
+    let main = dom.elements_named("main").next().unwrap();
+    let results = dom.elements_named("p").collect::<Vec<_>>();
+    let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
+
+    for (inline, expected) in [
+        (
+            "--tone: blue; --marker: 'revert-layer'",
+            Color::rgb(0, 0, 255),
+        ),
+        ("--tone: green; --marker: plain", Color::rgb(0, 128, 0)),
+    ] {
+        main.set_attr("style", inline);
+        styles.refresh_subtrees(&dom.document, std::slice::from_ref(&main), &[]);
+        assert!(
+            results
+                .iter()
+                .all(|result| styles.get(result).color == expected)
+        );
+    }
+}
+
+#[test]
+#[ignore = "isolated inherited-variable refresh timing; run alone with --nocapture"]
+fn measure_refresh_with_many_inherited_variables() {
+    let variables = (0..1000)
+        .map(|index| format!("--unused-{index}:{index}px;"))
+        .collect::<String>();
+    let dom = dom::parse(&format!(
+        "<style>p {{color:var(--tone)}}</style><main style='--tone:blue;{variables}'>{}</main>",
+        "<p>result</p>".repeat(1500)
+    ));
+    let main = dom.elements_named("main").next().unwrap();
+    let first = dom.elements_named("p").next().unwrap();
+    let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
+    for sample in 0..12 {
+        main.set_attr("data-refresh", &sample.to_string());
+        let start = std::time::Instant::now();
+        let stats = styles.refresh_subtrees(&dom.document, std::slice::from_ref(&main), &[]);
+        let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+        assert_eq!(stats.changed_styles, 0);
+        assert_eq!(styles.get(&first).color, Color::rgb(0, 0, 255));
+        if sample >= 2 {
+            println!(
+                "inherited-variables sample={} ms={elapsed:.4} element_ms={:.4} pseudo_ms={:.4}",
+                sample - 2,
+                stats.element_style_time.as_secs_f64() * 1000.0,
+                stats.pseudo_style_time.as_secs_f64() * 1000.0,
+            );
+        }
+    }
+}
+
+#[test]
 fn computes_the_bounded_maximum_dom_depth_without_recursive_style_walks() {
     let mut html = String::from("<main>");
     for _ in 0..MAX_DOM_DEPTH + 32 {

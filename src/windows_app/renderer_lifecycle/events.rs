@@ -226,6 +226,13 @@ impl BrowserState {
                 RendererEvent::PointerCursor(result) => {
                     self.process_for_tab(id, |state| state.apply_renderer_pointer_cursor(result));
                 }
+                RendererEvent::ScrollCompleted { document, sequence } => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.pending_renderer_inputs
+                            .acknowledge_scroll(document, sequence);
+                    }
+                    self.flush_renderer_inputs_for(id);
+                }
                 RendererEvent::FullscreenRequested(request) => {
                     self.handle_fullscreen_request(id, request);
                 }

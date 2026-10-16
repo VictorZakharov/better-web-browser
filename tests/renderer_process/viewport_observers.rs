@@ -2,7 +2,7 @@ use super::support::*;
 use better_web_browser::renderer_process::{RendererEvent, RendererSession};
 use better_web_browser::renderer_protocol::{
     DocumentId, DocumentInput, InputModifiers, PointerButton, PointerInput, PointerPhase,
-    PresentationAcknowledgement, RuntimeReport, ScrollInput,
+    PresentationAcknowledgement, RuntimeReport, ScrollInput, WheelInput,
 };
 use std::time::Duration;
 
@@ -49,7 +49,9 @@ fn next_report(
                     presentation.runtime,
                 );
             }
-            RendererEvent::Diagnostic { .. } | RendererEvent::PointerCursor(_) => {}
+            RendererEvent::Diagnostic { .. }
+            | RendererEvent::PointerCursor(_)
+            | RendererEvent::ScrollCompleted { .. } => {}
             event => panic!("unexpected observer event: {event:?}"),
         }
     }
@@ -60,6 +62,71 @@ fn advance(session: &RendererSession, document: DocumentId) -> (bool, RuntimeRep
     let (painted, advanced, _, report) = next_report(session, document);
     assert!(advanced, "expected dedicated observer task completion");
     (painted, report)
+}
+
+#[test]
+fn native_scroll_positions_share_one_pending_rendering_event() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let session = RendererSession::launch(options()).expect("hidden renderer");
+    let initial = load_html_document(
+        &session,
+        229,
+        r#"<!doctype html><style>body{height:2000px}</style><script>
+            addEventListener('scroll', () => console.log('scroll:' + scrollY));
+        </script>"#,
+    );
+    for (sequence, y) in [(1, 10.0), (2, 20.0), (3, 30.0)] {
+        session
+            .send_input(DocumentInput::Scroll(ScrollInput {
+                document: initial.document,
+                sequence,
+                x: 0.0,
+                y,
+            }))
+            .unwrap();
+        let (painted, advanced, next, report) = next_report(&session, initial.document);
+        assert!(!painted && !advanced && report.console.is_empty());
+        assert_eq!(next, Some(0));
+    }
+    let (_, rendered) = advance(&session, initial.document);
+    assert_eq!(rendered.console, ["log: scroll:30"]);
+    assert!(advance(&session, initial.document).1.console.is_empty());
+}
+
+#[test]
+fn wheel_listener_sees_native_position_before_a_coalesced_scroll_event() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let session = RendererSession::launch(options()).expect("hidden renderer");
+    let initial = load_html_document(
+        &session,
+        230,
+        r#"<!doctype html><style>body{height:2000px}</style><script>
+            addEventListener('wheel', () => console.log('wheel:' + scrollY));
+            addEventListener('scroll', () => console.log('scroll:' + scrollY));
+        </script>"#,
+    );
+    session
+        .send_input(DocumentInput::Wheel(WheelInput {
+            document: initial.document,
+            sequence: 2,
+            x: 20.0,
+            y: 50.0,
+            delta_x: 0.0,
+            delta_y: 0.0,
+            viewport_y: 30.0,
+            modifiers: InputModifiers::default(),
+            target: None,
+        }))
+        .unwrap();
+    let (_, _, next, wheel) = next_report(&session, initial.document);
+    assert_eq!(wheel.console, ["log: wheel:30"]);
+    assert_eq!(next, Some(0));
+    let (_, scroll) = advance(&session, initial.document);
+    assert_eq!(scroll.console, ["log: scroll:30"]);
 }
 
 #[test]
@@ -111,6 +178,12 @@ fn native_scroll_queues_observer_work_without_relayout_or_author_event_propagati
     );
     assert!(!queued.render_requested);
     assert!(queued.console.is_empty());
+    let (painted, scroll) = advance(&session, initial.document);
+    assert!(!painted && !scroll.render_requested);
+    assert!(
+        scroll.console.is_empty(),
+        "observer ran in the scroll update"
+    );
     let (painted, visible) = advance(&session, initial.document);
     assert!(!painted && !visible.render_requested);
     assert_eq!(visible.console, ["log: entry:true:400"]);
@@ -160,14 +233,16 @@ fn native_scroll_observer_task_uses_geometry_after_nested_promise_mutations() {
         }))
         .unwrap();
     let (painted, advanced, next, input) = next_report(&session, initial.document);
-    assert!(
-        painted && !advanced,
-        "Promise geometry update should render before observer delivery"
-    );
+    assert!(!painted && !advanced, "input only queues the scroll event");
     assert_eq!(next, Some(0));
     assert!(
         input.console.is_empty(),
         "observer ran inside the input task"
+    );
+    let (painted, scroll) = advance(&session, initial.document);
+    assert!(
+        painted && scroll.console.is_empty(),
+        "scroll update must render the Promise mutation before observer delivery"
     );
     assert_eq!(
         advance(&session, initial.document).1.console,

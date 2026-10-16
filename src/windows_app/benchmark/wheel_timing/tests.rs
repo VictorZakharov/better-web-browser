@@ -1,6 +1,26 @@
 use super::*;
 
 #[test]
+fn wheel_trace_separates_browser_queue_wait_from_renderer_wait() {
+    let now = Instant::now();
+    let mut trace = WheelTrace::default();
+    trace.enqueue(document(1), 7, 126, now);
+    trace.sent(document(1), 7, now + Duration::from_millis(4));
+    trace.acknowledge(
+        document(1),
+        &[ack(7, WheelDecision::Viewport)],
+        None,
+        now + Duration::from_millis(19),
+    );
+    let report: serde_json::Value = serde_json::from_str(&trace.to_json()).unwrap();
+    assert_eq!(report["samples"][0]["enqueue_to_renderer_send_ms"], 4.0);
+    assert_eq!(
+        report["samples"][0]["enqueue_to_decision_received_ms"],
+        19.0
+    );
+}
+
+#[test]
 fn delayed_old_viewport_verdicts_are_superseded_but_dom_decisions_remain_observed() {
     let now = Instant::now();
     let mut trace = WheelTrace::default();

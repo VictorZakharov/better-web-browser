@@ -67,6 +67,12 @@ pub struct DecodedImage {
 }
 
 #[derive(Debug)]
+struct FontFaceCatalog {
+    key: (u64, usize, MediaEnvironment),
+    faces: Vec<crate::engine::font::WebFontFace>,
+}
+
+#[derive(Debug)]
 pub struct Page {
     pub dom: Dom,
     pub title: String,
@@ -80,7 +86,9 @@ pub struct Page {
     pub external_stylesheets: Vec<String>,
     stylesheet_sources: Vec<crate::engine::css::StylesheetSource>,
     stylesheet_discovery: Option<(u64, usize, MediaEnvironment)>,
+    font_faces_cache: std::cell::RefCell<Option<FontFaceCatalog>>,
     cached_styles: Option<(f32, f32, StyleSet)>,
+    previous_styles: Option<(f32, f32, StyleSet)>,
     pub images: HashMap<String, DecodedImage>,
     pub(crate) canvas_gpu_frames: HashMap<String, crate::gpu_frame::GpuFrame>,
     image_origin_clean: HashMap<String, bool>,
@@ -149,7 +157,9 @@ impl Page {
             external_stylesheets: Vec::new(),
             stylesheet_sources: Vec::new(),
             stylesheet_discovery: None,
+            font_faces_cache: std::cell::RefCell::new(None),
             cached_styles: None,
+            previous_styles: None,
             images,
             image_updates: HashSet::new(),
             canvas_gpu_frames: HashMap::new(),

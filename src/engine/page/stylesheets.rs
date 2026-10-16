@@ -20,10 +20,17 @@ impl Page {
             ));
         }
         let css = css.to_string();
-        self.cached_styles = None;
+        if let Some(styles) = self.cached_styles.take() {
+            // Keep prior values for the next exact style comparison, but never expose them
+            // through cached_style_for_viewport after the stylesheet changes.
+            self.previous_styles = Some(styles);
+        }
+        self.font_faces_cache.borrow_mut().take();
         self.stylesheet_discovery = None;
+        if truncated {
+            source.imports = imports::parse(&css);
+        }
         source.source = css.clone();
-        source.imports = imports::parse(&css);
         if let Some(index) = source.owner_url.as_ref().and_then(|url| {
             self.stylesheet_sources
                 .iter()

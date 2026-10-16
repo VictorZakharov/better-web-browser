@@ -37,6 +37,8 @@ pub struct RuntimeReport {
     pub viewport_scroll_y: Option<f32>,
     pub viewport_wheel_delta_y: f32,
     pub wheel_acknowledgements: Vec<WheelAcknowledgement>,
+    pub wheel_has_blocking_listeners: Option<bool>,
+    pub wheel_has_nested_scroll: Option<bool>,
     /// Ordered same-document updates and traversals from one renderer task.
     pub history_actions: Vec<HistoryAction>,
     /// The renderer has applied this browser History input and finished its popstate task.

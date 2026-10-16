@@ -17,10 +17,21 @@ impl BrowserState {
             return Err("benchmark wheel has no active renderer document".into());
         };
         let viewport_y = self.scroll_y as f32 / self.page_scale().max(f32::EPSILON);
+        let renderer_state = self
+            .tabs
+            .active()
+            .renderer_session
+            .as_ref()
+            .map(|session| session.snapshot());
         if let Some(benchmark) = self.benchmark.as_mut() {
             benchmark
                 .wheel_trace
                 .enqueue(document, sequence, delta, Instant::now());
+            if let Some(snapshot) = renderer_state.as_ref() {
+                benchmark
+                    .wheel_trace
+                    .renderer_state_at_enqueue(document, sequence, snapshot);
+            }
         }
         // Use the ordinary renderer default action: nested scrollports, cancellation and
         // native wheel animation must all participate, unlike an absolute scroll_to probe.
@@ -37,6 +48,9 @@ impl BrowserState {
         }));
         if !accepted && let Some(benchmark) = self.benchmark.as_mut() {
             benchmark.wheel_trace.rejected(document, sequence);
+        }
+        if accepted {
+            self.preapply_content_wheel(sequence, delta as f32);
         }
         accepted
             .then_some(())

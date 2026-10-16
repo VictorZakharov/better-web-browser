@@ -54,6 +54,7 @@ impl BrowserState {
         let modifiers = pointer_modifiers(wparam);
         // Once content owns this wheel, rejection is not permission to bypass
         // its listeners/nested tree with a raw viewport default in WM_MOUSEWHEEL.
+        let delta_y = if modifiers.shift { 0.0 } else { distance };
         let accepted = self.submit_renderer_input(DocumentInput::Wheel(WheelInput {
             document,
             sequence,
@@ -61,10 +62,13 @@ impl BrowserState {
             y: (point.y - toolbar + self.scroll_y) as f32 / scale,
             viewport_y: self.scroll_y as f32 / scale,
             delta_x: if modifiers.shift { distance } else { 0.0 },
-            delta_y: if modifiers.shift { 0.0 } else { distance },
+            delta_y,
             modifiers,
             target: locked_target,
         }));
+        if accepted {
+            self.preapply_content_wheel(sequence, delta_y);
+        }
         ContentWheelRoute::from_submission(accepted)
     }
 }

@@ -82,6 +82,13 @@ impl HostState {
             self.css_animation_revision = self.css_animation_revision.wrapping_add(1);
             self.stylesheet_sources = stylesheets.to_vec();
             // Resource completion can change the cascade without a DOM mutation.
+            if let Some((_, styles)) = self
+                .computed_styles
+                .as_ref()
+                .or(self.offset_parent_styles.as_ref())
+            {
+                self.previous_rules = Some(styles.retain_rule_compilation());
+            }
             self.computed_styles = None;
             self.offset_parent_styles = None;
             self.layout_geometry_initialized = false;
@@ -217,6 +224,7 @@ impl HostState {
 
     fn take_computed_styles(&mut self) -> (u64, StyleSet) {
         let version = self.document.document_mutation_version();
+        let previous_rules = self.previous_rules.take();
         let styles = match self.computed_styles.take() {
             Some((cached_version, styles)) if cached_version == version => styles,
             Some((_, mut styles)) => {
@@ -225,6 +233,7 @@ impl HostState {
             }
             _ => self.document_style_set(),
         };
+        drop(previous_rules);
         (version, styles)
     }
 

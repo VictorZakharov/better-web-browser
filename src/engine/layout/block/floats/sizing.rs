@@ -17,7 +17,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let insets = style.padding.resolve(basis, style.font_size).horizontal()
             + table::resolved_table_borders(node, &style, basis).horizontal();
         let specified = resolve_outer_size(
-            intrinsic_constraint(style.width, percentage_basis, Length::Auto),
+            intrinsic_constraint(style.width.clone(), percentage_basis, Length::Auto),
             basis,
             style.font_size,
             insets,
@@ -43,6 +43,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             (lo - margin, hi - margin)
         } else if let Some(width) = specified {
             (width, width)
+        } else if matches!(style.display, Display::Flex | Display::InlineFlex) {
+            // Atomic inline flex boxes and floats shrink to fit using the flex items'
+            // intrinsic contributions, not the widest block child alone.
+            (
+                self.flex_container_min_content_width(node, &style, percentage_basis) + insets,
+                self.flex_container_intrinsic_width(node, &style, percentage_basis) + insets,
+            )
         } else {
             let (minimum, preferred) = self.intrinsic_content_widths(node, percentage_basis);
             (minimum + insets, preferred + insets)
@@ -142,7 +149,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         widths
     }
 
-    fn float_inline_widths(
+    pub(in crate::engine::layout) fn float_inline_widths(
         &mut self,
         atoms: &[InlineAtom],
         basis: impl Into<Option<f32>>,

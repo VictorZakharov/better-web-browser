@@ -204,8 +204,18 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
     let updated = wait_for_text(&session, initial.document, "visibility:hidden");
     let text = presentation_text(&updated);
     assert!(
-        text.contains("focus|input:changed|key:a|scroll:42|visibility:hidden"),
+        text.contains("focus|input:changed|key:a|visibility:hidden"),
         "{text}"
+    );
+    // CSSOM View delivers the coalesced document scroll event in the next
+    // rendering opportunity, after these already queued native input tasks.
+    session
+        .advance_time(initial.document, Duration::ZERO, 1)
+        .unwrap();
+    let scrolled = wait_for_text(&session, initial.document, "scroll:42");
+    assert!(
+        presentation_text(&scrolled)
+            .contains("focus|input:changed|key:a|visibility:hidden|scroll:42")
     );
     let changed_control = updated.layout.items.iter().find_map(|item| match item {
         DisplayItem::Control(control) if control.kind == ControlKind::Text => Some(control),

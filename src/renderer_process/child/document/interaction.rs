@@ -49,6 +49,8 @@ impl DocumentRuntime {
         }
         self.last_input_sequence = input.sequence();
         let input_kind = publication_diagnostics::input_kind(&input);
+        let previous_scroll_timer =
+            matches!(&input, DocumentInput::Scroll(_)).then(|| self.next_timer_micros());
         self.media_activation.observe(&input);
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_audio_activation(self.media_activation.allows(1_000));
@@ -190,7 +192,11 @@ impl DocumentRuntime {
                 (result.outcome, None)
             }
             DocumentInput::Scroll(input) => {
+                let changed = self.page.dom.document.scroll_offset.get() != (input.x, input.y);
                 self.page.dom.document.scroll_offset.set((input.x, input.y));
+                if let Some(runtime) = self.script_runtime.as_mut() {
+                    runtime.set_native_viewport_scroll_offset(input.x, input.y)?;
+                }
                 if !self.layout.sticky_offsets.is_empty() {
                     self.layout.update_sticky_positions(
                         &self.page,
@@ -202,11 +208,11 @@ impl DocumentRuntime {
                         runtime.set_sticky_offsets(&self.layout.sticky_offsets);
                     }
                 }
-                let result = self.dispatch_user_input(UserInputEvent::Scroll {
-                    x: input.x,
-                    y: input.y,
-                })?;
-                (result.outcome, None)
+                // CSSOM View queues one document scroll event for the next rendering
+                // opportunity. Native frames may replace the offset before that event runs.
+                // https://drafts.csswg.org/cssom-view/#scrolling-events
+                self.pending_viewport_scroll_event |= changed;
+                (ScriptOutcome::default(), None)
             }
             DocumentInput::Lifecycle(input) => {
                 if input.state != DocumentLifecycle::Active {
@@ -243,6 +249,7 @@ impl DocumentRuntime {
             input_kind,
             force_accessibility_update,
             wheel_acknowledgement,
+            previous_scroll_timer,
             connection,
         )?;
         if let Some(sequence) = history_traversal_ack {

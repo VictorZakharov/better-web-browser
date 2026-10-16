@@ -6,15 +6,21 @@
             const source = host('attrGet', nodeId(this.element), 'style') || '';
             if (this.__source === source) return this.__map;
             const map = new Map();
-            for (const [name, value, important] of host('cssDeclarationList', source, false))
-                map.set(name, {value, priority:important ? 'important' : ''});
+            if (source) {
+                for (const [name, value, important] of host('cssDeclarationList', source, false))
+                    map.set(name, {value, priority:important ? 'important' : ''});
+            }
             this.__source = source; this.__map = map;
             return map;
         }
         _write(map) {
-            setAttributeValueInternal(this.element, 'style', [...map]
+            const source = [...map]
                 .map(([name, entry]) => name + ': ' + entry.value +
-                    (entry.priority ? ' !important' : '')).join('; '));
+                    (entry.priority ? ' !important' : '')).join('; ');
+            setAttributeValueInternal(this.element, 'style', source);
+            // A nested custom-element reaction may update the attribute again.
+            // _map checks the live source before reusing this map on the next read.
+            this.__source = source; this.__map = map;
         }
         get cssText() { return [...this._map()].map(([name, entry]) => name + ': ' +
             entry.value + (entry.priority ? ' !important' : '') + ';').join(' '); }

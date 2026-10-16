@@ -58,6 +58,7 @@ impl EventSender {
         if matches!(
             event,
             RendererEvent::FetchBatch { .. }
+                | RendererEvent::ScrollCompleted { .. }
                 | RendererEvent::FetchAbort { .. }
                 | RendererEvent::StorageMutation(_)
                 | RendererEvent::BroadcastCommand(_)
@@ -244,6 +245,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::FetchBatch { document, .. }
         | RendererEvent::FetchAbort { document, .. }
         | RendererEvent::DocumentFailed { document, .. }
+        | RendererEvent::ScrollCompleted { document, .. }
         | RendererEvent::PointerCursor(crate::renderer_protocol::PointerCursorResult {
             document,
             ..

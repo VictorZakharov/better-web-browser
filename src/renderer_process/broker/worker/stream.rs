@@ -286,7 +286,7 @@ impl Broker {
 
     pub(super) fn process_fetch_stream(&mut self) {
         for _ in 0..crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS {
-            if !self.writer().has_page_command_capacity() {
+            if !self.writer().has_background_command_capacity() {
                 break;
             }
             let event = match self.resources().fetch_stream.try_recv() {

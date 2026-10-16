@@ -31,6 +31,37 @@ fn shares_only_identical_rule_inputs_and_never_computed_styles() {
 }
 
 #[test]
+fn unchanged_sheet_reuses_parsed_rules_keyframes_and_font_faces() {
+    let dom = dom::parse("<p>result</p>");
+    let environment = MediaEnvironment::new(800.0, 600.0, 1.0, false);
+    let original = StylesheetSource::injected(
+        "https://example.test/first.css",
+        "@keyframes fade{to{opacity:.5}} @font-face{font-family:Example;src:url(example.woff2)} p{animation:fade 1s}".into(),
+    );
+    let first = collect(
+        &dom.document,
+        "https://example.test/",
+        std::slice::from_ref(&original),
+        environment,
+    );
+    let parsed = first.parsed[0].clone();
+    assert_eq!(parsed.keyframes(environment).0.len(), 1);
+    assert_eq!(parsed.font_faces(environment).len(), 1);
+
+    let added =
+        StylesheetSource::injected("https://example.test/second.css", "p{color:blue}".into());
+    let next = collect(
+        &dom.document,
+        "https://example.test/",
+        &[original, added],
+        environment,
+    );
+    assert!(Rc::ptr_eq(&parsed, &next.parsed[0]));
+    assert_eq!(next.keyframes.len(), 1);
+    assert_eq!(next.font_faces.len(), 1);
+}
+
+#[test]
 fn rebuilding_rules_reconciles_values_and_generated_boxes_against_a_fresh_cascade() {
     let dom = dom::parse(
         "<style>:root{--tone:red} p{color:var(--tone);width:10vw} p::before{content:'old'}</style><p>x</p>",

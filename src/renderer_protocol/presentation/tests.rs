@@ -23,6 +23,18 @@ fn relative_wheel_scroll_round_trips_both_directions_and_rejects_non_finite_valu
 }
 
 #[test]
+fn wheel_fast_path_safety_round_trips_unknown_safe_and_blocked_states() {
+    let mut presentation = sample();
+    for state in [None, Some(false), Some(true)] {
+        presentation.runtime.wheel_has_blocking_listeners = state;
+        presentation.runtime.wheel_has_nested_scroll = state;
+        let decoded = RendererPresentation::decode(&presentation.encode().unwrap()).unwrap();
+        assert_eq!(decoded.runtime.wheel_has_blocking_listeners, state);
+        assert_eq!(decoded.runtime.wheel_has_nested_scroll, state);
+    }
+}
+
+#[test]
 fn viewport_scroll_requests_round_trip_and_reject_non_finite_or_negative_offsets() {
     let mut presentation = sample();
     presentation.runtime.viewport_scroll_y = Some(120.25);

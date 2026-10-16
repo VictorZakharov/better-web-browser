@@ -15,15 +15,33 @@ impl Page {
         if candidates.clone().next().is_none() {
             return HashSet::new();
         }
-        // Parse ownership rules once for all pending requests, not once per
-        // font on every renderer scheduling checkpoint.
-        let styles = StyleSet::from_sources_for_media_environment(
-            &self.dom,
-            &self.base_url,
-            &self.stylesheet_sources,
+        // A pending font can keep the renderer clock active through many input and network
+        // checkpoints. The face catalogue changes only with DOM rules, source installation,
+        // or media; completed downloads are filtered separately below.
+        let key = (
+            self.dom.mutation_version(),
+            self.stylesheet_sources.len(),
             self.media_environment,
         );
-        let faces = styles.document_font_faces();
+        if self
+            .font_faces_cache
+            .borrow()
+            .as_ref()
+            .is_none_or(|cached| cached.key != key)
+        {
+            let styles = StyleSet::from_sources_for_media_environment(
+                &self.dom,
+                &self.base_url,
+                &self.stylesheet_sources,
+                self.media_environment,
+            );
+            *self.font_faces_cache.borrow_mut() = Some(FontFaceCatalog {
+                key,
+                faces: styles.document_font_faces(),
+            });
+        }
+        let cache = self.font_faces_cache.borrow();
+        let faces = &cache.as_ref().expect("font faces were cached").faces;
         candidates
             .filter_map(|resource| {
                 let face = faces.iter().find(|face| {

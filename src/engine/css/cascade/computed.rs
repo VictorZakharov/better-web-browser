@@ -97,7 +97,8 @@ impl StyleSet {
         // unchanged ancestor's rebuilt variable map makes every descendant compare a large
         // equivalent map again. Equality is exact; changed values never reuse stale storage.
         if let Some(previous) = self.styles.get(&node_id(node))
-            && previous.custom_properties == style.custom_properties
+            && (Arc::ptr_eq(&previous.custom_properties, &style.custom_properties)
+                || previous.custom_properties == style.custom_properties)
         {
             style.custom_properties = Arc::clone(&previous.custom_properties);
         }

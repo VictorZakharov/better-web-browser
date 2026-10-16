@@ -1,6 +1,17 @@
 use super::*;
 
 #[test]
+fn late_veto_retracts_from_animation_target_after_partial_paint() {
+    let mut animation = ScrollAnimation::default();
+    animation.retarget(126);
+    assert_eq!(animation.plan_correction(50, -126, 1000).target, 0);
+    animation.retarget(252);
+    assert_eq!(animation.plan_correction(50, -126, 1000).target, 126);
+    animation.cancel(false);
+    assert_eq!(animation.plan_correction(126, -126, 1000).target, 0);
+}
+
+#[test]
 fn fractional_css_wheel_distance_is_retained_across_inputs() {
     let mut animation = ScrollAnimation::default();
     let pixels: i32 = (0..16)

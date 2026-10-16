@@ -59,6 +59,29 @@ fn removing_or_changing_the_owning_rule_does_not_leave_readiness_stuck() {
 }
 
 #[test]
+fn replacing_a_linked_sheet_replaces_cached_pending_faces() {
+    let mut page = Page::parse(
+        "<link rel=stylesheet href=theme.css><p>Remote text</p>",
+        "https://example.test/",
+    );
+    let source = "https://example.test/theme.css";
+    let css = |url: &str| {
+        format!("@font-face{{font-family:Remote;src:url({url})}}p{{font-family:Remote}}")
+    };
+    page.add_linked_stylesheet(source, css("first.ttf"));
+    page.refresh_resources_for_viewport(800.0, 600.0);
+    let first = page.pending_css_font_sources(&HashSet::new());
+    assert_eq!(first.len(), 1);
+    assert_eq!(page.pending_css_font_sources(&HashSet::new()), first);
+
+    page.add_linked_stylesheet(source, css("second.ttf"));
+    page.refresh_resources_for_viewport(800.0, 600.0);
+    let second = page.pending_css_font_sources(&HashSet::new());
+    assert_eq!(second.len(), 1);
+    assert_ne!(second, first);
+}
+
+#[test]
 fn decoded_fallback_is_loaded_under_the_original_source_identity() {
     let mut page = page("url(first.ttf),url(second.ttf)");
     let original = fonts(&page)[0].clone();

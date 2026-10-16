@@ -223,10 +223,16 @@ impl ChildConnection {
             | BrowserMessage::FetchResponseChunk(_)
             | BrowserMessage::FetchResponseEnd(_)
             | BrowserMessage::FetchResponseAbort(_)) => {
+                let terminal = matches!(
+                    message,
+                    BrowserMessage::FetchResponseEnd(_) | BrowserMessage::FetchResponseAbort(_)
+                );
                 if let Some(delivery) = self.handle_fetch_message(message)? {
                     self.deliver_script_fetch(delivery)?;
                 }
-                self.complete_document_resource_preloads()?;
+                if terminal {
+                    self.complete_document_resource_preloads()?;
+                }
                 Ok(())
             }
             BrowserMessage::Hello { .. } => Err("duplicate renderer Hello".into()),

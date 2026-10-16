@@ -7,6 +7,7 @@ pub(in crate::engine::css::cascade) struct NonlocalDependencies {
     style_attribute: bool,
     text_sensitive: bool,
     graphics_attribute: bool,
+    resource_attribute: bool,
     any_style_attribute: bool,
 }
 
@@ -33,6 +34,8 @@ impl NonlocalDependencies {
                 self.text_sensitive
             } else if impact.is_local_content_only() {
                 self.text_sensitive || self.style_attribute || self.graphics_attribute
+            } else if impact.is_resource_attribute_only() {
+                self.resource_attribute
             } else {
                 true
             }
@@ -74,6 +77,12 @@ impl NonlocalDependencies {
                     && compound.attributes.iter().any(|attribute| {
                         crate::engine::invalidation::is_local_graphics_attribute(&attribute.name)
                     });
+                self.resource_attribute |= !compound.directions.is_empty()
+                    || compound.requires_has_slotted
+                    || relative
+                        && compound.attributes.iter().any(|attribute| {
+                            crate::engine::invalidation::is_resource_attribute(&attribute.name)
+                        });
                 // Selectors 4 §4.5 allows descendant and later-sibling dependencies.
                 // https://drafts.csswg.org/selectors/#relational
                 self.any |= !compound.has.is_empty()

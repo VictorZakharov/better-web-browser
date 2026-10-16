@@ -9,9 +9,11 @@ impl DocumentRuntime {
         input_kind: &'static str,
         force_accessibility_update: bool,
         wheel: Option<WheelAcknowledgement>,
+        previous_scroll_timer: Option<Option<u64>>,
         connection: &mut ChildConnection,
     ) -> Result<Option<AdvanceResult>, String> {
         let needs_present = wheel.is_some() || force_accessibility_update
+            || self.pending_viewport_scroll_event
             || outcome.render_requested
             || outcome.executed > 0
             || !outcome.errors.is_empty()
@@ -20,7 +22,12 @@ impl DocumentRuntime {
             || outcome.navigation_url.is_some()
             // Quiet input can queue a form-navigation task. Geometry observers already
             // publish their own wakeup after sampling; do not bypass that checkpoint.
-            || (!self.has_pending_geometry_observers() && self.next_timer_micros().is_some())
+            || (!self.has_pending_geometry_observers()
+                && self.next_timer_micros().is_some_and(|next| {
+                    previous_scroll_timer.is_none_or(|previous| {
+                        previous.is_none_or(|previous| next < previous)
+                    })
+                }))
             || outcome.viewport_scroll_y.is_some()
             || outcome.viewport_wheel_delta_y != 0.0
             || !outcome.history_actions.is_empty()

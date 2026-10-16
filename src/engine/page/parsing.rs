@@ -7,6 +7,7 @@ impl Page {
         self.resources.clear();
         self.media_selections.clear();
         self.stylesheet_sources.clear();
+        self.font_faces_cache.borrow_mut().take();
         self.external_stylesheets.clear();
         self.dom
             .quirks_mode

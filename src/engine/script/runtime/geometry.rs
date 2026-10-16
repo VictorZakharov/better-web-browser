@@ -1,6 +1,22 @@
 use super::*;
 
 impl ScriptRuntime {
+    pub(crate) fn set_native_viewport_scroll_offset(
+        &mut self,
+        x: f32,
+        y: f32,
+    ) -> Result<(), String> {
+        if let Some(context) = self.context.as_deref_mut() {
+            context
+                .call_global(
+                    "__setNativeViewportScrollOffsets",
+                    &[JsValue::from(f64::from(x)), JsValue::from(f64::from(y))],
+                )
+                .map_err(|error| format!("synchronize native viewport scroll: {error}"))?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn set_hit_test_snapshot(&mut self, layout: &crate::engine::LayoutOutput) {
         let mut host = self.host.borrow_mut();
         host.hit_test_snapshot =

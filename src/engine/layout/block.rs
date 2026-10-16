@@ -175,7 +175,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 height: 0.0,
             },
         );
-        let overflow_clip = self.begin_overflow_clip(&style);
+        let overflow_clip = self.begin_overflow_clip(node, &style);
         // Negative positioned levels paint after this background and before in-flow descendants.
         let in_flow_paint_start = self.output.items.len();
         let in_flow_node_start = self.output.node_paint_order.len();

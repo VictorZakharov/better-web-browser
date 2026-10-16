@@ -156,6 +156,21 @@ impl DocumentRuntime {
         &mut self,
         input: WheelInput,
     ) -> Result<(ScriptOutcome, WheelDecision), String> {
+        let (viewport_x, viewport_y) = self.page.dom.document.scroll_offset.get();
+        if viewport_y != input.viewport_y {
+            // A later wheel can overtake an unsent native animation position.
+            // Make that position visible to its listener and retain the one
+            // pending CSSOM View scroll event for the rendering update.
+            self.page
+                .dom
+                .document
+                .scroll_offset
+                .set((viewport_x, input.viewport_y));
+            if let Some(runtime) = self.script_runtime.as_mut() {
+                runtime.set_native_viewport_scroll_offset(viewport_x, input.viewport_y)?;
+            }
+            self.pending_viewport_scroll_event = true;
+        }
         let target = input
             .target
             .and_then(|target| self.resolve_target(target))

@@ -53,6 +53,51 @@ fn ancestor_class_change_transitions_a_descendants_computed_style() {
 }
 
 #[test]
+fn ancestor_toggle_can_enable_a_descendants_transition_setting() {
+    assert_async_script(
+        "#target{opacity:0} main.on #target{opacity:1;transition:opacity 1s linear}",
+        r#"
+        let now = 100; performance.now = () => now;
+        document.getElementById('parent').className = 'on'; now = 600;
+        requestAnimationFrame(() => {
+            check('new descendant setting', getComputedStyle(target).opacity === '0.5');
+            now = 1100; requestAnimationFrame(finish);
+        });
+    "#,
+    );
+}
+
+#[test]
+fn inherited_custom_value_can_enable_a_descendants_transition_setting() {
+    assert_async_script(
+        "main{--duration:0s} main.on{--duration:1s} #target{opacity:0;transition:opacity var(--duration) linear} main.on #target{opacity:1}",
+        r#"
+        let now = 100; performance.now = () => now;
+        document.getElementById('parent').className = 'on'; now = 600;
+        requestAnimationFrame(() => {
+            check('inherited transition duration', getComputedStyle(target).opacity === '0.5');
+            now = 1100; requestAnimationFrame(finish);
+        });
+    "#,
+    );
+}
+
+#[test]
+fn ancestor_style_attribute_selector_can_enable_a_descendants_transition() {
+    assert_async_script(
+        "#target{opacity:0} main[style] #target{opacity:1;transition:opacity 1s linear}",
+        r#"
+        let now = 100; performance.now = () => now;
+        document.getElementById('parent').style.color = 'red'; now = 600;
+        requestAnimationFrame(() => {
+            check('style attribute selector', getComputedStyle(target).opacity === '0.5');
+            now = 1100; requestAnimationFrame(finish);
+        });
+    "#,
+    );
+}
+
+#[test]
 fn transitions_outrank_important_author_declarations_during_their_active_phase() {
     assert_async_script(
         "#target{opacity:0!important;transition:opacity 1s linear} #target.on{opacity:1!important}",

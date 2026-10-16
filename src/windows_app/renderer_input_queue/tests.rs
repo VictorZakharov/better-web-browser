@@ -2,7 +2,7 @@ use super::*;
 mod keyboard;
 use better_web_browser::renderer_protocol::{
     DocumentId, DocumentNodeId, InputModifiers, NativeTextInput, PointerButton, PointerInput,
-    ScrollInput, TextEditIntent, TextInput, TextSelectionDirection, TextSelectionInput,
+    ScrollInput, TextEditIntent, TextInput, TextSelectionDirection, TextSelectionInput, WheelInput,
 };
 
 fn document() -> DocumentId {
@@ -16,6 +16,60 @@ fn scroll(sequence: u64, y: f32) -> DocumentInput {
         x: 0.0,
         y,
     })
+}
+
+fn wheel(sequence: u64, viewport_y: f32) -> DocumentInput {
+    DocumentInput::Wheel(WheelInput {
+        document: document(),
+        sequence,
+        x: 20.0,
+        y: 20.0 + viewport_y,
+        delta_x: 0.0,
+        delta_y: 126.0,
+        viewport_y,
+        modifiers: InputModifiers::default(),
+        target: None,
+    })
+}
+
+#[test]
+fn wheel_carries_latest_unsent_scroll_position_past_inflight_feedback() {
+    let mut pending = PendingRendererInputs::default();
+    pending.note_scroll_sent(PendingRendererInputs::scroll_key(&scroll(1, 10.0)));
+    assert_eq!(pending.enqueue(scroll(2, 20.0)), QueueResult::Queued);
+    assert_eq!(pending.enqueue(wheel(3, 30.0)), QueueResult::Queued);
+    assert_eq!(pending.pop_front(), Some(wheel(3, 30.0)));
+    assert!(pending.pop_front().is_none());
+    pending.acknowledge_scroll(document(), 1);
+    assert!(pending.pop_front().is_none());
+
+    assert_eq!(pending.enqueue(scroll(4, 40.0)), QueueResult::Queued);
+    assert_eq!(pending.enqueue(activation(5)), QueueResult::Queued);
+    assert_eq!(pending.enqueue(wheel(6, 40.0)), QueueResult::Queued);
+    assert_eq!(pending.pop_front(), Some(scroll(4, 40.0)));
+    assert_eq!(pending.pop_front(), Some(activation(5)));
+    assert_eq!(pending.pop_front(), Some(wheel(6, 40.0)));
+}
+
+#[test]
+fn scroll_completion_bounds_the_pipe_without_reordering_discrete_input() {
+    let mut pending = PendingRendererInputs::default();
+    pending.note_scroll_sent(PendingRendererInputs::scroll_key(&scroll(1, 20.0)));
+    assert_eq!(pending.enqueue(scroll(2, 40.0)), QueueResult::Queued);
+    assert_eq!(pending.enqueue(scroll(3, 60.0)), QueueResult::Coalesced);
+    assert_eq!(pending.enqueue(activation(4)), QueueResult::Queued);
+    assert!(pending.pop_front().is_none());
+    pending.acknowledge_scroll(document(), 0);
+    assert!(pending.pop_front().is_none());
+    pending.acknowledge_scroll(document(), 1);
+    let latest = pending.pop_front().expect("latest scroll");
+    assert_eq!(latest, scroll(3, 60.0));
+    pending.note_scroll_sent(PendingRendererInputs::scroll_key(&latest));
+    assert_eq!(pending.pop_front(), Some(activation(4)));
+    pending.enqueue(scroll(5, 80.0));
+    assert!(pending.pop_front().is_none());
+    pending.acknowledge_scroll(document(), 3);
+    assert_eq!(pending.pop_front(), Some(scroll(5, 80.0)));
 }
 
 fn pointer_move(sequence: u64) -> DocumentInput {

@@ -78,6 +78,10 @@ impl HostState {
         next: &str,
     ) -> JsValue {
         let (version, styles) = self.take_computed_styles();
+        if !styles.attribute_change_can_affect_style(root, name, next) {
+            self.computed_styles = Some((version, styles));
+            return JsValue::null();
+        }
         let mut nodes = Vec::new();
         if styles.may_transition_on_attribute(root, name, next) {
             nodes.push(root.clone());
@@ -91,6 +95,12 @@ impl HostState {
                     }
                 }
             }
+        }
+        if !styles.transition_settings_may_change_on_attribute(root, name, next) {
+            // A rule or inherited custom value can enable a transition in the
+            // after-change style. Otherwise, only elements matching a rule
+            // that can supply transition time need before/after snapshots.
+            nodes.retain(|node| styles.may_have_transition_time_rule(node));
         }
         for node in self.inline_transitions.descendants(root) {
             if nodes.len() == 64 {
@@ -226,6 +236,66 @@ impl HostState {
 mod tests {
     use super::*;
     mod discovery;
+
+    #[test]
+    fn unrelated_class_write_needs_no_transition_snapshots() {
+        let dom = crate::engine::dom::parse(
+            "<style>.item{transition:opacity 1s}.on .item{opacity:.5}</style><main id=root><a class=item></a></main>",
+        );
+        let root = dom.elements_named("main").next().expect("fixture root");
+        let mut state = HostState::new(
+            dom.document,
+            "https://example.test/",
+            "UTF-8",
+            Rc::new(module_loader::WebModuleLoader::new()),
+        );
+        assert!(matches!(
+            state.transition_affected_targets(&root, "class", "noise1"),
+            JsValue::Null
+        ));
+        assert!(matches!(
+            state.transition_affected_targets(&root, "class", "on"),
+            JsValue::Array(_)
+        ));
+    }
+
+    #[test]
+    fn ancestor_style_write_snapshots_only_descendants_with_transition_time() {
+        let dom = crate::engine::dom::parse(
+            "<style>.active{transition:opacity 1s}.delayed{transition:opacity 0s 1s}.idle{transition:opacity 0s}</style><main><a class=active></a><span class=delayed></span><p class=idle></p></main>",
+        );
+        let root = dom.elements_named("main").next().expect("fixture root");
+        let mut state = HostState::new(
+            dom.document,
+            "https://example.test/",
+            "UTF-8",
+            Rc::new(module_loader::WebModuleLoader::new()),
+        );
+        let JsValue::Array(candidates) =
+            state.transition_affected_targets(&root, "style", "color:red")
+        else {
+            panic!("candidate array");
+        };
+        assert_eq!(candidates.len(), 2);
+    }
+
+    #[test]
+    fn unrelated_ancestor_selector_does_not_admit_a_transition_target() {
+        let dom = crate::engine::dom::parse(
+            "<style>.other .active{transition:opacity 1s}</style><main><a class=active></a></main>",
+        );
+        let root = dom.elements_named("main").next().expect("fixture root");
+        let mut state = HostState::new(
+            dom.document,
+            "https://example.test/",
+            "UTF-8",
+            Rc::new(module_loader::WebModuleLoader::new()),
+        );
+        assert!(matches!(
+            state.transition_affected_targets(&root, "style", "color:red"),
+            JsValue::Array(candidates) if candidates.is_empty()
+        ));
+    }
 
     #[test]
     fn snapshot_limits_are_atomic_and_saturating() {

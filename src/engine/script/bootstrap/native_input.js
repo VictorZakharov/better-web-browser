@@ -278,7 +278,9 @@
                 case 'simple': return dispatchNativeSimple(input);
                 case 'imageResource': return dispatchNativeImageResource(input);
                 case 'scroll': {
-                    if (!setViewportScrollOffsets(Number(input.x) || 0, Number(input.y) || 0)) return true;
+                    const changed = setViewportScrollOffsets(Number(input.x) || 0, Number(input.y) || 0);
+                    if (!changed && !nativeViewportScrollEventPending) return true;
+                    nativeViewportScrollEventPending = false;
                     viewportScrollDelay = userScrollEndDelay;
                     if (viewportScrollEventPending) return true;
                     // CSSOM View viewport scroll events target Document and bubble to Window.

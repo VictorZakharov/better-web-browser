@@ -123,6 +123,10 @@
         }
     }
     const listenerStore = new WeakMap();
+    let blockingWheelListeners = 0;
+    Object.defineProperty(globalThis, '__hasBlockingWheelListeners', {
+        value: () => blockingWheelListeners > 0,
+    });
     const proxyStorage = new WeakMap();
     const storageProxy = new WeakMap();
     const legacyEventTargets = new WeakMap();
@@ -168,6 +172,8 @@
         const listeners = listenerStore.get(target);
         const index = listeners?.indexOf(listener) ?? -1;
         if (index >= 0) listeners.splice(index, 1);
+        if (index >= 0 && listener.type === 'wheel' && !listener.passive)
+            blockingWheelListeners--;
         if (index >= 0 && sensorListenerChanged)
             sensorListenerChanged(receiverFor(target), listener.type, -1);
         if (index >= 0 && broadcastListenerChanged)
@@ -186,6 +192,7 @@
             listener.callback === callback && listener.capture === flattened.capture)) return;
         const listener = { type, callback, ...flattened, removed: false };
         listeners.push(listener);
+        if (type === 'wheel' && !flattened.passive) blockingWheelListeners++;
         if (sensorListenerChanged) sensorListenerChanged(receiverFor(target), type, 1);
         if (broadcastListenerChanged) broadcastListenerChanged(receiverFor(target), type, 1);
         // A signal removes the precise listener record, including during a dispatch

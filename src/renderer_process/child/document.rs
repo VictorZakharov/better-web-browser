@@ -107,6 +107,7 @@ pub(super) struct DocumentRuntime {
     resource_render_pending: bool,
     resource_event_pending: bool,
     resource_style_refresh_pending: bool,
+    resource_non_style_render_pending: bool,
     lifecycle: crate::renderer_protocol::DocumentLifecycle,
     accessibility: RendererAccessibility,
     accessibility_selection: Option<(crate::engine::dom::NodeId, u32, u32)>,
@@ -140,6 +141,7 @@ pub(super) struct DocumentRuntime {
     pending_async_outcome: ScriptOutcome,
     resource_events: resources::events::ResourceEvents,
     geometry_observers_pending: bool,
+    pending_viewport_scroll_event: bool,
     resize_observers_pending: bool,
     rendering: rendering::RenderBlocking,
     color_paint: color_paint::PendingColorPaint,
@@ -217,6 +219,19 @@ impl DocumentRuntime {
         load: PageLoadReport,
         wheel: Option<WheelAcknowledgement>,
     ) -> Result<AdvanceResult, String> {
+        // The browser can scroll its committed snapshot before this realm finishes
+        // a later wheel task only when no nested scrollport can own that wheel.
+        outcome.wheel_has_nested_scroll = Some(
+            self.rendering_is_blocked()
+                || self
+                    .layout
+                    .scroll_boxes
+                    .values()
+                    .any(|scroll| scroll.user_y && scroll.content_height > scroll.port.height),
+        );
+        if self.script_runtime.is_none() {
+            outcome.wheel_has_blocking_listeners = Some(false);
+        }
         if let Some(runtime) = self.script_runtime.as_ref() {
             self.focused_node = runtime.focused_node_id();
         }

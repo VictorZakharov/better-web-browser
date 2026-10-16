@@ -4,7 +4,7 @@ use super::*;
 pub(super) mod frame_service;
 mod gesture;
 mod sticky;
-pub(super) use gesture::WheelGesture;
+pub(super) use gesture::{WheelAdjustment, WheelGesture};
 
 // A 16 ms SetTimer request repeatedly landed on alternating one/two-tick boundaries in
 // diagnostics, producing the observed ~16/32 ms cadence. The animation remains time-based, so
@@ -67,6 +67,15 @@ impl ScrollAnimation {
         }
     }
 
+    fn plan_correction(&self, position: i32, distance: i32, maximum: i32) -> ScrollRequest {
+        let base = self.target.unwrap_or(position);
+        let target = base.saturating_add(distance).clamp(0, maximum);
+        ScrollRequest {
+            target,
+            introduces_motion: target != base && target != position,
+        }
+    }
+
     /// Returns whether this target needs a new timer and an immediate first frame.
     fn retarget(&mut self, target: i32) -> bool {
         let starting = self.target.replace(target).is_none();
@@ -100,6 +109,11 @@ impl ScrollAnimation {
         let pixels = total.round().clamp(i32::MIN as f64, i32::MAX as f64) as i32;
         self.pixel_remainder = (total - pixels as f64).clamp(-0.5, 0.5);
         pixels
+    }
+    fn preview_css_delta(&self, delta: f32, scale: f32) -> i32 {
+        (delta as f64 * scale as f64 + self.pixel_remainder)
+            .round()
+            .clamp(i32::MIN as f64, i32::MAX as f64) as i32
     }
     fn consume_wheel_delta(&mut self, delta: i32) -> i32 {
         let total = self.wheel_delta_remainder.saturating_add(delta);
@@ -138,7 +152,12 @@ impl BrowserState {
         &mut self,
         report: &better_web_browser::renderer_protocol::RuntimeReport,
     ) {
-        self.queue_css_wheel_scroll(self.wheel_gesture.viewport_delta(report));
+        for adjustment in self.wheel_gesture.reconcile(report) {
+            match adjustment {
+                WheelAdjustment::Default(delta) => self.queue_css_wheel_scroll(delta),
+                WheelAdjustment::Correction(pixels) => self.queue_scroll_correction(pixels),
+            }
+        }
     }
 
     pub(super) unsafe fn suspend_wheel_gesture(&mut self) {
@@ -191,6 +210,31 @@ impl BrowserState {
         }
     }
 
+    pub(super) unsafe fn preapply_content_wheel(&mut self, sequence: u64, delta: f32) {
+        if !self.wheel_gesture.can_preapply() || !delta.is_finite() || delta == 0.0 {
+            return;
+        }
+        let scale = self.page_scale();
+        let distance = self.scroll_animation.preview_css_delta(delta, scale);
+        let maximum = (self.content_height - self.viewport_height()).max(0);
+        let before = self.scroll_animation.target.unwrap_or(self.scroll_y);
+        let planned = self
+            .scroll_animation
+            .plan_distance(self.scroll_y, distance, maximum);
+        if planned.target == before {
+            return;
+        }
+        if let Some(document) = self.navigation.active_document()
+            && let Some(benchmark) = self.benchmark.as_mut()
+        {
+            benchmark.wheel_trace.preapplied(document, sequence);
+        }
+        self.queue_css_wheel_scroll(delta);
+        let after = self.scroll_animation.target.unwrap_or(self.scroll_y);
+        self.wheel_gesture
+            .preapply(sequence, delta, distance, after - before, scale);
+    }
+
     unsafe fn cancel_pending_scroll_on_reversal(&mut self, direction: i32) {
         if self
             .scroll_animation
@@ -218,6 +262,25 @@ impl BrowserState {
         let request = self
             .scroll_animation
             .plan_distance(self.scroll_y, distance, maximum);
+        self.queue_scroll_request(request);
+    }
+
+    unsafe fn queue_scroll_correction(&mut self, distance: i32) {
+        let maximum = (self.content_height - self.viewport_height()).max(0);
+        if self.processing_background_tab {
+            self.cancel_scroll_animation();
+            self.commit_scroll_position(self.scroll_y.saturating_add(distance).clamp(0, maximum));
+            return;
+        }
+        // A late veto retracts this input's contribution from the current target,
+        // including distance that has already painted or later wheels have added.
+        let request = self
+            .scroll_animation
+            .plan_correction(self.scroll_y, distance, maximum);
+        self.queue_scroll_request(request);
+    }
+
+    unsafe fn queue_scroll_request(&mut self, request: ScrollRequest) {
         // Resolve ownership before a new animation can synchronously paint its
         // first frame; an active animation continues on its existing timer.
         self.resolve_benchmark_wheel_viewport_request(request.introduces_motion);

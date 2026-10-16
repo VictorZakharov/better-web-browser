@@ -65,7 +65,9 @@ pub(super) fn wait_for_text(
                     return *presentation;
                 }
             }
-            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
+            RendererEvent::Diagnostic { .. }
+            | RendererEvent::RuntimeUpdate(_)
+            | RendererEvent::ScrollCompleted { .. } => {}
             event => panic!("unexpected renderer input event: {event:?}"),
         }
     }

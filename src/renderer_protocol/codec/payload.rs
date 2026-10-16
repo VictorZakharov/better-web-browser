@@ -337,7 +337,8 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
         | RendererMessage::RuntimeUpdate(_)
         | RendererMessage::DocumentFailed { .. }
         | RendererMessage::NavigationRequested { .. }
-        | RendererMessage::PointerCursor(_) => return encode_renderer_document(message),
+        | RendererMessage::PointerCursor(_)
+        | RendererMessage::ScrollCompleted { .. } => return encode_renderer_document(message),
         RendererMessage::FullscreenRequest(_)
         | RendererMessage::PointerLockRequest(_)
         | RendererMessage::TextSelectionUpdate(_) => {
@@ -414,7 +415,7 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
             Ok(RendererMessage::Diagnostic(diagnostic))
         }
         0x0102 | 0x0104 | 0x0106 | 0x0108 | 0x010a | 0x010c | 0x0112 | 0x0114 | 0x0116 | 0x0118
-        | 0x011a | 0x011e | 0x0120 => decode_renderer_document(kind, payload),
+        | 0x011a | 0x011e | 0x0120 | 0x0122 => decode_renderer_document(kind, payload),
         0x0132 | 0x0134 | 0x0136 | 0x013a => decode_renderer_state(kind, payload),
         0x0150 | 0x0152 | 0x0156 => decode_renderer_input(kind, payload),
         0x8002 => {

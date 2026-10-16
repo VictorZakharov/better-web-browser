@@ -3,11 +3,28 @@
 // abandons prior animation, not wheel dispatch or the new event's default-action gate.
 // https://drafts.csswg.org/cssom-view/#smooth-scroll
 use better_web_browser::renderer_protocol::{RuntimeReport, WheelDecision};
+use std::collections::HashMap;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(in crate::windows_app) enum WheelAdjustment {
+    Default(f32),
+    Correction(i32),
+}
+
+struct PreappliedWheel {
+    requested_delta: f32,
+    requested_pixels: i32,
+    distance_pixels: i32,
+    scale: f32,
+}
 
 #[derive(Default)]
 pub(in crate::windows_app) struct WheelGesture {
     direction: i8,
     first_live_sequence: u64,
+    blocking_listeners: Option<bool>,
+    nested_scroll: Option<bool>,
+    preapplied: HashMap<u64, PreappliedWheel>,
 }
 
 impl WheelGesture {
@@ -33,11 +50,59 @@ impl WheelGesture {
     pub(in crate::windows_app) fn retire_before(&mut self, sequence: u64) {
         self.first_live_sequence = self.first_live_sequence.max(sequence);
         self.direction = 0;
+        self.preapplied.clear();
     }
 
-    pub(in crate::windows_app) fn viewport_delta(&self, report: &RuntimeReport) -> f32 {
+    pub(in crate::windows_app) fn can_preapply(&self) -> bool {
+        self.blocking_listeners == Some(false) && self.nested_scroll == Some(false)
+    }
+
+    pub(in crate::windows_app) fn preapply(
+        &mut self,
+        sequence: u64,
+        delta: f32,
+        requested_pixels: i32,
+        distance_pixels: i32,
+        scale: f32,
+    ) -> bool {
+        if !self.can_preapply()
+            || sequence == 0
+            || sequence < self.first_live_sequence
+            || !delta.is_finite()
+            || delta == 0.0
+            || distance_pixels == 0
+            || !scale.is_finite()
+            || scale <= 0.0
+        {
+            return false;
+        }
+        self.preapplied.insert(
+            sequence,
+            PreappliedWheel {
+                requested_delta: delta,
+                requested_pixels,
+                distance_pixels,
+                scale,
+            },
+        );
+        true
+    }
+
+    pub(in crate::windows_app) fn reconcile(
+        &mut self,
+        report: &RuntimeReport,
+    ) -> Vec<WheelAdjustment> {
+        if let Some(blocking) = report.wheel_has_blocking_listeners {
+            self.blocking_listeners = Some(blocking);
+        }
+        if let Some(nested) = report.wheel_has_nested_scroll {
+            self.nested_scroll = Some(nested);
+        }
         if report.wheel_acknowledgements.is_empty() {
-            return report.viewport_wheel_delta_y;
+            return (report.viewport_wheel_delta_y != 0.0)
+                .then_some(WheelAdjustment::Default(report.viewport_wheel_delta_y))
+                .into_iter()
+                .collect();
         }
         // Keep DOM delivery, nested snapshots and script scrolls untouched. Only
         // obsolete shell-owned smooth-scroll distance is abandoned. Per-verdict
@@ -45,10 +110,56 @@ impl WheelGesture {
         report
             .wheel_acknowledgements
             .iter()
-            .filter(|ack| {
-                ack.sequence >= self.first_live_sequence && ack.decision == WheelDecision::Viewport
+            .flat_map(|ack| {
+                let preapplied = self.preapplied.remove(&ack.sequence);
+                if ack.sequence < self.first_live_sequence {
+                    return Vec::new();
+                }
+                let expected = if ack.decision == WheelDecision::Viewport {
+                    ack.viewport_delta_y
+                } else {
+                    0.0
+                };
+                // An absolute script scroll replaces the speculative target.
+                if report.viewport_scroll_y.is_some() {
+                    (expected != 0.0)
+                        .then_some(WheelAdjustment::Default(expected))
+                        .into_iter()
+                        .collect()
+                } else if let Some(preapplied) = preapplied {
+                    let expected_pixels = if expected == preapplied.requested_delta {
+                        preapplied.requested_pixels
+                    } else {
+                        (f64::from(expected) * f64::from(preapplied.scale))
+                            .round()
+                            .clamp(i32::MIN as f64, i32::MAX as f64) as i32
+                    };
+                    (expected_pixels != preapplied.distance_pixels)
+                        .then_some(WheelAdjustment::Correction(
+                            expected_pixels.saturating_sub(preapplied.distance_pixels),
+                        ))
+                        .into_iter()
+                        .collect()
+                } else {
+                    (expected != 0.0)
+                        .then_some(WheelAdjustment::Default(expected))
+                        .into_iter()
+                        .collect()
+                }
             })
-            .fold(0.0_f64, |sum, ack| sum + f64::from(ack.viewport_delta_y))
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(in crate::windows_app) fn viewport_delta(&mut self, report: &RuntimeReport) -> f32 {
+        self.reconcile(report)
+            .into_iter()
+            .fold(0.0_f64, |sum, adjustment| {
+                sum + f64::from(match adjustment {
+                    WheelAdjustment::Default(delta) => delta,
+                    WheelAdjustment::Correction(pixels) => pixels as f32,
+                })
+            })
             .clamp(-f64::from(f32::MAX), f64::from(f32::MAX)) as f32
     }
 }

@@ -38,7 +38,9 @@ impl Page {
             external_stylesheets: self.external_stylesheets.clone(),
             stylesheet_sources: self.stylesheet_sources.clone(),
             stylesheet_discovery: None,
+            font_faces_cache: std::cell::RefCell::new(None),
             cached_styles: None,
+            previous_styles: None,
             images: layout_image_metadata(&self.images),
             canvas_gpu_frames: HashMap::new(),
             image_origin_clean: HashMap::new(),
@@ -67,6 +69,7 @@ impl Page {
         self.external_stylesheets = source.external_stylesheets.clone();
         self.stylesheet_sources = source.stylesheet_sources.clone();
         self.stylesheet_discovery = None;
+        self.font_faces_cache.borrow_mut().take();
         self.images = layout_image_metadata(&source.images);
         self.inline_svgs.synchronize(&source.inline_svgs);
         self.scripting_enabled = source.scripting_enabled;

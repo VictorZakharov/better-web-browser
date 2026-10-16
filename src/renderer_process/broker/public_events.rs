@@ -33,6 +33,10 @@ pub enum RendererEvent {
         cause: NavigationCause,
     },
     PointerCursor(PointerCursorResult),
+    ScrollCompleted {
+        document: DocumentId,
+        sequence: u64,
+    },
     TextSelectionUpdate(crate::renderer_protocol::TextSelectionUpdate),
     FullscreenRequested(crate::renderer_protocol::FullscreenRequest),
     PointerLockRequested(crate::renderer_protocol::PointerLockRequest),

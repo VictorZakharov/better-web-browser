@@ -45,6 +45,14 @@ pub(in crate::renderer_protocol) fn encode_runtime(
     }
     writer.f32(report.viewport_wheel_delta_y);
     super::wheel::encode(writer, &report.wheel_acknowledgements)?;
+    writer.bool(report.wheel_has_blocking_listeners.is_some());
+    if let Some(blocking) = report.wheel_has_blocking_listeners {
+        writer.bool(blocking);
+    }
+    writer.bool(report.wheel_has_nested_scroll.is_some());
+    if let Some(nested) = report.wheel_has_nested_scroll {
+        writer.bool(nested);
+    }
     if report.history_actions.len() > MAX_RUNTIME_REPORT_ENTRIES {
         return Err(ProtocolError::InvalidPayload("history action count"));
     }
@@ -169,6 +177,8 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         return Err(ProtocolError::InvalidPayload("viewport wheel delta"));
     }
     let wheel_acknowledgements = super::wheel::decode(reader)?;
+    let wheel_has_blocking_listeners = reader.bool()?.then(|| reader.bool()).transpose()?;
+    let wheel_has_nested_scroll = reader.bool()?.then(|| reader.bool()).transpose()?;
     let history_action_count = reader.u32()? as usize;
     if history_action_count > MAX_RUNTIME_REPORT_ENTRIES {
         return Err(ProtocolError::InvalidPayload("history action count"));
@@ -247,6 +257,8 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         viewport_scroll_y,
         viewport_wheel_delta_y,
         wheel_acknowledgements,
+        wheel_has_blocking_listeners,
+        wheel_has_nested_scroll,
         history_actions,
         history_traversal_ack,
         native_text_rejection,

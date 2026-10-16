@@ -2,6 +2,7 @@ use super::*;
 use crate::engine::dom::Node;
 
 mod invalidation;
+mod invalidation_resource_attributes;
 mod scripts;
 
 #[test]

@@ -195,3 +195,29 @@ fn empty_rule_set_has_no_nonlocal_dependencies() {
         !NonlocalDependencies::for_rules(&[]).needs_document_refresh(InvalidationImpact::STYLE)
     );
 }
+
+#[test]
+fn relational_selectors_widen_resource_attribute_writes_only_when_they_read_them() {
+    let src = MutationKind::Attribute("src").impact();
+    assert!(src.is_resource_attribute_only());
+    for selector in ["main:has(.active)", "main:has(img)", "main:has([class])"] {
+        assert!(
+            !dependencies(selector).needs_document_refresh(src),
+            "{selector}"
+        );
+    }
+    for selector in [
+        "main:has([src])",
+        "main:has(:is([width]))",
+        "main:has(:not([sizes]))",
+    ] {
+        assert!(
+            dependencies(selector).needs_document_refresh(src),
+            "{selector}"
+        );
+    }
+    assert!(
+        dependencies("main:has(.active)")
+            .needs_document_refresh(src.union(MutationKind::Attribute("class").impact()))
+    );
+}
