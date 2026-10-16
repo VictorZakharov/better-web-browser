@@ -274,6 +274,11 @@ pub enum RendererMessage {
         cause: NavigationCause,
     },
     PointerCursor(PointerCursorResult),
+    /// The renderer has finished one native viewport scroll input.
+    ScrollCompleted {
+        document: DocumentId,
+        sequence: u64,
+    },
     TextSelectionUpdate(TextSelectionUpdate),
     FullscreenRequest(FullscreenRequest),
     PointerLockRequest(PointerLockRequest),

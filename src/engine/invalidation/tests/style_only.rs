@@ -70,3 +70,19 @@ fn render_invalidation_merges_keep_style_only_only_for_complete_css_batches() {
         assert!(!first.impact.is_style_only());
     }
 }
+
+#[test]
+fn resource_attribute_evidence_survives_only_resource_attribute_batches() {
+    let src = MutationKind::Attribute("src").impact();
+    let width = MutationKind::Attribute("WIDTH").impact();
+    assert!(src.is_resource_attribute_only() && src.affects_intrinsic_size());
+    assert!(src.union(width).is_resource_attribute_only());
+    assert_eq!(src.union(InvalidationImpact::default()), src);
+    for other in [
+        MutationKind::Attribute("value"),
+        MutationKind::ChildList,
+        MutationKind::State,
+    ] {
+        assert!(!src.union(other.impact()).is_resource_attribute_only());
+    }
+}

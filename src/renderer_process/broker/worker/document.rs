@@ -133,6 +133,11 @@ impl Broker {
                     self.emit_event(RendererEvent::PointerCursor(result))?;
                 }
             }
+            RendererMessage::ScrollCompleted { document, sequence } => {
+                if self.active_document == Some(document) {
+                    self.emit_event(RendererEvent::ScrollCompleted { document, sequence })?;
+                }
+            }
             RendererMessage::TextSelectionUpdate(update) => {
                 update.validate()?;
                 if self.active_document == Some(update.document) {

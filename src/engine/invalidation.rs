@@ -16,6 +16,9 @@ const TEXT_ONLY: u8 = 1 << 5;
 // Coalesced declarations, proven text children, and known graphics attributes.
 // Arbitrary attributes, element insertion, state and unknown work clear this proof.
 const LOCAL_CONTENT_ONLY: u8 = 1 << 6;
+// Replaced-resource attributes can change intrinsic geometry, while their
+// effect on a relational selector requires that selector to read the attribute.
+const RESOURCE_ATTRIBUTE_ONLY: u8 = 1 << 7;
 mod attributes;
 pub(crate) use attributes::is_local_graphics_attribute;
 
@@ -35,11 +38,21 @@ impl InvalidationImpact {
         let only_local = (self.is_local_content_only() || other.is_local_content_only())
             && (self.0 == 0 || self.is_local_content_only())
             && (other.0 == 0 || other.is_local_content_only());
+        let only_resource = (self.is_resource_attribute_only()
+            || other.is_resource_attribute_only())
+            && (self.0 == 0 || self.is_resource_attribute_only())
+            && (other.0 == 0 || other.is_resource_attribute_only());
         Self(
-            ((self.0 | other.0) & !(STYLE_ONLY | TEXT_ONLY | LOCAL_CONTENT_ONLY))
+            ((self.0 | other.0)
+                & !(STYLE_ONLY | TEXT_ONLY | LOCAL_CONTENT_ONLY | RESOURCE_ATTRIBUTE_ONLY))
                 | if only_style { STYLE_ONLY } else { 0 }
                 | if only_text { TEXT_ONLY } else { 0 }
-                | if only_local { LOCAL_CONTENT_ONLY } else { 0 },
+                | if only_local { LOCAL_CONTENT_ONLY } else { 0 }
+                | if only_resource {
+                    RESOURCE_ATTRIBUTE_ONLY
+                } else {
+                    0
+                },
         )
     }
 
@@ -53,6 +66,10 @@ impl InvalidationImpact {
 
     pub(crate) const fn is_local_content_only(self) -> bool {
         self.0 & LOCAL_CONTENT_ONLY != 0
+    }
+
+    pub(crate) const fn is_resource_attribute_only(self) -> bool {
+        self.0 & RESOURCE_ATTRIBUTE_ONLY != 0
     }
 
     pub const fn affects_style(self) -> bool {
@@ -132,10 +149,11 @@ impl MutationKind<'_> {
                 };
                 if name.eq_ignore_ascii_case("style") {
                     InvalidationImpact(base.0 | STYLE_ONLY | LOCAL_CONTENT_ONLY)
-                } else if matches!(
-                    name.to_ascii_lowercase().as_str(),
-                    "src" | "srcset" | "sizes" | "width" | "height" | "value"
-                ) {
+                } else if is_resource_attribute(name) {
+                    InvalidationImpact(
+                        base.union(InvalidationImpact::INTRINSIC_SIZE).0 | RESOURCE_ATTRIBUTE_ONLY,
+                    )
+                } else if name.eq_ignore_ascii_case("value") {
                     base.union(InvalidationImpact::INTRINSIC_SIZE)
                 } else {
                     base
@@ -161,6 +179,13 @@ impl MutationKind<'_> {
                 .union(InvalidationImpact::PAINT),
         }
     }
+}
+
+pub(crate) fn is_resource_attribute(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "src" | "srcset" | "sizes" | "width" | "height"
+    )
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

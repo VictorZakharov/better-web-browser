@@ -14,12 +14,18 @@ impl ChildConnection {
     pub(super) fn interact_document(&mut self, input: DocumentInput) -> Result<(), String> {
         let document = input.document();
         let move_completion = default_move_completion(&input);
+        let scroll_completion = match &input {
+            DocumentInput::Scroll(scroll) => Some((scroll.document, scroll.sequence)),
+            _ => None,
+        };
         let Some(mut runtime) = self.document.take() else {
-            return self.send_move_completion(move_completion);
+            self.send_move_completion(move_completion)?;
+            return self.send_scroll_completion(scroll_completion);
         };
         if runtime.id() != document {
             self.document = Some(runtime);
-            return self.send_move_completion(move_completion);
+            self.send_move_completion(move_completion)?;
+            return self.send_scroll_completion(scroll_completion);
         }
         let result = catch_unwind(AssertUnwindSafe(|| runtime.interact(input, self)));
         match result {
@@ -57,6 +63,7 @@ impl ChildConnection {
                 return Ok(());
             }
         }
+        self.send_scroll_completion(scroll_completion)?;
         if !self.stopping {
             self.document = Some(runtime);
         }
@@ -67,6 +74,18 @@ impl ChildConnection {
         if let Some(result) = result {
             self.writer
                 .send_renderer(&RendererMessage::PointerCursor(result))
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn send_scroll_completion(
+        &self,
+        completion: Option<(crate::renderer_protocol::DocumentId, u64)>,
+    ) -> Result<(), String> {
+        if let Some((document, sequence)) = completion {
+            self.writer
+                .send_renderer(&RendererMessage::ScrollCompleted { document, sequence })
                 .map_err(|error| error.to_string())?;
         }
         Ok(())

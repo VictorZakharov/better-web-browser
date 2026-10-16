@@ -91,6 +91,7 @@ impl Broker {
                     | RendererMessage::DocumentFailed { .. }
                     | RendererMessage::NavigationRequested { .. }
                     | RendererMessage::PointerCursor(_)
+                    | RendererMessage::ScrollCompleted { .. }
                     | RendererMessage::TextSelectionUpdate(_)
                     | RendererMessage::FullscreenRequest(_)
                     | RendererMessage::PointerLockRequest(_)

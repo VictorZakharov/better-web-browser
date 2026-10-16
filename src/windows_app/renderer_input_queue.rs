@@ -19,6 +19,7 @@ pub(super) enum QueueResult {
 pub(super) struct PendingRendererInputs {
     inputs: VecDeque<DocumentInput>,
     move_in_flight: Option<(DocumentId, u64)>,
+    scroll_in_flight: Option<(DocumentId, u64)>,
     keyboard: keyboard::Reservations,
 }
 
@@ -37,12 +38,17 @@ impl PendingRendererInputs {
         self.keyboard.delivered(document, sequence);
     }
     // Coalescing only after a full command channel is too late: its writer may have
-    // already copied many expensive mousemoves into the pipe. Keep one ordinary
-    // move in flight and the latest unsent position, with discrete FIFO barriers.
+    // already copied many expensive continuous inputs into the pipe. Keep one
+    // move and one scroll in flight, plus their latest unsent positions, with
+    // discrete FIFO barriers.
+    // CSSOM View runs pending scroll targets during rendering updates; a newer
+    // unsent viewport position supersedes an older one before that opportunity:
+    // https://drafts.csswg.org/cssom-view/#document-run-the-scroll-steps
     // Pointer Events permits delaying/coalescing movement, not reordering clicks:
     // https://www.w3.org/TR/pointerevents3/#the-pointermove-event
     pub(super) fn can_send(&self, input: &DocumentInput) -> bool {
-        Self::move_key(input).is_none() || self.move_in_flight.is_none()
+        (Self::move_key(input).is_none() || self.move_in_flight.is_none())
+            && (Self::scroll_key(input).is_none() || self.scroll_in_flight.is_none())
     }
 
     pub(super) fn move_key(input: &DocumentInput) -> Option<(DocumentId, u64)> {
@@ -54,10 +60,30 @@ impl PendingRendererInputs {
         }
     }
 
+    pub(super) fn scroll_key(input: &DocumentInput) -> Option<(DocumentId, u64)> {
+        match input {
+            DocumentInput::Scroll(input) => Some((input.document, input.sequence)),
+            _ => None,
+        }
+    }
+
     pub(super) fn note_sent(&mut self, key: Option<(DocumentId, u64)>) {
         if let Some(key) = key {
             debug_assert!(self.move_in_flight.is_none());
             self.move_in_flight = Some(key);
+        }
+    }
+
+    pub(super) fn note_scroll_sent(&mut self, key: Option<(DocumentId, u64)>) {
+        if let Some(key) = key {
+            debug_assert!(self.scroll_in_flight.is_none());
+            self.scroll_in_flight = Some(key);
+        }
+    }
+
+    pub(super) fn acknowledge_scroll(&mut self, document: DocumentId, sequence: u64) {
+        if self.scroll_in_flight == Some((document, sequence)) {
+            self.scroll_in_flight = None;
         }
     }
 
@@ -158,6 +184,7 @@ impl PendingRendererInputs {
     pub(super) fn clear(&mut self) {
         self.inputs.clear();
         self.move_in_flight = None;
+        self.scroll_in_flight = None;
         self.keyboard.clear();
     }
 

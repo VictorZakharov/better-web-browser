@@ -49,7 +49,9 @@ fn next_report(
                     presentation.runtime,
                 );
             }
-            RendererEvent::Diagnostic { .. } | RendererEvent::PointerCursor(_) => {}
+            RendererEvent::Diagnostic { .. }
+            | RendererEvent::PointerCursor(_)
+            | RendererEvent::ScrollCompleted { .. } => {}
             event => panic!("unexpected observer event: {event:?}"),
         }
     }

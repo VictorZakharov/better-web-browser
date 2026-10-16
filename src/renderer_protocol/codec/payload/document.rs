@@ -252,6 +252,14 @@ pub(super) fn encode_renderer_document(
             });
             0x011e
         }
+        RendererMessage::ScrollCompleted { document, sequence } => {
+            if *sequence == 0 {
+                return Err(ProtocolError::InvalidPayload("scroll completion sequence"));
+            }
+            writer.u64(document.get());
+            writer.u64(*sequence);
+            0x0122
+        }
         _ => return Err(ProtocolError::InvalidPayload("renderer document message")),
     };
     Ok((kind, writer.finish()))
@@ -332,6 +340,14 @@ pub(super) fn decode_renderer_document(
             }
             .validate()?,
         ),
+        0x0122 => {
+            let document = DocumentId::new(reader.u64()?)?;
+            let sequence = reader.u64()?;
+            if sequence == 0 {
+                return Err(ProtocolError::InvalidPayload("scroll completion sequence"));
+            }
+            RendererMessage::ScrollCompleted { document, sequence }
+        }
         _ => return Err(ProtocolError::UnexpectedMessage(kind)),
     };
     reader.finish()?;

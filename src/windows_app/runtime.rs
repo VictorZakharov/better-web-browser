@@ -4,12 +4,10 @@ use super::*;
 mod wakeup;
 pub(super) use wakeup::RuntimeWakeup;
 
-// Each callback remains a distinct HTML event-loop task with its own microtask checkpoint. Let the
-// renderer execute a small bounded slice per IPC wakeup; its 25 ms wall limit yields back to input
-// without paying one browser/renderer round trip for every tiny async script.
-pub(super) const RUNTIME_TASKS_PER_WAKEUP: u32 = 8;
+// Each callback remains a distinct HTML event-loop task with its own microtask checkpoint.
+// The 25 ms slice cannot interrupt one long callback, so give input a chance between tasks.
+pub(super) const RUNTIME_TASKS_PER_WAKEUP: u32 = 1;
 const MAX_NATIVE_TIMER_DELAY_MS: u32 = 0x7fff_ffff;
-const _: () = assert!(RUNTIME_TASKS_PER_WAKEUP > 1);
 const _: () = assert!(
     RUNTIME_TASKS_PER_WAKEUP < better_web_browser::limits::MAX_POST_LOAD_TIMER_CALLBACKS as u32
 );

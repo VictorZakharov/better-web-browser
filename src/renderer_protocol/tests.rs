@@ -161,6 +161,25 @@ fn pointer_cursor_results_round_trip_and_reject_invalid_fields() {
 }
 
 #[test]
+fn scroll_completion_round_trips_and_rejects_zero_sequence() {
+    let message = RendererMessage::ScrollCompleted {
+        document: DocumentId::new(11).unwrap(),
+        sequence: 27,
+    };
+    let decoded = FrameReader::new(Cursor::new(encoded_renderer(&message)), session())
+        .read_renderer()
+        .unwrap();
+    assert_eq!(decoded, message);
+
+    let mut zero_sequence = encoded_renderer(&message);
+    zero_sequence[HEADER_LENGTH + 8..HEADER_LENGTH + 16].fill(0);
+    assert!(matches!(
+        FrameReader::new(Cursor::new(zero_sequence), session()).read_renderer(),
+        Err(ProtocolError::InvalidPayload("scroll completion sequence"))
+    ));
+}
+
+#[test]
 fn document_start_diagnostic_selectors_round_trip_and_are_bounded() {
     let start = DocumentStart {
         document: DocumentId::new(11).unwrap(),
