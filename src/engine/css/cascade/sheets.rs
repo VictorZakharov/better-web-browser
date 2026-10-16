@@ -6,6 +6,7 @@ use crate::engine::css::rule_index::RuleIndex;
 use std::rc::Rc;
 
 mod animations;
+mod attribute_dependencies;
 mod dependencies;
 mod fonts;
 mod invalidation;
@@ -31,6 +32,10 @@ struct SheetInput {
 pub(super) struct CompiledRules {
     pub(super) rules: Vec<Rule>,
     transition_rule_indices: Vec<usize>,
+    attribute_dependencies: attribute_dependencies::AttributeDependencies,
+    transition_setting_dependencies: attribute_dependencies::AttributeDependencies,
+    potential_transition_rule_indices: Vec<usize>,
+    potential_transition_index: RuleIndex,
     animation_index: RuleIndex,
     keyframes: Vec<crate::engine::css::stylesheet::keyframes::KeyframeDefinition>,
     font_faces: Vec<crate::engine::font::WebFontFace>,
@@ -182,6 +187,16 @@ pub(super) fn collect(
         .find(|set| set.environment == Some(environment));
     let (rules, parsed) = parsed::assemble(&mut inputs, environment, previous.map(Rc::as_ref));
     let transition_rule_indices = transitions::rule_indices(&rules);
+    let attribute_dependencies = attribute_dependencies::AttributeDependencies::for_rules(&rules);
+    let transition_setting_dependencies =
+        attribute_dependencies::AttributeDependencies::for_indices(
+            &rules,
+            &transition_rule_indices,
+        );
+    let potential_transition_rule_indices =
+        transitions::potential_rule_indices(&rules, &transition_rule_indices);
+    let potential_transition_index =
+        RuleIndex::for_indices(&rules, &potential_transition_rule_indices);
     let animation_rule_indices = animations::rule_indices(&rules);
     let keyframes = animations::collect(&inputs, environment);
     let font_faces = fonts::collect(&inputs, environment);
@@ -192,6 +207,10 @@ pub(super) fn collect(
         animation_index: RuleIndex::for_indices(&rules, &animation_rule_indices),
         rules,
         transition_rule_indices,
+        attribute_dependencies,
+        transition_setting_dependencies,
+        potential_transition_index,
+        potential_transition_rule_indices,
         keyframes,
         font_faces,
         nonlocal_dependencies,

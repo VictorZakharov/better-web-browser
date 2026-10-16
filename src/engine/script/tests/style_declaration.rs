@@ -187,3 +187,26 @@ fn inline_style_writes_still_trigger_custom_element_attribute_reactions() {
         "style::color: red:|style:color: red:color: red; width: 12px:|style:color: red; width: 12px:width: 12px:"
     );
 }
+
+#[test]
+fn nested_custom_element_style_write_invalidates_the_cssom_map() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output></output><script>
+        class StyledElement extends HTMLElement {
+            static get observedAttributes() { return ['style']; }
+            attributeChangedCallback(_name, _old, value) {
+                if (value === 'color: red') this.setAttribute('style', 'color: blue');
+            }
+        }
+        customElements.define('x-styled', StyledElement);
+        const element = document.createElement('x-styled');
+        element.style.color = 'red';
+        document.querySelector('output').textContent = element.style.color + ':' + element.style.cssText;
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "blue:color: blue;"
+    );
+}

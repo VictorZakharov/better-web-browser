@@ -178,8 +178,10 @@
     };
     transitionBeforeAttributeChange = (target, name, nextValue) => {
         if (!['class', 'id', 'style'].includes(name) || !target.isConnected) return null;
-        const candidates = new Set(host('transitionAffectedTargets', nodeId(target), name,
-            String(nextValue ?? '')).map(wrap));
+        const affected = host('transitionAffectedTargets', nodeId(target), name,
+            String(nextValue ?? ''));
+        if (affected === null) return null;
+        const candidates = new Set(affected.map(wrap));
         if (runningTransitions.get(target)?.size ||
             hasInlineTransition(host('attrGet', nodeId(target), 'style')) ||
             hasInlineTransition(name === 'style' ? nextValue : '')) candidates.add(target);
