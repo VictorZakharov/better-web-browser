@@ -101,6 +101,13 @@ impl Sender {
         state.open && state.failure.is_none() && state.queued < MAX_QUEUED_BROWSER_COMMANDS
     }
 
+    /// Keep streamed background work behind at most one pending pipe write so input can
+    /// enter the writer while a renderer is busy processing the preceding chunk.
+    pub(super) fn has_background_command_capacity(&self) -> bool {
+        let state = lock(&self.state);
+        state.open && state.failure.is_none() && state.queued == 0
+    }
+
     pub(super) fn take_failure(&self) -> Option<String> {
         lock(&self.state).failure.take()
     }
@@ -155,5 +162,24 @@ mod tests {
             wake: BrokerWake::default(),
         };
         assert!(!sender.has_page_command_capacity());
+    }
+
+    #[test]
+    fn background_stream_yields_writer_capacity_to_input() {
+        let (messages, _receiver) = mpsc::channel();
+        let state = Arc::new(Mutex::new(State {
+            open: true,
+            queued: 1,
+            failure: None,
+        }));
+        let sender = Sender {
+            messages,
+            state: Arc::clone(&state),
+            wake: BrokerWake::default(),
+        };
+        assert!(sender.has_page_command_capacity());
+        assert!(!sender.has_background_command_capacity());
+        lock(&state).queued = 0;
+        assert!(sender.has_background_command_capacity());
     }
 }

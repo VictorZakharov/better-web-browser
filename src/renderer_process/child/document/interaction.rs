@@ -49,6 +49,8 @@ impl DocumentRuntime {
         }
         self.last_input_sequence = input.sequence();
         let input_kind = publication_diagnostics::input_kind(&input);
+        let previous_scroll_timer =
+            matches!(&input, DocumentInput::Scroll(_)).then(|| self.next_timer_micros());
         self.media_activation.observe(&input);
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_audio_activation(self.media_activation.allows(1_000));
@@ -243,6 +245,7 @@ impl DocumentRuntime {
             input_kind,
             force_accessibility_update,
             wheel_acknowledgement,
+            previous_scroll_timer,
             connection,
         )?;
         if let Some(sequence) = history_traversal_ack {

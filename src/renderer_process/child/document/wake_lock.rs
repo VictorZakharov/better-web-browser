@@ -23,6 +23,13 @@ impl DocumentRuntime {
             })?
             .outcome;
         self.admit_user_input_outcome(&mut outcome, connection)?;
-        self.presentation_after_user_input(outcome, "wake-lock-response", false, None, connection)
+        self.presentation_after_user_input(
+            outcome,
+            "wake-lock-response",
+            false,
+            None,
+            None,
+            connection,
+        )
     }
 }

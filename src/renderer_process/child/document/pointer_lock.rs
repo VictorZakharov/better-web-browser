@@ -29,6 +29,7 @@ impl DocumentRuntime {
             "pointer-lock-response",
             false,
             None,
+            None,
             connection,
         )
     }

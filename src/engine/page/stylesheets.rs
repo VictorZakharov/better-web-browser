@@ -21,6 +21,7 @@ impl Page {
         }
         let css = css.to_string();
         self.cached_styles = None;
+        self.font_faces_cache.borrow_mut().take();
         self.stylesheet_discovery = None;
         source.source = css.clone();
         source.imports = imports::parse(&css);
