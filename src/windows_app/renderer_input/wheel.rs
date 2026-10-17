@@ -110,7 +110,12 @@ mod tests {
                     viewport_y: 0.0,
                     delta_x: 0.0,
                     delta_y,
-                    modifiers: InputModifiers::default(),
+                    // Alternating modifiers keep same-direction wheels from
+                    // coalescing so this fills every pending slot.
+                    modifiers: InputModifiers {
+                        alt: sequence % 2 == 0,
+                        ..InputModifiers::default()
+                    },
                     target: None,
                 })
             };

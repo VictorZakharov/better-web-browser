@@ -4,6 +4,18 @@ use crate::windows_app::*;
 use better_web_browser::renderer_protocol::RuntimeReport;
 
 impl BrowserState {
+    pub(in crate::windows_app) fn record_benchmark_wheel_coalesced(
+        &mut self,
+        document: DocumentId,
+        sequence: u64,
+    ) {
+        if !self.processing_background_tab
+            && let Some(benchmark) = self.benchmark.as_mut()
+        {
+            benchmark.wheel_trace.coalesced(document, sequence);
+        }
+    }
+
     pub(in crate::windows_app) fn record_benchmark_wheel_sent(
         &mut self,
         document: DocumentId,

@@ -26,6 +26,22 @@ fractional conversion produces no device-pixel distance, or range clamping keeps
 the previous target. An existing animation alone cannot supply a paint latency
 for that new request; its synchronous and later timer ticks remain unattributed.
 
+### Coalescing and default-passive listeners
+
+While the renderer is busy, an unsent wheel absorbs the newest same-direction wheel
+for the same document, modifiers and pointer-lock target. Only absolute pointer
+moves and viewport positions may lie between them; any discrete input, a
+reversal or a native gesture fence keeps the wheels separate. The merged input
+carries the summed delta, the newest position and the newest sequence, so the
+bounded queue no longer rejects ordinary fast scrolling or hover-plus-wheel
+input. The absorbed sample reports `coalesced`; native distance it already
+preapplied is reconciled by the merged verdict.
+
+Wheel listeners on the Window, Document, document element or body element that
+leave `passive` unspecified are passive, following DOM's
+[default passive value](https://dom.spec.whatwg.org/#default-passive-value).
+They cannot cancel scrolling, so they no longer disable native preapplication.
+
 ## Ownership and visual parity
 
 Renderer verdicts carry the input sequence and travel in a report owned by one

@@ -90,6 +90,18 @@ impl WheelTrace {
         }
     }
 
+    /// A coalesced input has no verdict of its own. Motion it already painted
+    /// through native preapplication keeps its measured endpoint.
+    pub(super) fn coalesced(&mut self, document: DocumentId, sequence: u64) {
+        if let Some(sample) = self.samples.iter_mut().find(|sample| {
+            sample.document == document
+                && sample.sequence == sequence
+                && sample.status == "unacknowledged"
+        }) {
+            sample.status = "coalesced";
+        }
+    }
+
     pub(super) fn renderer_state_at_enqueue(
         &mut self,
         document: DocumentId,

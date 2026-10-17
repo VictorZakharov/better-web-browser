@@ -164,6 +164,7 @@ impl BrowserState {
         self.record_benchmark_scroll_interruption(None);
         let next = self.renderer_input_sequence.saturating_add(1);
         self.wheel_gesture.retire_before(next);
+        self.pending_renderer_inputs.fence_wheel_coalescing(next);
         self.cancel_scroll_animation();
         self.scroll_animation.discard_input_remainders();
     }
