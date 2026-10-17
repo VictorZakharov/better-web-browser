@@ -18,6 +18,15 @@ struct PreappliedWheel {
     scale: f32,
 }
 
+impl PreappliedWheel {
+    fn absorb(&mut self, newer: Self) {
+        self.requested_delta += newer.requested_delta;
+        self.requested_pixels = self.requested_pixels.saturating_add(newer.requested_pixels);
+        self.distance_pixels = self.distance_pixels.saturating_add(newer.distance_pixels);
+        self.scale = newer.scale;
+    }
+}
+
 #[derive(Default)]
 pub(in crate::windows_app) struct WheelGesture {
     direction: i8,
@@ -76,16 +85,27 @@ impl WheelGesture {
         {
             return false;
         }
-        self.preapplied.insert(
-            sequence,
-            PreappliedWheel {
-                requested_delta: delta,
-                requested_pixels,
-                distance_pixels,
-                scale,
-            },
-        );
+        let wheel = PreappliedWheel {
+            requested_delta: delta,
+            requested_pixels,
+            distance_pixels,
+            scale,
+        };
+        match self.preapplied.get_mut(&sequence) {
+            Some(retired) => retired.absorb(wheel),
+            None => {
+                self.preapplied.insert(sequence, wheel);
+            }
+        }
         true
+    }
+
+    /// Moves an unsent wheel's preapplied distance to the input that absorbed it.
+    /// The merged verdict then reconciles both contributions, added in queue order.
+    pub(in crate::windows_app) fn coalesce(&mut self, retired: u64, sequence: u64) {
+        if let Some(retired) = self.preapplied.remove(&retired) {
+            self.preapplied.insert(sequence, retired);
+        }
     }
 
     pub(in crate::windows_app) fn reconcile(

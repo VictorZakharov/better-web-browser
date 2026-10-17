@@ -11,15 +11,25 @@ fn status_after_script(body: &str) -> String {
 fn wheel_listener_snapshot_tracks_cancelable_listeners_after_removal_and_dispatch() {
     for (script, expected) in [
         ("addEventListener('wheel', () => {}, {passive:true})", false),
-        ("addEventListener('wheel', () => {})", true),
-        ("onwheel = () => {}", true),
-        ("onwheel = () => {}; onwheel = null", false),
+        ("addEventListener('wheel', () => {}, {passive:false})", true),
         (
-            "const f=()=>{}; addEventListener('wheel',f); removeEventListener('wheel',f)",
+            "const d=document.createElement('div'); d.addEventListener('wheel', () => {})",
+            true,
+        ),
+        (
+            "const d=document.createElement('div'); d.onwheel = () => {}",
+            true,
+        ),
+        (
+            "const d=document.createElement('div'); d.onwheel = () => {}; d.onwheel = null",
             false,
         ),
         (
-            "addEventListener('wheel',()=>{}, {once:true}); dispatchEvent(new Event('wheel'))",
+            "const d=document.createElement('div'), f=()=>{}; d.addEventListener('wheel',f); d.removeEventListener('wheel',f)",
+            false,
+        ),
+        (
+            "const d=document.createElement('div'); d.addEventListener('wheel',()=>{}, {once:true}); d.dispatchEvent(new Event('wheel'))",
             false,
         ),
     ] {
@@ -31,6 +41,56 @@ fn wheel_listener_snapshot_tracks_cancelable_listeners_after_removal_and_dispatc
             "{script}"
         );
     }
+}
+
+#[test]
+fn document_level_wheel_listeners_default_to_passive() {
+    // https://dom.spec.whatwg.org/#default-passive-value
+    for script in [
+        "addEventListener('wheel', () => {})",
+        "addEventListener('wheel', () => {}, true)",
+        "addEventListener('wheel', () => {}, {capture:true})",
+        "onwheel = () => {}",
+        "document.addEventListener('wheel', () => {})",
+        "document.documentElement.addEventListener('wheel', () => {})",
+        "document.body.addEventListener('wheel', () => {})",
+        "document.body.onwheel = () => {}",
+    ] {
+        let (_, outcome) = execute_html(&format!("<body><script>{script}</script></body>"));
+        assert!(outcome.errors.is_empty(), "{script}: {:?}", outcome.errors);
+        assert_eq!(
+            outcome.wheel_has_blocking_listeners,
+            Some(false),
+            "{script}"
+        );
+    }
+    let status = status_after_script(
+        r#"<script>
+            const results = [];
+            const listen = (target, options) => target.addEventListener('wheel', event => {
+                event.preventDefault();
+                results.push(event.defaultPrevented);
+            }, options);
+            listen(window);
+            listen(document.body);
+            const nested = document.createElement('div');
+            document.body.append(nested);
+            listen(nested);
+            listen(document, { passive: false });
+            const other = document.createElement('div');
+            const touch = [];
+            other.addEventListener('touchstart', e => { e.preventDefault(); touch.push(e.defaultPrevented); });
+            other.dispatchEvent(new Event('touchstart', { cancelable: true }));
+            // A second body is not the body element, so its unspecified listener can cancel.
+            const late = document.createElement('body');
+            document.documentElement.append(late);
+            listen(late);
+            for (const target of [window, document.body, document, nested, late])
+                target.dispatchEvent(new Event('wheel', { cancelable: true }));
+            document.getElementById('status').textContent = [results.join(','), touch].join('|');
+        </script>"#,
+    );
+    assert_eq!(status, "false,false,true,true,true|true");
 }
 
 #[test]

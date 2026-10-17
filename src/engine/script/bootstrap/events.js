@@ -156,15 +156,43 @@
         options == null ? false : !!Object(options).capture;
     const listenerOptions = options => {
         if (typeof options === 'boolean' || options == null)
-            return { capture: captureOption(options), once: false, passive: false, signal: undefined };
+            return { capture: captureOption(options), once: false, passive: null, signal: undefined };
         options = Object(options);
         const capture = !!options.capture;
         const once = !!options.once;
-        const passive = !!options.passive;
+        const passive = options.passive === undefined ? null : !!options.passive;
         const signal = options.signal;
         if (signal != null && !isNativeAbortSignal(signal))
             throw new TypeError('Event listener signal must be an AbortSignal');
         return { capture, once, passive, signal };
+    };
+    // Unspecified passive options on document-level wheel/touch targets cannot cancel scrolling,
+    // so the browser may scroll before such listeners finish.
+    // https://dom.spec.whatwg.org/#default-passive-value
+    const passiveByDefaultTypes = new Set(['touchstart', 'touchmove', 'wheel', 'mousewheel']);
+    const isHtmlElementNamed = (id, names) => host('nodeType', id) === 1 &&
+        host('namespaceUri', id) === 'http://www.w3.org/1999/xhtml' &&
+        names.includes(host('localName', id));
+    const defaultPassiveValue = (type, target) => {
+        if (!passiveByDefaultTypes.has(type)) return false;
+        const receiver = receiverFor(target);
+        if (receiver === globalThis) return true;
+        if (!isNode(receiver)) return false;
+        const id = nodeId(receiver);
+        const parent = host('parent', id);
+        if (host('nodeType', id) === 9) return true;
+        if (!parent) return false;
+        // The document element is the document's element child.
+        if (host('nodeType', parent) === 9) return host('nodeType', id) === 1;
+        const owner = host('parent', parent);
+        if (!owner || host('nodeType', owner) !== 9 || !isHtmlElementNamed(parent, ['html']))
+            return false;
+        // The body element is the html element's first body or frameset child.
+        // https://html.spec.whatwg.org/multipage/dom.html#the-body-element-2
+        for (let child = host('firstChild', parent); child; child = host('nextSibling', child)) {
+            if (isHtmlElementNamed(child, ['body', 'frameset'])) return child === id;
+        }
+        return false;
     };
     const removeListener = (target, listener) => {
         if (listener.removed) return;
@@ -183,6 +211,7 @@
     const addListener = (target, type, callback, options) => {
         type = String(type);
         const flattened = listenerOptions(options);
+        if (flattened.passive === null) flattened.passive = defaultPassiveValue(type, target);
         if (flattened.signal?.aborted) return;
         if (callback == null) return;
         const kind = typeof callback;
