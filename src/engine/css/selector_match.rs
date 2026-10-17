@@ -287,7 +287,7 @@ pub(super) fn compound_matches(
     })
 }
 
-fn relative_selector_matches(relative: &RelativeSelector, anchor: &NodeRef) -> bool {
+pub(super) fn relative_selector_matches(relative: &RelativeSelector, anchor: &NodeRef) -> bool {
     let mut candidates = match relative.search {
         RelativeSearch::Descendants => vec![anchor.clone()],
         RelativeSearch::Children => anchor.children.borrow().iter().cloned().collect(),

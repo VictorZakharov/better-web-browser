@@ -1,7 +1,10 @@
 //! Custom-property cascade and var() substitution.
 
 use super::*;
+mod memo;
 mod substitution;
+use memo::Substitution;
+pub(super) use memo::SubstitutionMemo;
 use substitution::{substitute_component_values, substitute_variable_references};
 
 const MAX_CACHED_LITERAL_BYTES: usize = 4 * 1024;
@@ -93,30 +96,22 @@ pub(super) fn apply_scoped_declaration(
     if declaration.name.starts_with("--") {
         return;
     }
-    let variable_reference =
-        declaration.may_use_var && contains_valid_variable_reference(&declaration.value);
     let substituted;
     let value = if let Some(literal) = declaration.prepared_literal() {
         literal
     } else {
-        let Some(value) = substitute_variables(&declaration.value, &style.custom_properties) else {
-            if variable_reference {
-                apply_declaration(style, (&declaration.name, "unset"), context);
+        match declaration.substitute(&style.custom_properties) {
+            Substitution::Valid(value) => {
+                substituted = value;
+                &*substituted
             }
-            return;
-        };
-        substituted = value;
-        &substituted
+            Substitution::Unresolved if !declaration.has_variable_reference() => return,
+            Substitution::Unresolved | Substitution::Invalid => {
+                apply_declaration(style, (&declaration.name, "unset"), context);
+                return;
+            }
+        }
     };
-    if variable_reference && !supports::cssom_declaration_value(&declaration.name, value) {
-        // Substitution happens after the cascade chose this declaration. An
-        // invalid result cannot resurrect a lower-priority authored value. Validate
-        // declarations, not feature-query admission: partially implemented visual
-        // properties may deliberately decline CSS.supports without being invalid CSS.
-        // https://drafts.csswg.org/css-variables-1/#invalid-at-computed-value-time
-        apply_declaration(style, (&declaration.name, "unset"), context);
-        return;
-    }
     // CSS-wide keywords copy the source's scope. Literal names and var() results instead
     // refer to the scope of their winning declaration, not the animated element's scope.
     // https://drafts.csswg.org/css-scoping-1/#shadow-names

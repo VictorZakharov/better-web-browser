@@ -82,6 +82,7 @@ pub(super) struct Declaration {
     pub(super) may_use_var: bool,
     // Parsed declarations are immutable; shared rule payloads reuse this token preparation.
     pub(super) literal_value: std::cell::OnceCell<Option<String>>,
+    pub(super) substitution: super::variables::SubstitutionMemo,
 }
 
 #[cfg(test)]

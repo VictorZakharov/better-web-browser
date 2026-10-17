@@ -26,6 +26,7 @@ pub(in crate::engine::css) fn parse_declarations(body: &str) -> Vec<Declaration>
                 may_use_var: contains_ascii_case_insensitive(value, b"var(")
                     || value.contains('\\'),
                 literal_value: std::cell::OnceCell::new(),
+                substitution: Default::default(),
             })
         })
         .take(MAX_CSS_DECLARATIONS_PER_RULE)

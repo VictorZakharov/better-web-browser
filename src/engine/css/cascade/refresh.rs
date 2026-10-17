@@ -36,16 +36,32 @@ impl StyleSet {
         let unsupported_local_scope = self.compiled.cross_tree_or_scoped
             && impact.is_local_content_only()
             && !impact.is_style_only();
-        let roots = if unsupported_local_scope
-            || self
-                .compiled
-                .nonlocal_dependencies
-                .needs_document_refresh(impact)
+        let mut changed_has_results = Vec::new();
+        let roots = if unsupported_local_scope {
+            vec![document.clone()]
+        } else if self
+            .compiled
+            .nonlocal_dependencies
+            .needs_document_refresh(impact)
         {
             // A local equality check cannot conceal a changed ancestor or
             // sibling :has() result. Widen only when this mutation can affect
-            // the compiled relative-selector dependencies.
-            vec![document.clone()]
+            // the compiled relative-selector dependencies, and then only to
+            // the anchors whose results can change when that is provable.
+            match self
+                .compiled
+                .nonlocal_dependencies
+                .relational_roots(requested_roots, &self.has_results)
+                .filter(|_| !self.compiled.cross_tree_or_scoped)
+            {
+                Some(relational) => {
+                    changed_has_results = relational.results;
+                    let mut roots = relational.roots;
+                    roots.extend_from_slice(requested_roots);
+                    normalized_roots(document, &roots)
+                }
+                None => vec![document.clone()],
+            }
         } else {
             normalized_roots(document, requested_roots)
         };
@@ -80,6 +96,10 @@ impl StyleSet {
             .filter(|node| !connected_nodes.contains(node))
             .filter(|node| self.styles.remove(node).is_some())
             .count();
+        // Anchors evaluated while choosing roots supersede what their recalculation recorded.
+        self.has_results
+            .retain(|node, _| connected_nodes.contains(node));
+        self.has_results.extend(changed_has_results);
         let removed_origins = removed_nodes
             .iter()
             .filter(|node| !connected_nodes.contains(node))
@@ -110,6 +130,7 @@ impl StyleSet {
                     .expect("parent style is computed before its children");
                 self.compute_style(&node, Some(parent_style))
             };
+            self.remember_has_results(&node, node_id(&node) == root);
             self.styles.insert(node_id(&node), style.clone());
             self.sync_generated_pseudos(&node, &style);
             if !self.defer_nonrendered_descendants || style.display != Display::None {
@@ -160,6 +181,7 @@ impl StyleSet {
                 }
                 _ => {}
             }
+            self.remember_has_results(&node, node_id(&node) == root);
             self.styles.insert(node_id(&node), style.clone());
             // Attribute-backed generated content and pseudo-only declarations can change box
             // geometry without changing the originating element's computed style.
@@ -176,6 +198,27 @@ impl StyleSet {
                 pending.extend(Node::composed_children(&node).into_iter().rev());
             } else {
                 stats.removed_styles += self.forget_deferred_styles(&node, false);
+            }
+        }
+    }
+}
+
+impl StyleSet {
+    /// Records the `:has()` results that `node`'s dependents are being styled with. A traversal
+    /// root's later siblings are outside the traversal, so a root whose results later siblings
+    /// may consult is forgotten instead, keeping the next mutation conservative.
+    fn remember_has_results(&mut self, node: &NodeRef, traversal_root: bool) {
+        let id = node_id(node);
+        match self
+            .compiled
+            .nonlocal_dependencies
+            .current_has_results(node)
+        {
+            Some((results, siblings)) if !(siblings && traversal_root) => {
+                self.has_results.insert(id, results);
+            }
+            _ => {
+                self.has_results.remove(&id);
             }
         }
     }
