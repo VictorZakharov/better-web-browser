@@ -61,7 +61,7 @@ fn target_root_font_effect_recascades_all_rem_consumers() {
 }
 
 #[test]
-fn relational_style_dependencies_keep_conservative_document_refresh() {
+fn relational_style_dependencies_refresh_the_anchor_subtree() {
     let dom = dom::parse(
         "<style>body:has(main[style]) aside{color:red}</style><main></main><aside></aside>",
     );
@@ -74,17 +74,21 @@ fn relational_style_dependencies_keep_conservative_document_refresh() {
         &[],
         MutationKind::StyleOverlay.impact(),
     );
-    assert_eq!(
-        stats.recomputed_styles,
-        Node::composed_descendants(&dom.document).count()
-    );
+    // An animation overlay is not a `style` attribute, so body's remembered result holds.
+    assert_eq!(stats.recomputed_styles, 1);
     assert_eq!(styles.styles, StyleSet::from_dom(&dom, &[], 800.0).styles);
     target.set_attr("style", "color:blue");
-    styles.refresh_subtrees_after_invalidation(
+    let stats = styles.refresh_subtrees_after_invalidation(
         &dom.document,
         &[target],
         &[],
         MutationKind::Attribute("style").impact(),
+    );
+    // The keyed body anchor's result flips, bounding the refresh to its subtree with `aside`.
+    let body = dom.elements_named("body").next().unwrap();
+    assert_eq!(
+        stats.recomputed_styles,
+        Node::composed_descendants(&body).count()
     );
     assert_eq!(styles.styles, StyleSet::from_dom(&dom, &[], 800.0).styles);
 }

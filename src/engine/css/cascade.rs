@@ -56,6 +56,8 @@ pub struct StyleSet {
     ancestor_filters: std::cell::RefCell<super::selector_match::AncestorFilterCache>,
     // A shared inherited variable map is inspected by every descendant with var() rules.
     revert_layer_variables: std::cell::RefCell<InheritedLayerRevertCache>,
+    // `:has()` results each anchor's current dependents were styled with.
+    has_results: sheets::HasResults,
     defer_nonrendered_descendants: bool,
     deferred_fullscreen_roots: HashSet<NodeId>,
     document_base_url: String,
@@ -194,6 +196,7 @@ impl StyleSet {
             compiled,
             ancestor_filters: std::cell::RefCell::default(),
             revert_layer_variables: std::cell::RefCell::default(),
+            has_results: HashMap::new(),
             defer_nonrendered_descendants: false,
             deferred_fullscreen_roots: HashSet::new(),
             document_base_url: document_base_url.to_string(),
@@ -204,6 +207,7 @@ impl StyleSet {
     }
 
     pub(crate) fn clear_computed_styles(&mut self) {
+        self.has_results.clear();
         self.styles.clear();
         self.pseudo_styles.clear();
         self.generated_styles.clear();

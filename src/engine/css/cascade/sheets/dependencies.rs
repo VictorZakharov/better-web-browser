@@ -9,6 +9,9 @@ pub(in crate::engine::css::cascade) struct NonlocalDependencies {
     graphics_attribute: bool,
     resource_attribute: bool,
     any_style_attribute: bool,
+    /// `:has-slotted` or `:dir()` dependencies, which have no bounded root walk.
+    unbounded: bool,
+    has_anchors: super::has_anchors::HasAnchors,
 }
 
 impl NonlocalDependencies {
@@ -16,8 +19,33 @@ impl NonlocalDependencies {
         let mut dependencies = Self::default();
         for rule in rules {
             dependencies.include(&rule.selector);
+            dependencies.has_anchors.include(&rule.selector);
         }
         dependencies
+    }
+
+    /// Replaces a whole-document refresh with bounded roots when `:has()` is the only
+    /// nonlocal dependency; `None` keeps the whole-document refresh.
+    pub(in crate::engine::css::cascade) fn relational_roots(
+        &self,
+        requested: &[NodeRef],
+        known: &super::has_anchors::HasResults,
+    ) -> Option<super::has_anchors::RelationalRoots> {
+        if self.unbounded {
+            return None;
+        }
+        self.has_anchors.roots(requested, known)
+    }
+
+    /// See [`super::has_anchors::HasAnchors::current_results`].
+    pub(in crate::engine::css::cascade) fn current_has_results(
+        &self,
+        node: &NodeRef,
+    ) -> Option<(Vec<bool>, bool)> {
+        if self.unbounded {
+            return None;
+        }
+        self.has_anchors.current_results(node)
     }
 
     pub(in crate::engine::css::cascade) fn needs_document_refresh(
@@ -88,6 +116,7 @@ impl NonlocalDependencies {
                 self.any |= !compound.has.is_empty()
                     || compound.requires_has_slotted
                     || !compound.directions.is_empty();
+                self.unbounded |= compound.requires_has_slotted || !compound.directions.is_empty();
                 // Slot assignment has separate cross-tree rules. Do not infer a
                 // local refresh from the absence of an ordinary [style] selector.
                 self.style_attribute |= compound.requires_has_slotted;

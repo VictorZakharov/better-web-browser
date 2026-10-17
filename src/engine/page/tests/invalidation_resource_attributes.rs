@@ -38,5 +38,8 @@ fn image_source_change_keeps_unrelated_relational_rules_local() {
 fn image_source_change_refreshes_relational_attribute_dependents() {
     let (initial, refreshed, color) = source_change("main:has(img[src]) + aside { color: red }");
     assert_eq!(color, Color::rgb(255, 0, 0));
-    assert_eq!(refreshed.recomputed_styles, initial.total_styles);
+    // The flipped `main` anchor refreshes its parent's subtree, which holds the `aside`
+    // sibling dependent, rather than the whole document.
+    assert!(!refreshed.full_rebuild);
+    assert!(refreshed.recomputed_styles < initial.total_styles);
 }

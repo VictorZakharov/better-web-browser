@@ -9,6 +9,8 @@ mod animations;
 mod attribute_dependencies;
 mod dependencies;
 mod fonts;
+mod has_anchors;
+pub(super) use has_anchors::HasResults;
 mod invalidation;
 mod owners;
 mod parsed;
@@ -64,6 +66,8 @@ impl StyleSet {
             || self.resolution_dppx != environment.resolution_dppx;
         let (removed_styles, removed_generated) = self.prune_uncomposed_styles(dom);
         self.compiled = collect(&dom.document, base_url, external_stylesheets, environment);
+        // Remembered results follow the previous rules' anchor order.
+        self.has_results.clear();
         self.document_base_url = base_url.to_string();
         self.viewport_width = environment.viewport_width;
         self.viewport_height = environment.viewport_height;
