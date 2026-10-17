@@ -232,3 +232,39 @@ fn edge_clamping_never_speculates_zero_motion_and_retracts_only_painted_distance
         "new scroll range must admit the rest of the accepted wheel"
     );
 }
+
+#[test]
+fn coalesced_wheels_reconcile_their_combined_preapplied_distance_once() {
+    let mut gesture = WheelGesture::default();
+    gesture.viewport_delta(&RuntimeReport {
+        wheel_has_blocking_listeners: Some(false),
+        wheel_has_nested_scroll: Some(false),
+        ..RuntimeReport::default()
+    });
+    assert!(gesture.preapply(1, 126.0, 158, 158, 1.25));
+    gesture.coalesce(1, 2);
+    assert!(gesture.preapply(2, 126.0, 157, 157, 1.25));
+    assert!(
+        gesture
+            .reconcile(&report(&[(2, WheelDecision::Viewport, 252.0)]))
+            .is_empty(),
+        "the merged verdict must not repeat either painted contribution"
+    );
+
+    assert!(gesture.preapply(3, 126.0, 158, 158, 1.25));
+    gesture.coalesce(3, 4);
+    assert!(gesture.preapply(4, 126.0, 157, 100, 1.25));
+    assert_eq!(
+        gesture.reconcile(&report(&[(4, WheelDecision::Cancelled, 0.0)])),
+        [WheelAdjustment::Correction(-258)],
+        "a cancelled merged wheel retracts both painted contributions"
+    );
+
+    // Only the newer half moved natively; the verdict supplies the older half.
+    gesture.coalesce(5, 6);
+    assert!(gesture.preapply(6, 126.0, 158, 158, 1.25));
+    assert_eq!(
+        gesture.reconcile(&report(&[(6, WheelDecision::Viewport, 252.0)])),
+        [WheelAdjustment::Correction(157)]
+    );
+}

@@ -6,12 +6,15 @@ use better_web_browser::renderer_protocol::{
 };
 use std::collections::VecDeque;
 mod keyboard;
+mod wheel;
 pub(super) use keyboard::Admission as KeyboardAdmission;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum QueueResult {
     Queued,
     Coalesced,
+    /// The input absorbed this older unsent wheel sequence.
+    WheelCoalesced(u64),
     Full,
 }
 
@@ -21,6 +24,7 @@ pub(super) struct PendingRendererInputs {
     move_in_flight: Option<(DocumentId, u64)>,
     scroll_in_flight: Option<(DocumentId, u64)>,
     keyboard: keyboard::Reservations,
+    wheel_coalescing_floor: u64,
 }
 
 impl PendingRendererInputs {
@@ -93,6 +97,12 @@ impl PendingRendererInputs {
         }
     }
 
+    /// Wheels before a native gesture fence keep their own verdicts, so their
+    /// obsolete viewport distance can still be discarded independently.
+    pub(super) fn fence_wheel_coalescing(&mut self, sequence: u64) {
+        self.wheel_coalescing_floor = self.wheel_coalescing_floor.max(sequence);
+    }
+
     pub(super) fn enqueue(&mut self, input: DocumentInput) -> QueueResult {
         if let (DocumentInput::Wheel(wheel), Some(DocumentInput::Scroll(pending))) =
             (&input, self.inputs.back())
@@ -104,6 +114,16 @@ impl PendingRendererInputs {
             // unsent position need not block this discrete, cancelable input.
             // A preceding discrete input remains an ordering barrier.
             self.inputs.pop_back();
+        }
+        if let DocumentInput::Wheel(newer) = &input
+            && let Some(index) =
+                wheel::coalescible_index(&self.inputs, newer, self.wheel_coalescing_floor)
+            && let Some(DocumentInput::Wheel(older)) = self.inputs.remove(index)
+        {
+            self.compact_continuous_tail();
+            self.inputs
+                .push_back(DocumentInput::Wheel(wheel::merge(&older, newer)));
+            return QueueResult::WheelCoalesced(older.sequence);
         }
         if let (DocumentInput::Pointer(newer), Some(DocumentInput::Pointer(previous))) =
             (&input, self.inputs.back_mut())
@@ -138,13 +158,7 @@ impl PendingRendererInputs {
             if !is_continuous(pending) {
                 break;
             }
-            if let (DocumentInput::Pointer(newer), DocumentInput::Pointer(older)) =
-                (&input, pending)
-                && (newer.buttons != older.buttons
-                    || newer.modifiers != older.modifiers
-                    || newer.target != older.target
-                    || newer.phase != older.phase)
-            {
+            if pointer_barrier(&input, pending) {
                 break;
             }
             if can_compact_across(&input, pending) {
@@ -176,6 +190,36 @@ impl PendingRendererInputs {
         }
         self.inputs.push_back(input);
         QueueResult::Queued
+    }
+
+    /// Replaceable state that an absorbed wheel used to separate is now one
+    /// continuous run; keep only its latest values, honoring the same barriers
+    /// as ordinary enqueue compaction.
+    fn compact_continuous_tail(&mut self) {
+        let start = self
+            .inputs
+            .iter()
+            .rposition(|input| !is_continuous(input))
+            .map_or(0, |index| index + 1);
+        let mut index = self.inputs.len();
+        while index > start {
+            index -= 1;
+            let older = &self.inputs[index];
+            let superseded = self
+                .inputs
+                .range(index + 1..)
+                .position(|newer| can_compact_across(newer, older))
+                .is_some_and(|offset| {
+                    let newer = &self.inputs[index + 1 + offset];
+                    !self
+                        .inputs
+                        .range(index + 1..index + 1 + offset)
+                        .any(|pending| pointer_barrier(newer, pending))
+                });
+            if superseded {
+                self.inputs.remove(index);
+            }
+        }
     }
 
     pub(super) fn pop_front(&mut self) -> Option<DocumentInput> {
@@ -252,6 +296,16 @@ fn is_continuous(input: &DocumentInput) -> bool {
         }
         _ => false,
     }
+}
+
+/// Button, modifier, target or phase changes order pointer state; later movement
+/// cannot compact across them.
+fn pointer_barrier(newer: &DocumentInput, pending: &DocumentInput) -> bool {
+    matches!((newer, pending), (DocumentInput::Pointer(newer), DocumentInput::Pointer(older))
+        if newer.buttons != older.buttons
+            || newer.modifiers != older.modifiers
+            || newer.target != older.target
+            || newer.phase != older.phase)
 }
 
 fn can_compact_across(newer: &DocumentInput, pending: &DocumentInput) -> bool {

@@ -1,5 +1,6 @@
 use super::*;
 mod keyboard;
+mod wheel;
 use better_web_browser::renderer_protocol::{
     DocumentId, DocumentNodeId, InputModifiers, NativeTextInput, PointerButton, PointerInput,
     ScrollInput, TextEditIntent, TextInput, TextSelectionDirection, TextSelectionInput, WheelInput,

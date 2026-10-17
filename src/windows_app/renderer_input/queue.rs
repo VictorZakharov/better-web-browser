@@ -67,7 +67,17 @@ impl BrowserState {
                 true
             }
             Ok(Some(input)) => match self.pending_renderer_inputs.enqueue(input) {
-                QueueResult::Queued | QueueResult::Coalesced => {
+                result @ (QueueResult::Queued
+                | QueueResult::Coalesced
+                | QueueResult::WheelCoalesced(_)) => {
+                    if let (QueueResult::WheelCoalesced(retired), Some((document, sequence))) =
+                        (result, wheel_key)
+                    {
+                        // The retired sequence will never be acknowledged; its native
+                        // preapplied distance is reconciled by the merged verdict.
+                        self.wheel_gesture.coalesce(retired, sequence);
+                        self.record_benchmark_wheel_coalesced(document, retired);
+                    }
                     self.note_renderer_input_activity();
                     if wheel_key.is_some() {
                         unsafe { self.flush_renderer_inputs_for(self.id) };
