@@ -56,6 +56,13 @@ pub(super) struct RuleData {
     pub(super) css_scopes: Vec<CssScope>,
 }
 
+impl Rule {
+    /// Identifies a parsed rule payload shared between compiled cascades.
+    pub(super) fn data_ptr(&self) -> *const RuleData {
+        Rc::as_ptr(&self.data)
+    }
+}
+
 impl std::ops::Deref for Rule {
     type Target = RuleData;
 

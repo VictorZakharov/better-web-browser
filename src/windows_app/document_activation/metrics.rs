@@ -126,8 +126,12 @@ impl BrowserState {
             benchmark.navigation_started,
             benchmark.script_executed,
             benchmark.script_mutations,
-            benchmark.script_time,
-            benchmark.script_fetch_time,
+            crate::windows_app::benchmark::runtime_timeline::RuntimeWork {
+                script: benchmark.script_time,
+                script_fetch: benchmark.script_fetch_time,
+                style: benchmark.style_refresh_time,
+                layout: benchmark.layout_time,
+            },
             runtime.render_requested,
         );
         benchmark

@@ -95,7 +95,9 @@ fn equivalent_stylesheet_replacement_preserves_small_synchronous_refreshes() {
     assert_eq!(stats.len(), 3);
     assert!(!stats[1].full_rebuild);
     assert!(stats[1].recomputed_styles < 10, "{:?}", stats[1]);
-    assert!(stats[2].full_rebuild);
+    // Replacing keyed rules restyles only their subjects, not the 500 unrelated paragraphs.
+    assert!(!stats[2].full_rebuild);
+    assert!(stats[2].recomputed_styles < 10, "{:?}", stats[2]);
 }
 
 #[test]

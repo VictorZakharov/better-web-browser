@@ -326,7 +326,9 @@ fn stylesheet_text_mutation_forces_rule_rebuild_without_stale_style() {
     );
     let stats = page.refresh_resources_after_invalidation(800.0, &outcome.invalidation);
 
-    assert!(stats.full_rebuild);
+    // The edited sheet only swaps keyed `p` rules, so only their subjects are restyled.
+    assert!(!stats.full_rebuild);
+    assert!(stats.recomputed_styles < stats.total_styles);
     let target = element_with_id(&page, "p", "target");
     assert_eq!(
         page.cached_style(800.0).unwrap().get(&target).color,

@@ -34,6 +34,7 @@ fn compile(
         potential_transition_index: RuleIndex::default(),
         rules,
         transition_rule_indices: Vec::new(),
+        transition_index: RuleIndex::default(),
         animation_index: RuleIndex::default(),
         keyframes: Vec::new(),
         font_faces: Vec::new(),

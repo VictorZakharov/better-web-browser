@@ -78,6 +78,13 @@ impl AnchorKey {
 }
 
 impl HasAnchors {
+    /// Whether `selector` contains a `:has()` anywhere.
+    pub(super) fn is_relational(selector: &Selector) -> bool {
+        let mut anchors = Self::default();
+        anchors.include(selector);
+        !anchors.anchors.is_empty() || anchors.unbounded
+    }
+
     pub(super) fn include(&mut self, selector: &Selector) {
         self.visit(selector, &AnchorKey::default(), false, false);
     }

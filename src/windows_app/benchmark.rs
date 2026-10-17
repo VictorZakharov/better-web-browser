@@ -8,7 +8,7 @@ mod navigation;
 mod options;
 mod renderer_diagnostics;
 mod report;
-mod runtime_timeline;
+pub(in crate::windows_app) mod runtime_timeline;
 mod video;
 mod wheel_timing;
 

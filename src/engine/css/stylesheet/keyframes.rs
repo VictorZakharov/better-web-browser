@@ -12,13 +12,13 @@ mod tests;
 pub(crate) const MAX_KEYFRAME_BLOCKS: usize = 256;
 pub(crate) const MAX_KEYFRAME_DEFINITIONS: usize = 512;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct KeyframeBlock {
     pub(crate) offsets: Vec<f32>,
     pub(crate) declarations: Vec<(String, String)>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct KeyframeDefinition {
     pub(crate) name: String,
     pub(crate) blocks: Vec<KeyframeBlock>,
