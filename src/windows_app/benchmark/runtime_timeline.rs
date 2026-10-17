@@ -15,7 +15,18 @@ struct RuntimeSample {
     mutations: usize,
     script_ms: f64,
     script_fetch_wait_ms: f64,
+    /// Cumulative renderer style refresh and layout time, to place rendering work in time.
+    style_ms: f64,
+    layout_ms: f64,
     rendered: bool,
+}
+
+/// Cumulative renderer work reported up to one sample.
+pub(in crate::windows_app) struct RuntimeWork {
+    pub(in crate::windows_app) script: Duration,
+    pub(in crate::windows_app) script_fetch: Duration,
+    pub(in crate::windows_app) style: Duration,
+    pub(in crate::windows_app) layout: Duration,
 }
 
 impl RuntimeTimeline {
@@ -24,8 +35,7 @@ impl RuntimeTimeline {
         navigation_started: Option<Instant>,
         scripts: usize,
         mutations: usize,
-        script_time: Duration,
-        script_fetch_time: Duration,
+        work: RuntimeWork,
         rendered: bool,
     ) {
         let Some(navigation_started) = navigation_started else {
@@ -38,8 +48,10 @@ impl RuntimeTimeline {
             elapsed_ms: navigation_started.elapsed().as_secs_f64() * 1_000.0,
             scripts,
             mutations,
-            script_ms: script_time.as_secs_f64() * 1_000.0,
-            script_fetch_wait_ms: script_fetch_time.as_secs_f64() * 1_000.0,
+            script_ms: work.script.as_secs_f64() * 1_000.0,
+            script_fetch_wait_ms: work.script_fetch.as_secs_f64() * 1_000.0,
+            style_ms: work.style.as_secs_f64() * 1_000.0,
+            layout_ms: work.layout.as_secs_f64() * 1_000.0,
             rendered,
         });
     }
@@ -53,13 +65,16 @@ impl RuntimeTimeline {
                     concat!(
                         "    {{\"elapsed_ms\": {:.3}, \"scripts\": {}, ",
                         "\"mutations\": {}, \"script_ms\": {:.3}, ",
-                        "\"script_fetch_wait_ms\": {:.3}, \"rendered\": {}}}"
+                        "\"script_fetch_wait_ms\": {:.3}, \"style_ms\": {:.3}, ",
+                        "\"layout_ms\": {:.3}, \"rendered\": {}}}"
                     ),
                     sample.elapsed_ms,
                     sample.scripts,
                     sample.mutations,
                     sample.script_ms,
                     sample.script_fetch_wait_ms,
+                    sample.style_ms,
+                    sample.layout_ms,
                     sample.rendered,
                 )
             })

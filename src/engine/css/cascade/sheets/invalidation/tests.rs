@@ -35,15 +35,15 @@ fn identical_rule_inputs_refresh_only_dirty_dom_and_keep_generated_content_live(
 }
 
 #[test]
-fn changed_rules_widen_a_small_dirty_root_to_the_document() {
+fn changed_keyless_rules_widen_a_small_dirty_root_to_the_document() {
     let dom = dom::parse(
-        "<style>p{color:red}</style><section><b>x</b></section><aside><p>affected</p></aside>",
+        "<style>:is(p){color:red}</style><section><b>x</b></section><aside><p>affected</p></aside>",
     );
     let root = dom.elements_named("section").next().unwrap();
     let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
     Node::set_text_content(
         &dom.elements_named("style").next().unwrap(),
-        "p{color:blue}",
+        ":is(p){color:blue}",
     );
     let stats =
         styles.refresh_rules_after_invalidation(&dom, "", &[], environment(), &dirty(&root));

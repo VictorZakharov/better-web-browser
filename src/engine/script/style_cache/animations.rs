@@ -88,7 +88,7 @@ impl HostState {
         }
         if styles.has_transition_rules() {
             for node in Node::composed_descendants(root).skip(1).take(100_000) {
-                if node.element().is_some() && styles.may_transition_on_attribute(&node, "", "") {
+                if node.element().is_some() && styles.may_transition_unchanged(&node) {
                     nodes.push(node);
                     if nodes.len() == 64 {
                         break;

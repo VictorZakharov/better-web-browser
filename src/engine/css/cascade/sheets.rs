@@ -34,6 +34,7 @@ struct SheetInput {
 pub(super) struct CompiledRules {
     pub(super) rules: Vec<Rule>,
     transition_rule_indices: Vec<usize>,
+    transition_index: RuleIndex,
     attribute_dependencies: attribute_dependencies::AttributeDependencies,
     transition_setting_dependencies: attribute_dependencies::AttributeDependencies,
     potential_transition_rule_indices: Vec<usize>,
@@ -197,6 +198,7 @@ pub(super) fn collect(
             &rules,
             &transition_rule_indices,
         );
+    let transition_index = RuleIndex::for_indices(&rules, &transition_rule_indices);
     let potential_transition_rule_indices =
         transitions::potential_rule_indices(&rules, &transition_rule_indices);
     let potential_transition_index =
@@ -211,6 +213,7 @@ pub(super) fn collect(
         animation_index: RuleIndex::for_indices(&rules, &animation_rule_indices),
         rules,
         transition_rule_indices,
+        transition_index,
         attribute_dependencies,
         transition_setting_dependencies,
         potential_transition_index,

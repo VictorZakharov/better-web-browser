@@ -109,7 +109,19 @@ impl StyleSet {
             node,
             name,
             next_value,
-            &self.compiled.transition_rule_indices,
+            self.compiled.transition_rule_indices.iter().copied(),
+        )
+    }
+
+    /// [`Self::may_transition_on_attribute`] for an element whose own attributes are not
+    /// changing, such as a descendant of the mutated element. Its candidate rules come from
+    /// the transition rule index instead of a scan of every transition rule.
+    pub(crate) fn may_transition_unchanged(&self, node: &NodeRef) -> bool {
+        self.may_match_transition_rules(
+            node,
+            "",
+            "",
+            self.compiled.transition_index.candidates(node, None),
         )
     }
 
@@ -137,7 +149,7 @@ impl StyleSet {
         node: &NodeRef,
         name: &str,
         next_value: &str,
-        indices: &[usize],
+        indices: impl IntoIterator<Item = usize>,
     ) -> bool {
         let old_id = node.attr("id").unwrap_or_default();
         let old_class = node.attr("class").unwrap_or_default();
@@ -147,7 +159,7 @@ impl StyleSet {
         } else {
             &old_class
         };
-        indices.iter().any(|&index| {
+        indices.into_iter().any(|index| {
             let rule = &self.compiled.rules[index];
             if rule.pseudo.is_some() {
                 return false;
