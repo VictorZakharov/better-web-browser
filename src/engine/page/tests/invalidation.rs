@@ -41,6 +41,7 @@ fn refreshes_only_the_invalidated_style_subtree_without_stale_values() {
             rebuild_style_rules: false,
             removed_nodes: Vec::new(),
             removals_are_local: false,
+            class_changes: Vec::new(),
         },
     );
 
@@ -78,6 +79,7 @@ fn refreshes_disjoint_component_subtrees_without_widening_to_the_document() {
             rebuild_style_rules: false,
             removed_nodes: Vec::new(),
             removals_are_local: false,
+            class_changes: Vec::new(),
         },
     );
 
@@ -113,6 +115,7 @@ fn dynamic_loaded_class_resolves_visibility_inherit_without_stale_hidden_style()
             rebuild_style_rules: false,
             removed_nodes: Vec::new(),
             removals_are_local: false,
+            class_changes: Vec::new(),
         },
     );
 
@@ -140,6 +143,7 @@ fn handles_text_insertion_removal_and_viewport_invalidation_conservatively() {
             rebuild_style_rules: false,
             removed_nodes: Vec::new(),
             removals_are_local: false,
+            class_changes: Vec::new(),
         },
     );
     assert_eq!(text.recomputed_styles, 0);
@@ -156,6 +160,7 @@ fn handles_text_insertion_removal_and_viewport_invalidation_conservatively() {
             rebuild_style_rules: false,
             removed_nodes: Vec::new(),
             removals_are_local: false,
+            class_changes: Vec::new(),
         },
     );
     assert!(insertion.changed_styles > 0);
@@ -176,6 +181,7 @@ fn handles_text_insertion_removal_and_viewport_invalidation_conservatively() {
             rebuild_style_rules: false,
             removed_nodes: vec![inserted.id()],
             removals_are_local: false,
+            class_changes: Vec::new(),
         },
     );
     assert_eq!(removal.removed_styles, 1);
@@ -209,6 +215,7 @@ fn keeps_style_for_a_node_reinserted_before_the_rendering_checkpoint() {
             rebuild_style_rules: false,
             removed_nodes: vec![target.id()],
             removals_are_local: false,
+            class_changes: Vec::new(),
         },
     );
 
@@ -247,6 +254,7 @@ fn rebuilt_layout_does_not_retain_text_or_insertion_geometry() {
             rebuild_style_rules: false,
             removed_nodes: vec![old_text],
             removals_are_local: false,
+            class_changes: Vec::new(),
         },
     );
     let text_layout = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
@@ -275,6 +283,7 @@ fn rebuilt_layout_does_not_retain_text_or_insertion_geometry() {
             rebuild_style_rules: false,
             removed_nodes: Vec::new(),
             removals_are_local: false,
+            class_changes: Vec::new(),
         },
     );
     let inserted_layout = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
@@ -290,6 +299,7 @@ fn rebuilt_layout_does_not_retain_text_or_insertion_geometry() {
             rebuild_style_rules: false,
             removed_nodes: vec![inserted.id()],
             removals_are_local: false,
+            class_changes: Vec::new(),
         },
     );
     let removed_layout = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);

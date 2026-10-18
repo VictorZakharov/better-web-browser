@@ -12,6 +12,7 @@ fn local_removal_evidence_survives_additions_but_not_unknown_removals() {
         roots: vec![document],
         removed_nodes: vec![child],
         removals_are_local: true,
+        class_changes: Vec::new(),
         ..RenderInvalidation::default()
     };
     let mut combined = addition.clone();

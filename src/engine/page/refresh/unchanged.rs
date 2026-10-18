@@ -71,7 +71,7 @@ impl Page {
     ) -> bool {
         if !invalidation.impact.is_style_only()
             || invalidation.rebuild_style_rules
-            || invalidation.roots.is_empty()
+            || invalidation.affected_roots().next().is_none()
             || !invalidation.removed_nodes.is_empty()
             || self
                 .cached_styles
@@ -84,8 +84,8 @@ impl Page {
         {
             return false;
         }
-        invalidation.roots.iter().all(|id| {
-            self.dom.find_node(*id).is_some_and(|root| {
+        invalidation.affected_roots().all(|id| {
+            self.dom.find_node(id).is_some_and(|root| {
                 Node::shadow_including_descendants(&root).all(|node| ordinary_html(&node))
                     && std::iter::successors(root.shadow_including_parent(), |node| {
                         node.shadow_including_parent()

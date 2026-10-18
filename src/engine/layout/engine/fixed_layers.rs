@@ -81,7 +81,7 @@ impl LayoutOutput {
             || invalidation.rebuild_style_rules
             || !(invalidation.removed_nodes.is_empty()
                 || local_content && invalidation.removals_are_local)
-            || invalidation.roots.is_empty()
+            || invalidation.affected_roots().next().is_none()
             || !self.fixed_layers.image_inputs.matches(page)
         {
             return false;
@@ -100,12 +100,12 @@ impl LayoutOutput {
             return false;
         }
         let mut owners = HashSet::new();
-        for id in &invalidation.roots {
+        for id in invalidation.affected_roots() {
             let Some((&owner, _)) = self
                 .fixed_layers
                 .layers
                 .iter()
-                .find(|(_, layer)| layer.members.contains(id))
+                .find(|(_, layer)| layer.members.contains(&id))
             else {
                 return false;
             };

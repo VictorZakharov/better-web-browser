@@ -45,6 +45,28 @@ impl HostState {
         }
     }
 
+    /// A `class` write whose token set changed. The cascade bounds its restyle scope from the
+    /// rules that mention those tokens; other attribute writes keep the parent-subtree root.
+    pub(in crate::engine::script) fn record_class_mutation(
+        &mut self,
+        target: &NodeRef,
+        tokens: Vec<String>,
+        requires_render: bool,
+    ) {
+        let kind = MutationKind::Attribute("class");
+        self.mutation_count += 1;
+        self.task_mutations.record(kind);
+        self.invalidate_style_rules_for_mutation(Some(target), kind);
+        if requires_render {
+            self.css_animation_revision = self.css_animation_revision.wrapping_add(1);
+            self.pending_invalidation
+                .record_class_change(&self.document, target, tokens.clone());
+            self.pending_layout_invalidation
+                .record_class_change(&self.document, target, tokens);
+            self.timers.request_render();
+        }
+    }
+
     pub(in crate::engine::script) fn begin_task(&mut self) {
         self.idle_callbacks.interrupt();
         self.begin_idle_task();

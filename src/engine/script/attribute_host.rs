@@ -85,7 +85,18 @@ pub(super) fn set_attribute(args: &[JsValue], state: &mut HostState) -> JsResult
     let contents_changed = previous
         .as_ref()
         .is_none_or(|attribute| attribute.value.as_ref() != value);
-    record_attribute_mutation(state, node.as_ref(), &name, changed, true, contents_changed);
+    record_attribute_mutation(
+        state,
+        node.as_ref(),
+        &name,
+        AttributeWrite {
+            changed,
+            queue_dynamic_script: true,
+            contents_changed,
+            class_attribute: true,
+            previous: previous.as_ref().map(|attribute| attribute.value.as_ref()),
+        },
+    );
     Ok(previous
         .as_ref()
         .map_or_else(JsValue::null, attribute_record))
@@ -111,17 +122,22 @@ pub(super) fn set_attribute_ns(
             node.set_attr_ns(optional(&namespace), optional(&prefix), &local_name, &value)
         }
     });
+    let contents_changed = previous.as_ref().is_none_or(|attribute| {
+        attribute.value.as_ref() != value
+            || (replace && attribute.name.prefix.as_ref().map(|p| p.as_ref()) != optional(&prefix))
+    });
     record_attribute_mutation(
         state,
         node.as_ref(),
         &local_name,
-        changed,
-        namespace.is_empty(),
-        previous.as_ref().is_none_or(|attribute| {
-            attribute.value.as_ref() != value
-                || (replace
-                    && attribute.name.prefix.as_ref().map(|p| p.as_ref()) != optional(&prefix))
-        }),
+        AttributeWrite {
+            changed,
+            queue_dynamic_script: namespace.is_empty(),
+            contents_changed,
+            // Only the null-namespace `class` attribute carries class tokens.
+            class_attribute: namespace.is_empty(),
+            previous: previous.as_ref().map(|attribute| attribute.value.as_ref()),
+        },
     );
     Ok(previous
         .as_ref()
@@ -137,7 +153,18 @@ pub(super) fn remove_attribute(args: &[JsValue], state: &mut HostState) -> JsRes
     let changed = node
         .as_ref()
         .is_some_and(|node| node.remove_attr_qualified(&name));
-    record_attribute_mutation(state, node.as_ref(), &name, changed, false, changed);
+    record_attribute_mutation(
+        state,
+        node.as_ref(),
+        &name,
+        AttributeWrite {
+            changed,
+            queue_dynamic_script: false,
+            contents_changed: changed,
+            class_attribute: true,
+            previous: previous.as_ref().map(|attribute| attribute.value.as_ref()),
+        },
+    );
     Ok(previous
         .as_ref()
         .map_or_else(JsValue::null, attribute_record))
@@ -153,7 +180,18 @@ pub(super) fn remove_attribute_ns(args: &[JsValue], state: &mut HostState) -> Js
     let changed = node
         .as_ref()
         .is_some_and(|node| node.remove_attr_ns(optional(&namespace), &local_name));
-    record_attribute_mutation(state, node.as_ref(), &local_name, changed, false, changed);
+    record_attribute_mutation(
+        state,
+        node.as_ref(),
+        &local_name,
+        AttributeWrite {
+            changed,
+            queue_dynamic_script: false,
+            contents_changed: changed,
+            class_attribute: namespace.is_empty(),
+            previous: previous.as_ref().map(|attribute| attribute.value.as_ref()),
+        },
+    );
     Ok(previous
         .as_ref()
         .map_or_else(JsValue::null, attribute_record))
@@ -215,14 +253,29 @@ fn optional(value: &str) -> Option<&str> {
     (!value.is_empty()).then_some(value)
 }
 
+/// What one attribute write changed, for mutation and rendering bookkeeping.
+struct AttributeWrite<'a> {
+    changed: bool,
+    queue_dynamic_script: bool,
+    contents_changed: bool,
+    /// The write targets the null-namespace attribute named `name`.
+    class_attribute: bool,
+    previous: Option<&'a str>,
+}
+
 fn record_attribute_mutation(
     state: &mut HostState,
     node: Option<&NodeRef>,
     name: &str,
-    changed: bool,
-    queue_dynamic_script: bool,
-    contents_changed: bool,
+    write: AttributeWrite<'_>,
 ) {
+    let AttributeWrite {
+        changed,
+        queue_dynamic_script,
+        contents_changed,
+        class_attribute,
+        previous,
+    } = write;
     if !changed {
         return;
     }
@@ -231,7 +284,19 @@ fn record_attribute_mutation(
     // but cannot change selector matching or geometry. Do not widen a later real dirty root.
     let requires_render =
         contents_changed && node.is_some_and(|node| state.mutation_requires_render(node));
-    state.record_mutation_with_render(node, MutationKind::Attribute(name), requires_render);
+    let class_tokens = node
+        .filter(|_| class_attribute && name == "class")
+        .and_then(|node| {
+            crate::engine::invalidation::changed_class_tokens(
+                previous.unwrap_or_default(),
+                &node.attr("class").unwrap_or_default(),
+            )
+        });
+    if let (Some(node), Some(tokens)) = (node, class_tokens) {
+        state.record_class_mutation(node, tokens, requires_render);
+    } else {
+        state.record_mutation_with_render(node, MutationKind::Attribute(name), requires_render);
+    }
     if let Some(node) = node {
         state.diagnose(format!("mutate {name} on {}", node_label(node)));
         if queue_dynamic_script

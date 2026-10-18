@@ -7,6 +7,7 @@ use std::rc::Rc;
 
 mod animations;
 mod attribute_dependencies;
+mod class_invalidation;
 mod dependencies;
 pub(crate) use dependencies::AppendedChildDependencies;
 mod fonts;
@@ -47,6 +48,7 @@ pub(super) struct CompiledRules {
     pub(super) index: RuleIndex,
     pub(super) nonlocal_dependencies: dependencies::NonlocalDependencies,
     pub(super) cross_tree_or_scoped: bool,
+    class_invalidation: class_invalidation::ClassInvalidation,
     inputs: Vec<Rc<SheetInput>>,
     parsed: Vec<Rc<parsed::ParsedSheet>>,
     environment: Option<MediaEnvironment>,
@@ -209,6 +211,8 @@ pub(super) fn collect(
     let font_faces = fonts::collect(&inputs, &parsed, environment);
     let nonlocal_dependencies = dependencies::NonlocalDependencies::for_rules(&rules);
     let cross_tree_or_scoped = dependencies::cross_tree_or_scoped(&rules);
+    let class_invalidation =
+        class_invalidation::ClassInvalidation::for_rules(&rules, cross_tree_or_scoped);
     let compiled = Rc::new(CompiledRules {
         index: RuleIndex::new(&rules),
         animation_index: RuleIndex::for_indices(&rules, &animation_rule_indices),
@@ -223,6 +227,7 @@ pub(super) fn collect(
         font_faces,
         nonlocal_dependencies,
         cross_tree_or_scoped,
+        class_invalidation,
         scope_parents,
         inputs,
         parsed,

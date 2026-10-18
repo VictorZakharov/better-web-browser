@@ -24,6 +24,7 @@ fn target_effect_refresh_matches_full_cascade_without_recascading_siblings() {
             &dom.document,
             std::slice::from_ref(&target),
             &[],
+            &[],
             MutationKind::StyleOverlay.impact(),
         );
         let fresh = StyleSet::from_dom(&dom, &[], 800.0);
@@ -54,6 +55,7 @@ fn target_root_font_effect_recascades_all_rem_consumers() {
         &dom.document,
         &[target],
         &[],
+        &[],
         MutationKind::StyleOverlay.impact(),
     );
     assert!(stats.layout_changed);
@@ -72,6 +74,7 @@ fn relational_style_dependencies_refresh_the_anchor_subtree() {
         &dom.document,
         std::slice::from_ref(&target),
         &[],
+        &[],
         MutationKind::StyleOverlay.impact(),
     );
     // An animation overlay is not a `style` attribute, so body's remembered result holds.
@@ -81,6 +84,7 @@ fn relational_style_dependencies_refresh_the_anchor_subtree() {
     let stats = styles.refresh_subtrees_after_invalidation(
         &dom.document,
         &[target],
+        &[],
         &[],
         MutationKind::Attribute("style").impact(),
     );

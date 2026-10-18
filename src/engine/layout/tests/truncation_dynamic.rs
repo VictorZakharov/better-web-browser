@@ -23,6 +23,7 @@ fn refresh(
             rebuild_style_rules: false,
             removed_nodes: Vec::new(),
             removals_are_local: false,
+            class_changes: Vec::new(),
         },
     )
 }
