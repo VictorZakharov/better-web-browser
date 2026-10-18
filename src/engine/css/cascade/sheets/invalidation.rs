@@ -21,18 +21,21 @@ impl StyleSet {
         // subtree, including inheritance, structural selectors and generated content.
         if Rc::ptr_eq(&compiled, &self.compiled)
             && self.document_base_url == base_url
-            && !invalidation.roots.is_empty()
+            && !invalidation.is_empty()
             && !invalidation.roots.contains(&dom.document.id())
         {
-            let roots = invalidation
+            let mut roots = invalidation
                 .roots
                 .iter()
                 .filter_map(|id| dom.find_node(*id))
                 .collect::<Vec<_>>();
+            let mut elements = Vec::new();
+            self.resolve_class_changes(dom, &invalidation.class_changes, &mut roots, &mut elements);
             let (removed_styles, removed_generated) = self.prune_uncomposed_styles(dom);
             let mut stats = self.refresh_subtrees_after_invalidation(
                 &dom.document,
                 &roots,
+                &elements,
                 &invalidation.removed_nodes,
                 invalidation.impact,
             );
@@ -48,21 +51,27 @@ impl StyleSet {
             && let Some(diff) =
                 rule_diff::changed_rule_subjects(&self.compiled, &compiled, &dom.document)
         {
-            self.compiled = compiled;
-            // Remembered :has() results follow the anchor order of the rules with :has().
-            if diff.relational {
-                self.has_results.clear();
-            }
+            // Resolve class changes against the outgoing rules too: a removed rule may have
+            // matched through a token that changed in the same checkpoint.
             let mut roots = invalidation
                 .roots
                 .iter()
                 .filter_map(|id| dom.find_node(*id))
                 .collect::<Vec<_>>();
+            let mut elements = Vec::new();
+            self.resolve_class_changes(dom, &invalidation.class_changes, &mut roots, &mut elements);
+            self.compiled = compiled;
+            self.resolve_class_changes(dom, &invalidation.class_changes, &mut roots, &mut elements);
+            // Remembered :has() results follow the anchor order of the rules with :has().
+            if diff.relational {
+                self.has_results.clear();
+            }
             roots.extend(diff.subjects);
             let (removed_styles, removed_generated) = self.prune_uncomposed_styles(dom);
             let mut stats = self.refresh_subtrees_after_invalidation(
                 &dom.document,
                 &roots,
+                &elements,
                 &invalidation.removed_nodes,
                 invalidation.impact,
             );

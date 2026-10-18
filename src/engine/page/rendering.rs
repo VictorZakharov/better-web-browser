@@ -12,15 +12,15 @@ impl Page {
         if stats.layout_changed
             || stats.full_rebuild
             || (stats.removed_styles != 0 && !invalidation.removals_are_local)
-            || invalidation.roots.is_empty()
+            || invalidation.affected_roots().next().is_none()
         {
             return false;
         }
         let Some((_, _, styles)) = self.cached_styles.as_ref() else {
             return false;
         };
-        invalidation.roots.iter().all(|id| {
-            let Some(root) = self.dom.find_node(*id) else {
+        invalidation.affected_roots().all(|id| {
+            let Some(root) = self.dom.find_node(id) else {
                 return false;
             };
             // Fullscreen can participate independently of the ordinary composed traversal.
@@ -168,6 +168,7 @@ mod tests {
             roots: vec![root.id()],
             removed_nodes: vec![child.id()],
             removals_are_local: true,
+            class_changes: Vec::new(),
             impact: MutationKind::ChildList.impact(),
             ..RenderInvalidation::default()
         };

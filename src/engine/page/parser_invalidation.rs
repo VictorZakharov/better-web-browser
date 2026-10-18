@@ -66,6 +66,7 @@ impl Page {
             rebuild_style_rules: collected.rebuild_style_rules,
             removed_nodes: collected.removed,
             removals_are_local: false,
+            class_changes: Vec::new(),
         }
     }
 }

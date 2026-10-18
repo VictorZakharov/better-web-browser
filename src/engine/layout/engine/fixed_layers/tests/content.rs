@@ -24,6 +24,7 @@ fn text_change(page: &mut Page, target: &NodeRef, text: &str) -> RenderInvalidat
         mutation_count: 1,
         removed_nodes,
         removals_are_local: true,
+        class_changes: Vec::new(),
         ..Default::default()
     };
     page.refresh_resources_after_invalidation_for_viewport(800., 600., &invalidation);
@@ -112,6 +113,7 @@ fn relational_text_dependencies_and_unknown_removals_fall_back_atomically() {
     for dirty in [
         RenderInvalidation {
             removals_are_local: false,
+            class_changes: Vec::new(),
             ..valid.clone()
         },
         RenderInvalidation {

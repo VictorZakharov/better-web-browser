@@ -7,6 +7,7 @@ use crate::engine::invalidation::InvalidationImpact;
 mod deferred_paint_tests;
 #[cfg(test)]
 mod effect_roots_tests;
+mod element_roots;
 
 impl StyleSet {
     pub(crate) fn refresh_subtrees(
@@ -18,6 +19,7 @@ impl StyleSet {
         self.refresh_subtrees_after_invalidation(
             document,
             requested_roots,
+            &[],
             removed_nodes,
             InvalidationImpact::default(),
         )
@@ -27,6 +29,7 @@ impl StyleSet {
         &mut self,
         document: &NodeRef,
         requested_roots: &[NodeRef],
+        element_roots: &[NodeRef],
         removed_nodes: &[NodeId],
         impact: InvalidationImpact,
     ) -> StyleRefreshStats {
@@ -48,36 +51,42 @@ impl StyleSet {
             // sibling :has() result. Widen only when this mutation can affect
             // the compiled relative-selector dependencies, and then only to
             // the anchors whose results can change when that is provable.
+            let changed = requested_roots
+                .iter()
+                .chain(element_roots)
+                .cloned()
+                .collect::<Vec<_>>();
             match self
                 .compiled
                 .nonlocal_dependencies
-                .relational_roots(requested_roots, &self.has_results)
+                .relational_roots(&changed, &self.has_results)
                 .filter(|_| !self.compiled.cross_tree_or_scoped)
             {
                 Some(relational) => {
                     changed_has_results = relational.results;
                     let mut roots = relational.roots;
                     roots.extend_from_slice(requested_roots);
-                    normalized_roots(document, &roots)
+                    normalized_roots(document, &roots, element_roots.is_empty())
                 }
                 None => vec![document.clone()],
             }
         } else {
-            normalized_roots(document, requested_roots)
+            normalized_roots(document, requested_roots, element_roots.is_empty())
         };
         let mut stats = StyleRefreshStats {
             opacity_only: true,
             ..StyleRefreshStats::default()
         };
-        for root in roots {
-            if self.has_deferred_ancestor(&root) {
-                stats.removed_styles += self.forget_deferred_styles(&root, true);
+        for root in &roots {
+            if self.has_deferred_ancestor(root) {
+                stats.removed_styles += self.forget_deferred_styles(root, true);
                 continue;
             }
-            let parent_style = Node::composed_parent(&root)
+            let parent_style = Node::composed_parent(root)
                 .and_then(|parent| self.styles.get(&node_id(&parent)).cloned());
-            self.recompute_subtree(&root, parent_style.as_ref(), &mut stats);
+            self.recompute_subtree(root, parent_style.as_ref(), &mut stats);
         }
+        self.refresh_element_roots(element_roots, &roots, &mut stats);
 
         // A node may be removed and reinserted before the rendering checkpoint. Its identifier
         // remains in the removal log, but its newly recomputed style must remain available. Sweep
@@ -224,7 +233,13 @@ impl StyleSet {
     }
 }
 
-fn normalized_roots(document: &NodeRef, requested: &[NodeRef]) -> Vec<NodeRef> {
+/// `default_document` makes an empty request mean the whole document; element roots alone
+/// request no subtree.
+fn normalized_roots(
+    document: &NodeRef,
+    requested: &[NodeRef],
+    default_document: bool,
+) -> Vec<NodeRef> {
     let mut roots = Vec::<NodeRef>::new();
     for requested in requested {
         let requested = requested.shadow_host().unwrap_or_else(|| requested.clone());
@@ -239,7 +254,7 @@ fn normalized_roots(document: &NodeRef, requested: &[NodeRef]) -> Vec<NodeRef> {
         roots.retain(|known| !is_descendant_of(known, &root));
         roots.push(root);
     }
-    if roots.is_empty() {
+    if roots.is_empty() && default_document {
         roots.push(document.clone());
     }
     roots

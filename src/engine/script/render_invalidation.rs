@@ -11,6 +11,7 @@ pub(super) struct PendingInvalidation {
     rebuild_style_rules: bool,
     removed_nodes: BTreeSet<NodeId>,
     removed_global_dependency: bool,
+    class_changes: Vec<crate::engine::invalidation::ClassChange>,
 }
 
 impl PendingInvalidation {
@@ -21,6 +22,34 @@ impl PendingInvalidation {
         kind: MutationKind<'_>,
     ) {
         self.record_with_style_scope(document, target, kind, false);
+    }
+
+    /// Records changed class tokens on `target` for the cascade to bound, instead of the
+    /// target's parent subtree. A proper ancestor root already restyles the element and every
+    /// sibling, so the change adds nothing there.
+    pub(super) fn record_class_change(
+        &mut self,
+        document: &NodeRef,
+        target: &NodeRef,
+        tokens: Vec<String>,
+    ) {
+        self.impact = self.impact.union(MutationKind::Attribute("class").impact());
+        let covered = target.shadow_including_parent().is_some_and(|parent| {
+            self.roots
+                .iter()
+                .any(|root| is_descendant_of(&parent, root))
+        });
+        if covered {
+            return;
+        }
+        if self.class_changes.len() >= crate::engine::invalidation::MAX_INVALIDATION_ROOTS {
+            let parent = target
+                .shadow_including_parent()
+                .unwrap_or_else(|| document.clone());
+            self.extend(document, &parent);
+            return;
+        }
+        crate::engine::invalidation::record_class_change(&mut self.class_changes, target, tokens);
     }
 
     pub(super) fn record_selector_independent_style(
@@ -141,6 +170,7 @@ impl PendingInvalidation {
             rebuild_style_rules: self.rebuild_style_rules,
             removed_nodes: self.removed_nodes.iter().copied().collect(),
             removals_are_local: !self.removed_nodes.is_empty() && !self.removed_global_dependency,
+            class_changes: self.class_changes.clone(),
         }
     }
 

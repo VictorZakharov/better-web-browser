@@ -20,7 +20,10 @@ const LOCAL_CONTENT_ONLY: u8 = 1 << 6;
 // effect on a relational selector requires that selector to read the attribute.
 const RESOURCE_ATTRIBUTE_ONLY: u8 = 1 << 7;
 mod attributes;
+mod class_changes;
 pub(crate) use attributes::is_local_graphics_attribute;
+pub use class_changes::ClassChange;
+pub(crate) use class_changes::{changed_class_tokens, record_class_change};
 
 impl InvalidationImpact {
     pub const STYLE: Self = Self(1 << 0);
@@ -197,6 +200,9 @@ pub struct RenderInvalidation {
     pub removed_nodes: Vec<NodeId>,
     /// True only when removed subtrees were inspected for nonlocal rendering dependencies.
     pub removals_are_local: bool,
+    /// Class token changes whose restyle scope the cascade bounds. Their elements are also
+    /// conservative subtree roots for consumers that only need to know what may have changed.
+    pub class_changes: Vec<ClassChange>,
 }
 
 impl RenderInvalidation {
@@ -208,6 +214,7 @@ impl RenderInvalidation {
             rebuild_style_rules: true,
             removed_nodes: Vec::new(),
             removals_are_local: false,
+            class_changes: Vec::new(),
         }
     }
 
@@ -219,11 +226,21 @@ impl RenderInvalidation {
             rebuild_style_rules: true,
             removed_nodes: Vec::new(),
             removals_are_local: false,
+            class_changes: Vec::new(),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.roots.is_empty()
+        self.roots.is_empty() && self.class_changes.is_empty()
+    }
+
+    /// Every node whose subtree may contain changed rendering: the roots plus elements with
+    /// class changes. Sibling-dependent class changes already add their parent to the roots.
+    pub fn affected_roots(&self) -> impl Iterator<Item = NodeId> + '_ {
+        self.roots
+            .iter()
+            .copied()
+            .chain(self.class_changes.iter().map(|change| change.node))
     }
 
     /// Combines rendering work produced by sequential callbacks before an embedder checkpoint.
@@ -240,9 +257,16 @@ impl RenderInvalidation {
         self.roots.append(&mut other.roots);
         self.roots.sort_unstable();
         self.roots.dedup();
-        if self.roots.contains(&document_root) || self.roots.len() > MAX_INVALIDATION_ROOTS {
+        for change in other.class_changes {
+            class_changes::merge_class_change(&mut self.class_changes, change);
+        }
+        if self.roots.contains(&document_root)
+            || self.roots.len() > MAX_INVALIDATION_ROOTS
+            || self.class_changes.len() > MAX_INVALIDATION_ROOTS
+        {
             self.roots.clear();
             self.roots.push(document_root);
+            self.class_changes.clear();
         }
         self.impact = self.impact.union(other.impact);
         self.mutation_count = self.mutation_count.saturating_add(other.mutation_count);
@@ -375,6 +399,7 @@ mod tests {
             rebuild_style_rules: false,
             removed_nodes: vec![left],
             removals_are_local: true,
+            class_changes: Vec::new(),
         };
         invalidation.merge_conservatively(
             RenderInvalidation {
@@ -384,6 +409,7 @@ mod tests {
                 rebuild_style_rules: false,
                 removed_nodes: vec![left, right],
                 removals_are_local: false,
+                class_changes: Vec::new(),
             },
             document,
         );

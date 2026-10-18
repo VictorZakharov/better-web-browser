@@ -188,7 +188,7 @@ impl Page {
             .iter()
             .filter_map(|root| self.dom.find_node(*root))
             .collect::<Vec<_>>();
-        if invalidation_roots.is_empty() {
+        if invalidation_roots.is_empty() && invalidation.class_changes.is_empty() {
             invalidation_roots.push(self.dom.document.clone());
         }
         let invalidated_nodes = invalidation_roots
@@ -208,9 +208,17 @@ impl Page {
                     && (cached_height - viewport_height).abs() < 0.5 =>
             {
                 let stats = if invalidation.impact.affects_style() {
+                    let mut element_roots = Vec::new();
+                    styles.resolve_class_changes(
+                        &self.dom,
+                        &invalidation.class_changes,
+                        &mut invalidation_roots,
+                        &mut element_roots,
+                    );
                     styles.refresh_subtrees_after_invalidation(
                         &self.dom.document,
                         &invalidation_roots,
+                        &element_roots,
                         &invalidation.removed_nodes,
                         invalidation.impact,
                     )

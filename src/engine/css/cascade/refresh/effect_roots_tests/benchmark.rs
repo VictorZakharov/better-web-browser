@@ -31,6 +31,7 @@ fn measure_effect_target_refresh_in_a_large_sibling_set() {
                     &dom.document,
                     std::slice::from_ref(if narrow { &target } else { &parent }),
                     &[],
+                    &[],
                     MutationKind::StyleOverlay.impact(),
                 );
                 let elapsed = start.elapsed().as_secs_f64() * 1000.0;
