@@ -209,9 +209,12 @@ impl StyleSet {
         // Resolve custom properties before var() substitution. For important rules the rollback
         // baseline is the normal cascade *before* that layer, plus earlier important layers;
         // the normal declaration in the same layer and all intervening normal layers are ignored.
-        let custom_origin = style.clone();
+        // The origin snapshots are revert-layer baselines too; text nodes and most elements
+        // need none, and each clone copies the whole computed style.
+        let custom_origin = needs_snapshot.then(|| style.clone());
         let mut normal_history = Vec::new();
-        let mut normal_author_end = custom_origin.clone();
+        // None until a normal author layer ends: the origin is the end of the normal cascade.
+        let mut normal_author_end = None;
         let mut important_custom_names: HashSet<String> = HashSet::new();
         let mut previous = None;
         let mut layer_start = None;
@@ -222,12 +225,12 @@ impl StyleSet {
                     && prior.band == 0
                 {
                     normal_history.push((prior, style.clone()));
-                    normal_author_end = style.clone();
+                    normal_author_end = Some(style.clone());
                 }
-                if needs_snapshot {
+                if let Some(origin) = &custom_origin {
                     let mut baseline = match item.layer.band {
-                        3 => normal_prefix(&normal_history, &custom_origin, item.layer),
-                        4 => normal_author_end.clone(),
+                        3 => normal_prefix(&normal_history, origin, item.layer),
+                        4 => normal_author_end.as_ref().unwrap_or(origin).clone(),
                         _ => style.clone(),
                     };
                     if item.layer.band >= 3 {
@@ -272,9 +275,9 @@ impl StyleSet {
                 },
             );
         }
-        let property_origin = style.clone();
+        let property_origin = needs_snapshot.then(|| style.clone());
         normal_history.clear();
-        normal_author_end = property_origin.clone();
+        normal_author_end = None;
         let mut important_starts: Vec<(LayerKey, ComputedStyle)> = Vec::new();
         let mut prior_important = Vec::new();
         previous = None;
@@ -282,16 +285,16 @@ impl StyleSet {
         // later font shorthands or change importance ordering.
         for item in &cascaded {
             if previous != Some(item.layer) {
-                if needs_snapshot {
+                if let Some(origin) = &property_origin {
                     if let Some(prior) = previous
                         && prior.band == 0
                     {
                         normal_history.push((prior, style.clone()));
-                        normal_author_end = style.clone();
+                        normal_author_end = Some(style.clone());
                     }
                     let mut baseline = match item.layer.band {
-                        3 => normal_prefix(&normal_history, &property_origin, item.layer),
-                        4 => normal_author_end.clone(),
+                        3 => normal_prefix(&normal_history, origin, item.layer),
+                        4 => normal_author_end.as_ref().unwrap_or(origin).clone(),
                         _ => style.clone(),
                     };
                     if item.layer.band >= 3 {
