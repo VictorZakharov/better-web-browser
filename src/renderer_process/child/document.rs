@@ -221,14 +221,8 @@ impl DocumentRuntime {
     ) -> Result<AdvanceResult, String> {
         // The browser can scroll its committed snapshot before this realm finishes
         // a later wheel task only when no nested scrollport can own that wheel.
-        outcome.wheel_has_nested_scroll = Some(
-            self.rendering_is_blocked()
-                || self
-                    .layout
-                    .scroll_boxes
-                    .values()
-                    .any(|scroll| scroll.user_y && scroll.content_height > scroll.port.height),
-        );
+        outcome.wheel_has_nested_scroll =
+            Some(self.rendering_is_blocked() || self.has_wheel_reachable_nested_scroll());
         if self.script_runtime.is_none() {
             outcome.wheel_has_blocking_listeners = Some(false);
         }

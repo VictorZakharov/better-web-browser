@@ -219,6 +219,22 @@ impl DocumentRuntime {
                 .is_some_and(ScriptRuntime::has_pending_frame_layout)
     }
 
+    /// Whether some vertically scrollable nested scrollport could own a wheel. A wheel scrolls the
+    /// nearest scrollable composed ancestor of its hit-test target, so a scrollport whose whole
+    /// composed subtree is excluded from hit testing (`visibility: hidden` or
+    /// `pointer-events: none` without a hit-testable descendant, such as a closed dropdown
+    /// menu) can never own one and must not disable the browser's early viewport scroll.
+    pub(super) fn has_wheel_reachable_nested_scroll(&self) -> bool {
+        self.layout.scroll_boxes.iter().any(|(id, scroll)| {
+            scroll.user_y
+                && scroll.content_height > scroll.port.height
+                && self.page.dom.find_node(*id).is_none_or(|node| {
+                    crate::engine::dom::Node::composed_descendants(&node)
+                        .any(|node| !self.layout.hit_excluded.contains(&node.id()))
+                })
+        })
+    }
+
     pub(super) fn rebuild_layout_for_invalidation(
         &mut self,
         invalidation: Option<&crate::engine::invalidation::RenderInvalidation>,

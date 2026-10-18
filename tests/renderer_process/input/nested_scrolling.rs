@@ -1,5 +1,5 @@
 use super::*;
-use better_web_browser::renderer_protocol::WheelInput;
+use better_web_browser::renderer_protocol::{WheelDecision, WheelInput};
 
 fn wheel(
     document: better_web_browser::renderer_protocol::DocumentId,
@@ -280,5 +280,69 @@ fn viewport_scroll_repositions_sticky_paint_without_page_javascript() {
                 controls_applied: true,
             })
             .unwrap();
+    }
+}
+
+/// The browser starts viewport motion before the renderer's verdict only while no nested
+/// scrollport can own a wheel. A scrollport that hit testing can never reach, such as a closed
+/// `visibility: hidden` dropdown menu, must not disable that, and the renderer's own verdict
+/// over its box must agree.
+#[test]
+fn only_hit_testable_scrollports_report_nested_wheel_ownership() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    for (index, (pane, extra, nested)) in [
+        ("", "", true),
+        ("visibility:hidden", "", false),
+        ("pointer-events:none", "", false),
+        ("visibility:hidden", "#pane p{visibility:visible}", true),
+        ("pointer-events:none", "#pane p{pointer-events:auto}", true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let session = RendererSession::launch(options()).expect("hidden renderer");
+        let html = format!(
+            "<!doctype html><style>body{{margin:0}}main{{height:3000px}}\
+             #pane{{position:absolute;top:0;left:0;width:200px;height:100px;overflow:auto;{pane}}}\
+             #pane p{{margin:0;height:600px}}{extra}</style>\
+             <div id=pane><p>menu</p></div><main>long document</main>"
+        );
+        let initial = load_html_document(&session, 170 + index as u64, &html);
+        assert_eq!(
+            initial.runtime.wheel_has_nested_scroll,
+            Some(nested),
+            "{pane} {extra}"
+        );
+        session
+            .acknowledge_presentation(PresentationAcknowledgement {
+                document: initial.document,
+                revision: initial.revision,
+                presented: true,
+                controls_applied: true,
+            })
+            .unwrap();
+        session
+            .send_input(wheel(initial.document, 1, 126.0))
+            .unwrap();
+        let decision = loop {
+            let acknowledgements = match session.wait_for_event(Duration::from_secs(5)).unwrap() {
+                RendererEvent::Presentation(presentation) => {
+                    presentation.runtime.wheel_acknowledgements.clone()
+                }
+                RendererEvent::RuntimeUpdate(update) => update.runtime.wheel_acknowledgements,
+                _ => Vec::new(),
+            };
+            if let Some(acknowledgement) = acknowledgements.first() {
+                break acknowledgement.decision;
+            }
+        };
+        let expected = if nested {
+            WheelDecision::NestedScroll
+        } else {
+            WheelDecision::Viewport
+        };
+        assert_eq!(decision, expected, "{pane} {extra}");
     }
 }
