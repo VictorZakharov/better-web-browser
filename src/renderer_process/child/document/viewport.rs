@@ -13,7 +13,7 @@ impl DocumentRuntime {
                 refresh_rate: viewport.refresh_rate,
                 ..self.viewport
             } == viewport;
-        self.viewport = viewport;
+        let previous = std::mem::replace(&mut self.viewport, viewport);
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_rendering_environment(
                 viewport.refresh_rate,
@@ -48,9 +48,19 @@ impl DocumentRuntime {
             })?
             .outcome;
         self.admit_user_input_outcome(&mut outcome, connection)?;
-        let style = self
-            .page
-            .refresh_resources_for_viewport(viewport.style_width, viewport.height);
+        // The cascade sees the style width, never the layout width: a classic scrollbar that
+        // appears or disappears narrows layout without changing media queries or viewport
+        // units. Keep cached styles then, and refresh only what resize handlers invalidated.
+        let invalidation = if same_style_environment(&previous, &viewport) {
+            outcome.invalidation.clone()
+        } else {
+            crate::engine::invalidation::RenderInvalidation::full(self.page.dom.document.id())
+        };
+        let style = self.page.refresh_resources_after_invalidation_for_viewport(
+            viewport.style_width,
+            viewport.height,
+            &invalidation,
+        );
         self.start_presentational_preloads(connection)?;
         let started = Instant::now();
         self.rebuild_layout();
@@ -60,4 +70,14 @@ impl DocumentRuntime {
         });
         self.presentation(outcome, style, load, connection, None)
     }
+}
+
+fn same_style_environment(
+    previous: &crate::renderer_protocol::PresentedViewport,
+    next: &crate::renderer_protocol::PresentedViewport,
+) -> bool {
+    previous.style_width == next.style_width
+        && previous.height == next.height
+        && previous.dpi == next.dpi
+        && previous.prefers_dark_color_scheme == next.prefers_dark_color_scheme
 }
