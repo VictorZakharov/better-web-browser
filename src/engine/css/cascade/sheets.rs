@@ -8,6 +8,7 @@ use std::rc::Rc;
 mod animations;
 mod attribute_dependencies;
 mod dependencies;
+pub(crate) use dependencies::AppendedChildDependencies;
 mod fonts;
 mod has_anchors;
 pub(super) use has_anchors::HasResults;

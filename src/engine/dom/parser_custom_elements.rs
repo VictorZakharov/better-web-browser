@@ -130,6 +130,7 @@ impl Dom {
             .attrs
             .borrow_mut()
             .extend(attributes);
+        self.parser_render_element(&element.node);
         element.node.mark_mutated();
         Some(element.node.clone())
     }

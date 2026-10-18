@@ -12,6 +12,22 @@ pub(in crate::engine::css::cascade) struct NonlocalDependencies {
     /// `:has-slotted` or `:dir()` dependencies, which have no bounded root walk.
     unbounded: bool,
     has_anchors: super::has_anchors::HasAnchors,
+    appended_child: AppendedChildDependencies,
+}
+
+/// Selectors through which appending a child can restyle elements outside the new subtree.
+/// Positions counted from the start are unchanged by an append; these count from the end.
+/// https://drafts.csswg.org/selectors-4/#structural-pseudos
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AppendedChildDependencies {
+    /// `:last-child` or `:only-child`: the previous last element child.
+    pub(crate) last_child: bool,
+    /// `:last-of-type` or `:only-of-type`: the previous last element of the same type.
+    pub(crate) last_of_type: bool,
+    /// `:nth-last-child()` or `:nth-last-of-type()`: every earlier sibling.
+    pub(crate) nth_last: bool,
+    /// `:empty`: the parent, while it had no element or non-whitespace text children.
+    pub(crate) empty: bool,
 }
 
 impl NonlocalDependencies {
@@ -35,6 +51,10 @@ impl NonlocalDependencies {
             return None;
         }
         self.has_anchors.roots(requested, known)
+    }
+
+    pub(in crate::engine::css::cascade) fn appended_child(&self) -> AppendedChildDependencies {
+        self.appended_child
     }
 
     /// See [`super::has_anchors::HasAnchors::current_results`].
@@ -80,6 +100,12 @@ impl NonlocalDependencies {
                 continue;
             }
             for compound in selector.compounds.iter() {
+                let appended = &mut self.appended_child;
+                appended.last_child |= compound.requires_last_child || compound.requires_only_child;
+                appended.last_of_type |=
+                    compound.requires_last_of_type || compound.requires_only_of_type;
+                appended.nth_last |= compound.nth.iter().any(|nth| nth.from_end);
+                appended.empty |= compound.requires_empty;
                 self.any_style_attribute |= compound
                     .attributes
                     .iter()
@@ -150,6 +176,10 @@ pub(super) fn cross_tree_or_scoped(rules: &[Rule]) -> bool {
 }
 
 impl StyleSet {
+    pub(crate) fn appended_child_dependencies(&self) -> AppendedChildDependencies {
+        self.compiled.nonlocal_dependencies.appended_child()
+    }
+
     pub(crate) fn can_scope_fixed_content(
         &self,
         impact: crate::engine::invalidation::InvalidationImpact,

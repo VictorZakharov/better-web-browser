@@ -47,6 +47,8 @@ pub(super) fn attach(
     // html5ever keeps the detached template on its open-element stack. Redirect its
     // contents handle, so subsequent tokens are constructed directly in the shadow tree.
     *contents.borrow_mut() = Some(root);
+    // Light children are now slotted through the new shadow tree.
+    dom.parser_render_element(host);
     true
 }
 

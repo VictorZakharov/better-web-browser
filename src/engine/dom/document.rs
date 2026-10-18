@@ -14,6 +14,8 @@ mod declarative_shadow;
 mod parser_custom_elements;
 #[path = "parser_mutations.rs"]
 pub(crate) mod parser_mutations;
+#[path = "parser_render_changes.rs"]
+pub(crate) mod parser_render_changes;
 mod title;
 #[path = "tree_sink.rs"]
 mod tree_sink;
@@ -33,6 +35,7 @@ pub struct Dom {
     /// Detached documents have a null custom-element registry until initialized.
     pub(super) document_registry_is_null: bool,
     pub(crate) parser_mutations: Rc<RefCell<Vec<parser_mutations::ParserMutation>>>,
+    pub(super) parser_render_changes: Rc<parser_render_changes::ParserRenderJournal>,
     pub(super) parser_elements: Rc<parser_custom_elements::ParserElements>,
     pub(super) parser_csp_meta: RefCell<VecDeque<NodeRef>>,
 }
@@ -56,6 +59,7 @@ impl Dom {
             pending_shadowrootmode_spelling: Default::default(),
             document_registry_is_null: false,
             parser_mutations: Default::default(),
+            parser_render_changes: Default::default(),
             parser_elements: Default::default(),
             parser_csp_meta: Default::default(),
         }
@@ -72,6 +76,7 @@ impl Dom {
             pending_shadowrootmode_spelling: Default::default(),
             document_registry_is_null: false,
             parser_mutations: Default::default(),
+            parser_render_changes: Default::default(),
             parser_elements: Default::default(),
             parser_csp_meta: Default::default(),
         }
