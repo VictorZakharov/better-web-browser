@@ -16,13 +16,16 @@ pub(super) fn make_parser(
     source: &str,
     input: Option<&StreamingInput>,
 ) -> Result<HtmlParser, String> {
-    if let Some(input) = input {
+    let parser = if let Some(input) = input {
         let mut parser = HtmlParser::streaming();
         parser.append(source, input.decoder.ended())?;
-        Ok(parser)
+        parser
     } else {
-        Ok(HtmlParser::new(source))
-    }
+        HtmlParser::new(source)
+    };
+    // `DocumentRuntime::advance_parser` drains these edits into checkpoint invalidation.
+    parser.dom().retain_parser_render_changes();
+    Ok(parser)
 }
 
 impl DocumentRuntime {

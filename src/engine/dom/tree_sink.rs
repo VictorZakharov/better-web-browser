@@ -268,6 +268,7 @@ impl TreeSink for Dom {
         existing.extend(missing);
         drop(existing);
         if changed {
+            self.parser_render_element(target);
             target.mark_mutated();
             // Late parser attributes (duplicate start tags) can complete
             // pattern verdict inputs after creation.

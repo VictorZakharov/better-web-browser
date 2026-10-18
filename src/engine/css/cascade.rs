@@ -15,6 +15,7 @@ mod scope;
 mod sheets;
 mod sources;
 mod svg_presentation;
+pub(crate) use sheets::AppendedChildDependencies;
 pub use sources::StylesheetSource;
 #[cfg(test)]
 mod anonymous_text_tests;

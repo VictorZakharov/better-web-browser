@@ -126,6 +126,7 @@ impl DocumentRuntime {
         if parser_changed {
             self.page.discover_parsed_resources();
             self.record_written_stylesheets(written_stylesheets);
+            self.merge_parser_render_changes(outcome);
         }
         self.collect_document_stream_changes();
         Ok(())

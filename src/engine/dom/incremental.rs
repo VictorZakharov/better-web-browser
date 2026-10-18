@@ -85,6 +85,7 @@ impl HtmlParser {
             pending_shadowrootmode_spelling: Default::default(),
             document_registry_is_null: false,
             parser_mutations: Default::default(),
+            parser_render_changes: Default::default(),
             parser_elements: Default::default(),
             parser_csp_meta: Default::default(),
         };

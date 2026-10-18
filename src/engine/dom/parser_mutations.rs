@@ -81,6 +81,7 @@ impl Dom {
         {
             record.old_value = Some(node.text_content());
         }
+        self.parser_render_text(node);
         if !super::super::mutation::append_to_existing_text(node, text) {
             return false;
         }
@@ -101,6 +102,7 @@ impl Dom {
             record.next = children.get(index + 1).cloned();
             record.removed.push(node.clone());
         }
+        self.parser_render_removed(&parent, node);
         super::super::mutation::remove_from_parent(node);
         self.queue_parser_record(record);
     }
@@ -132,6 +134,8 @@ impl Dom {
             record.next = next.cloned();
             record.added.push(child.clone());
         }
+        let appended = index == parent.children.borrow().len();
+        self.parser_render_inserted(parent, &child, appended);
         child.parent.set(Some(std::rc::Rc::downgrade(parent)));
         parent.children.borrow_mut().insert(index, child.clone());
         Node::checkable_subtree_inserted(&child);

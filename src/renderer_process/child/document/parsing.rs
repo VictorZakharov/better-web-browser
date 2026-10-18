@@ -63,9 +63,10 @@ impl DocumentRuntime {
                 .next
                 .take()
                 .unwrap_or_else(|| parser.parser.advance());
+            let quirks_changed = previous_quirks != parser.parser.dom().quirks_mode.get();
             let dom_changed = pending_checkpoint
                 || previous_version != parser.parser.dom().mutation_version()
-                || previous_quirks != parser.parser.dom().quirks_mode.get();
+                || quirks_changed;
             self.page
                 .dom
                 .quirks_mode
@@ -92,10 +93,14 @@ impl DocumentRuntime {
                     outcome.navigation_url = Some(url);
                     break;
                 }
-                outcome.request_full_render();
-                outcome.invalidation = crate::engine::invalidation::RenderInvalidation::full(
-                    self.page.dom.document.id(),
-                );
+                // Quirks mode changes how existing rules match. Structural edits are
+                // scoped from the parser's own journal after this loop.
+                if quirks_changed {
+                    outcome.request_full_render();
+                    outcome.invalidation = crate::engine::invalidation::RenderInvalidation::full(
+                        self.page.dom.document.id(),
+                    );
+                }
             }
             match step {
                 ParserStep::CspMeta(node) => {
@@ -159,7 +164,27 @@ impl DocumentRuntime {
                 break;
             }
         }
+        self.merge_parser_render_changes(outcome);
         Ok(())
+    }
+
+    /// Scopes the next checkpoint to what the parser touched, including content inserted
+    /// by `document.write` and custom-element construction since the last checkpoint.
+    pub(super) fn merge_parser_render_changes(&mut self, outcome: &mut ScriptOutcome) {
+        let changes = self.page.dom.take_parser_render_changes();
+        if changes.is_empty() {
+            return;
+        }
+        let invalidation = self.page.parser_render_invalidation(&changes);
+        // Edits confined to inert or detached trees render nothing. An empty invalidation
+        // with a render request would mean the whole document.
+        if invalidation.is_empty() {
+            return;
+        }
+        outcome.request_full_render();
+        outcome
+            .invalidation
+            .merge_conservatively(invalidation, self.page.dom.document.id());
     }
 
     pub(super) fn written_script_preparation(

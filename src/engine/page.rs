@@ -13,6 +13,7 @@ mod media_sources;
 pub(crate) use media_sources::MediaSourceAdvance;
 #[cfg(test)]
 mod modern_image_tests;
+mod parser_invalidation;
 mod parsing;
 mod preload;
 mod refresh;
