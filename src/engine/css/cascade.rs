@@ -5,6 +5,7 @@ mod computed;
 mod effect_cache;
 mod keyframe_values;
 mod layout;
+mod layout_generations;
 mod matching;
 mod parts;
 mod presentational;
@@ -65,6 +66,7 @@ pub struct StyleSet {
     viewport_width: f32,
     viewport_height: f32,
     resolution_dppx: f32,
+    layout_generations: layout_generations::LayoutGenerations,
 }
 
 type InheritedLayerRevertCache = Option<(Arc<HashMap<String, String>>, bool)>;
@@ -204,12 +206,14 @@ impl StyleSet {
             viewport_width: environment.viewport_width,
             viewport_height: environment.viewport_height,
             resolution_dppx: environment.resolution_dppx,
+            layout_generations: Default::default(),
         }
     }
 
     pub(crate) fn clear_computed_styles(&mut self) {
         self.has_results.clear();
         self.styles.clear();
+        self.layout_generations.clear();
         self.pseudo_styles.clear();
         self.generated_styles.clear();
     }
@@ -221,11 +225,12 @@ impl StyleSet {
             ancestors.reverse();
             let mut parent_style = None;
             for ancestor in ancestors {
-                let style = self
-                    .styles
-                    .get(&node_id(&ancestor))
-                    .cloned()
-                    .unwrap_or_else(|| self.compute_style(&ancestor, parent_style.as_ref()));
+                let known = self.styles.get(&node_id(&ancestor)).cloned();
+                if known.is_none() {
+                    self.layout_generations.mark(&ancestor);
+                }
+                let style =
+                    known.unwrap_or_else(|| self.compute_style(&ancestor, parent_style.as_ref()));
                 self.styles.insert(node_id(&ancestor), style.clone());
                 self.sync_generated_pseudos(&ancestor, &style);
                 parent_style = Some(style);

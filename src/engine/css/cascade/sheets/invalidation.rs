@@ -99,6 +99,8 @@ impl StyleSet {
         let previous_count = self.styles.len();
         let previous_generated_count = self.generated_nodes.len();
         self.styles.retain(|node, _| composed.contains(node));
+        self.layout_generations
+            .retain(|node| composed.contains(node));
         self.pseudo_styles
             .retain(|(origin, _), _| composed.contains(origin));
         self.generated_nodes

@@ -105,6 +105,13 @@ impl StyleSet {
             .filter(|node| !connected_nodes.contains(node))
             .filter(|node| self.styles.remove(node).is_some())
             .count();
+        // Disconnected nodes' former ancestors carry new DOM versions; their generations go.
+        for node in removed_nodes
+            .iter()
+            .filter(|node| !connected_nodes.contains(node))
+        {
+            self.layout_generations.forget(*node);
+        }
         // Anchors evaluated while choosing roots supersede what their recalculation recorded.
         self.has_results
             .retain(|node, _| connected_nodes.contains(node));
@@ -141,6 +148,7 @@ impl StyleSet {
             };
             self.remember_has_results(&node, node_id(&node) == root);
             self.styles.insert(node_id(&node), style.clone());
+            self.layout_generations.mark(&node);
             self.sync_generated_pseudos(&node, &style);
             if !self.defer_nonrendered_descendants || style.display != Display::None {
                 pending.extend(Node::composed_children(&node).into_iter().rev());
@@ -172,6 +180,7 @@ impl StyleSet {
             stats.element_style_time += style_started.elapsed();
             stats.invalidated_nodes += 1;
             stats.recomputed_styles += 1;
+            let mut changed = true;
             match self.styles.get(&node_id(&node)) {
                 Some(previous) if previous != &style => {
                     stats.first_changed_node.get_or_insert(node.id());
@@ -188,7 +197,7 @@ impl StyleSet {
                     stats.non_deferable_paint_changes = true;
                     stats.opacity_only = false;
                 }
-                _ => {}
+                _ => changed = false,
             }
             self.remember_has_results(&node, node_id(&node) == root);
             self.styles.insert(node_id(&node), style.clone());
@@ -196,6 +205,9 @@ impl StyleSet {
             // geometry without changing the originating element's computed style.
             let pseudo_started = std::time::Instant::now();
             let pseudo_changes = self.sync_generated_pseudos(&node, &style);
+            if changed || pseudo_changes.layout_changed || pseudo_changes.paint_changed {
+                self.layout_generations.mark(&node);
+            }
             stats.layout_changed |= pseudo_changes.layout_changed;
             stats.non_deferable_paint_changes |= pseudo_changes.paint_changed;
             stats.opacity_only &= !pseudo_changes.paint_changed;
