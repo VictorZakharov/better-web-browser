@@ -10,6 +10,7 @@ mod attribute_dependencies;
 mod class_invalidation;
 mod dependencies;
 pub(crate) use dependencies::AppendedChildDependencies;
+mod direction_roots;
 mod fonts;
 mod has_anchors;
 pub(super) use has_anchors::HasResults;

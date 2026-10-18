@@ -9,8 +9,10 @@ pub(in crate::engine::css::cascade) struct NonlocalDependencies {
     graphics_attribute: bool,
     resource_attribute: bool,
     any_style_attribute: bool,
-    /// `:has-slotted` or `:dir()` dependencies, which have no bounded root walk.
+    /// `:has-slotted` dependencies, which have no bounded root walk.
     unbounded: bool,
+    /// `:dir()` dependencies, bounded by auto-directionality ancestors.
+    directionality: bool,
     has_anchors: super::has_anchors::HasAnchors,
     appended_child: AppendedChildDependencies,
 }
@@ -40,8 +42,8 @@ impl NonlocalDependencies {
         dependencies
     }
 
-    /// Replaces a whole-document refresh with bounded roots when `:has()` is the only
-    /// nonlocal dependency; `None` keeps the whole-document refresh.
+    /// Replaces a whole-document refresh with bounded roots when `:has()` and `:dir()` are the
+    /// only nonlocal dependencies; `None` keeps the whole-document refresh.
     pub(in crate::engine::css::cascade) fn relational_roots(
         &self,
         requested: &[NodeRef],
@@ -50,7 +52,19 @@ impl NonlocalDependencies {
         if self.unbounded {
             return None;
         }
-        self.has_anchors.roots(requested, known)
+        if !self.directionality {
+            return self.has_anchors.roots(requested, known);
+        }
+        // A flipped directionality can change `:has()` results above its root.
+        let directional = super::direction_roots::direction_roots(requested);
+        let changed = requested
+            .iter()
+            .chain(&directional)
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut relational = self.has_anchors.roots(&changed, known)?;
+        relational.roots.extend(directional);
+        Some(relational)
     }
 
     pub(in crate::engine::css::cascade) fn appended_child(&self) -> AppendedChildDependencies {
@@ -142,7 +156,8 @@ impl NonlocalDependencies {
                 self.any |= !compound.has.is_empty()
                     || compound.requires_has_slotted
                     || !compound.directions.is_empty();
-                self.unbounded |= compound.requires_has_slotted || !compound.directions.is_empty();
+                self.unbounded |= compound.requires_has_slotted;
+                self.directionality |= !compound.directions.is_empty();
                 // Slot assignment has separate cross-tree rules. Do not infer a
                 // local refresh from the absence of an ordinary [style] selector.
                 self.style_attribute |= compound.requires_has_slotted;
