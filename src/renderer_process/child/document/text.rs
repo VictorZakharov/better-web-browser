@@ -306,6 +306,11 @@ impl TextMeasurer for RendererTextSystem {
     fn shape(&mut self, text: &str, font: &FontSpec) -> ShapedText {
         self.shape_text(text, font)
     }
+
+    // Every font-catalog or DPI change resets glyph state and advances this epoch.
+    fn layout_cache_epoch(&self) -> Option<u64> {
+        Some(self.glyph_epoch)
+    }
 }
 
 impl<'a> ShapeKey<'a> {

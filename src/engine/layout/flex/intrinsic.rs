@@ -73,12 +73,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         node: &NodeRef,
         percentage_basis: Option<f32>,
     ) -> f32 {
-        if let Some(width) = self
+        if let Some((width, reads)) = self
             .intrinsic_widths
             .max_content(node.id(), percentage_basis)
         {
+            self.replay_reads(&reads);
             return width;
         }
+        self.begin_reads();
         let available_width = percentage_basis.unwrap_or(0.0);
         let mut widest = 0.0_f32;
         let mut inline_atoms = Vec::new();
@@ -119,8 +121,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if !inline_atoms.is_empty() {
             widest = widest.max(self.inline_intrinsic_width(&inline_atoms, available_width));
         }
+        let reads = self.end_reads();
         self.intrinsic_widths
-            .insert_max_content(node.id(), percentage_basis, widest);
+            .insert_max_content(node.id(), percentage_basis, widest, reads);
         widest
     }
 
@@ -130,12 +133,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         style: &ComputedStyle,
         percentage_basis: Option<f32>,
     ) -> f32 {
-        if let Some(width) = self
+        if let Some((width, reads)) = self
             .intrinsic_widths
             .max_content(node.id(), percentage_basis)
         {
+            self.replay_reads(&reads);
             return width;
         }
+        self.begin_reads();
         let available_width = percentage_basis.unwrap_or(0.0);
         let mut contributions = Vec::new();
         let mut anonymous_atoms = Vec::new();
@@ -190,8 +195,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         } else {
             contributions.into_iter().fold(0.0, f32::max)
         };
+        let reads = self.end_reads();
         self.intrinsic_widths
-            .insert_max_content(node.id(), percentage_basis, width);
+            .insert_max_content(node.id(), percentage_basis, width, reads);
         width
     }
 

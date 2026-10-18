@@ -102,6 +102,9 @@ pub struct Page {
     media_environment: MediaEnvironment,
     layout_viewport: (f32, f32),
     resource_profile: refresh::profile::Profile,
+    /// Layout results reused across passes; see `layout::engine::probe_cache`.
+    pub(crate) layout_probes:
+        std::cell::RefCell<crate::engine::layout::engine::probe_cache::ProbeCache>,
 }
 
 impl Page {
@@ -173,6 +176,7 @@ impl Page {
             media_environment,
             layout_viewport: (1280.0, 720.0),
             resource_profile: Default::default(),
+            layout_probes: Default::default(),
         };
         page.refresh_media_sources();
         page.install_embedded_images();

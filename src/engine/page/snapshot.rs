@@ -53,6 +53,7 @@ impl Page {
             media_environment: self.media_environment,
             layout_viewport: self.layout_viewport,
             resource_profile: Default::default(),
+            layout_probes: Default::default(),
         }
     }
 

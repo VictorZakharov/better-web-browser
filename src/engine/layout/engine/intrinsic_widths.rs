@@ -1,11 +1,12 @@
 //! Intrinsic contributions are stable within a layout pass, including its sizing probes.
 //! A new pass gets a fresh cache so DOM, style, font and image changes cannot leave stale sizes.
+//! Each entry keeps the image inputs it read, which a hit replays into the enclosing result.
 use super::*;
 
 #[derive(Default)]
 pub(in crate::engine::layout) struct IntrinsicWidths {
-    entries: HashMap<(NodeId, Option<u32>, bool), (f32, f32)>,
-    max_content: HashMap<(NodeId, Option<u32>), f32>,
+    entries: HashMap<(NodeId, Option<u32>, bool), ((f32, f32), LayoutReads)>,
+    max_content: HashMap<(NodeId, Option<u32>), (f32, LayoutReads)>,
 }
 
 impl IntrinsicWidths {
@@ -14,10 +15,10 @@ impl IntrinsicWidths {
         node: NodeId,
         basis: impl Into<Option<f32>>,
         outer: bool,
-    ) -> Option<(f32, f32)> {
+    ) -> Option<((f32, f32), LayoutReads)> {
         self.entries
             .get(&(node, basis.into().map(f32::to_bits), outer))
-            .copied()
+            .cloned()
     }
 
     pub(in crate::engine::layout) fn insert(
@@ -26,11 +27,14 @@ impl IntrinsicWidths {
         basis: impl Into<Option<f32>>,
         outer: bool,
         widths: (f32, f32),
+        reads: LayoutReads,
     ) {
         // Wide/deep documents may probe many percentage bases; overflow just recomputes.
         if self.entries.len() + self.max_content.len() < crate::limits::MAX_DOM_NODES {
-            self.entries
-                .insert((node, basis.into().map(f32::to_bits), outer), widths);
+            self.entries.insert(
+                (node, basis.into().map(f32::to_bits), outer),
+                (widths, reads),
+            );
         }
     }
 
@@ -38,10 +42,10 @@ impl IntrinsicWidths {
         &self,
         node: NodeId,
         basis: Option<f32>,
-    ) -> Option<f32> {
+    ) -> Option<(f32, LayoutReads)> {
         self.max_content
             .get(&(node, basis.map(f32::to_bits)))
-            .copied()
+            .cloned()
     }
 
     pub(in crate::engine::layout) fn insert_max_content(
@@ -49,12 +53,13 @@ impl IntrinsicWidths {
         node: NodeId,
         basis: Option<f32>,
         width: f32,
+        reads: LayoutReads,
     ) {
         // The node's computed display selects block/flex sizing and is stable for this pass.
         // Indefinite and definite-zero bases differ for cyclic percentage constraints.
         if self.entries.len() + self.max_content.len() < crate::limits::MAX_DOM_NODES {
             self.max_content
-                .insert((node, basis.map(f32::to_bits)), width);
+                .insert((node, basis.map(f32::to_bits)), (width, reads));
         }
     }
 }
@@ -70,19 +75,53 @@ mod tests {
         let div = page.dom.elements_named("div").next().unwrap();
         let span = page.dom.elements_named("span").next().unwrap();
         let mut cache = IntrinsicWidths::default();
-        cache.insert(div.id(), 200.0, false, (20.0, 80.0));
-        assert_eq!(cache.get(div.id(), 200.0, false), Some((20.0, 80.0)));
-        assert_eq!(cache.get(div.id(), 200.001, false), None);
-        assert_eq!(cache.get(div.id(), 400.0, false), None);
-        assert_eq!(cache.get(div.id(), 200.0, true), None);
-        assert_eq!(cache.get(span.id(), 200.0, false), None);
-        cache.insert(div.id(), None, false, (10.0, 100.0));
-        assert_eq!(cache.get(div.id(), None, false), Some((10.0, 100.0)));
-        assert_eq!(cache.get(div.id(), 0.0, false), None);
-        cache.insert_max_content(div.id(), None, 100.0);
-        assert_eq!(cache.max_content(div.id(), None), Some(100.0));
-        assert_eq!(cache.max_content(div.id(), Some(0.0)), None);
-        assert_eq!(cache.max_content(span.id(), None), None);
+        cache.insert(div.id(), 200.0, false, (20.0, 80.0), LayoutReads::default());
+        assert_eq!(
+            cache.get(div.id(), 200.0, false).map(|(widths, _)| widths),
+            Some((20.0, 80.0))
+        );
+        assert_eq!(
+            cache
+                .get(div.id(), 200.001, false)
+                .map(|(widths, _)| widths),
+            None
+        );
+        assert_eq!(
+            cache.get(div.id(), 400.0, false).map(|(widths, _)| widths),
+            None
+        );
+        assert_eq!(
+            cache.get(div.id(), 200.0, true).map(|(widths, _)| widths),
+            None
+        );
+        assert_eq!(
+            cache.get(span.id(), 200.0, false).map(|(widths, _)| widths),
+            None
+        );
+        cache.insert(div.id(), None, false, (10.0, 100.0), LayoutReads::default());
+        assert_eq!(
+            cache.get(div.id(), None, false).map(|(widths, _)| widths),
+            Some((10.0, 100.0))
+        );
+        assert_eq!(
+            cache.get(div.id(), 0.0, false).map(|(widths, _)| widths),
+            None
+        );
+        cache.insert_max_content(div.id(), None, 100.0, LayoutReads::default());
+        assert_eq!(
+            cache.max_content(div.id(), None).map(|(width, _)| width),
+            Some(100.0)
+        );
+        assert_eq!(
+            cache
+                .max_content(div.id(), Some(0.0))
+                .map(|(width, _)| width),
+            None
+        );
+        assert_eq!(
+            cache.max_content(span.id(), None).map(|(width, _)| width),
+            None
+        );
     }
 
     #[test]
@@ -116,6 +155,7 @@ mod tests {
             output: LayoutOutput::default(),
             positioned_flow_scopes: Vec::new(),
             floats: Default::default(),
+            reads: Default::default(),
         };
         for basis in [200.0, 400.0, 200.001] {
             let widths = engine.float_intrinsic_widths(&node, basis);
@@ -141,7 +181,10 @@ mod tests {
         let widths = engine.float_intrinsic_widths(&node, 200.0);
         engine.intrinsic_block_height(&node, 200.0, None, None);
         assert_eq!(
-            engine.intrinsic_widths.get(node.id(), 200.0, true),
+            engine
+                .intrinsic_widths
+                .get(node.id(), 200.0, true)
+                .map(|(widths, _)| widths),
             Some(widths),
             "a no-paint height probe returns the shared width cache"
         );

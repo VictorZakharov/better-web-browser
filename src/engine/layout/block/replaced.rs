@@ -50,7 +50,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         if node.tag_name() == Some("svg") {
             let url = inline_svg_key(node);
-            let dimensions = self.page.layout_image_dimensions(&url);
+            let dimensions = self.image_dimensions(&url);
             let (intrinsic_width, intrinsic_height) = dimensions
                 .map(|(width, height)| (width as f32, height as f32))
                 .unwrap_or((300.0, 150.0));
@@ -66,7 +66,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         if node.tag_name() == Some("canvas") {
             let (width, height) = crate::engine::page::canvas_intrinsic_size(node);
-            let image = self.page.image_url(node);
+            let image = self.image_url_for(node);
             return Some(BlockImage {
                 url: image.clone().unwrap_or_default(),
                 intrinsic_width: width as f32,
@@ -77,7 +77,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 embedded_frame: false,
             });
         }
-        let url = self.page.image_url(node)?;
+        let url = self.image_url_for(node)?;
         let default_size = if node.tag_name() == Some("video") {
             (300.0, 150.0)
         } else {
@@ -87,9 +87,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             if url == crate::engine::page::MEDIA_VIDEO_PLACEHOLDER {
                 default_size
             } else {
-                self.page
-                    .images
-                    .get(&url)
+                self.decoded_image(&url)
                     .map(|image| (image.width as f32, image.height as f32))
                     .unwrap_or(default_size)
             };

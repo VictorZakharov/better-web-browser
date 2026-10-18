@@ -45,7 +45,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let natural = match image {
             ImageSource::None => return None,
             ImageSource::Url(url) => {
-                let image = self.page.images.get(url)?;
+                let image = self.decoded_image(url)?;
                 (
                     image.width as f32 * style.effective_zoom,
                     image.height as f32 * style.effective_zoom,
@@ -160,7 +160,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         clip_rect: RectF,
     ) -> Option<RectF> {
         let url = style.background_image.as_ref()?;
-        let image = self.page.images.get(url)?;
+        let image = self.decoded_image(url)?;
         let (width, height) = resolve_background_size(
             style.background_size.clone(),
             clip_rect,

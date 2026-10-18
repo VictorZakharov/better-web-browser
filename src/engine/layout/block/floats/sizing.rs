@@ -8,9 +8,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         percentage_basis: impl Into<Option<f32>>,
     ) -> (f32, f32) {
         let percentage_basis = percentage_basis.into();
-        if let Some(widths) = self.intrinsic_widths.get(node.id(), percentage_basis, true) {
+        if let Some((widths, reads)) = self.intrinsic_widths.get(node.id(), percentage_basis, true)
+        {
+            self.replay_reads(&reads);
             return widths;
         }
+        self.begin_reads();
         let basis = percentage_basis.unwrap_or(0.0);
         let style = self.styles.get(node).clone();
         let margin = style.margin.resolve(basis, style.font_size).horizontal();
@@ -82,8 +85,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             preferred = preferred.max(table_minimum);
         }
         let widths = (minimum.max(0.0) + margin, preferred.max(0.0) + margin);
+        let reads = self.end_reads();
         self.intrinsic_widths
-            .insert(node.id(), percentage_basis, true, widths);
+            .insert(node.id(), percentage_basis, true, widths, reads);
         widths
     }
 
@@ -93,20 +97,23 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         percentage_basis: impl Into<Option<f32>>,
     ) -> (f32, f32) {
         let percentage_basis = percentage_basis.into();
-        if let Some(widths) = self
+        if let Some((widths, reads)) = self
             .intrinsic_widths
             .get(node.id(), percentage_basis, false)
         {
+            self.replay_reads(&reads);
             return widths;
         }
+        self.begin_reads();
         let basis = percentage_basis.unwrap_or(0.0);
         if matches!(
             self.styles.get(node).display,
             Display::Table | Display::InlineTable
         ) {
             let widths = self.table_intrinsic_widths(node, basis);
+            let reads = self.end_reads();
             self.intrinsic_widths
-                .insert(node.id(), percentage_basis, false, widths);
+                .insert(node.id(), percentage_basis, false, widths, reads);
             return widths;
         }
         let mut minimum = 0.0_f32;
@@ -144,8 +151,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         let (lo, hi) = self.float_inline_widths(&atoms, percentage_basis);
         let widths = (minimum.max(lo), preferred.max(hi));
+        let reads = self.end_reads();
         self.intrinsic_widths
-            .insert(node.id(), percentage_basis, false, widths);
+            .insert(node.id(), percentage_basis, false, widths, reads);
         widths
     }
 

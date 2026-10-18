@@ -1,7 +1,7 @@
 //! Intrinsic block-size probes do not publish paint, hit-test, or observer state.
 use super::*;
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(super) struct MeasureKey {
     node: NodeId,
     width: u32,
@@ -24,8 +24,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             used_width: used_width
                 .map(|size| (size.outer.to_bits(), size.percentage_basis.to_bits())),
         };
-        if let Some(height) = self.intrinsic_block_heights.get(&key) {
+        if let Some((height, reads)) = self.intrinsic_block_heights.get(&key) {
+            self.replay_reads(reads);
             return *height;
+        }
+        let cached = self.cached_probe(key, node);
+        if let super::probe_cache::CachedProbe::Hit(height, reads) = cached {
+            self.replay_reads(&reads);
+            self.intrinsic_block_heights.insert(key, (height, reads));
+            return height;
         }
         // Share per-layout caches with the probe: nested grids/tables reuse the same
         // intrinsic measurements when their resolved boxes are laid out for painting.
@@ -45,16 +52,23 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             output: LayoutOutput::default(),
             positioned_flow_scopes: Vec::new(),
             floats: Default::default(),
+            reads: std::mem::take(&mut self.reads),
         };
+        probe.begin_reads();
         let height = probe
             .layout_block(node, 0.0, 0.0, width, height_basis, used_width)
             .bottom;
+        let reads = probe.end_reads();
+        self.reads = probe.reads;
         self.measurement_cache = probe.measurement_cache;
         self.inline_box_cache = probe.inline_box_cache;
         self.intrinsic_block_heights = probe.intrinsic_block_heights;
         self.intrinsic_widths = probe.intrinsic_widths;
         self.margin_profiles = probe.margin_profiles;
-        self.intrinsic_block_heights.insert(key, height);
+        if let super::probe_cache::CachedProbe::Miss(inputs) = cached {
+            self.remember_probe(key, inputs, height, reads.clone());
+        }
+        self.intrinsic_block_heights.insert(key, (height, reads));
         height
     }
 }
