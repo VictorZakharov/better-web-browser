@@ -9,6 +9,13 @@
 
 - On this machine, keep generated build outputs, benchmark profiles/captures, and task scratch files on the G: drive. Before running Cargo or benchmark scripts from a C: worktree, set `CARGO_TARGET_DIR`, `TEMP`, and `TMP` to task-specific directories on G:. Do not create a `target` directory in a C: worktree.
 
+## Local build environment
+
+- Native dependencies (`mozangle` via bindgen, V8) need LLVM 19+ `libclang.dll` with its matching `clang.exe`, and CMake. A plain `cargo build` without them fails in `mozangle`'s build script with a bindgen panic.
+- On this workstation, LLVM 23.1.2 is at `G:\Git\better-web-browser\target\webgl2-admission-20261004\llvm-paired\clang+llvm-23.1.2-x86_64-pc-windows-msvc\bin`; set `LIBCLANG_PATH` to it. Do not delete that directory when cleaning `target`. CMake comes from Visual Studio 2022 Build Tools, which `scripts/prepare-build-tools.ps1` finds through `vswhere`.
+- Run repository scripts with PowerShell 7 (`pwsh`, installed through winget as `Microsoft.PowerShell` and reached through the `WindowsApps` alias on PATH). The scripts rely on `$IsWindows` and .NET Core APIs, and the full-test runner fails under Windows PowerShell 5.1, whose redirection turns native stderr into terminating errors.
+- Prepare a build shell in `pwsh` with: `$env:LIBCLANG_PATH = '<LLVM bin above>'; $env:CARGO_TARGET_DIR = 'G:\Git\better-web-browser\target'; . ./scripts/prepare-angle.ps1; . ./scripts/prepare-build-tools.ps1`, then run Cargo with `-j 4`. The final gate is `./scripts/run-impacted-tests.ps1 -Final -Run` from that shell.
+
 ## Shared-machine resources and performance work
 
 - This workstation also runs other agents. Default local Cargo builds to four jobs, and run heavy builds and full suites sequentially unless the user requests otherwise. The complete local verification runner may use three isolated, single-thread CPU test processes and up to two hidden browser workers for its explicitly classified independent functional fixtures, as authorized by the user. Keep heavy native GPU tests to one worker; run memory, latency and performance comparisons exclusively after the CPU and functional browser workers finish. Unknown responsibilities stay serial. Do not terminate another agent's processes or the user's browsers to obtain cleaner measurements.
