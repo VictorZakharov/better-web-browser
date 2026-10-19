@@ -90,38 +90,40 @@ impl StyleSet {
 
         // A node may be removed and reinserted before the rendering checkpoint. Its identifier
         // remains in the removal log, but its newly recomputed style must remain available. Sweep
-        // connectivity once for the entire root set rather than once per component.
+        // connectivity once for the entire root set rather than once per component. Without
+        // removals no node left the document, and without fullscreen elements there are no
+        // fullscreen roots to find, so the sweep is skipped.
         let mut fullscreen = Vec::new();
-        let connected_nodes = Node::shadow_including_descendants(document)
-            .map(|node| {
-                if node.is_fullscreen() {
-                    fullscreen.push(node.clone());
-                }
-                node_id(&node)
-            })
-            .collect::<HashSet<_>>();
-        stats.removed_styles += removed_nodes
-            .iter()
-            .filter(|node| !connected_nodes.contains(node))
-            .filter(|node| self.styles.remove(node).is_some())
-            .count();
-        // Disconnected nodes' former ancestors carry new DOM versions; their generations go.
-        for node in removed_nodes
-            .iter()
-            .filter(|node| !connected_nodes.contains(node))
-        {
-            self.layout_generations.forget(*node);
-        }
-        // Anchors evaluated while choosing roots supersede what their recalculation recorded.
-        self.has_results
-            .retain(|node, _| connected_nodes.contains(node));
-        self.has_results.extend(changed_has_results);
-        let removed_origins = removed_nodes
+        let connected_nodes = if !removed_nodes.is_empty() || Node::any_fullscreen_elements() {
+            Node::shadow_including_descendants(document)
+                .map(|node| {
+                    if node.is_fullscreen() {
+                        fullscreen.push(node.clone());
+                    }
+                    node_id(&node)
+                })
+                .collect::<HashSet<_>>()
+        } else {
+            HashSet::new()
+        };
+        let disconnected = removed_nodes
             .iter()
             .filter(|node| !connected_nodes.contains(node))
             .copied()
             .collect::<HashSet<_>>();
-        let removed_pseudos = self.remove_generated_pseudos(&removed_origins);
+        stats.removed_styles += disconnected
+            .iter()
+            .filter(|node| self.styles.remove(node).is_some())
+            .count();
+        // Disconnected nodes' former ancestors carry new DOM versions; their generations go.
+        for node in &disconnected {
+            self.layout_generations.forget(*node);
+        }
+        // Anchors evaluated while choosing roots supersede what their recalculation recorded.
+        self.has_results
+            .retain(|node, _| !disconnected.contains(node));
+        self.has_results.extend(changed_has_results);
+        let removed_pseudos = self.remove_generated_pseudos(&disconnected);
         stats.non_deferable_paint_changes |= removed_pseudos;
         self.refresh_deferred_fullscreen_roots(&fullscreen, &mut stats);
         stats.non_deferable_paint_changes |= stats.removed_styles != 0;
@@ -148,6 +150,7 @@ impl StyleSet {
             };
             self.remember_has_results(&node, node_id(&node) == root);
             self.styles.insert(node_id(&node), style.clone());
+            self.style_log.record(node_id(&node));
             self.layout_generations.mark(&node);
             self.sync_generated_pseudos(&node, &style);
             if !self.defer_nonrendered_descendants || style.display != Display::None {
@@ -201,6 +204,7 @@ impl StyleSet {
             }
             self.remember_has_results(&node, node_id(&node) == root);
             self.styles.insert(node_id(&node), style.clone());
+            self.style_log.record(node_id(&node));
             // Attribute-backed generated content and pseudo-only declarations can change box
             // geometry without changing the originating element's computed style.
             let pseudo_started = std::time::Instant::now();

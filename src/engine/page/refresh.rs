@@ -119,27 +119,30 @@ impl Page {
     ) -> StyleRefreshStats {
         self.resource_profile.reset();
         let started = self.resource_profile.start();
-        self.base_url = document_base_url(&self.dom, &self.source_url);
+        self.base_url = self.document_base_url();
         self.media_environment = self
             .media_environment
             .with_viewport(viewport_width, viewport_height);
         // Script preparation belongs to the parser/runtime, not a rendering
         // checkpoint. Do not clone inline source only to discard it below.
-        let resources = super::resources::discover_non_script_resources(
+        // Media elements' resources come from `refresh_media_sources` below.
+        let resources = super::resources::discover_link_and_image_resources(
             &self.dom,
             &self.source_url,
             &self.base_url,
             self.media_environment,
         );
-        for resource in resources {
-            if !matches!(
-                resource,
-                PageResource::Script { .. } | PageResource::Media { .. }
-            ) && !self.resources.contains(&resource)
-            {
-                self.resources.push(resource);
-            }
-        }
+        let known = self.resources.iter().collect::<HashSet<_>>();
+        let added = resources
+            .into_iter()
+            .filter(|resource| {
+                !matches!(
+                    resource,
+                    PageResource::Script { .. } | PageResource::Media { .. }
+                ) && !known.contains(resource)
+            })
+            .collect::<Vec<_>>();
+        self.resources.extend(added);
         self.resource_profile.finish(Phase::Discovery, started);
         let started = self.resource_profile.start();
         self.refresh_media_sources();
@@ -162,7 +165,7 @@ impl Page {
         viewport_height: f32,
         invalidation: &RenderInvalidation,
     ) -> StyleRefreshStats {
-        self.base_url = document_base_url(&self.dom, &self.source_url);
+        self.base_url = self.document_base_url();
         self.media_environment = self
             .media_environment
             .with_viewport(viewport_width, viewport_height);
@@ -191,12 +194,23 @@ impl Page {
         if invalidation_roots.is_empty() && invalidation.class_changes.is_empty() {
             invalidation_roots.push(self.dom.document.clone());
         }
+        // Roots inside another root add nothing; the rest cover disjoint subtrees.
+        let root_ids = invalidation_roots
+            .iter()
+            .map(|root| root.id())
+            .collect::<HashSet<_>>();
+        let mut counted = HashSet::new();
         let invalidated_nodes = invalidation_roots
             .iter()
-            .flat_map(Node::shadow_including_descendants)
-            .map(|node| node.id())
-            .collect::<HashSet<_>>()
-            .len();
+            .filter(|root| {
+                counted.insert(root.id())
+                    && !std::iter::successors(root.shadow_including_parent(), |node| {
+                        node.shadow_including_parent()
+                    })
+                    .any(|ancestor| root_ids.contains(&ancestor.id()))
+            })
+            .map(|root| Node::shadow_including_descendants(root).count())
+            .sum::<usize>();
         let cached = self.cached_styles.take();
         let stale = cached.is_none() && self.previous_styles.is_some();
         let cached = cached.or_else(|| self.previous_styles.take());

@@ -66,12 +66,12 @@ impl Page {
         {
             return None;
         }
-        self.base_url = document_base_url(&self.dom, &self.source_url);
+        self.base_url = self.document_base_url();
         resources::prepare_script(node, &self.base_url, ordinal)
     }
 
     pub(crate) fn discover_parsed_resources(&mut self) {
-        self.base_url = document_base_url(&self.dom, &self.source_url);
+        self.base_url = self.document_base_url();
         self.title = self.dom.title();
         self.hide_scripted_noscript();
         let resources = resources::discover_non_script_resources(

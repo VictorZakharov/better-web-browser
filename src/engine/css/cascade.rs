@@ -67,6 +67,27 @@ pub struct StyleSet {
     viewport_height: f32,
     resolution_dppx: f32,
     layout_generations: layout_generations::LayoutGenerations,
+    style_log: StyleLog,
+}
+
+/// Elements whose styles were stored since the log was last taken, so resource discovery can
+/// inspect only those. A long log is abandoned: a whole-document walk is cheaper to keep.
+#[derive(Debug, Default)]
+struct StyleLog {
+    nodes: Vec<NodeId>,
+    overflowed: bool,
+}
+
+const MAX_STYLE_LOG: usize = 8192;
+
+impl StyleLog {
+    fn record(&mut self, node: NodeId) {
+        if self.nodes.len() < MAX_STYLE_LOG {
+            self.nodes.push(node);
+        } else {
+            self.overflowed = true;
+        }
+    }
 }
 
 type InheritedLayerRevertCache = Option<(Arc<HashMap<String, String>>, bool)>;
@@ -207,7 +228,15 @@ impl StyleSet {
             viewport_height: environment.viewport_height,
             resolution_dppx: environment.resolution_dppx,
             layout_generations: Default::default(),
+            style_log: StyleLog::default(),
         }
+    }
+
+    /// Elements whose styles were stored since the last call, or `None` when that is unknown
+    /// (too many changes) or incomplete (styles below non-rendered elements are deferred).
+    pub(crate) fn take_style_log(&mut self) -> Option<Vec<NodeId>> {
+        let log = std::mem::take(&mut self.style_log);
+        (!log.overflowed && !self.defer_nonrendered_descendants).then_some(log.nodes)
     }
 
     pub(crate) fn clear_computed_styles(&mut self) {
@@ -232,6 +261,7 @@ impl StyleSet {
                 let style =
                     known.unwrap_or_else(|| self.compute_style(&ancestor, parent_style.as_ref()));
                 self.styles.insert(node_id(&ancestor), style.clone());
+                self.style_log.record(node_id(&ancestor));
                 self.sync_generated_pseudos(&ancestor, &style);
                 parent_style = Some(style);
             }
