@@ -7,8 +7,11 @@
 // or in an ancestor compound, the affected elements are the element itself plus descendants that
 // can match the subjects of those ancestor-position rules. Those are restyled as element roots:
 // recalculated alone, with their subtree following only when their own style changes.
-// Sibling combinators, `:has()`, nested complex selectors and attribute selectors on `class`
-// keep the parent-subtree scope. https://drafts.csswg.org/selectors-4/#combinators
+// Sibling combinators, `:has()` and nested complex selectors keep the parent-subtree scope.
+// An attribute selector on `class` (`[class*=x]`) can match differently after any token change,
+// so it counts as a use of every changed token at its position; inside a complex nested
+// selector it keeps the parent-subtree scope for every change.
+// https://drafts.csswg.org/selectors-4/#combinators
 use super::*;
 use crate::engine::css::selector_model::{Combinator, CompoundSelector};
 use std::collections::{HashMap, HashSet};
@@ -37,7 +40,9 @@ struct SubjectKey {
 #[derive(Debug, Default)]
 pub(super) struct ClassInvalidation {
     uses: HashMap<String, ClassUse>,
-    /// `[class]` attribute selectors or scoped/cross-tree rules: no token can be bounded.
+    /// Positions of `[class]` attribute selectors, which apply to every token.
+    any_token: ClassUse,
+    /// Nested complex `[class]` selectors or scoped/cross-tree rules: no token can be bounded.
     unbounded: bool,
 }
 
@@ -65,10 +70,6 @@ impl ClassInvalidation {
         let last = selector.compounds.len().saturating_sub(1);
         let subject = &selector.compounds[last];
         for (position, compound) in selector.compounds.iter().enumerate() {
-            self.unbounded |= compound
-                .attributes
-                .iter()
-                .any(|attribute| attribute.name.eq_ignore_ascii_case("class"));
             let siblings = selector.combinators[position..].iter().any(|combinator| {
                 matches!(
                     combinator,
@@ -78,8 +79,7 @@ impl ClassInvalidation {
             let mut tokens = compound.classes.iter().collect::<Vec<_>>();
             let mut nested_complex = Vec::new();
             nested_simple_classes(compound, &mut tokens, &mut nested_complex);
-            for token in tokens {
-                let class_use = self.uses.entry(token.to_ascii_lowercase()).or_default();
+            let record = |class_use: &mut ClassUse| {
                 if siblings {
                     class_use.parent_scope = true;
                 } else if position == last {
@@ -87,7 +87,14 @@ impl ClassInvalidation {
                 } else {
                     class_use.descendant_subjects.push(SubjectKey::of(subject));
                 }
+            };
+            for token in tokens {
+                record(self.uses.entry(token.to_ascii_lowercase()).or_default());
             }
+            if simple_class_attribute(compound) {
+                record(&mut self.any_token);
+            }
+            self.unbounded |= nested_complex_class_attribute(compound);
             for token in nested_complex {
                 self.uses
                     .entry(token.to_ascii_lowercase())
@@ -103,10 +110,10 @@ impl ClassInvalidation {
             return None;
         }
         let mut keys = HashSet::new();
-        for token in tokens {
-            let Some(class_use) = self.uses.get(&token.to_ascii_lowercase()) else {
-                continue;
-            };
+        let token_uses = tokens
+            .iter()
+            .filter_map(|token| self.uses.get(&token.to_ascii_lowercase()));
+        for class_use in token_uses.chain([&self.any_token]) {
             if class_use.parent_scope {
                 return None;
             }
@@ -253,6 +260,50 @@ fn nested_simple_classes<'a>(
             collect_all_classes(selector, complex);
         }
     }
+}
+
+fn is_class_attribute(compound: &CompoundSelector) -> bool {
+    compound
+        .attributes
+        .iter()
+        .any(|attribute| attribute.name.eq_ignore_ascii_case("class"))
+}
+
+/// A `[class]` selector on this element, directly or in a single-compound nested argument.
+fn simple_class_attribute(compound: &CompoundSelector) -> bool {
+    is_class_attribute(compound)
+        || compound.functional.iter().any(|functional| {
+            functional.selectors.iter().any(|selector| {
+                selector.compounds.len() == 1 && simple_class_attribute(&selector.compounds[0])
+            })
+        })
+}
+
+/// A `[class]` selector inside a nested complex selector, `:has()` or `of S`.
+fn nested_complex_class_attribute(compound: &CompoundSelector) -> bool {
+    let anywhere = |selector: &Selector| {
+        selector.compounds.iter().any(|compound| {
+            simple_class_attribute(compound) || nested_complex_class_attribute(compound)
+        })
+    };
+    compound.functional.iter().any(|functional| {
+        functional.selectors.iter().any(|selector| {
+            if selector.compounds.len() == 1 {
+                nested_complex_class_attribute(&selector.compounds[0])
+            } else {
+                anywhere(selector)
+            }
+        })
+    }) || compound
+        .has
+        .iter()
+        .flatten()
+        .any(|relative| anywhere(&relative.selector))
+        || compound
+            .nth
+            .iter()
+            .flat_map(|nth| &nth.filter)
+            .any(anywhere)
 }
 
 fn collect_all_classes(selector: &Selector, classes: &mut Vec<String>) {
