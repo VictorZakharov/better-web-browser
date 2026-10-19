@@ -15,7 +15,10 @@
 //   such condition is in a compound with a tag, ID or class, only the children that may match
 //   one are searched: their descendants that may match the subject key are restyled as element
 //   roots, or their whole subtrees when the subject has no key. Otherwise the elements that may
-//   match the subject key are searched below every child.
+//   match the subject key are searched below every child, and when the subject has no key either
+//   the parent's subtree is restyled. Compounds left of the condition that are joined to it by a
+//   descendant or child combinator match the parent or its ancestors, so a rule whose keys there
+//   match none of them (`table.x :first-child td` below <body>) is skipped.
 //
 // Element roots refresh descendants only when their own style changes, which carries inheritance.
 // `:has()` anchors are found from the changed elements (`has_anchors`); when a `:has()` argument
@@ -26,9 +29,10 @@
 // https://drafts.csswg.org/selectors-4/#structural-pseudos
 use super::subject_keys::{KeyIndex, SubjectKey};
 use super::*;
-use crate::engine::css::selector_model::{Combinator, CompoundSelector};
+use selectors::{Position, empty_reaches_siblings, outer_keys, position, positional_ancestor_keys};
 use std::collections::HashSet;
 
+mod selectors;
 #[cfg(test)]
 mod tests;
 
@@ -36,28 +40,25 @@ mod tests;
 pub(super) struct ChildListInvalidation {
     /// Some rule's positional conditions are confined to its rightmost sibling chain.
     children: bool,
-    /// Subject keys of rules with a positional condition left of their rightmost sibling chain
-    /// in a compound without a key.
-    descendant_subjects: Vec<SubjectKey>,
-    /// Rules whose positional conditions left of their rightmost sibling chain are all in keyed
-    /// compounds, as (key of such a compound, subject key or `None` for any element).
-    anchored: Vec<(SubjectKey, Option<SubjectKey>)>,
+    /// Rules with a positional condition left of their rightmost sibling chain.
+    ancestor_rules: Vec<AncestorRule>,
     /// `:empty` appears outside a subject compound, so the parent's own `:empty` state can
     /// reach its siblings (`:empty + p`) and its siblings' subtrees.
     empty_siblings: bool,
-    /// A rule with an unkeyed subject has an unkeyed positional compound, or the rules are
-    /// scoped or cross-tree.
+    /// The rules are scoped or cross-tree.
     unbounded: bool,
 }
 
-/// Where a selector observes sibling positions.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Position {
-    None,
-    /// Only in the sibling chain of the matched element itself.
-    Siblings,
-    /// Also in an ancestor's sibling chain.
-    Ancestors,
+/// What a rule with a positional condition left of its subject's sibling chain can reach.
+#[derive(Debug, PartialEq)]
+struct AncestorRule {
+    /// Keys that the changed parent or its ancestors must match (`outer_keys`).
+    outer: Vec<SubjectKey>,
+    /// Keys of the compounds a child of the parent must match to change what the rule matches
+    /// below it, or `None` when such a compound has no key.
+    anchors: Option<Vec<SubjectKey>>,
+    /// The subject key, or `None` for any element.
+    subject: Option<SubjectKey>,
 }
 
 impl ChildListInvalidation {
@@ -67,145 +68,26 @@ impl ChildListInvalidation {
             ..Self::default()
         };
         for rule in rules {
-            index.empty_siblings |= empty_reaches_siblings(&rule.selector);
-            match position(&rule.selector) {
+            let selector = &rule.selector;
+            index.empty_siblings |= empty_reaches_siblings(selector);
+            match position(selector) {
                 Position::None => {}
                 Position::Siblings => index.children = true,
                 Position::Ancestors => {
-                    let subject = SubjectKey::of(rule.selector.compounds.last().expect("compound"));
-                    let subject = (!subject.matches_any()).then_some(subject);
-                    match (positional_ancestor_keys(&rule.selector), subject) {
-                        (Some(anchors), subject) => {
-                            for anchor in anchors {
-                                let entry = (anchor, subject.clone());
-                                if !index.anchored.contains(&entry) {
-                                    index.anchored.push(entry);
-                                }
-                            }
-                        }
-                        (None, Some(subject)) => {
-                            if !index.descendant_subjects.contains(&subject) {
-                                index.descendant_subjects.push(subject);
-                            }
-                        }
-                        (None, None) => index.unbounded = true,
+                    let subject = SubjectKey::of(selector.compounds.last().expect("compound"));
+                    let entry = AncestorRule {
+                        outer: outer_keys(selector),
+                        anchors: positional_ancestor_keys(selector),
+                        subject: (!subject.matches_any()).then_some(subject),
+                    };
+                    if !index.ancestor_rules.contains(&entry) {
+                        index.ancestor_rules.push(entry);
                     }
                 }
             }
         }
         index
     }
-}
-
-/// Whether an `:empty` condition is followed by a sibling combinator, so the parent's own
-/// `:empty` state can reach its siblings and their subtrees.
-fn empty_reaches_siblings(selector: &Selector) -> bool {
-    selector
-        .compounds
-        .iter()
-        .enumerate()
-        .any(|(index, compound)| {
-            ((compound.requires_empty || nested(compound).any(contains_empty))
-                && selector.combinators[index..].iter().any(sibling))
-                || nested(compound).any(empty_reaches_siblings)
-        })
-}
-
-fn contains_empty(selector: &Selector) -> bool {
-    selector
-        .compounds
-        .iter()
-        .any(|compound| compound.requires_empty || nested(compound).any(contains_empty))
-}
-
-/// The selector arguments of `compound`'s functional pseudo-classes and `of S` filters.
-fn nested(compound: &CompoundSelector) -> impl Iterator<Item = &Selector> {
-    compound
-        .functional
-        .iter()
-        .flat_map(|functional| &functional.selectors)
-        .chain(compound.nth.iter().flat_map(|nth| &nth.filter))
-}
-
-fn sibling(combinator: &Combinator) -> bool {
-    matches!(
-        combinator,
-        Combinator::AdjacentSibling | Combinator::GeneralSibling
-    )
-}
-
-/// The index of the first compound of the subject's sibling chain; compounds before it match
-/// ancestors of the subject or their siblings.
-fn sibling_chain_start(selector: &Selector) -> usize {
-    selector
-        .combinators
-        .iter()
-        .rposition(|combinator| matches!(combinator, Combinator::Descendant | Combinator::Child))
-        .map_or(0, |index| index + 1)
-}
-
-/// Keys of the compounds left of the subject's sibling chain that observe sibling positions,
-/// or `None` when one of them can match any element or observes positions further inside.
-fn positional_ancestor_keys(selector: &Selector) -> Option<Vec<SubjectKey>> {
-    let chain = sibling_chain_start(selector);
-    let mut keys = Vec::new();
-    for (index, compound) in selector.compounds[..chain].iter().enumerate() {
-        let after_sibling = index > 0 && sibling(&selector.combinators[index - 1]);
-        match compound_position(compound) {
-            Position::Ancestors => return None,
-            Position::None if !after_sibling => continue,
-            Position::None | Position::Siblings => {}
-        }
-        let key = SubjectKey::of(compound);
-        if key.matches_any() {
-            return None;
-        }
-        keys.push(key);
-    }
-    Some(keys)
-}
-
-fn position(selector: &Selector) -> Position {
-    let chain = sibling_chain_start(selector);
-    let mut result = if selector.combinators[..chain.saturating_sub(1)]
-        .iter()
-        .any(sibling)
-    {
-        Position::Ancestors
-    } else if selector.combinators[chain..].iter().any(sibling) {
-        Position::Siblings
-    } else {
-        Position::None
-    };
-    for (index, compound) in selector.compounds.iter().enumerate() {
-        let compound = compound_position(compound);
-        result = result.max(if index < chain && compound != Position::None {
-            Position::Ancestors
-        } else {
-            compound
-        });
-    }
-    result
-}
-
-fn compound_position(compound: &CompoundSelector) -> Position {
-    let own = compound.requires_first_child
-        || compound.requires_first_of_type
-        || compound.requires_last_child
-        || compound.requires_last_of_type
-        || compound.requires_only_child
-        || compound.requires_only_of_type
-        || compound.requires_empty
-        || !compound.nth.is_empty();
-    let nested = nested(compound)
-        .map(position)
-        .max()
-        .unwrap_or(Position::None);
-    nested.max(if own {
-        Position::Siblings
-    } else {
-        Position::None
-    })
 }
 
 impl StyleSet {
@@ -236,7 +118,6 @@ impl StyleSet {
         let children =
             index.children || self.compiled.nonlocal_dependencies.sibling_has_relations();
         let removed = removed_nodes.iter().copied().collect::<HashSet<_>>();
-        let unanchored = KeyIndex::new(index.descendant_subjects.iter().collect());
         for &id in parents {
             // Child-list roots are also subtree roots; finding them there avoids a document walk.
             let Some(parent) = subtrees.iter().find(|root| root.id() == id).cloned() else {
@@ -248,6 +129,30 @@ impl StyleSet {
             {
                 continue;
             }
+            let ancestry = std::iter::successors(Some(parent.clone()), |node| node.parent())
+                .collect::<Vec<_>>();
+            let rules = index
+                .ancestor_rules
+                .iter()
+                .filter(|rule| {
+                    rule.outer
+                        .iter()
+                        .all(|key| ancestry.iter().any(|node| key.may_match(node)))
+                })
+                .collect::<Vec<_>>();
+            if rules
+                .iter()
+                .any(|rule| rule.anchors.is_none() && rule.subject.is_none())
+            {
+                // Any element below any child may match anew; keep the parent's subtree.
+                continue;
+            }
+            let unanchored_subjects = rules
+                .iter()
+                .filter(|rule| rule.anchors.is_none())
+                .filter_map(|rule| rule.subject.as_ref())
+                .collect::<HashSet<_>>();
+            let unanchored = KeyIndex::new(unanchored_subjects.clone());
             subtrees.retain(|root| root.id() != id);
             elements.push(parent.clone());
             for child in parent.children.borrow().iter() {
@@ -257,9 +162,12 @@ impl StyleSet {
                 }
                 let mut subjects = HashSet::new();
                 let mut whole = false;
-                for (anchor, subject) in &index.anchored {
-                    if anchor.may_match(child) {
-                        match subject {
+                for rule in &rules {
+                    let Some(anchors) = &rule.anchors else {
+                        continue;
+                    };
+                    if anchors.iter().any(|anchor| anchor.may_match(child)) {
+                        match &rule.subject {
                             Some(subject) => {
                                 subjects.insert(subject);
                             }
@@ -275,11 +183,11 @@ impl StyleSet {
                     elements.push(child.clone());
                 }
                 if subjects.is_empty() {
-                    if !index.descendant_subjects.is_empty() {
+                    if !unanchored_subjects.is_empty() {
                         push_matches(child, &unanchored, elements);
                     }
                 } else {
-                    subjects.extend(&index.descendant_subjects);
+                    subjects.extend(&unanchored_subjects);
                     push_matches(child, &KeyIndex::new(subjects), elements);
                 }
             }

@@ -152,6 +152,8 @@ fn positional_rules_see_inserted_and_removed_siblings() {
         ".s{color:red;font-size:20px} b{border:1px solid}",
         ".s:last-child > :last-child{color:red} .s:nth-child(2) *{color:blue}",
         ".a ~ section *{color:red} :nth-child(1 of .s) > *{color:blue}",
+        "body :first-child .x{color:red} html :last-child *{color:blue}",
+        "html > body > :first-child b{color:red} body.y :first-child *{color:blue}",
     ] {
         for change in &CHANGES {
             change_children(&page(css), change);
@@ -166,6 +168,8 @@ fn children_changes_do_not_restyle_the_whole_parent_subtree() {
         "body > :first-child{color:red} body > :last-child{color:blue}",
         ".a + section{color:red} .new ~ .b{color:blue}",
         ":first-child .x{color:red}",
+        // Its outer compound matches neither the parent nor an ancestor.
+        ".elsewhere :first-child *{color:red} .elsewhere > * + * b{color:blue}",
     ] {
         for change in [Change::Append, Change::Prepend] {
             let stats = change_children(&page(css), &change);
