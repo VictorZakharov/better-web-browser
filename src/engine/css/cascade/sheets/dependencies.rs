@@ -71,6 +71,11 @@ impl NonlocalDependencies {
         self.appended_child
     }
 
+    /// See [`super::has_anchors::HasAnchors::sibling_relations`].
+    pub(in crate::engine::css::cascade) fn sibling_has_relations(&self) -> bool {
+        self.has_anchors.sibling_relations()
+    }
+
     /// See [`super::has_anchors::HasAnchors::current_results`].
     pub(in crate::engine::css::cascade) fn current_has_results(
         &self,

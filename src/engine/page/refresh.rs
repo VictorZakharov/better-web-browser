@@ -215,6 +215,13 @@ impl Page {
                         &mut invalidation_roots,
                         &mut element_roots,
                     );
+                    styles.resolve_child_list_changes(
+                        &self.dom,
+                        &invalidation.child_list_roots,
+                        &invalidation.removed_nodes,
+                        &mut invalidation_roots,
+                        &mut element_roots,
+                    );
                     styles.refresh_subtrees_after_invalidation(
                         &self.dom.document,
                         &invalidation_roots,
