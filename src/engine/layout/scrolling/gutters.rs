@@ -14,6 +14,31 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         used_width: Option<UsedInlineSize>,
         used_height: Option<f32>,
     ) -> BlockMetrics {
+        // An unchanged subtree replays the layout an earlier pass retained.
+        let key = self.subtree_key(node, width, height, used_width, used_height);
+        if let Some(metrics) = self.replay_subtree(&key, node, x, y) {
+            return metrics;
+        }
+        let capture = self.begin_capture(key, node, x, y);
+        let metrics =
+            self.layout_block_with_gutters(node, x, y, width, height, used_width, used_height);
+        if let Some(capture) = capture {
+            self.finish_capture(capture, node, metrics);
+        }
+        metrics
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn layout_block_with_gutters(
+        &mut self,
+        node: &NodeRef,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: Option<f32>,
+        used_width: Option<UsedInlineSize>,
+        used_height: Option<f32>,
+    ) -> BlockMetrics {
         let axes = self.styles.get(node).overflow_axes();
         if matches!(node.tag_name(), Some("html" | "body"))
             || self

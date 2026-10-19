@@ -136,24 +136,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
     }
 
-    pub(super) fn effective_background_color(&self, node: &NodeRef) -> Color {
-        let mut colors = Vec::new();
-        let mut candidate = Some(node.clone());
-        while let Some(current) = candidate {
-            let color = self.styles.get(&current).background_color;
-            if color.alpha > 0 {
-                colors.push(color);
-            }
-            candidate = Node::composed_parent(&current);
-        }
-        colors
-            .into_iter()
-            .rev()
-            .fold(Color::WHITE, |backdrop, color| {
-                color.composite_over(backdrop)
-            })
-    }
-
     pub(super) fn background_tile_rect(
         &self,
         style: &ComputedStyle,

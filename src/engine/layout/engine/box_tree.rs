@@ -88,6 +88,11 @@ impl<'a> BoxTree<'a> {
         }
     }
 
+    /// Whether `id` is a table-fixup box, whose identifier is new in every pass.
+    pub fn is_anonymous(&self, id: NodeId) -> bool {
+        self.anonymous.contains_key(&id)
+    }
+
     pub fn node(&self, id: NodeId) -> Option<NodeRef> {
         self.nodes.get(&id).cloned()
     }

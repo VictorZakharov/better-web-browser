@@ -6,7 +6,9 @@ mod intrinsic_widths;
 mod layout_reads;
 pub(in crate::engine::layout) use layout_reads::LayoutReads;
 mod popover;
-pub(crate) mod probe_cache;
+mod probe_cache;
+pub(crate) mod reuse;
+mod subtree_replay;
 
 #[cfg(test)]
 mod fullscreen;
@@ -139,18 +141,20 @@ fn layout_page_for_output<M: TextMeasurer>(
         root = parent;
     }
     let box_tree = box_tree::BoxTree::new(&root, styles);
-    page.layout_probes
+    page.layout_reuse
         .borrow_mut()
-        .begin_pass(measurer.layout_cache_epoch().map(|measurer_epoch| {
-            probe_cache::ProbeEnvironment {
-                viewport: (viewport_width, viewport_height),
-                style_viewport_width,
-                scrollbar: page.scrollbar_thickness(),
-                canvas_replaced: page.canvas_is_replaced(),
-                fullscreen: root.is_fullscreen().then(|| root.id()),
-                measurer_epoch,
-            }
-        }));
+        .begin_pass(
+            measurer
+                .layout_cache_epoch()
+                .map(|measurer_epoch| reuse::ReuseEnvironment {
+                    viewport: (viewport_width, viewport_height),
+                    style_viewport_width,
+                    scrollbar: page.scrollbar_thickness(),
+                    canvas_replaced: page.canvas_is_replaced(),
+                    fullscreen: root.is_fullscreen().then(|| root.id()),
+                    measurer_epoch,
+                }),
+        );
     let mut engine = LayoutEngine {
         page,
         styles: &box_tree,
@@ -276,7 +280,7 @@ fn layout_page_for_output<M: TextMeasurer>(
     );
     fixed_layers::retain_image_inputs(page, &mut engine.output);
     if !partial {
-        page.layout_probes.borrow_mut().finish_pass();
+        page.layout_reuse.borrow_mut().finish_pass();
     }
     engine.output
 }

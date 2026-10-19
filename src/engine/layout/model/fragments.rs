@@ -123,6 +123,41 @@ impl FragmentGeometry {
         }
     }
 
+    /// The entries of `ids`, with no line numbers allocated.
+    pub(in crate::engine::layout) fn subset(&self, ids: &[NodeId]) -> Self {
+        let mut subset = Self::default();
+        for id in ids {
+            if let Some(rect) = self.layout_boxes.get(id) {
+                subset.layout_boxes.insert(*id, *rect);
+            }
+            if let Some(matrix) = self.transforms.get(id) {
+                subset.transforms.insert(*id, *matrix);
+            }
+            if let Some(fragments) = self.elements.get(id) {
+                subset.elements.insert(*id, fragments.clone());
+            }
+            if let Some(fragments) = self.text.get(id) {
+                subset.text.insert(*id, fragments.clone());
+            }
+        }
+        subset
+    }
+
+    /// Renumbers every line by `delta`, for a subset replayed at another point in the pass.
+    pub(in crate::engine::layout) fn shift_lines(&mut self, delta: i64) {
+        let shift = |line: &mut u64| *line = line.wrapping_add_signed(delta);
+        for fragments in self.elements.values_mut() {
+            fragments
+                .iter_mut()
+                .for_each(|fragment| shift(&mut fragment.line));
+        }
+        for fragments in self.text.values_mut() {
+            fragments
+                .iter_mut()
+                .for_each(|fragment| shift(&mut fragment.line));
+        }
+    }
+
     pub(crate) fn remove(&mut self, id: NodeId) {
         self.layout_boxes.remove(&id);
         self.transforms.remove(&id);

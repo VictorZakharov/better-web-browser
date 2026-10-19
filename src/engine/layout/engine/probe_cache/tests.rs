@@ -47,15 +47,27 @@ fn layout(page: &Page, measurer: &mut Counting) -> LayoutOutput {
 /// Lays out `page` with whatever the cache holds, then again from an empty cache.
 fn warm_and_cold(page: &Page) -> (LayoutOutput, LayoutOutput) {
     let warm = layout(page, &mut Counting::default());
-    let retained = std::mem::take(&mut *page.layout_probes.borrow_mut());
+    let retained = std::mem::take(&mut *page.layout_reuse.borrow_mut());
     let cold = layout(page, &mut Counting::default());
-    *page.layout_probes.borrow_mut() = retained;
+    *page.layout_reuse.borrow_mut() = retained;
     (warm, cold)
 }
 
+/// Replayed subtrees are translated by float offsets, so compare to a hundredth of a pixel.
 fn assert_same_geometry(warm: &LayoutOutput, cold: &LayoutOutput) {
-    assert_eq!(warm.node_bounds, cold.node_bounds);
-    assert_eq!(warm.content_height, cold.content_height);
+    let close = |a: f32, b: f32| (a - b).abs() < 0.01;
+    assert_eq!(warm.node_bounds.len(), cold.node_bounds.len());
+    for (id, rect) in &warm.node_bounds {
+        let other = cold.node_bounds[id];
+        assert!(
+            close(rect.x, other.x)
+                && close(rect.y, other.y)
+                && close(rect.width, other.width)
+                && close(rect.height, other.height),
+            "{id:?}: {rect:?} vs {other:?}"
+        );
+    }
+    assert!(close(warm.content_height, cold.content_height));
     assert_eq!(warm.items.len(), cold.items.len());
 }
 
@@ -71,7 +83,7 @@ fn an_unchanged_page_reuses_probes_with_identical_geometry() {
     let mut first = Counting::default();
     let cold = layout(&page, &mut first);
     assert!(
-        page.layout_probes.borrow().len() > 0,
+        page.layout_reuse.borrow().len().0 > 0,
         "the page exercises probes"
     );
     let mut second = Counting::default();
@@ -128,7 +140,7 @@ fn environment_changes_discard_every_result() {
     layout(&page, &mut Counting::default());
     let narrow =
         layout_page_with_style_viewport(&page, 500.0, HEIGHT, WIDTH, &mut Counting::default());
-    let retained = std::mem::take(&mut *page.layout_probes.borrow_mut());
+    let retained = std::mem::take(&mut *page.layout_reuse.borrow_mut());
     let cold =
         layout_page_with_style_viewport(&page, 500.0, HEIGHT, WIDTH, &mut Counting::default());
     drop(retained);
@@ -146,7 +158,7 @@ fn environment_changes_discard_every_result() {
     }
     let one = layout_page_with_style_viewport(&page, WIDTH, HEIGHT, WIDTH, &mut Epoch(1));
     let two = layout_page_with_style_viewport(&page, WIDTH, HEIGHT, WIDTH, &mut Epoch(2));
-    std::mem::take(&mut *page.layout_probes.borrow_mut());
+    std::mem::take(&mut *page.layout_reuse.borrow_mut());
     let cold = layout_page_with_style_viewport(&page, WIDTH, HEIGHT, WIDTH, &mut Epoch(2));
     assert_same_geometry(&two, &cold);
     assert_ne!(one.node_bounds, two.node_bounds);
@@ -162,7 +174,7 @@ fn measurers_without_an_epoch_and_shadow_trees_are_never_cached() {
         WIDTH,
         &mut crate::engine::layout::test_support::CountingMeasurer::default(),
     );
-    assert_eq!(page.layout_probes.borrow().len(), 0);
+    assert_eq!(page.layout_reuse.borrow().len().0, 0);
 
     let mut page = Page::parse(
         "<div id=host><template shadowrootmode=open><style>section{display:flex;flex-direction:column}</style><section><p>shadow</p><slot></slot></section></template><p id=light>light</p></div>",

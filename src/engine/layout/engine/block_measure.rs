@@ -9,6 +9,12 @@ pub(super) struct MeasureKey {
     used_width: Option<(u32, u32)>,
 }
 
+impl MeasureKey {
+    pub(super) fn node(&self) -> NodeId {
+        self.node
+    }
+}
+
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(in crate::engine::layout) fn intrinsic_block_height(
         &mut self,

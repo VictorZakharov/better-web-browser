@@ -14,6 +14,22 @@ impl Geometry {
         self.ports.0.remove(&id);
     }
 
+    /// The entries of `ids`.
+    pub(in crate::engine::layout) fn subset(&self, ids: &[NodeId]) -> Self {
+        let pick = |map: &BoxMap| {
+            BoxMap(
+                ids.iter()
+                    .filter_map(|id| map.0.get(id).map(|value| (*id, *value)))
+                    .collect(),
+            )
+        };
+        Self {
+            boxes: pick(&self.boxes),
+            clips: pick(&self.clips),
+            ports: pick(&self.ports),
+        }
+    }
+
     pub(in crate::engine::layout) fn extend(&mut self, other: Self) {
         self.boxes.0.extend(other.boxes.0);
         self.clips.0.extend(other.clips.0);
