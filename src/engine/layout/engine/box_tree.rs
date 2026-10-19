@@ -1,6 +1,8 @@
 //! CSS 2.2 §17.2.1 table fixup creates layout boxes, never DOM elements.
 //! https://www.w3.org/TR/CSS22/tables.html#anonymous-boxes
 use super::*;
+mod persistent;
+pub(crate) use persistent::AnonymousBoxes;
 
 pub(in crate::engine::layout) struct BoxTree<'a> {
     base: &'a StyleSet,
@@ -9,6 +11,10 @@ pub(in crate::engine::layout) struct BoxTree<'a> {
     zoomed: HashMap<NodeId, ComputedStyle>,
     nodes: HashMap<NodeId, NodeRef>,
     parents: HashMap<NodeId, NodeRef>,
+    /// Where anonymous boxes come from when their identity should outlive this tree.
+    persistent: Option<&'a std::cell::RefCell<AnonymousBoxes>>,
+    /// Anonymous boxes taken from `persistent`; others are new in this tree.
+    stable: HashSet<NodeId>,
 }
 
 impl std::ops::Deref for BoxTree<'_> {
@@ -20,6 +26,23 @@ impl std::ops::Deref for BoxTree<'_> {
 
 impl<'a> BoxTree<'a> {
     pub fn new(root: &NodeRef, base: &'a StyleSet) -> Self {
+        Self::build(root, base, None)
+    }
+
+    /// A box tree whose anonymous boxes keep their identity across passes that build them alike.
+    pub fn with_persistent_anonymous_boxes(
+        root: &NodeRef,
+        base: &'a StyleSet,
+        boxes: &'a std::cell::RefCell<AnonymousBoxes>,
+    ) -> Self {
+        Self::build(root, base, Some(boxes))
+    }
+
+    fn build(
+        root: &NodeRef,
+        base: &'a StyleSet,
+        persistent: Option<&'a std::cell::RefCell<AnonymousBoxes>>,
+    ) -> Self {
         let mut tree = Self {
             base,
             children: HashMap::new(),
@@ -27,16 +50,18 @@ impl<'a> BoxTree<'a> {
             zoomed: HashMap::new(),
             nodes: HashMap::new(),
             parents: HashMap::new(),
+            persistent,
+            stable: HashSet::new(),
         };
         tree.compute_zoomed_styles(root);
         // Iterative postorder keeps malformed/deep documents off the native stack.
-        let mut stack = vec![(root.clone(), false)];
-        while let Some((node, visited)) = stack.pop() {
+        // Each node's children are collected once, before its descendants, and normalized after.
+        let mut stack: Vec<(NodeRef, Option<Vec<NodeRef>>)> = vec![(root.clone(), None)];
+        while let Some((node, collected)) = stack.pop() {
             if tree.get(&node).display == Display::None {
                 continue;
             }
-            if visited {
-                let children = tree.children(&node);
+            if let Some(children) = collected {
                 let had_children = !children.is_empty();
                 let normalized = tree.normalize(&node, children);
                 if had_children || !normalized.is_empty() {
@@ -48,8 +73,9 @@ impl<'a> BoxTree<'a> {
                 }
             } else {
                 tree.nodes.insert(node.id(), node.clone());
-                stack.push((node.clone(), true));
-                stack.extend(tree.children(&node).into_iter().rev().map(|n| (n, false)));
+                let children = tree.children(&node);
+                stack.push((node.clone(), Some(children.clone())));
+                stack.extend(children.into_iter().rev().map(|n| (n, None)));
             }
         }
         tree
@@ -63,6 +89,12 @@ impl<'a> BoxTree<'a> {
     }
 
     fn compute_zoomed_styles(&mut self, root: &NodeRef) {
+        // Most documents set no zoom; scanning the computed styles is cheaper than the walk.
+        let unzoomed =
+            |style: &ComputedStyle| crate::engine::css::zoom::combine(1.0, style.zoom) == 1.0;
+        if self.base.all_styles().all(unzoomed) {
+            return;
+        }
         // A fullscreen/top-layer root can retain zoom from ancestors outside its box tree.
         let ancestor_scale =
             std::iter::successors(Node::composed_parent(root), Node::composed_parent)
@@ -86,6 +118,16 @@ impl<'a> BoxTree<'a> {
                     .map(|child| (child, scale)),
             );
         }
+    }
+
+    #[cfg(test)]
+    pub fn is_anonymous(&self, id: NodeId) -> bool {
+        self.anonymous.contains_key(&id)
+    }
+
+    /// Whether `id` is a table-fixup box whose identifier a later pass will not reuse.
+    pub fn is_transient_anonymous(&self, id: NodeId) -> bool {
+        self.anonymous.contains_key(&id) && !self.stable.contains(&id)
     }
 
     pub fn node(&self, id: NodeId) -> Option<NodeRef> {
@@ -147,8 +189,7 @@ impl<'a> BoxTree<'a> {
     }
 
     fn wrap(&mut self, parent: &NodeRef, display: Display, children: Vec<NodeRef>) -> NodeRef {
-        // A private allocator leaves the document's allocation budget and identity untouched.
-        let node = Node::create_element("breeze-anonymous-box");
+        let node = self.anonymous_box(parent, display, &children);
         self.nodes.insert(node.id(), node.clone());
         self.parents.insert(node.id(), parent.clone());
         for child in &children {
@@ -160,6 +201,17 @@ impl<'a> BoxTree<'a> {
         let children = self.normalize(&node, children);
         self.children.insert(node.id(), children);
         node
+    }
+
+    fn anonymous_box(&mut self, parent: &NodeRef, display: Display, run: &[NodeRef]) -> NodeRef {
+        if let (Some(boxes), Some(first)) = (self.persistent, run.first()) {
+            let node = boxes.borrow_mut().wrapper(parent.id(), first.id(), display);
+            // A key repeated within one tree cannot share a box; the repeat gets a new one.
+            if self.stable.insert(node.id()) {
+                return node;
+            }
+        }
+        persistent::new_anonymous_box()
     }
 
     fn normalize(&mut self, parent: &NodeRef, mut children: Vec<NodeRef>) -> Vec<NodeRef> {

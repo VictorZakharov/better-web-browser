@@ -108,9 +108,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             .map(|node| self.styles.get(&node));
                         let (painted, clip) = style.as_ref().map_or((rect, None), |style| {
                             let (natural_width, natural_height) = self
-                                .page
-                                .images
-                                .get(url)
+                                .decoded_image(url)
                                 .map(|image| (image.width as f32, image.height as f32))
                                 .unwrap_or((*image_width, *image_height));
                             object::image_paint_geometry(style, rect, natural_width, natural_height)

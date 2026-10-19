@@ -15,6 +15,20 @@ impl FloatContext {
     pub(in crate::engine::layout) fn add(&mut self, side: Float, rect: RectF) {
         self.boxes.push((side, rect));
     }
+    pub(in crate::engine::layout) fn len(&self) -> usize {
+        self.boxes.len()
+    }
+    /// Floats added after the first `start`, for a subtree replayed elsewhere.
+    pub(in crate::engine::layout) fn since(&self, start: usize) -> Vec<(Float, RectF)> {
+        self.boxes[start..].to_vec()
+    }
+    /// Whether the first `count` floats all end at or above `y`, so none can affect
+    /// layout below it.
+    pub(in crate::engine::layout) fn clear_below(&self, count: usize, y: f32) -> bool {
+        self.boxes[..count]
+            .iter()
+            .all(|(_, rect)| rect.y + rect.height <= y)
+    }
     pub(in crate::engine::layout) fn bottom(&self) -> f32 {
         self.clearance(Clear::Both, 0.0)
     }

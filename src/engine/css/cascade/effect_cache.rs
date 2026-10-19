@@ -27,6 +27,7 @@ impl StyleSet {
                 pending.push(shadow);
             }
         }
+        self.layout_generations.forget_below(&affected, target);
         self.remove_generated_pseudos(&affected);
     }
 }

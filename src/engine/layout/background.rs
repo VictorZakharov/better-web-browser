@@ -45,7 +45,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let natural = match image {
             ImageSource::None => return None,
             ImageSource::Url(url) => {
-                let image = self.page.images.get(url)?;
+                let image = self.decoded_image(url)?;
                 (
                     image.width as f32 * style.effective_zoom,
                     image.height as f32 * style.effective_zoom,
@@ -136,31 +136,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
     }
 
-    pub(super) fn effective_background_color(&self, node: &NodeRef) -> Color {
-        let mut colors = Vec::new();
-        let mut candidate = Some(node.clone());
-        while let Some(current) = candidate {
-            let color = self.styles.get(&current).background_color;
-            if color.alpha > 0 {
-                colors.push(color);
-            }
-            candidate = Node::composed_parent(&current);
-        }
-        colors
-            .into_iter()
-            .rev()
-            .fold(Color::WHITE, |backdrop, color| {
-                color.composite_over(backdrop)
-            })
-    }
-
     pub(super) fn background_tile_rect(
         &self,
         style: &ComputedStyle,
         clip_rect: RectF,
     ) -> Option<RectF> {
         let url = style.background_image.as_ref()?;
-        let image = self.page.images.get(url)?;
+        let image = self.decoded_image(url)?;
         let (width, height) = resolve_background_size(
             style.background_size.clone(),
             clip_rect,

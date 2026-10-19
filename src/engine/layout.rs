@@ -3,7 +3,7 @@ mod background;
 mod block;
 mod clip_path;
 mod controls;
-mod engine;
+pub(crate) mod engine;
 mod flex;
 mod forms;
 mod grid;

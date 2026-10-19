@@ -3,7 +3,12 @@ mod block_measure;
 pub(super) mod box_tree;
 pub(crate) mod fixed_layers;
 mod intrinsic_widths;
+mod layout_reads;
+pub(in crate::engine::layout) use layout_reads::LayoutReads;
 mod popover;
+mod probe_cache;
+pub(crate) mod reuse;
+mod subtree_replay;
 
 #[cfg(test)]
 mod fullscreen;
@@ -65,6 +70,9 @@ pub fn layout_geometry_with_style_viewport<M: TextMeasurer>(
         }
         fn text_geometry(&mut self, text: &str, font: &FontSpec) -> TextGeometry {
             self.0.text_geometry(text, font)
+        }
+        fn layout_cache_epoch(&self) -> Option<u64> {
+            self.0.layout_cache_epoch()
         }
     }
     layout_page_for_output(
@@ -132,7 +140,26 @@ fn layout_page_for_output<M: TextMeasurer>(
         };
         root = parent;
     }
-    let box_tree = box_tree::BoxTree::new(&root, styles);
+    page.layout_anonymous_boxes.borrow_mut().begin_pass();
+    let box_tree = box_tree::BoxTree::with_persistent_anonymous_boxes(
+        &root,
+        styles,
+        &page.layout_anonymous_boxes,
+    );
+    page.layout_reuse
+        .borrow_mut()
+        .begin_pass(
+            measurer
+                .layout_cache_epoch()
+                .map(|measurer_epoch| reuse::ReuseEnvironment {
+                    viewport: (viewport_width, viewport_height),
+                    style_viewport_width,
+                    scrollbar: page.scrollbar_thickness(),
+                    canvas_replaced: page.canvas_is_replaced(),
+                    fullscreen: root.is_fullscreen().then(|| root.id()),
+                    measurer_epoch,
+                }),
+        );
     let mut engine = LayoutEngine {
         page,
         styles: &box_tree,
@@ -147,6 +174,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         inline_box_cache: HashMap::new(),
         positioned_flow_scopes: Vec::new(),
         floats: Default::default(),
+        reads: Default::default(),
         viewport: RectF {
             x: 0.0,
             y: 0.0,
@@ -256,6 +284,10 @@ fn layout_page_for_output<M: TextMeasurer>(
         style_viewport_width,
     );
     fixed_layers::retain_image_inputs(page, &mut engine.output);
+    if !partial {
+        page.layout_reuse.borrow_mut().finish_pass();
+        page.layout_anonymous_boxes.borrow_mut().finish_pass();
+    }
     engine.output
 }
 
@@ -267,7 +299,7 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) retain_fragments: bool,
     pub(super) scroll_gutters: HashMap<NodeId, (bool, bool)>,
     pub(super) measurement_cache: HashMap<(usize, bool, u32), CachedAtomMeasurement>,
-    intrinsic_block_heights: HashMap<block_measure::MeasureKey, f32>,
+    intrinsic_block_heights: HashMap<block_measure::MeasureKey, (f32, LayoutReads)>,
     pub(super) intrinsic_widths: intrinsic_widths::IntrinsicWidths,
     pub(super) margin_profiles:
         std::cell::RefCell<HashMap<(NodeId, u32), block::margins::MarginProfile>>,
@@ -276,6 +308,7 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) output: LayoutOutput,
     pub(super) positioned_flow_scopes: Vec<Vec<InFlowPaintRange>>,
     pub(super) floats: block::floats::FloatContext,
+    pub(super) reads: std::cell::RefCell<layout_reads::ReadFrames>,
 }
 
 pub(super) struct InFlowPaintRange {

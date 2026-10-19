@@ -115,3 +115,30 @@ fn each_new_layout_pass_observes_new_topology_and_styles() {
     let second = BoxTree::new(&page.dom.document, &styles);
     assert_eq!(ids(second.children(&main)), [next.id()]);
 }
+
+#[test]
+fn persistent_anonymous_boxes_keep_their_identity_while_the_tree_is_unchanged() {
+    let page = Page::parse(
+        "<style>.cell{display:table-cell}.row{display:table-row}</style>
+         <main><span class=cell>a</span><span class=cell>b</span></main>",
+        "https://example.test/",
+    );
+    let main = page.dom.elements_named("main").next().unwrap();
+    let styles = page.style(800.0);
+    let boxes = std::cell::RefCell::new(AnonymousBoxes::default());
+    let build = |boxes: &std::cell::RefCell<AnonymousBoxes>| {
+        boxes.borrow_mut().begin_pass();
+        let tree = BoxTree::with_persistent_anonymous_boxes(&page.dom.document, &styles, boxes);
+        let table = tree.children(&main)[0].clone();
+        assert!(tree.is_anonymous(table.id()) && !tree.is_transient_anonymous(table.id()));
+        let row = tree.children(&table)[0].clone();
+        boxes.borrow_mut().finish_pass();
+        (table.id(), row.id())
+    };
+    assert_eq!(build(&boxes), build(&boxes));
+    // Without a persistent source every pass creates new boxes, which layout must not retain.
+    let tree = BoxTree::new(&page.dom.document, &styles);
+    let table = tree.children(&main)[0].clone();
+    assert!(tree.is_transient_anonymous(table.id()));
+    assert_ne!(table.id(), build(&boxes).0);
+}

@@ -157,8 +157,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             scroll.bar_x = false;
             scroll.bar_y = false;
         }
-        (scroll.offset_x, scroll.offset_y) =
-            scroll.clamp(node.scroll_offset.get().0, node.scroll_offset.get().1);
+        let (offset_x, offset_y) = self.scroll_offset(node);
+        (scroll.offset_x, scroll.offset_y) = scroll.clamp(offset_x, offset_y);
         translate::translate_display_items(
             &mut self.output.items[start..],
             -scroll.offset_x,

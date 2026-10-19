@@ -32,6 +32,7 @@ impl StyleSet {
             for id in &uncomposed {
                 stats.removed_styles += usize::from(self.styles.remove(id).is_some());
             }
+            self.layout_generations.forget_below(&uncomposed, root);
             stats.non_deferable_paint_changes |= self.remove_generated_pseudos(&uncomposed);
             let ancestors =
                 std::iter::successors(Some(root.clone()), |node| node.shadow_including_parent())
@@ -81,6 +82,7 @@ impl StyleSet {
         for id in &ids {
             self.styles.remove(id);
         }
+        self.layout_generations.forget_below(&ids, node);
         self.remove_generated_pseudos(&ids);
         count - self.styles.len()
     }

@@ -14,9 +14,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let url = if is_frame {
             Some(String::new())
         } else {
-            self.page.image_url(node)
+            self.image_url_for(node)
         };
-        let intrinsic = url.as_ref().and_then(|url| self.page.images.get(url));
+        let intrinsic = url.as_ref().and_then(|url| self.decoded_image(url));
         let is_video = node.tag_name() == Some("video");
         let canvas = (node.tag_name() == Some("canvas"))
             .then(|| crate::engine::page::canvas_intrinsic_size(node));
@@ -163,7 +163,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         containing_block: InlineContainingBlock,
     ) {
         let key = inline_svg_key(node);
-        let dimensions = self.page.layout_image_dimensions(&key);
+        let dimensions = self.image_dimensions(&key);
         let (intrinsic_width, intrinsic_height) = dimensions
             .map(|(width, height)| (width as f32, height as f32))
             .unwrap_or((300.0, 150.0));

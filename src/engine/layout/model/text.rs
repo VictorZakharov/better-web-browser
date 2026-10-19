@@ -66,6 +66,12 @@ pub trait TextMeasurer {
     /// implementations must retain contextual shaping, fallback, and spacing in these metrics.
     fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32);
 
+    /// Identifies this measurer's current results: equal epochs measure all text identically.
+    /// Layout reuses results across passes only for measurers that report one.
+    fn layout_cache_epoch(&self) -> Option<u64> {
+        None
+    }
+
     /// Font/advance geometry with no raster allocation, in DOM UTF-16 source order.
     fn text_geometry(&mut self, text: &str, font: &FontSpec) -> TextGeometry {
         fragments::measured_geometry(self, text, font)

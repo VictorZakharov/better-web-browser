@@ -43,6 +43,7 @@ pub(super) fn append_top_layer<M: TextMeasurer>(
             inline_box_cache: HashMap::new(),
             positioned_flow_scopes: Vec::new(),
             floats: Default::default(),
+            reads: Default::default(),
             viewport: RectF {
                 x: 0.0,
                 y: 0.0,
