@@ -54,6 +54,7 @@ impl Page {
             layout_viewport: self.layout_viewport,
             resource_profile: Default::default(),
             layout_reuse: Default::default(),
+            layout_anonymous_boxes: Default::default(),
         }
     }
 

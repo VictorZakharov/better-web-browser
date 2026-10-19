@@ -4,11 +4,12 @@
 // For an unchanged DOM and style, these inputs are: which URL an element shows
 // (`Page::image_url`), the natural dimensions of a decoded image or inline SVG, a scroll
 // container's offset, and two values read from ancestors outside a subtree: the link a promoted
-// inline formatting root inherits and the backdrop a form control composites. Every intrinsic computation that a cache may return later is
-// computed inside a frame; reads made while a frame is open land in it, and a cache hit
-// replays the hit's recorded reads into the enclosing frame. Closing a frame also passes its
-// reads to the enclosing frame, so every cached result lists every read it depended on,
-// however it was assembled.
+// inline formatting root inherits and the backdrop a form control composites.
+//
+// Every result that a cache may return later is computed inside a frame. Reads land in one log
+// for the pass, and a frame is the part of the log written while it was open, so an enclosing
+// frame includes everything its nested frames read. A cache hit appends the hit's recorded reads
+// to the log. Only a result that is actually retained copies its frame's distinct reads.
 use super::*;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -93,19 +94,39 @@ impl LayoutReads {
 
 #[derive(Default)]
 pub(in crate::engine::layout) struct ReadFrames {
-    frames: Vec<Vec<LayoutRead>>,
+    log: Vec<LayoutRead>,
+    frames: Vec<OpenFrame>,
+}
+
+#[derive(Clone, Copy)]
+struct OpenFrame {
+    start: usize,
+    retained_items: usize,
+}
+
+/// A closed frame; its reads stay readable until the next outermost frame opens.
+pub(in crate::engine::layout) struct ReadFrame {
+    reads: std::ops::Range<usize>,
+    /// The most display items any retained result inside the frame holds.
+    pub(in crate::engine::layout) retained_items: usize,
 }
 
 impl ReadFrames {
     fn record(&mut self, read: LayoutRead) {
-        if let Some(frame) = self.frames.last_mut() {
-            frame.push(read);
+        if !self.frames.is_empty() {
+            self.log.push(read);
         }
     }
 
     fn replay(&mut self, reads: &LayoutReads) {
-        if let (Some(frame), Some(reads)) = (self.frames.last_mut(), reads.0.as_deref()) {
-            frame.extend_from_slice(reads);
+        if let (false, Some(reads)) = (self.frames.is_empty(), reads.0.as_deref()) {
+            self.log.extend_from_slice(reads);
+        }
+    }
+
+    fn note_retained(&mut self, items: usize) {
+        if let Some(enclosing) = self.frames.last_mut() {
+            enclosing.retained_items = enclosing.retained_items.max(items);
         }
     }
 }
@@ -153,25 +174,53 @@ fn effective_backdrop(styles: &StyleSet, node: &NodeRef) -> Color {
 impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
     /// Opens a frame for a result that a cache may return later; pair with `end_reads`.
     pub(in crate::engine::layout) fn begin_reads(&self) {
-        self.reads.borrow_mut().frames.push(Vec::new());
+        let mut reads = self.reads.borrow_mut();
+        if reads.frames.is_empty() {
+            reads.log.clear();
+        }
+        let start = reads.log.len();
+        reads.frames.push(OpenFrame {
+            start,
+            retained_items: 0,
+        });
     }
 
-    /// Closes the innermost frame, passes its reads to the enclosing one and returns them.
+    /// Closes the innermost frame and returns its reads.
     pub(in crate::engine::layout) fn end_reads(&self) -> LayoutReads {
-        let mut frames = self.reads.borrow_mut();
-        let mut reads = frames
-            .frames
-            .pop()
-            .expect("layout read frames are balanced");
-        if reads.is_empty() {
+        let frame = self.close_reads();
+        self.frame_reads(&frame)
+    }
+
+    /// Closes the innermost frame without copying its reads; see `frame_reads`.
+    pub(in crate::engine::layout) fn close_reads(&self) -> ReadFrame {
+        let mut reads = self.reads.borrow_mut();
+        let frame = reads.frames.pop().expect("layout read frames are balanced");
+        reads.note_retained(frame.retained_items);
+        ReadFrame {
+            reads: frame.start..reads.log.len(),
+            retained_items: frame.retained_items,
+        }
+    }
+
+    /// The distinct reads a closed frame made.
+    pub(in crate::engine::layout) fn frame_reads(&self, frame: &ReadFrame) -> LayoutReads {
+        let reads = self.reads.borrow();
+        let log = &reads.log[frame.reads.clone()];
+        if log.is_empty() {
             return LayoutReads::default();
         }
         let mut seen = HashSet::new();
-        reads.retain(|read| seen.insert(read.clone()));
-        if let Some(enclosing) = frames.frames.last_mut() {
-            enclosing.extend_from_slice(&reads);
-        }
-        LayoutReads(Some(reads.into()))
+        let distinct = log
+            .iter()
+            .filter(|read| seen.insert(*read))
+            .cloned()
+            .collect::<Vec<_>>();
+        LayoutReads(Some(distinct.into()))
+    }
+
+    /// Tells the enclosing frame that a retained result of `items` display items lies inside it.
+    pub(in crate::engine::layout) fn retained_items(&self, items: usize) {
+        self.reads.borrow_mut().note_retained(items);
     }
 
     /// Accounts a cache hit's reads to the result being computed now.

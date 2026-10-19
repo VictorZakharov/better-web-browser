@@ -1,15 +1,18 @@
 //! Replays a block subtree's retained layout instead of laying it out again.
 //
-// A block that establishes its own formatting context and sits in normal flow (or is relatively
-// positioned) lays out from its arguments alone: its floats start empty, its absolutely
-// positioned descendants resolve against boxes inside it or against its own containing area,
-// and nothing it emits depends on where it is placed except by translation. Its output is
-// therefore a function of the box's subtree, its arguments and the inputs `reuse` validates, and
+// A block in normal flow (or relatively positioned) lays out from its arguments and the floats
+// of its formatting context: its absolutely positioned descendants resolve against boxes inside
+// it or against its own containing area, and nothing it emits depends on where it is placed
+// except by translation. A block that establishes its own formatting context starts with no
+// floats. Any other block shares its parent's float context, so it is retained only when every
+// float already in that context ends above all of its boxes, and replayed only when that holds
+// again at the new position; the floats it adds itself are retained and added back. Its output
+// is then a function of the box's subtree, its arguments and the inputs `reuse` validates, and
 // a later pass can append a copy and translate it to the new position, exactly as an ancestor
 // moves an already laid-out subtree (`translate_layout_subtree`).
 //
 // Subtrees containing viewport-dependent boxes (fixed or sticky positioning) or table-fixup
-// boxes (whose identifiers are new in every pass) are not retained. Each retained subtree keeps
+// boxes whose identifiers are new in every pass are not retained. Each retained subtree keeps
 // its own copy of what it emitted, captured as soon as its layout finishes and before any
 // ancestor moves it, so a nested subtree can still be replayed after an enclosing one changes.
 // Entries are bounded by size so that very large containers recompute while their children
@@ -55,6 +58,9 @@ pub(super) struct SubtreeEntry {
     lines: u64,
     /// The stacking level a relatively positioned root reported to its parent's flow scope.
     flow_level: Option<i32>,
+    /// For a root sharing its parent's float context: the top of its highest box, which every
+    /// earlier float must end above, and the floats it added.
+    shared_floats: Option<(f32, Vec<(Float, RectF)>)>,
 }
 
 /// A layout in progress whose result may be retained.
@@ -66,6 +72,7 @@ pub(in crate::engine::layout) struct Capture {
     node_start: usize,
     first_line: u64,
     flow_ranges: usize,
+    floats: usize,
 }
 
 impl LayoutReuse {
@@ -115,7 +122,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             && style.display != Display::None
             && !node.is_generated_pseudo()
             && !matches!(node.tag_name(), Some("html" | "body"))
-            && self.block_establishes_context(node)
+            && (style.display == Display::Block || self.block_establishes_context(node))
     }
 
     /// Appends `node`'s retained layout at (`x`, `y`) when every input still matches.
@@ -132,6 +139,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let inputs = self.reuse_inputs(node)?;
         let mut reuse = self.page.layout_reuse.borrow_mut();
         let entry = reuse.subtree(key, inputs, self.page, self.styles)?;
+        let (dx, dy) = (x - entry.origin.0, y - entry.origin.1);
+        if let Some((top, _)) = &entry.shared_floats
+            && !self.floats.clear_below(self.floats.len(), top + dy)
+        {
+            return None;
+        }
         let item_start = self.output.items.len();
         let node_start = self.output.node_paint_order.len();
         self.output.items.extend(entry.items.iter().cloned());
@@ -157,12 +170,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         replayed.shift_lines(first_line.wrapping_sub(entry.first_line) as i64);
         fragments.extend_subtree(&replayed);
         fragments.next_line = first_line + entry.lines;
-        let (dx, dy) = (x - entry.origin.0, y - entry.origin.1);
+        for (side, rect) in entry.shared_floats.iter().flat_map(|(_, floats)| floats) {
+            let rect = RectF {
+                x: rect.x + dx,
+                y: rect.y + dy,
+                ..*rect
+            };
+            self.floats.add(*side, rect);
+        }
         let bottom = entry.bottom + dy;
         let flow_level = entry.flow_level;
         let reads = entry.reads.clone();
+        let retained = entry.items.len();
         drop(reuse);
         self.replay_reads(&reads);
+        self.retained_items(retained);
         if dx != 0.0 || dy != 0.0 {
             let item_end = self.output.items.len();
             self.translate_layout_subtree(Some(node), item_start, item_end, dx, dy);
@@ -201,6 +223,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             node_start: self.output.node_paint_order.len(),
             first_line: self.output.fragments.next_line,
             flow_ranges: self.positioned_flow_scopes.last().map_or(0, Vec::len),
+            floats: self.floats.len(),
         })
     }
 
@@ -210,32 +233,49 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         node: &NodeRef,
         metrics: BlockMetrics,
     ) {
-        let reads = self.end_reads();
+        let frame = self.close_reads();
         let items = &self.output.items[capture.item_start..];
-        if !(MIN_ITEMS..=MAX_ITEMS).contains(&items.len()) {
+        // Around a retained descendant holding most of the items, laying the block out again
+        // costs little more than replaying it; retaining both would copy those items twice.
+        if !(MIN_ITEMS..=MAX_ITEMS).contains(&items.len())
+            || items.len().saturating_sub(frame.retained_items) * 4 < items.len()
+        {
             return;
         }
         let nodes = self.styles.descendants(node);
         let retainable = nodes.iter().all(|descendant| {
             let style = self.styles.get(descendant);
-            !self.styles.is_anonymous(descendant.id())
+            !self.styles.is_transient_anonymous(descendant.id())
                 && !matches!(style.position, Position::Fixed | Position::Sticky)
         });
         if !retainable {
             return;
         }
         let ids = nodes.iter().map(|node| node.id()).collect::<Vec<_>>();
+        let node_bounds = pick(&self.output.node_bounds, &ids);
+        let shared_floats = if self.block_establishes_context(node) {
+            None
+        } else {
+            let top = node_bounds
+                .iter()
+                .map(|(_, rect)| rect.y)
+                .fold(capture.origin.1, f32::min);
+            if !self.floats.clear_below(capture.floats, top) {
+                return;
+            }
+            Some((top, self.floats.since(capture.floats)))
+        };
         let flow_level = (self.positioned_flow_scopes.last().map_or(0, Vec::len)
             > capture.flow_ranges)
             .then(|| self.styles.get(node).z_index.unwrap_or(0));
         let entry = SubtreeEntry {
             inputs: capture.inputs,
-            reads,
+            reads: self.frame_reads(&frame),
             origin: capture.origin,
             bottom: metrics.bottom,
             items: items.to_vec(),
             paint_order: self.output.node_paint_order[capture.node_start..].to_vec(),
-            node_bounds: pick(&self.output.node_bounds, &ids),
+            node_bounds,
             resize_boxes: pick(&self.output.resize_boxes, &ids),
             scroll_boxes: pick(&self.output.scroll_boxes, &ids),
             clip_paths: pick(&self.output.clip_paths, &ids),
@@ -244,12 +284,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             first_line: capture.first_line,
             lines: self.output.fragments.next_line - capture.first_line,
             flow_level,
+            shared_floats,
             nodes: ids,
         };
+        let retained = entry.items.len();
         let mut reuse = self.page.layout_reuse.borrow_mut();
         if reuse.subtrees.len() < MAX_ENTRIES || reuse.subtrees.contains_key(&capture.key) {
             reuse.keep(node.id());
             reuse.subtrees.insert(capture.key, entry);
+            drop(reuse);
+            self.retained_items(retained);
         }
     }
 }

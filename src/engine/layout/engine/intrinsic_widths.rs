@@ -3,9 +3,12 @@
 //! Each entry keeps the image inputs it read, which a hit replays into the enclosing result.
 use super::*;
 
+/// A node, its percentage basis bits and whether outer (margin-box) widths are wanted.
+type WidthKey = (NodeId, Option<u32>, bool);
+
 #[derive(Default)]
 pub(in crate::engine::layout) struct IntrinsicWidths {
-    entries: HashMap<(NodeId, Option<u32>, bool), ((f32, f32), LayoutReads)>,
+    entries: HashMap<WidthKey, ((f32, f32), LayoutReads)>,
     max_content: HashMap<(NodeId, Option<u32>), (f32, LayoutReads)>,
 }
 

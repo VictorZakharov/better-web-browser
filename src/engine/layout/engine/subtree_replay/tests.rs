@@ -219,6 +219,12 @@ fn recorded_inputs_outside_dom_and_style_invalidate_replays() {
     element(&page, "link").set_attr("href", "two.html");
     page.refresh_resources_for_viewport(WIDTH, HEIGHT);
     assert_warm_matches_cold(&page);
+
+    // Zoom on an ancestor scales the used styles inside every section.
+    let body = page.dom.elements_named("body").next().unwrap();
+    body.set_attr("style", "zoom:2");
+    page.refresh_resources_for_viewport(WIDTH, HEIGHT);
+    assert_warm_matches_cold(&page);
 }
 
 #[test]
@@ -249,4 +255,78 @@ fn viewport_dependent_subtrees_are_never_retained() {
         let node = element(&page, id).id();
         assert!(!reuse.subtrees.keys().any(|key| key.node == node), "{id}");
     }
+}
+
+#[test]
+fn blocks_sharing_a_float_context_replay_clear_of_earlier_floats_and_restore_their_own() {
+    let mut page = Page::parse(
+        "<style>div{background:#eee}p{margin:4px 0;background:#ddd}
+            .side{float:left;width:200px;height:0}.tall{height:300px}
+            .pull{float:right;width:100px;height:160px}</style>
+         <div class=side id=side></div>
+         <div id=lead><p>alpha beta</p></div>
+         <div id=beside><p>words beside a float</p><p>more words</p><p>still more</p><p>and more</p></div>
+         <div id=owner><div class=pull></div><p>next to a float</p><p>that overhangs</p><p>below it</p></div>
+         <div id=after><p>these words wrap</p><p>around the float</p><p>the block left</p></div>",
+        "https://example.test/",
+    );
+    page.refresh_resources_for_viewport(WIDTH, HEIGHT);
+    layout(&page, &mut Counting::default());
+    let retained = |page: &Page, id: &str| {
+        let node = element(page, id).id();
+        page.layout_reuse
+            .borrow()
+            .subtrees
+            .keys()
+            .any(|key| key.node == node)
+    };
+    assert!(retained(&page, "beside"), "a block clear of earlier floats");
+    assert!(retained(&page, "owner"), "a block with its own float");
+
+    // Moving a block that owns an overhanging float carries the float to its new position.
+    element(&page, "lead").set_attr("class", "tall");
+    page.refresh_resources_for_viewport(WIDTH, HEIGHT);
+    assert_warm_matches_cold(&page);
+    assert!(retained(&page, "owner"));
+
+    // A float growing over a retained block must not replay its unwrapped lines.
+    element(&page, "side").set_attr("class", "side tall");
+    page.refresh_resources_for_viewport(WIDTH, HEIGHT);
+    assert_warm_matches_cold(&page);
+}
+
+#[test]
+fn sections_with_table_fixup_boxes_replay_and_keep_those_boxes() {
+    let mut page = Page::parse(
+        "<style>section{display:flow-root;background:#eee}p{background:#ddd}
+            figure{display:table;margin:0;background:#ccc}figcaption{display:table-caption}
+            .tall{height:200px}</style>
+         <section id=lead><p>lead</p></section>
+         <section id=figure><p>before</p><figure><p>image</p><p>stand-in</p>
+            <figcaption>caption words</figcaption></figure><p>after</p><p>more</p></section>",
+        "https://example.test/",
+    );
+    page.refresh_resources_for_viewport(WIDTH, HEIGHT);
+    let mut first = Counting::default();
+    layout(&page, &mut first);
+    let node = element(&page, "figure").id();
+    assert!(
+        page.layout_reuse
+            .borrow()
+            .subtrees
+            .keys()
+            .any(|key| key.node == node)
+    );
+
+    element(&page, "lead").set_attr("class", "tall");
+    page.refresh_resources_for_viewport(WIDTH, HEIGHT);
+    let mut second = Counting::default();
+    layout(&page, &mut second);
+    assert!(
+        second.calls * 2 < first.calls,
+        "{} vs {}",
+        second.calls,
+        first.calls
+    );
+    assert_warm_matches_cold(&page);
 }

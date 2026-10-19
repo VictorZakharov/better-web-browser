@@ -8,7 +8,7 @@
 // - the subtree's DOM (`Node::subtree_mutation_version`, which also covers control state,
 //   focus and popover changes) and computed styles (`StyleSet` subtree generation) are
 //   unchanged, as is the parent's own style, which some boxes consult (flex/grid parents,
-//   white-space at the box edges);
+//   white-space at the box edges), and the zoom its ancestors apply;
 // - every recorded input (`layout_reads`) reads the same, and the viewport, scrollbar size,
 //   canvas policy, fullscreen root and text measurer epoch match the pass that computed it.
 //
@@ -17,6 +17,7 @@
 // complete pass neither computed nor reused are dropped at its end, which bounds the cache by
 // the live document.
 use super::block_measure::MeasureKey;
+pub(crate) use super::box_tree::AnonymousBoxes;
 use super::*;
 use std::collections::HashSet;
 
@@ -38,6 +39,8 @@ pub(super) struct Inputs {
     own: u64,
     subtree: u64,
     parent_own: Option<u64>,
+    /// Zoom applied by ancestors scales the box tree's used styles without restyling them.
+    zoom: u32,
 }
 
 #[derive(Debug, Default)]
@@ -94,6 +97,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             own: self.styles.own_layout_generation(node.id())?,
             subtree: self.styles.subtree_layout_generation(node.id())?,
             parent_own,
+            zoom: self.styles.get(node).effective_zoom.to_bits(),
         })
     }
 }

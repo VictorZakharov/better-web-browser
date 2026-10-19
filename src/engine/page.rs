@@ -104,6 +104,9 @@ pub struct Page {
     resource_profile: refresh::profile::Profile,
     /// Layout results reused across passes; see `layout::engine::reuse`.
     pub(crate) layout_reuse: std::cell::RefCell<crate::engine::layout::engine::reuse::LayoutReuse>,
+    /// Table-fixup boxes whose identity persists across passes; see `layout::engine::box_tree`.
+    pub(crate) layout_anonymous_boxes:
+        std::cell::RefCell<crate::engine::layout::engine::reuse::AnonymousBoxes>,
 }
 
 impl Page {
@@ -176,6 +179,7 @@ impl Page {
             layout_viewport: (1280.0, 720.0),
             resource_profile: Default::default(),
             layout_reuse: Default::default(),
+            layout_anonymous_boxes: Default::default(),
         };
         page.refresh_media_sources();
         page.install_embedded_images();
