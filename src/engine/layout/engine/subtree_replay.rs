@@ -24,7 +24,7 @@ use super::*;
 /// Subtrees emitting fewer items are cheaper to lay out than to copy and validate.
 const MIN_ITEMS: usize = 8;
 /// Larger containers recompute; their retained children still replay.
-const MAX_ITEMS: usize = 4096;
+const MAX_ITEMS: usize = 32_768;
 const MAX_ENTRIES: usize = 16_384;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]

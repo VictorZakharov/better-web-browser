@@ -55,13 +55,13 @@ impl<'a> BoxTree<'a> {
         };
         tree.compute_zoomed_styles(root);
         // Iterative postorder keeps malformed/deep documents off the native stack.
-        let mut stack = vec![(root.clone(), false)];
-        while let Some((node, visited)) = stack.pop() {
+        // Each node's children are collected once, before its descendants, and normalized after.
+        let mut stack: Vec<(NodeRef, Option<Vec<NodeRef>>)> = vec![(root.clone(), None)];
+        while let Some((node, collected)) = stack.pop() {
             if tree.get(&node).display == Display::None {
                 continue;
             }
-            if visited {
-                let children = tree.children(&node);
+            if let Some(children) = collected {
                 let had_children = !children.is_empty();
                 let normalized = tree.normalize(&node, children);
                 if had_children || !normalized.is_empty() {
@@ -73,8 +73,9 @@ impl<'a> BoxTree<'a> {
                 }
             } else {
                 tree.nodes.insert(node.id(), node.clone());
-                stack.push((node.clone(), true));
-                stack.extend(tree.children(&node).into_iter().rev().map(|n| (n, false)));
+                let children = tree.children(&node);
+                stack.push((node.clone(), Some(children.clone())));
+                stack.extend(children.into_iter().rev().map(|n| (n, None)));
             }
         }
         tree
@@ -88,6 +89,12 @@ impl<'a> BoxTree<'a> {
     }
 
     fn compute_zoomed_styles(&mut self, root: &NodeRef) {
+        // Most documents set no zoom; scanning the computed styles is cheaper than the walk.
+        let unzoomed =
+            |style: &ComputedStyle| crate::engine::css::zoom::combine(1.0, style.zoom) == 1.0;
+        if self.base.all_styles().all(unzoomed) {
+            return;
+        }
         // A fullscreen/top-layer root can retain zoom from ancestors outside its box tree.
         let ancestor_scale =
             std::iter::successors(Node::composed_parent(root), Node::composed_parent)

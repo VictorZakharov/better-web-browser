@@ -239,6 +239,11 @@ impl StyleSet {
         self.styles.get(&node_id(node))
     }
 
+    /// Every computed style, including generated pseudo-elements', in no particular order.
+    pub(crate) fn all_styles(&self) -> impl Iterator<Item = &ComputedStyle> {
+        self.styles.values().chain(self.generated_styles.values())
+    }
+
     pub fn get(&self, node: &NodeRef) -> &ComputedStyle {
         self.styles
             .get(&node_id(node))
