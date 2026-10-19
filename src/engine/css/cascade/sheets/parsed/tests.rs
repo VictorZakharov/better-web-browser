@@ -28,6 +28,7 @@ fn compile(
         nonlocal_dependencies: super::super::dependencies::NonlocalDependencies::for_rules(&rules),
         cross_tree_or_scoped: super::super::dependencies::cross_tree_or_scoped(&rules),
         class_invalidation: Default::default(),
+        child_list_invalidation: Default::default(),
         attribute_dependencies:
             super::super::attribute_dependencies::AttributeDependencies::for_rules(&rules),
         transition_setting_dependencies: Default::default(),

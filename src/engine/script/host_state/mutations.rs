@@ -97,6 +97,12 @@ impl HostState {
             .record(&self.document, Some(target), kind);
         if !self.is_connected(moved) {
             self.record_removed_subtree(moved);
+        } else if self.mutation_requires_render(moved) {
+            // A moved subtree keeps styles computed under its old ancestors; its new parent's
+            // child-list root may be bounded to new children, so restyle it as a whole.
+            self.pending_invalidation.extend(&self.document, moved);
+            self.pending_layout_invalidation
+                .extend(&self.document, moved);
         }
         self.timers.request_render();
     }

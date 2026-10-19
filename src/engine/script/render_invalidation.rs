@@ -12,6 +12,9 @@ pub(super) struct PendingInvalidation {
     removed_nodes: BTreeSet<NodeId>,
     removed_global_dependency: bool,
     class_changes: Vec<crate::engine::invalidation::ClassChange>,
+    /// Parents whose child lists changed and that no other mutation made a full root. They
+    /// never cover other roots: the cascade may restyle only part of their subtrees.
+    child_lists: Vec<NodeRef>,
 }
 
 impl PendingInvalidation {
@@ -99,6 +102,11 @@ impl PendingInvalidation {
                 .unwrap_or_else(|| target.clone()),
             // Keep the DOM mutation's scope even when rules may need rebuilding. The style
             // consumer widens to the document only if the effective rule inputs changed.
+            MutationKind::ChildList if !rebuild_rules => {
+                self.extend_child_list(document, target);
+                self.extend_validation_dependents(document, target, kind);
+                return;
+            }
             MutationKind::ChildList | MutationKind::Stylesheet => target.clone(),
             MutationKind::Viewport => document.clone(),
         };
@@ -135,9 +143,32 @@ impl PendingInvalidation {
             return;
         }
         self.roots.retain(|root| !is_descendant_of(root, target));
+        self.child_lists
+            .retain(|parent| !is_descendant_of(parent, target));
         self.roots.push(target.clone());
-        if self.roots.len() > crate::engine::invalidation::MAX_INVALIDATION_ROOTS {
+        self.limit(document);
+    }
+
+    /// Records that `parent`'s children changed, unless a full root already restyles it.
+    fn extend_child_list(&mut self, document: &NodeRef, parent: &NodeRef) {
+        if self.roots.iter().any(|root| is_descendant_of(parent, root))
+            || self
+                .child_lists
+                .iter()
+                .any(|known| known.id() == parent.id())
+        {
+            return;
+        }
+        self.child_lists.push(parent.clone());
+        self.limit(document);
+    }
+
+    fn limit(&mut self, document: &NodeRef) {
+        if self.roots.len() + self.child_lists.len()
+            > crate::engine::invalidation::MAX_INVALIDATION_ROOTS
+        {
             self.roots.clear();
+            self.child_lists.clear();
             self.roots.push(document.clone());
         }
     }
@@ -164,13 +195,19 @@ impl PendingInvalidation {
 
     pub(super) fn snapshot(&self, mutation_count: usize) -> RenderInvalidation {
         RenderInvalidation {
-            roots: self.roots.iter().map(|root| root.id()).collect(),
+            roots: self
+                .roots
+                .iter()
+                .chain(&self.child_lists)
+                .map(|root| root.id())
+                .collect(),
             impact: self.impact,
             mutation_count,
             rebuild_style_rules: self.rebuild_style_rules,
             removed_nodes: self.removed_nodes.iter().copied().collect(),
             removals_are_local: !self.removed_nodes.is_empty() && !self.removed_global_dependency,
             class_changes: self.class_changes.clone(),
+            child_list_roots: self.child_lists.iter().map(|root| root.id()).collect(),
         }
     }
 
@@ -206,167 +243,4 @@ fn is_descendant_of(node: &NodeRef, ancestor: &NodeRef) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::engine::dom;
-
-    #[test]
-    fn native_effects_use_target_roots_but_author_writes_keep_sibling_scope() {
-        let dom = dom::parse("<main><b></b><i></i></main>");
-        let parent = dom.elements_named("main").next().unwrap();
-        let target = dom.elements_named("b").next().unwrap();
-        let mut pending = PendingInvalidation::default();
-        pending.record(&dom.document, Some(&target), MutationKind::StyleOverlay);
-        assert_eq!(pending.snapshot(1).roots, vec![target.id()]);
-        assert!(pending.snapshot(1).impact.affects_layout());
-        pending.record(
-            &dom.document,
-            Some(&target),
-            MutationKind::Attribute("style"),
-        );
-        assert_eq!(pending.snapshot(2).roots, vec![parent.id()]);
-    }
-
-    #[test]
-    fn validation_mutations_widen_roots_to_form_and_fieldsets() {
-        let document =
-            dom::parse("<form><fieldset><div><input required></div></fieldset></form><p></p>");
-        let input = document.elements_named("input").next().unwrap();
-        let form = document.elements_named("form").next().unwrap();
-        let mut pending = PendingInvalidation::default();
-        pending.record(
-            &document.document,
-            Some(&input),
-            MutationKind::Attribute("required"),
-        );
-        // The form root covers the nested fieldset and control subtrees.
-        let roots = pending.snapshot(1).roots;
-        assert!(roots.contains(&form.id()));
-        assert!(!roots.contains(&document.document.id()));
-
-        // A standalone fieldset (no form owner) becomes a root of its own.
-        let grouped = dom::parse("<fieldset><div><input required></div></fieldset>");
-        let lone_input = grouped.elements_named("input").next().unwrap();
-        let lone_set = grouped.elements_named("fieldset").next().unwrap();
-        let mut grouped_pending = PendingInvalidation::default();
-        grouped_pending.record(
-            &grouped.document,
-            Some(&lone_input),
-            MutationKind::Attribute("required"),
-        );
-        assert!(grouped_pending.snapshot(1).roots.contains(&lone_set.id()));
-
-        // Unrelated attributes keep their existing narrow roots.
-        let mut narrow = PendingInvalidation::default();
-        narrow.record(
-            &document.document,
-            Some(&input),
-            MutationKind::Attribute("class"),
-        );
-        let roots = narrow.snapshot(1).roots;
-        assert!(!roots.contains(&form.id()));
-
-        // Ownerless controls add no aggregation roots at all.
-        let bare = dom::parse("<div><input required></div>");
-        let lone = bare.elements_named("input").next().unwrap();
-        let mut lone_pending = PendingInvalidation::default();
-        lone_pending.record(&bare.document, Some(&lone), MutationKind::State);
-        assert_eq!(lone_pending.snapshot(1).roots.len(), 1);
-    }
-
-    #[test]
-    fn published_geometry_preserves_pending_style_and_removal_obligations() {
-        let dom = dom::parse("<style>p{color:red}</style><main><p>text</p></main>");
-        let sheet = dom.elements_named("style").next().unwrap();
-        let paragraph = dom.elements_named("p").next().unwrap();
-        let mut pending = PendingInvalidation::default();
-        pending.record(&dom.document, Some(&sheet), MutationKind::Stylesheet);
-        pending.record_removed_subtree(&paragraph);
-        let before = pending.snapshot(2);
-
-        pending.acknowledge_published_geometry();
-        let after = pending.snapshot(2);
-        assert!(before.impact.affects_intrinsic_size());
-        assert!(!after.impact.affects_intrinsic_size());
-        assert!(after.impact.affects_style() && after.impact.affects_layout());
-        assert!(after.impact.affects_paint() && after.rebuild_style_rules);
-        assert_eq!(after.roots, before.roots);
-        assert_eq!(after.removed_nodes, before.removed_nodes);
-        assert_eq!(after.mutation_count, before.mutation_count);
-
-        pending.record(&dom.document, Some(&paragraph), MutationKind::CharacterData);
-        assert!(pending.snapshot(3).impact.affects_intrinsic_size());
-    }
-
-    #[test]
-    fn coalesces_sibling_mutations_at_their_parent() {
-        let document = dom::parse("<main><p id=a></p><p id=b></p></main>");
-        let main = document.elements_named("main").next().unwrap();
-        let children = main.children.borrow().clone();
-        let mut pending = PendingInvalidation::default();
-        pending.record(
-            &document.document,
-            Some(&children[0]),
-            MutationKind::Attribute("class"),
-        );
-        pending.record(
-            &document.document,
-            Some(&children[1]),
-            MutationKind::Attribute("hidden"),
-        );
-
-        let invalidation = pending.snapshot(2);
-        assert_eq!(invalidation.roots, vec![main.id()]);
-        assert_eq!(invalidation.mutation_count, 2);
-    }
-
-    #[test]
-    fn removed_subtrees_retain_nonlocal_dependencies_until_consumed() {
-        for (source, local) in [
-            ("<section><script></script></section>", true),
-            ("<section><svg><defs/></svg></section>", false),
-            ("<section><base href='/other/'></section>", false),
-            ("<section><slot></slot></section>", false),
-        ] {
-            let dom = dom::parse(source);
-            let root = dom.elements_named("section").next().unwrap();
-            let mut pending = PendingInvalidation::default();
-            pending.record_removed_subtree(&root);
-            pending.acknowledge_published_geometry();
-            assert_eq!(pending.take(1).removals_are_local, local, "{source}");
-            assert!(!pending.snapshot(0).removals_are_local);
-        }
-        let dom = dom::parse("<main><p>fullscreen</p></main>");
-        let root = dom.elements_named("main").next().unwrap();
-        dom.elements_named("p").next().unwrap().set_fullscreen(true);
-        let mut pending = PendingInvalidation::default();
-        pending.record_removed_subtree(&root);
-        assert!(!pending.snapshot(1).removals_are_local);
-    }
-
-    #[test]
-    fn retains_disjoint_component_roots() {
-        let document = dom::parse("<main><section><p></p></section><aside><p></p></aside></main>");
-        let section = document.elements_named("section").next().unwrap();
-        let aside = document.elements_named("aside").next().unwrap();
-        let left = section.children.borrow()[0].clone();
-        let right = aside.children.borrow()[0].clone();
-        let mut pending = PendingInvalidation::default();
-        pending.record(
-            &document.document,
-            Some(&left),
-            MutationKind::Attribute("class"),
-        );
-        pending.record(
-            &document.document,
-            Some(&right),
-            MutationKind::Attribute("class"),
-        );
-
-        let mut roots = pending.snapshot(2).roots;
-        roots.sort_unstable();
-        let mut expected = vec![section.id(), aside.id()];
-        expected.sort_unstable();
-        assert_eq!(roots, expected);
-    }
-}
+mod tests;

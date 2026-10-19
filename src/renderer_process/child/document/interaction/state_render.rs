@@ -41,5 +41,6 @@ pub(super) fn request_state_render(control: &NodeRef, outcome: &mut ScriptOutcom
         removed_nodes: Vec::new(),
         removals_are_local: false,
         class_changes: Vec::new(),
+        child_list_roots: Vec::new(),
     };
 }

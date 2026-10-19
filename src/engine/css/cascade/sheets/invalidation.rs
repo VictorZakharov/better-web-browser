@@ -31,6 +31,13 @@ impl StyleSet {
                 .collect::<Vec<_>>();
             let mut elements = Vec::new();
             self.resolve_class_changes(dom, &invalidation.class_changes, &mut roots, &mut elements);
+            self.resolve_child_list_changes(
+                dom,
+                &invalidation.child_list_roots,
+                &invalidation.removed_nodes,
+                &mut roots,
+                &mut elements,
+            );
             let (removed_styles, removed_generated) = self.prune_uncomposed_styles(dom);
             let mut stats = self.refresh_subtrees_after_invalidation(
                 &dom.document,

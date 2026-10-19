@@ -181,6 +181,12 @@ impl HasAnchors {
         Some(relational)
     }
 
+    /// Whether a `:has()` argument searches siblings, so changing an element's siblings can
+    /// change the results of anchors beside it.
+    pub(super) fn sibling_relations(&self) -> bool {
+        self.sibling_relations
+    }
+
     /// Current `:has()` results of every anchor key `node` may match, and whether later
     /// siblings can depend on them; `None` when `node` cannot be an anchor.
     pub(super) fn current_results(&self, node: &NodeRef) -> Option<(Vec<bool>, bool)> {

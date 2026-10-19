@@ -126,3 +126,50 @@ fn quirks_mode_class_tokens_match_case_insensitively() {
     let html = "<style>.ACTIVE .item{color:red}</style><main id=target><p class=item>x</p></main>";
     change_class(html, "active");
 }
+
+#[test]
+fn class_attribute_selectors_are_bounded_by_their_position() {
+    // A subject-position `[class]` selector elsewhere in the sheet must not widen root changes.
+    for (css, class) in [
+        (
+            ".icon[class*='-progressive']{color:blue} .client-js .foo{color:red}",
+            "client-js",
+        ),
+        // In an ancestor compound it restyles descendants that match the rule's subject.
+        ("[class*='-dark'] .foo{color:white}", "theme-dark"),
+        ("html:is([class~=wide]) .foo{margin:4px}", "wide"),
+    ] {
+        let html = page(css, "client-nojs");
+        let stats = change_class(&html, class);
+        assert!(!stats.full_rebuild, "{css}");
+        assert!(
+            stats.recomputed_styles < stats.total_styles / 3,
+            "{css}: {stats:?}"
+        );
+    }
+    // The changed element itself is always restyled, so its own `[class]` match updates.
+    change_class(
+        "<style>[class$=progressive]{color:blue}</style><p id=target class=quiet>x</p>",
+        "x-progressive",
+    );
+}
+
+#[test]
+fn sibling_and_nested_complex_class_attribute_selectors_keep_the_parent_scope() {
+    for (css, html) in [
+        (
+            "[class^=a] + p{color:red}",
+            "<main><div id=target></div><p>x</p></main>",
+        ),
+        (
+            ":is([class^=a] p) b{color:red}",
+            "<main id=target><p><b>x</b></p></main>",
+        ),
+        (
+            "main:has([class^=a]){color:red}",
+            "<main><div id=target></div><p>x</p></main>",
+        ),
+    ] {
+        change_class(&format!("<style>{css}</style>{html}"), "a");
+    }
+}

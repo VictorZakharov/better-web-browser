@@ -7,6 +7,7 @@ use std::rc::Rc;
 
 mod animations;
 mod attribute_dependencies;
+mod child_list_invalidation;
 mod class_invalidation;
 mod dependencies;
 pub(crate) use dependencies::AppendedChildDependencies;
@@ -20,6 +21,7 @@ mod parsed;
 #[cfg(test)]
 mod rebuild_tests;
 mod registry;
+mod subject_keys;
 mod transitions;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -50,6 +52,7 @@ pub(super) struct CompiledRules {
     pub(super) nonlocal_dependencies: dependencies::NonlocalDependencies,
     pub(super) cross_tree_or_scoped: bool,
     class_invalidation: class_invalidation::ClassInvalidation,
+    child_list_invalidation: child_list_invalidation::ChildListInvalidation,
     inputs: Vec<Rc<SheetInput>>,
     parsed: Vec<Rc<parsed::ParsedSheet>>,
     environment: Option<MediaEnvironment>,
@@ -214,6 +217,8 @@ pub(super) fn collect(
     let cross_tree_or_scoped = dependencies::cross_tree_or_scoped(&rules);
     let class_invalidation =
         class_invalidation::ClassInvalidation::for_rules(&rules, cross_tree_or_scoped);
+    let child_list_invalidation =
+        child_list_invalidation::ChildListInvalidation::for_rules(&rules, cross_tree_or_scoped);
     let compiled = Rc::new(CompiledRules {
         index: RuleIndex::new(&rules),
         animation_index: RuleIndex::for_indices(&rules, &animation_rule_indices),
@@ -229,6 +234,7 @@ pub(super) fn collect(
         nonlocal_dependencies,
         cross_tree_or_scoped,
         class_invalidation,
+        child_list_invalidation,
         scope_parents,
         inputs,
         parsed,

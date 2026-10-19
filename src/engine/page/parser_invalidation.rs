@@ -67,6 +67,7 @@ impl Page {
             removed_nodes: collected.removed,
             removals_are_local: false,
             class_changes: Vec::new(),
+            child_list_roots: Vec::new(),
         }
     }
 }

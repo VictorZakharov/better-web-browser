@@ -203,6 +203,10 @@ pub struct RenderInvalidation {
     /// Class token changes whose restyle scope the cascade bounds. Their elements are also
     /// conservative subtree roots for consumers that only need to know what may have changed.
     pub class_changes: Vec<ClassChange>,
+    /// Roots recorded only because their child lists changed. They stay in `roots` for
+    /// consumers that need every possibly changed subtree; the cascade may bound their restyle
+    /// to new children, the parent itself and siblings that structural selectors can reach.
+    pub child_list_roots: Vec<NodeId>,
 }
 
 impl RenderInvalidation {
@@ -215,6 +219,7 @@ impl RenderInvalidation {
             removed_nodes: Vec::new(),
             removals_are_local: false,
             class_changes: Vec::new(),
+            child_list_roots: Vec::new(),
         }
     }
 
@@ -227,6 +232,7 @@ impl RenderInvalidation {
             removed_nodes: Vec::new(),
             removals_are_local: false,
             class_changes: Vec::new(),
+            child_list_roots: Vec::new(),
         }
     }
 
@@ -254,6 +260,23 @@ impl RenderInvalidation {
             *self = other;
             return;
         }
+        // A child-list root stays bounded only while no other mutation made it a full root.
+        let full = self
+            .roots
+            .iter()
+            .filter(|root| !self.child_list_roots.contains(root))
+            .chain(
+                other
+                    .roots
+                    .iter()
+                    .filter(|root| !other.child_list_roots.contains(root)),
+            )
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        self.child_list_roots.append(&mut other.child_list_roots);
+        self.child_list_roots.retain(|root| !full.contains(root));
+        self.child_list_roots.sort_unstable();
+        self.child_list_roots.dedup();
         self.roots.append(&mut other.roots);
         self.roots.sort_unstable();
         self.roots.dedup();
@@ -267,6 +290,7 @@ impl RenderInvalidation {
             self.roots.clear();
             self.roots.push(document_root);
             self.class_changes.clear();
+            self.child_list_roots.clear();
         }
         self.impact = self.impact.union(other.impact);
         self.mutation_count = self.mutation_count.saturating_add(other.mutation_count);
@@ -400,6 +424,7 @@ mod tests {
             removed_nodes: vec![left],
             removals_are_local: true,
             class_changes: Vec::new(),
+            child_list_roots: Vec::new(),
         };
         invalidation.merge_conservatively(
             RenderInvalidation {
@@ -410,6 +435,7 @@ mod tests {
                 removed_nodes: vec![left, right],
                 removals_are_local: false,
                 class_changes: Vec::new(),
+                child_list_roots: Vec::new(),
             },
             document,
         );
