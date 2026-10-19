@@ -16,7 +16,8 @@
 // its own copy of what it emitted, captured as soon as its layout finishes and before any
 // ancestor moves it, so a nested subtree can still be replayed after an enclosing one changes.
 // Entries are bounded by size so that very large containers recompute while their children
-// replay.
+// replay. A subtree is retained only when a later pass lays it out again with the same
+// arguments, so a document's first layout does not pay for copying what it emits.
 use super::layout_reads::LayoutReads;
 use super::reuse::{Inputs, LayoutReuse};
 use super::*;
@@ -90,6 +91,13 @@ impl LayoutReuse {
         }
         self.used.extend(self.subtrees[key].nodes.iter().copied());
         self.subtrees.get(key)
+    }
+
+    /// Whether a layout of `key` should be retained: it was laid out in an earlier pass too.
+    fn seen_before(&mut self, key: SubtreeKey) -> bool {
+        let pass = self.pass;
+        let earlier = self.sighted.insert(key, pass);
+        self.subtrees.contains_key(&key) || earlier.is_some_and(|sighted| sighted < pass)
     }
 }
 
@@ -214,6 +222,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return None;
         }
         let inputs = self.reuse_inputs(node)?;
+        if !self.page.layout_reuse.borrow_mut().seen_before(key) {
+            return None;
+        }
         self.begin_reads();
         Some(Capture {
             key,

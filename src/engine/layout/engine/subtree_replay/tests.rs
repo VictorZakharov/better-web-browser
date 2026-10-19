@@ -48,6 +48,12 @@ fn layout(page: &Page, measurer: &mut Counting) -> LayoutOutput {
     layout_page_with_style_viewport(page, WIDTH, HEIGHT, WIDTH, measurer)
 }
 
+/// Lays the page out twice: a subtree is retained when a second pass lays it out again.
+fn settle(page: &Page) {
+    layout(page, &mut Counting::default());
+    layout(page, &mut Counting::default());
+}
+
 fn element(page: &Page, id: &str) -> NodeRef {
     Node::descendants(&page.dom.document)
         .find(|node| node.attr("id").as_deref() == Some(id))
@@ -157,9 +163,15 @@ fn unchanged_sections_replay_without_measuring_text() {
     let page = page();
     let mut first = Counting::default();
     let cold = layout(&page, &mut first);
+    assert_eq!(
+        page.layout_reuse.borrow().len().1,
+        0,
+        "a first layout retains nothing"
+    );
+    layout(&page, &mut Counting::default());
     assert!(
         page.layout_reuse.borrow().len().1 >= 5,
-        "sections are retained"
+        "a second layout retains the sections"
     );
     let mut second = Counting::default();
     let warm = layout(&page, &mut second);
@@ -175,7 +187,7 @@ fn unchanged_sections_replay_without_measuring_text() {
 #[test]
 fn a_change_in_one_section_relayouts_it_and_translates_the_rest() {
     let mut page = page();
-    layout(&page, &mut Counting::default());
+    settle(&page);
     // A taller first section moves every later section down.
     Node::set_text_content(
         &element(&page, "text"),
@@ -192,7 +204,7 @@ fn a_change_in_one_section_relayouts_it_and_translates_the_rest() {
 #[test]
 fn recorded_inputs_outside_dom_and_style_invalidate_replays() {
     let mut page = page();
-    layout(&page, &mut Counting::default());
+    settle(&page);
 
     // An image decode changes only the recorded natural size.
     let url = page.image_url(&element(&page, "icon")).unwrap();
@@ -230,7 +242,7 @@ fn recorded_inputs_outside_dom_and_style_invalidate_replays() {
 #[test]
 fn relatively_positioned_sections_keep_their_stacking_order_when_replayed() {
     let mut page = page();
-    layout(&page, &mut Counting::default());
+    settle(&page);
     Node::set_text_content(&element(&page, "text"), "short");
     page.refresh_resources_for_viewport(WIDTH, HEIGHT);
     let warm = assert_warm_matches_cold(&page);
@@ -249,7 +261,7 @@ fn viewport_dependent_subtrees_are_never_retained() {
         "https://example.test/",
     );
     page.refresh_resources_for_viewport(WIDTH, HEIGHT);
-    layout(&page, &mut Counting::default());
+    settle(&page);
     let reuse = page.layout_reuse.borrow();
     for id in ["fixed", "sticky"] {
         let node = element(&page, id).id();
@@ -271,7 +283,7 @@ fn blocks_sharing_a_float_context_replay_clear_of_earlier_floats_and_restore_the
         "https://example.test/",
     );
     page.refresh_resources_for_viewport(WIDTH, HEIGHT);
-    layout(&page, &mut Counting::default());
+    settle(&page);
     let retained = |page: &Page, id: &str| {
         let node = element(page, id).id();
         page.layout_reuse
@@ -309,6 +321,7 @@ fn sections_with_table_fixup_boxes_replay_and_keep_those_boxes() {
     page.refresh_resources_for_viewport(WIDTH, HEIGHT);
     let mut first = Counting::default();
     layout(&page, &mut first);
+    layout(&page, &mut Counting::default());
     let node = element(&page, "figure").id();
     assert!(
         page.layout_reuse
