@@ -21,11 +21,14 @@ use html5ever::{Attribute, QualName};
 use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::rc::{Rc, Weak};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 pub type NodeRef = Rc<Node>;
 
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
+/// Elements flagged fullscreen in this process. A flagged element that is dropped keeps its
+/// count, so the count can only overstate; zero proves no element is fullscreen.
+static FULLSCREEN_ELEMENTS: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShadowRootMode {
@@ -308,8 +311,18 @@ impl Node {
             return;
         };
         if element.fullscreen.replace(fullscreen) != fullscreen {
+            if fullscreen {
+                FULLSCREEN_ELEMENTS.fetch_add(1, Ordering::Relaxed);
+            } else {
+                FULLSCREEN_ELEMENTS.fetch_sub(1, Ordering::Relaxed);
+            }
             self.mark_mutated();
         }
+    }
+
+    /// Whether any element may be fullscreen; `false` only when none is.
+    pub fn any_fullscreen_elements() -> bool {
+        FULLSCREEN_ELEMENTS.load(Ordering::Relaxed) != 0
     }
 
     pub fn tag_name(&self) -> Option<&str> {

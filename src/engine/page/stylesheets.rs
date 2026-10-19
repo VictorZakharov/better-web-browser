@@ -49,10 +49,25 @@ impl Page {
     pub(crate) fn stylesheet_dependencies(&self, node: &NodeRef) -> SheetDependencies {
         stylesheet_dependencies(
             node,
-            &document_base_url(&self.dom, &self.source_url),
+            &self.document_base_url(),
             &self.stylesheet_sources,
             self.media_environment,
         )
+    }
+
+    /// The document base URL. Finding `<base>` walks the document, and stylesheet checks ask
+    /// once per sheet, so the result is kept until the DOM or the source URL changes.
+    pub(crate) fn document_base_url(&self) -> String {
+        let version = self.dom.mutation_version();
+        if let Some((cached, source, base)) = &*self.document_base.borrow()
+            && *cached == version
+            && *source == self.source_url
+        {
+            return base.clone();
+        }
+        let base = document_base_url(&self.dom, &self.source_url);
+        *self.document_base.borrow_mut() = Some((version, self.source_url.clone(), base.clone()));
+        base
     }
 
     pub(crate) fn stylesheet_applies(&self, node: &NodeRef) -> bool {

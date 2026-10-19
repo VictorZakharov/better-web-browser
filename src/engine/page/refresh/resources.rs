@@ -18,22 +18,38 @@ impl Page {
             })
             .collect::<HashSet<_>>();
         let mut discovered_style_images = 0_usize;
-        for node in Node::shadow_including_descendants(&self.dom.document) {
-            // Hydrate newly connected chains through the same computed-style API.
-            let Some(style) = styles.computed_style_for_node(&node) else {
-                continue;
-            };
+        let mut discover = |style: &crate::engine::css::ComputedStyle,
+                            resources: &mut Vec<PageResource>| {
             if style.display == Display::None || !style.visibility {
-                continue;
+                return;
             }
             for url in style.background_image.urls().chain(style.mask_image.urls()) {
                 if discovered_style_images < MAX_STYLE_IMAGES && known_images.insert(url.clone()) {
-                    self.resources
-                        .push(PageResource::Image { url: url.clone() });
+                    resources.push(PageResource::Image { url: url.clone() });
                     discovered_style_images += 1;
                 }
             }
+        };
+        // Unchanged styles name only images found by an earlier pass, unless that pass stopped
+        // at the per-pass limit. Styles of removed elements are gone from the set.
+        match styles.take_style_log() {
+            Some(changed) if !self.style_images_pending => {
+                for id in changed {
+                    if let Some(style) = styles.styles.get(&id) {
+                        discover(style, &mut self.resources);
+                    }
+                }
+            }
+            _ => {
+                for node in Node::shadow_including_descendants(&self.dom.document) {
+                    // Hydrate newly connected chains through the same computed-style API.
+                    if let Some(style) = styles.computed_style_for_node(&node) {
+                        discover(style, &mut self.resources);
+                    }
+                }
+            }
         }
+        self.style_images_pending = discovered_style_images >= MAX_STYLE_IMAGES;
         self.resource_profile.finish(Phase::StyleImages, started);
         let started = self.resource_profile.start();
         self.install_embedded_images();
@@ -47,3 +63,6 @@ impl Page {
         self.resource_profile.finish(Phase::Svg, started);
     }
 }
+
+#[cfg(test)]
+mod tests;

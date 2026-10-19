@@ -56,85 +56,93 @@ pub(super) fn discover_non_script_resources(
     base_url: &str,
     environment: MediaEnvironment,
 ) -> Vec<PageResource> {
+    let mut resources = discover_link_and_image_resources(dom, document_url, base_url, environment);
+    resources.extend(super::media_sources::discover(dom, base_url, environment));
+    resources
+}
+
+/// Stylesheets, link hints, preloads and images; media selection is tracked separately.
+pub(super) fn discover_link_and_image_resources(
+    dom: &Dom,
+    document_url: &str,
+    base_url: &str,
+    environment: MediaEnvironment,
+) -> Vec<PageResource> {
     let mut resources = Vec::new();
+    let mut images = Vec::new();
     let mut seen_stylesheets = HashSet::new();
+    let mut seen_images = HashSet::new();
     let mut preload_count = 0;
     let mut origin_hint_count = 0;
     let mut prefetch_count = 0;
-    for link in Node::shadow_including_descendants(&dom.document)
-        .filter(|node| node.tag_name() == Some("link"))
-    {
-        let rel = link.attr("rel").unwrap_or_default();
-        for hint in super::resource_hints::discover_link_hints(&link, document_url, base_url) {
-            // OS DNS resolution can block a background worker until the platform times out.
-            // Keep no more than two origins eligible per document.
-            if resources.contains(&hint) {
+    // One walk finds links and images; images still follow every link-derived resource.
+    let mut links_done = false;
+    for node in Node::shadow_including_descendants(&dom.document) {
+        let tag = node.tag_name();
+        if tag == Some("link") && !links_done {
+            let link = node;
+            let rel = link.attr("rel").unwrap_or_default();
+            for hint in super::resource_hints::discover_link_hints(&link, document_url, base_url) {
+                // OS DNS resolution can block a background worker until the platform times out.
+                // Keep no more than two origins eligible per document.
+                if resources.contains(&hint) {
+                    continue;
+                }
+                match hint {
+                    PageResource::OriginHint { .. } if origin_hint_count < 2 => {
+                        resources.push(hint);
+                        origin_hint_count += 1;
+                    }
+                    PageResource::Prefetch { .. } if prefetch_count < 2 => {
+                        resources.push(hint);
+                        prefetch_count += 1;
+                    }
+                    _ => {}
+                }
+            }
+            if preload_count < 32
+                && rel.split_ascii_whitespace().any(|token| {
+                    token.eq_ignore_ascii_case("preload")
+                        || token.eq_ignore_ascii_case("modulepreload")
+                })
+                && let Some(preload) =
+                    super::link_preloads::discover_link_preload(&link, base_url, environment)
+                && !resources.contains(&preload)
+            {
+                resources.push(preload);
+                preload_count += 1;
+            }
+            if !rel
+                .split_ascii_whitespace()
+                .any(|token| token.eq_ignore_ascii_case("stylesheet"))
+            {
                 continue;
             }
-            match hint {
-                PageResource::OriginHint { .. } if origin_hint_count < 2 => {
-                    resources.push(hint);
-                    origin_hint_count += 1;
-                }
-                PageResource::Prefetch { .. } if prefetch_count < 2 => {
-                    resources.push(hint);
-                    prefetch_count += 1;
-                }
-                _ => {}
+            if seen_stylesheets.len() >= MAX_STYLESHEETS {
+                links_done = true;
+                continue;
             }
-        }
-        if preload_count < 32
-            && rel.split_ascii_whitespace().any(|token| {
-                token.eq_ignore_ascii_case("preload") || token.eq_ignore_ascii_case("modulepreload")
-            })
-            && let Some(preload) =
-                super::link_preloads::discover_link_preload(&link, base_url, environment)
-            && !resources.contains(&preload)
-        {
-            resources.push(preload);
-            preload_count += 1;
-        }
-        if !rel
-            .split_ascii_whitespace()
-            .any(|token| token.eq_ignore_ascii_case("stylesheet"))
-        {
-            continue;
-        }
-        if seen_stylesheets.len() >= MAX_STYLESHEETS {
-            break;
-        }
-        if let Some(url) = link
-            .attr("href")
-            .filter(|href| !href.trim().is_empty())
-            .and_then(|href| crate::engine::css::imports::resolve(base_url, &href))
-            && seen_stylesheets.insert(url.clone())
-        {
-            resources.push(PageResource::Stylesheet { url });
-        }
-    }
-
-    let mut seen_images = HashSet::new();
-    for node in Node::shadow_including_descendants(&dom.document) {
-        if !(matches!(node.tag_name(), Some("img" | "image"))
-            || (node.tag_name() == Some("input")
+            if let Some(url) = link
+                .attr("href")
+                .filter(|href| !href.trim().is_empty())
+                .and_then(|href| crate::engine::css::imports::resolve(base_url, &href))
+                && seen_stylesheets.insert(url.clone())
+            {
+                resources.push(PageResource::Stylesheet { url });
+            }
+        } else if (matches!(tag, Some("img" | "image"))
+            || (tag == Some("input")
                 && node
                     .attr("type")
                     .is_some_and(|kind| kind.eq_ignore_ascii_case("image"))))
-        {
-            continue;
-        }
-        if seen_images.len() >= MAX_IMAGES {
-            break;
-        }
-        if let Some(url) = resolve_image_url(&node, base_url, environment)
+            && seen_images.len() < MAX_IMAGES
+            && let Some(url) = resolve_image_url(&node, base_url, environment)
             && seen_images.insert(url.clone())
         {
-            resources.push(PageResource::Image { url });
+            images.push(PageResource::Image { url });
         }
     }
-
-    resources.extend(super::media_sources::discover(dom, base_url, environment));
-
+    resources.extend(images);
     resources
 }
 
