@@ -136,6 +136,8 @@ struct Broker {
     outgoing_fetch: HashMap<u64, stream::OutgoingFetch>,
     fetch_response_streaming: HashMap<u64, bool>,
     outgoing_state_update: Option<OutgoingStateUpdate>,
+    /// Whether a Fetch stream message goes before the next document chunk; see `process_streams`.
+    fetch_turn: bool,
 }
 
 impl Broker {
@@ -162,6 +164,7 @@ impl Broker {
             outgoing_fetch: HashMap::new(),
             fetch_response_streaming: HashMap::new(),
             outgoing_state_update: None,
+            fetch_turn: true,
         }
     }
 
@@ -177,7 +180,7 @@ impl Broker {
             self.process_document_clock();
             self.process_messages();
             self.process_database_events();
-            self.process_fetch_stream();
+            self.process_streams();
             self.process_notification_updates();
             self.process_permission_updates();
             self.process_geolocation_updates();
@@ -187,7 +190,6 @@ impl Broker {
             self.process_sensor_updates();
             self.process_clipboard_updates();
             self.process_file_picker_updates();
-            self.process_navigation();
             if self.process_has_exited() {
                 self.finish_exit();
                 break;
