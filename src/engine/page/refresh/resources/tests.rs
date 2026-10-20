@@ -164,3 +164,27 @@ fn a_deferred_invalidation_reaches_whichever_refresh_comes_next() {
     }
     assert!(has_image(&page, "shown.png"));
 }
+
+#[test]
+fn a_stylesheet_arriving_after_the_first_frame_restyles_only_its_rule_subjects() {
+    let mut page = page(&format!(
+        "<link rel=stylesheet href=late.css><p class=late>late</p>{}",
+        "<div><i>x</i></div>".repeat(40)
+    ));
+    page.add_linked_stylesheet_response(
+        "https://example.test/late.css",
+        "https://example.test/late.css",
+        ".late{color:red}".into(),
+    );
+    let stats = page.refresh_resources_after_invalidation(800.0, &RenderInvalidation::default());
+    assert!(!stats.full_rebuild, "{stats:?}");
+    assert!(
+        stats.recomputed_styles < stats.total_styles / 4,
+        "{stats:?}"
+    );
+    let fresh = page.style(800.0);
+    let refreshed = page.cached_style(800.0).expect("refreshed styles");
+    for node in Node::descendants(&page.dom.document).filter(|node| node.element().is_some()) {
+        assert!(refreshed.styles.get(&node.id()) == fresh.styles.get(&node.id()));
+    }
+}

@@ -12,7 +12,7 @@ pub(super) struct OutgoingNavigation {
 
 /// Stream messages (response starts, chunks and ends) are cheap for the renderer next to a
 /// document chunk, which costs a parser checkpoint.
-pub(super) const FETCH_EVENTS_PER_DOCUMENT_CHUNK: u8 = 8;
+pub(super) const FETCH_EVENTS_PER_DOCUMENT_CHUNK: u8 = 64;
 
 impl Broker {
     pub(super) fn begin_navigation(

@@ -4,11 +4,8 @@
 use super::*;
 use crate::engine::dom::{Node, NodeId, NodeRef};
 
-/// Frame skipping for parsing documents and resource arrivals; see `background_frame_waits`.
-const FRAME_SPACING: u32 = 2;
-const MIN_FRAME_SPACING: Duration = Duration::from_millis(50);
-const PARSER_STALL: Duration = Duration::from_millis(250);
-const MAX_PARSER_FRAME_DELAY: Duration = Duration::from_secs(1);
+mod frame_waits;
+pub(super) use frame_waits::FrameArrivals;
 
 pub(super) struct RenderBlocking {
     links: HashMap<NodeId, NodeRef>,
@@ -171,53 +168,35 @@ impl DocumentRuntime {
                 Duration::from_secs(30).saturating_sub(self.rendering.started.elapsed()),
             ));
         }
-        // Wake when the longest applicable wait ends; that checkpoint decides again.
-        self.rendering
-            .frame_delayed
-            .then(|| micros(self.background_frame_remaining(true).unwrap_or_default()))
+        // Wake when the wait ends; that checkpoint decides again.
+        self.rendering.frame_delayed.then(|| {
+            micros(
+                self.background_frame_remaining(FrameArrivals {
+                    resources: self.resource_render_pending,
+                    only: true,
+                })
+                .unwrap_or_default(),
+            )
+        })
     }
-    /// Whether a scheduled rendering checkpoint skips its frame. HTML lets a user agent skip
-    /// rendering opportunities. Each frame of a long, growing document restyles and lays out
-    /// the parsed content again: presenting after every network chunk and image of a large
-    /// article made parsing take 5 s instead of 0.5 s, and its images arrived over seconds.
-    /// After the first frame of a document whose input is still streaming in, the next
-    /// checkpoint frame therefore waits until the input ends, stalls for `PARSER_STALL`, or
-    /// `MAX_PARSER_FRAME_DELAY` has passed; WebKit likewise delays layouts while parsing. A
-    /// parser waiting for a blocking script makes no progress, so its frame does not wait.
-    /// Once parsing is done, a checkpoint that only installs arrived resources (`resources_only`)
-    /// waits until `FRAME_SPACING` times the last frame's style and layout time has passed.
-    /// Input and viewport changes present through their own paths and never wait.
-    /// https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
-    pub(super) fn background_frame_waits(&self, resources_only: bool) -> bool {
-        self.background_frame_remaining(resources_only).is_some()
+    /// Whether a scheduled rendering checkpoint skips its frame; see `frame_waits`.
+    pub(super) fn background_frame_waits(&self, arrivals: FrameArrivals) -> bool {
+        self.background_frame_remaining(arrivals).is_some()
     }
-    fn background_frame_remaining(&self, resources_only: bool) -> Option<Duration> {
+    fn background_frame_remaining(&self, arrivals: FrameArrivals) -> Option<Duration> {
         if self.rendering_is_blocked() {
             return None;
         }
-        let (presented, cost) = self.rendering.last_frame?;
-        let remaining = |wait: Duration, since: Instant| {
-            wait.checked_sub(since.elapsed())
-                .filter(|remaining| !remaining.is_zero())
-        };
-        let parser = self
+        let streaming = self
             .rendering
             .parser_input
-            .filter(|_| self.parser.is_some() && !self.parser_scripts.blocked())
-            .and_then(|input| {
-                Some(
-                    remaining(MAX_PARSER_FRAME_DELAY, presented)?
-                        .min(remaining(PARSER_STALL, input)?),
-                )
-            });
-        let spacing = (cost * FRAME_SPACING).max(MIN_FRAME_SPACING);
-        let resources = resources_only
-            .then(|| remaining(spacing, presented))
-            .flatten();
-        match (parser, resources) {
-            (Some(parser), Some(resources)) => Some(parser.max(resources)),
-            (parser, resources) => parser.or(resources),
-        }
+            .filter(|_| self.parser.is_some() && !self.parser_scripts.blocked());
+        frame_waits::remaining(
+            Instant::now(),
+            self.rendering.last_frame?,
+            streaming,
+            arrivals,
+        )
     }
     /// Skips this checkpoint's frame (see `background_frame_waits`). Arrived resources and the
     /// style invalidation carry over to whichever path presents the next frame.

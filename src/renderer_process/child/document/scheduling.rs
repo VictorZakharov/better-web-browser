@@ -285,7 +285,11 @@ impl DocumentRuntime {
             && !media_changed
             && !scroll_event
             && !self.has_pending_geometry_observers();
-        if wants_frame && self.background_frame_waits(resources_only) {
+        let arrivals = super::rendering::FrameArrivals {
+            resources: resources_changed,
+            only: resources_only,
+        };
+        if wants_frame && self.background_frame_waits(arrivals) {
             self.start_presentational_preloads(connection)?;
             let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
                 script_micros: micros(script_time),
@@ -330,9 +334,10 @@ impl DocumentRuntime {
                 self.page.source_url
             ))?;
             self.refresh_checkpoint_styles(Some(&outcome.invalidation))
-        } else if resource_style_changed || self.styles_deferred() {
+        } else if self.styles_deferred() {
             self.refresh_checkpoint_styles(None)
-        } else if self.page.has_deferred_style_invalidation() {
+        } else if resource_style_changed || self.page.has_deferred_style_invalidation() {
+            // An arrived stylesheet restyles the subjects of the rules it changed.
             self.refresh_checkpoint_styles(Some(&outcome.invalidation))
         } else {
             StyleRefreshStats::default()
