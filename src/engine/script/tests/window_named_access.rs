@@ -136,3 +136,37 @@ fn window_named_properties_ignore_values_removed_by_attribute_reactions() {
         </script></body>"#,
     );
 }
+
+#[test]
+fn parsed_elements_get_names_handlers_and_upgrades_without_eager_wrappers() {
+    // Content parsed after a script reaches the realm through the parser hook, which wraps
+    // only elements that need it and adds just the names of the parsed elements.
+    assert_named_access_checks(
+        r#"<body><output id="status">no</output><script>
+            customElements.define('parsed-widget', class extends HTMLElement {
+                connectedCallback() { this.upgraded = true; }
+            });
+            document.addEventListener('DOMContentLoaded', () => {
+                const failures = [];
+                const check = (name, condition) => { if (!condition) failures.push(name); };
+                check('id', window.later === document.getElementById('later'));
+                check('form-name', window.laterForm === document.forms[0]);
+                check('merged-body-id', window.mergedBody === document.body);
+                check('nested', window.deep === document.querySelector('#deep'));
+                check('svg-excluded', window.svgChild === undefined);
+                document.getElementById('clicker').click();
+                check('handler', window.clicked === true);
+                check('upgrade', document.querySelector('parsed-widget').upgraded === true);
+                document.getElementById('status').textContent =
+                    failures.length ? failures.join(',') : 'yes';
+            });
+        </script>
+        <body id="mergedBody">
+        <div id="later"><section><p><span id="deep">x</span></p></section></div>
+        <form name="laterForm"></form>
+        <svg><g id="svgChild"></g></svg>
+        <button id="clicker" onclick="window.clicked = true">go</button>
+        <parsed-widget></parsed-widget>
+        </body>"#,
+    );
+}

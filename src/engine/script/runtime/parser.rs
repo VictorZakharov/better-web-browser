@@ -125,18 +125,19 @@ impl ScriptRuntime {
             // Parser mutations bypass JS mutation recording. Invalidate the independent CSSOM
             // and synchronous-layout caches before constructors or the next script can query
             // newly inserted nodes/sheets; presentation invalidation alone arrives too late.
-            let ids = host.register_parser_changes();
+            let changes = host.register_parser_changes();
             let records = super::super::parser_writes::parser_mutation_records(&mut host, records);
-            (ids, records)
+            (changes, records)
         };
         let Some(context) = self.context.as_deref_mut() else {
             return inactive_runtime_outcome();
         };
         let result = catch_unwind(AssertUnwindSafe(|| {
             let mut outcome = ScriptOutcome::default();
-            if let Err(error) =
-                context.call_global("__parserDomChanged", &[JsValue::from(ids), records])
-            {
+            if let Err(error) = context.call_global(
+                "__parserDomChanged",
+                &[JsValue::from(ids.ids), records, ids.names],
+            ) {
                 outcome
                     .errors
                     .push(format!("parser DOM notification: {error}"));

@@ -54,7 +54,7 @@
                 }
             }
             const attributes = host('parserElementAttributes', nodeId(target));
-            parserDomChanged(attributes.ids, attributes.mutations);
+            parserDomChanged(attributes.ids, attributes.mutations, attributes.names);
             withCustomElementReactions(() => {
                 for (const attribute of attributeRecords(element)) {
                     eventHandlerAttributeChanged(element, attribute, attribute.value);
@@ -66,7 +66,7 @@
             if (definition) throwOnDynamicMarkupInsertion--;
         }
         const inserted = host('parserElementInsert', nodeId(target));
-        parserDomChanged(inserted.ids, inserted.mutations);
+        parserDomChanged(inserted.ids, inserted.mutations, inserted.names);
         if (element.isConnected) withCustomElementReactions(() =>
             enqueueCustomElementCallback(element, 'connectedCallback'));
     }

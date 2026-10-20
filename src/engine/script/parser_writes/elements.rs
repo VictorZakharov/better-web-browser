@@ -51,14 +51,15 @@ pub(super) fn dispatch(
     };
     session.mutated = true;
     let records = session.parser.dom().take_parser_mutations();
-    let ids = host.register_parser_changes_in(&target);
+    let changes = host.register_parser_changes_in(&target);
     host.record_mutation(Some(&target), MutationKind::Stylesheet);
     Ok(Some(JsValue::Object(vec![
         (
             "node".into(),
             JsValue::from(node.as_ref().map_or(0, |n| host.id_for(n))),
         ),
-        ("ids".into(), JsValue::from(ids)),
+        ("ids".into(), JsValue::from(changes.ids)),
+        ("names".into(), changes.names),
         ("mutations".into(), parser_mutation_records(host, records)),
     ])))
 }

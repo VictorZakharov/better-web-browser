@@ -63,7 +63,7 @@ pub(super) fn named_property_candidates(state: &HostState, root_id: u32) -> Stri
     serde_json::to_string(&names).unwrap_or_else(|_| "[]".into())
 }
 
-fn named_values(node: &NodeRef) -> Vec<String> {
+pub(in crate::engine::script) fn named_values(node: &NodeRef) -> Vec<String> {
     if node.namespace_uri() != Some(HTML_NAMESPACE) {
         return Vec::new();
     }
