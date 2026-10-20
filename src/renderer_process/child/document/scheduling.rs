@@ -18,9 +18,11 @@ impl DocumentRuntime {
         );
         if self.has_pending_geometry_observers()
             || (self.pending_viewport_scroll_event && !self.rendering_is_blocked())
-            || self.resource_render_pending
+            || (self.resource_render_pending && !self.rendering.frame_delayed)
             || self.resource_event_pending
-            || (self.rendering.dirty && !self.rendering_is_blocked())
+            || (self.rendering.dirty
+                && !self.rendering_is_blocked()
+                && !self.rendering.frame_delayed)
         {
             return Some(0);
         }
@@ -276,6 +278,29 @@ impl DocumentRuntime {
                 .merge_due(&mut outcome, self.page.dom.document.id(), Instant::now());
         }
 
+        let wants_frame =
+            resources_changed || outcome.render_requested || media_changed || self.rendering.dirty;
+        let resources_only = resources_changed
+            && !outcome.render_requested
+            && !media_changed
+            && !scroll_event
+            && !self.has_pending_geometry_observers();
+        if wants_frame && self.background_frame_waits(resources_only) {
+            self.start_presentational_preloads(connection)?;
+            let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
+                script_micros: micros(script_time),
+                ..PageLoadReport::default()
+            });
+            return Ok(self.delay_background_frame(
+                outcome,
+                [
+                    resources_changed,
+                    resource_style_changed,
+                    non_style_resources_changed,
+                ],
+                load,
+            ));
+        }
         // Script execution, console output, storage/cookie traffic, and worker progress are not
         // visual invalidations. Sending a complete display-list snapshot for those tasks made
         // timer-heavy pages continuously serialize, install, and repaint an unchanged document.
@@ -307,6 +332,8 @@ impl DocumentRuntime {
             self.refresh_checkpoint_styles(Some(&outcome.invalidation))
         } else if resource_style_changed || self.styles_deferred() {
             self.refresh_checkpoint_styles(None)
+        } else if self.page.has_deferred_style_invalidation() {
+            self.refresh_checkpoint_styles(Some(&outcome.invalidation))
         } else {
             StyleRefreshStats::default()
         };

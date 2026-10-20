@@ -142,6 +142,27 @@ impl Page {
         }
     }
 
+    /// Discovers resources as a refresh does but keeps `invalidation` for the next style
+    /// refresh, whichever path performs it, so that a rendering checkpoint can skip its frame
+    /// without making the next frame restyle the whole document.
+    pub fn defer_style_invalidation(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
+        invalidation: &RenderInvalidation,
+    ) {
+        self.resource_profile.reset();
+        self.discover_refreshed_resources(viewport_width, viewport_height);
+        let root = self.dom.document.id();
+        self.deferred_style_invalidation
+            .get_or_insert_with(RenderInvalidation::default)
+            .merge_conservatively(invalidation.clone(), root);
+    }
+
+    pub fn has_deferred_style_invalidation(&self) -> bool {
+        self.deferred_style_invalidation.is_some()
+    }
+
     fn discover_refreshed_resources(&mut self, viewport_width: f32, viewport_height: f32) {
         let started = self.resource_profile.start();
         self.base_url = self.document_base_url();
@@ -205,6 +226,22 @@ impl Page {
     ) -> (StyleSet, StyleRefreshStats) {
         let viewport_width = viewport_width.max(1.0);
         let viewport_height = viewport_height.max(1.0);
+        // A layout-only flush computes part of each style, so deferred work stays pending for
+        // the next complete refresh as well.
+        let deferred = if layout_only {
+            self.deferred_style_invalidation.clone()
+        } else {
+            self.deferred_style_invalidation.take()
+        };
+        let merged;
+        let invalidation = match deferred {
+            Some(mut deferred) => {
+                deferred.merge_conservatively(invalidation.clone(), self.dom.document.id());
+                merged = deferred;
+                &merged
+            }
+            None => invalidation,
+        };
         let mut invalidation_roots = invalidation
             .roots
             .iter()

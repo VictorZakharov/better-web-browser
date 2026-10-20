@@ -4,6 +4,12 @@
 use super::*;
 use crate::engine::dom::{Node, NodeId, NodeRef};
 
+/// Frame skipping for parsing documents and resource arrivals; see `background_frame_waits`.
+const FRAME_SPACING: u32 = 2;
+const MIN_FRAME_SPACING: Duration = Duration::from_millis(50);
+const PARSER_STALL: Duration = Duration::from_millis(250);
+const MAX_PARSER_FRAME_DELAY: Duration = Duration::from_secs(1);
+
 pub(super) struct RenderBlocking {
     links: HashMap<NodeId, NodeRef>,
     scripts: HashMap<NodeId, NodeRef>,
@@ -11,6 +17,12 @@ pub(super) struct RenderBlocking {
     pub(super) dirty: bool,
     /// A checkpoint skipped its style refresh while rendering was blocked.
     pub(super) styles_deferred: bool,
+    /// When the last frame was presented, and its style and layout time.
+    pub(super) last_frame: Option<(Instant, Duration)>,
+    /// A background checkpoint skipped its frame; see `background_frame_waits`.
+    pub(super) frame_delayed: bool,
+    /// When the parser last received streamed document input, while more is expected.
+    pub(super) parser_input: Option<Instant>,
 }
 impl Default for RenderBlocking {
     fn default() -> Self {
@@ -20,6 +32,9 @@ impl Default for RenderBlocking {
             started: Instant::now(),
             dirty: false,
             styles_deferred: false,
+            last_frame: None,
+            frame_delayed: false,
+            parser_input: None,
         }
     }
 }
@@ -151,9 +166,88 @@ impl DocumentRuntime {
         }
     }
     pub(super) fn rendering_deadline(&self) -> Option<u64> {
-        self.rendering_is_blocked().then(|| {
-            micros(Duration::from_secs(30).saturating_sub(self.rendering.started.elapsed()))
-        })
+        if self.rendering_is_blocked() {
+            return Some(micros(
+                Duration::from_secs(30).saturating_sub(self.rendering.started.elapsed()),
+            ));
+        }
+        // Wake when the longest applicable wait ends; that checkpoint decides again.
+        self.rendering
+            .frame_delayed
+            .then(|| micros(self.background_frame_remaining(true).unwrap_or_default()))
+    }
+    /// Whether a scheduled rendering checkpoint skips its frame. HTML lets a user agent skip
+    /// rendering opportunities. Each frame of a long, growing document restyles and lays out
+    /// the parsed content again: presenting after every network chunk and image of a large
+    /// article made parsing take 5 s instead of 0.5 s, and its images arrived over seconds.
+    /// After the first frame of a document whose input is still streaming in, the next
+    /// checkpoint frame therefore waits until the input ends, stalls for `PARSER_STALL`, or
+    /// `MAX_PARSER_FRAME_DELAY` has passed; WebKit likewise delays layouts while parsing. A
+    /// parser waiting for a blocking script makes no progress, so its frame does not wait.
+    /// Once parsing is done, a checkpoint that only installs arrived resources (`resources_only`)
+    /// waits until `FRAME_SPACING` times the last frame's style and layout time has passed.
+    /// Input and viewport changes present through their own paths and never wait.
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
+    pub(super) fn background_frame_waits(&self, resources_only: bool) -> bool {
+        self.background_frame_remaining(resources_only).is_some()
+    }
+    fn background_frame_remaining(&self, resources_only: bool) -> Option<Duration> {
+        if self.rendering_is_blocked() {
+            return None;
+        }
+        let (presented, cost) = self.rendering.last_frame?;
+        let remaining = |wait: Duration, since: Instant| {
+            wait.checked_sub(since.elapsed())
+                .filter(|remaining| !remaining.is_zero())
+        };
+        let parser = self
+            .rendering
+            .parser_input
+            .filter(|_| self.parser.is_some() && !self.parser_scripts.blocked())
+            .and_then(|input| {
+                Some(
+                    remaining(MAX_PARSER_FRAME_DELAY, presented)?
+                        .min(remaining(PARSER_STALL, input)?),
+                )
+            });
+        let spacing = (cost * FRAME_SPACING).max(MIN_FRAME_SPACING);
+        let resources = resources_only
+            .then(|| remaining(spacing, presented))
+            .flatten();
+        match (parser, resources) {
+            (Some(parser), Some(resources)) => Some(parser.max(resources)),
+            (parser, resources) => parser.or(resources),
+        }
+    }
+    /// Skips this checkpoint's frame (see `background_frame_waits`). Arrived resources and the
+    /// style invalidation carry over to whichever path presents the next frame.
+    pub(super) fn delay_background_frame(
+        &mut self,
+        outcome: ScriptOutcome,
+        resources: [bool; 3],
+        load: PageLoadReport,
+    ) -> AdvanceResult {
+        if outcome.render_requested || !outcome.invalidation.is_empty() {
+            let (width, height) = (self.viewport.style_width, self.viewport.height);
+            let invalidation = if outcome.invalidation.is_empty() {
+                crate::engine::invalidation::RenderInvalidation::full(self.page.dom.document.id())
+            } else {
+                outcome.invalidation.clone()
+            };
+            self.page
+                .defer_style_invalidation(width, height, &invalidation);
+            self.rendering.dirty = true;
+        }
+        let [render, style, non_style] = resources;
+        self.resource_render_pending |= render;
+        self.resource_style_refresh_pending |= style;
+        self.resource_non_style_render_pending |= non_style;
+        self.rendering.frame_delayed = true;
+        let mut update = self.blocked_render_update(outcome, load, None);
+        if let AdvanceResult::Runtime(update) = &mut update {
+            update.clock_advanced = true;
+        }
+        update
     }
     pub(super) fn blocked_render_update(
         &mut self,

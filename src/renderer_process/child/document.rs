@@ -233,6 +233,11 @@ impl DocumentRuntime {
             return Ok(self.blocked_render_update(outcome, load, wheel));
         }
         self.rendering.dirty = false;
+        self.rendering.frame_delayed = false;
+        self.rendering.last_frame = Some((
+            Instant::now(),
+            Duration::from_micros(load.style_micros + load.layout_micros),
+        ));
         // Color-only retained presentations can refresh SVG input without
         // rebuilding geometry. Publish their current device rasters as well.
         self.page.prepare_inline_svg_images(&self.layout);
