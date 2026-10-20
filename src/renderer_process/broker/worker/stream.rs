@@ -293,6 +293,7 @@ impl Broker {
                 Ok(event) => event,
                 Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
             };
+            self.fetch_turn = false;
             if let Err(error) = self.process_fetch_stream_event(event) {
                 self.protocol_failure(error);
                 break;

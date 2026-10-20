@@ -138,18 +138,19 @@ fn step(host: &mut HostState, id: u32, stream: bool) -> JsResult<JsValue> {
     } else {
         0
     };
-    let ids = if changed {
-        let ids = host.register_parser_changes_in(&target);
+    let (ids, names) = if changed {
+        let changes = host.register_parser_changes_in(&target);
         host.record_mutation(Some(&target), MutationKind::Stylesheet);
-        ids
+        (changes.ids, changes.names)
     } else {
-        String::new()
+        (String::new(), JsValue::Array(Vec::new()))
     };
     Ok(JsValue::Object(vec![
         ("mutations".into(), parser_mutation_records(host, records)),
         ("node".into(), JsValue::from(node)),
         ("customElement".into(), JsValue::from(custom_element)),
         ("ids".into(), JsValue::from(ids)),
+        ("names".into(), names),
         ("changed".into(), JsValue::from(changed)),
         ("ended".into(), JsValue::from(ended)),
         (
@@ -268,13 +269,24 @@ fn limit_error(message: String) -> JsError {
     JsNativeError::range().with_message(message).into()
 }
 
+/// Elements the parser created since the last registration, for the realm's parser hook.
+pub(super) struct ParserChanges {
+    /// Comma-separated IDs of the new elements whose wrappers must exist now: elements with
+    /// event handler content attributes, iframes, shadow hosts and possible custom elements.
+    /// Other wrappers are created on first use, as for any node.
+    pub(super) ids: String,
+    /// Window named-property names (`named_values`) of the new elements in the realm's document
+    /// and of its <html> and <body>, whose attributes the parser can merge.
+    pub(super) names: JsValue,
+}
+
 impl HostState {
-    pub(super) fn register_parser_changes(&mut self) -> String {
+    pub(super) fn register_parser_changes(&mut self) -> ParserChanges {
         let document = self.document.clone();
         self.register_parser_changes_in(&document)
     }
 
-    pub(super) fn register_parser_changes_in(&mut self, document: &NodeRef) -> String {
+    pub(super) fn register_parser_changes_in(&mut self, document: &NodeRef) -> ParserChanges {
         self.computed_styles = None;
         self.offset_parent_styles = None;
         self.layout_geometry_initialized = false;
@@ -290,12 +302,60 @@ impl HostState {
             })
             .collect::<Vec<_>>();
         self.register_subtree(document);
-        new_elements
+        let mut names = Vec::new();
+        if document.id() == self.document.id() {
+            let child_element = |parent: &NodeRef, tag: Option<&str>| {
+                parent
+                    .children
+                    .borrow()
+                    .iter()
+                    .find(|child| {
+                        child.element().is_some()
+                            && tag.is_none_or(|tag| child.tag_name() == Some(tag))
+                    })
+                    .cloned()
+            };
+            let root = child_element(&self.document, None);
+            let body = root
+                .as_ref()
+                .and_then(|root| child_element(root, Some("body")));
+            for node in new_elements.iter().chain(root.iter()).chain(body.iter()) {
+                if Node::tree_root(node).id() == self.document.id() {
+                    names.extend(
+                        super::dom_host::named_values(node)
+                            .into_iter()
+                            .map(JsValue::from),
+                    );
+                }
+            }
+        }
+        let ids = new_elements
             .iter()
+            .filter(|node| needs_parser_wrapper(node))
             .map(|node| self.id_for(node).to_string())
             .collect::<Vec<_>>()
-            .join(",")
+            .join(",");
+        ParserChanges {
+            ids,
+            names: JsValue::Array(names),
+        }
     }
+}
+
+/// Whether the parser hook must wrap `element` as soon as it is parsed: wrapping activates
+/// event handler content attributes, and the hook upgrades custom elements (whose names
+/// contain a hyphen), exposes iframe windows and registers shadow roots for traversal.
+fn needs_parser_wrapper(element: &NodeRef) -> bool {
+    element.shadow_root().is_some()
+        || element
+            .tag_name()
+            .is_some_and(|name| name == "iframe" || name.contains('-'))
+        || element.element().is_some_and(|data| {
+            data.attrs.borrow().iter().any(|attribute| {
+                attribute.name.ns.as_ref().is_empty()
+                    && attribute.name.local.as_ref().starts_with("on")
+            })
+        })
 }
 
 pub(super) fn parser_mutation_records(

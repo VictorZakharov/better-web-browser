@@ -52,9 +52,23 @@ impl Broker {
         Ok(())
     }
 
-    pub(super) fn process_navigation(&mut self) {
+    /// Main-document chunks and Fetch response streams share the renderer pipe. A document
+    /// chunk waits for the writer to drain, as stream messages do, and the two take turns: a
+    /// render-blocking stylesheet is not queued behind the rest of a long document, and a burst
+    /// of response bytes cannot stall parsing.
+    pub(super) fn process_streams(&mut self) {
+        if self.fetch_turn {
+            self.process_fetch_stream();
+            self.process_navigation();
+        } else {
+            self.process_navigation();
+            self.process_fetch_stream();
+        }
+    }
+
+    fn process_navigation(&mut self) {
         for _ in 0..8 {
-            if !self.writer().has_page_command_capacity() {
+            if !self.writer().has_background_command_capacity() {
                 break;
             }
             let Some(mut navigation) = self.navigation.take() else {
@@ -65,6 +79,7 @@ impl Broker {
             }
             let message = match navigation.body.read(navigation.offset) {
                 Input::Chunk(bytes) => {
+                    self.fetch_turn = true;
                     let offset = navigation.offset as u32;
                     navigation.offset += bytes.len();
                     let document = navigation.document;

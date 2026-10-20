@@ -304,14 +304,9 @@ impl DocumentRuntime {
                 "refreshing styles for {}",
                 self.page.source_url
             ))?;
-            self.page.refresh_resources_after_invalidation_for_viewport(
-                self.viewport.style_width,
-                self.viewport.height,
-                &outcome.invalidation,
-            )
-        } else if resource_style_changed {
-            self.page
-                .refresh_resources_for_viewport(self.viewport.style_width, self.viewport.height)
+            self.refresh_checkpoint_styles(Some(&outcome.invalidation))
+        } else if resource_style_changed || self.styles_deferred() {
+            self.refresh_checkpoint_styles(None)
         } else {
             StyleRefreshStats::default()
         };

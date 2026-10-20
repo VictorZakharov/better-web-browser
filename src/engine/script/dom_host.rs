@@ -10,6 +10,7 @@ mod parsing;
 use construction::{clone_size, create_document, create_html_document, subtree_size};
 use metadata::{element_qualified_name, node_metadata, node_name, node_type};
 pub(super) use named::NamedPropertyIndex;
+pub(super) use named::named_values;
 use named::{named_property_candidates, named_property_names, named_property_nodes};
 pub(super) use parsing::DocumentMetadata;
 

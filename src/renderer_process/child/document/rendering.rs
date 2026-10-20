@@ -9,6 +9,8 @@ pub(super) struct RenderBlocking {
     scripts: HashMap<NodeId, NodeRef>,
     started: Instant,
     pub(super) dirty: bool,
+    /// A checkpoint skipped its style refresh while rendering was blocked.
+    pub(super) styles_deferred: bool,
 }
 impl Default for RenderBlocking {
     fn default() -> Self {
@@ -17,6 +19,7 @@ impl Default for RenderBlocking {
             scripts: HashMap::new(),
             started: Instant::now(),
             dirty: false,
+            styles_deferred: false,
         }
     }
 }
@@ -118,6 +121,34 @@ impl DocumentRuntime {
             Node::tree_root(node).id() == self.page.dom.document.id()
                 && self.stylesheet_pending(node)
         })
+    }
+    /// Whether a checkpoint must refresh styles although nothing invalidated them since.
+    pub(super) fn styles_deferred(&self) -> bool {
+        self.rendering.styles_deferred && !self.rendering_is_blocked()
+    }
+    /// Refreshes styles at a rendering checkpoint, after `invalidation` or throughout. While
+    /// rendering is blocked no frame is presented and layout waits (see
+    /// `rebuild_layout_for_invalidation`), so the cascade waits as well: recomputing it for each
+    /// parsed chunk of a long document before its stylesheets arrive is wasted work. Resources
+    /// are still discovered; the first unblocked checkpoint restyles the whole document.
+    pub(super) fn refresh_checkpoint_styles(
+        &mut self,
+        invalidation: Option<&crate::engine::invalidation::RenderInvalidation>,
+    ) -> StyleRefreshStats {
+        let (width, height) = (self.viewport.style_width, self.viewport.height);
+        if self.rendering_is_blocked() {
+            self.page.refresh_resources_deferring_styles(width, height);
+            self.rendering.styles_deferred = true;
+            self.rendering.dirty = true;
+            return StyleRefreshStats::default();
+        }
+        let deferred = std::mem::take(&mut self.rendering.styles_deferred);
+        match invalidation {
+            Some(invalidation) if !deferred => self
+                .page
+                .refresh_resources_after_invalidation_for_viewport(width, height, invalidation),
+            _ => self.page.refresh_resources_for_viewport(width, height),
+        }
     }
     pub(super) fn rendering_deadline(&self) -> Option<u64> {
         self.rendering_is_blocked().then(|| {

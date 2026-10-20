@@ -288,7 +288,10 @@
     };
     globalThis.__queuePolicyViolation = (id, payload) =>
         queuePolicyViolation(wrap(id), JSON.parse(payload));
-    const parserDomChanged = (ids, mutations = []) => {
+    // `ids` lists the new elements that need wrappers now (`needs_parser_wrapper`), and `names`
+    // the window named properties that parsed elements can add. Parser insertions only add
+    // names; a removal, or a caller without `names`, checks every name.
+    const parserDomChanged = (ids, mutations = [], names = null) => {
         parserCollectionEpoch++;
         repairDetachedFocus();
         for (const record of mutations) {
@@ -313,7 +316,9 @@
             if (type === 1) maybeUpgradeCustomElement(node, false, true);
         }
         refreshParserEventHandlerAttributes();
-        refreshWindowNamedProperties();
+        if (names && !mutations.some(record => record.removed.length))
+            refreshWindowNamedPropertyValues(names, true);
+        else refreshWindowNamedProperties();
     };
     globalThis.__parserDomChanged = parserDomChanged;
     installEventHandlerAttributes(Document.prototype);

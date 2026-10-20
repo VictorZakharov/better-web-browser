@@ -118,6 +118,31 @@ impl Page {
         invalidation: &RenderInvalidation,
     ) -> StyleRefreshStats {
         self.resource_profile.reset();
+        self.discover_refreshed_resources(viewport_width, viewport_height);
+        let started = self.resource_profile.start();
+        let (styles, style_stats) =
+            self.refresh_style_cache(viewport_width, viewport_height, invalidation, false);
+        self.resource_profile.finish(Phase::Cascade, started);
+        self.finish_refreshed_resources(styles, viewport_width, viewport_height);
+        style_stats
+    }
+
+    /// Discovers resources as a refresh does but leaves the cascade to a later refresh, which
+    /// rebuilds every style because the cached set is marked stale. Style-dependent discovery
+    /// (background images and fonts) waits for that refresh as well.
+    pub fn refresh_resources_deferring_styles(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
+    ) {
+        self.resource_profile.reset();
+        self.discover_refreshed_resources(viewport_width, viewport_height);
+        if let Some(styles) = self.cached_styles.take() {
+            self.previous_styles = Some(styles);
+        }
+    }
+
+    fn discover_refreshed_resources(&mut self, viewport_width: f32, viewport_height: f32) {
         let started = self.resource_profile.start();
         self.base_url = self.document_base_url();
         self.media_environment = self
@@ -150,12 +175,6 @@ impl Page {
         let started = self.resource_profile.start();
         self.discover_stylesheet_dependencies();
         self.resource_profile.finish(Phase::Stylesheets, started);
-        let started = self.resource_profile.start();
-        let (styles, style_stats) =
-            self.refresh_style_cache(viewport_width, viewport_height, invalidation, false);
-        self.resource_profile.finish(Phase::Cascade, started);
-        self.finish_refreshed_resources(styles, viewport_width, viewport_height);
-        style_stats
     }
 
     /// Refreshes only the style cache needed by a synchronous CSSOM View layout flush.
@@ -253,6 +272,15 @@ impl Page {
                 (styles, stats)
             }
             Some((_, _, mut styles)) => {
+                // Stale styles may predate DOM changes that a deferred refresh never saw
+                // (`refresh_resources_deferring_styles`), so they are refreshed throughout.
+                let full;
+                let invalidation = if stale {
+                    full = RenderInvalidation::full(self.dom.document.id());
+                    &full
+                } else {
+                    invalidation
+                };
                 let stats = styles.refresh_rules_after_invalidation(
                     &self.dom,
                     &self.base_url,
