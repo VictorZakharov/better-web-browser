@@ -203,3 +203,36 @@ fn script_preparation_uses_current_base_not_a_later_unparsed_base_element() {
     driver.until_text("second ready");
     driver.session.shutdown().unwrap();
 }
+
+#[test]
+fn parsed_subtrees_reach_the_realm_with_names_handlers_shadow_roots_and_frames() {
+    // The navigation parser hands the realm only the roots it inserted since the last step.
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut driver = Driver::new(
+        r#"<!doctype html><body><script>customElements.define('parsed-card', class extends HTMLElement {
+          connectedCallback() { this.dataset.ready = 'yes'; } });</script>
+        <body id=mergedBody>
+        <section><div><p><span id=deep>deep</span></p></div></section>
+        <table><tr><td><parsed-card id=card></parsed-card></td></tr><b id=fostered>f</b></table>
+        <div id=host><template shadowrootmode=open><i id=inner>shadow</i></template></div>
+        <button id=clicker onclick="window.clicked = true">go</button>
+        <iframe name=namedFrame srcdoc="<p>frame</p>"></iframe>
+        <p id=status>waiting</p><script>
+        const checks = {
+          deep: window.deep === document.getElementById('deep'),
+          body: window.mergedBody === document.body,
+          fostered: window.fostered === document.getElementById('fostered'),
+          card: document.getElementById('card').dataset.ready === 'yes',
+          shadow: document.getElementById('host').shadowRoot?.querySelector('#inner')?.textContent === 'shadow',
+          frame: window.namedFrame === document.querySelector('iframe').contentWindow,
+        };
+        document.getElementById('clicker').click();
+        checks.handler = window.clicked === true;
+        const failed = Object.keys(checks).filter(name => !checks[name]);
+        document.getElementById('status').textContent = failed.length ? 'failed:' + failed : 'parsed ok';
+        </script>"#,
+    );
+    let painted = driver.until_text("parsed ok");
+    assert!(!painted_text(&painted).contains("failed"));
+    driver.session.shutdown().unwrap();
+}

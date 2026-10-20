@@ -118,6 +118,7 @@ impl ScriptRuntime {
     pub(crate) fn parser_dom_changed(
         &mut self,
         records: Vec<crate::engine::dom::document::parser_mutations::ParserMutation>,
+        registration_roots: Option<Vec<crate::engine::dom::NodeRef>>,
     ) -> ScriptOutcome {
         let (ids, records) = {
             let mut host = self.host.borrow_mut();
@@ -125,7 +126,7 @@ impl ScriptRuntime {
             // Parser mutations bypass JS mutation recording. Invalidate the independent CSSOM
             // and synchronous-layout caches before constructors or the next script can query
             // newly inserted nodes/sheets; presentation invalidation alone arrives too late.
-            let changes = host.register_parser_changes();
+            let changes = host.register_parser_changes(registration_roots.as_deref());
             let records = super::super::parser_writes::parser_mutation_records(&mut host, records);
             (changes, records)
         };
