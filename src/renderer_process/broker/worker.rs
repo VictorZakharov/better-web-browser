@@ -83,6 +83,7 @@ pub(super) struct BrokerResources {
     pub(super) state_updates: super::state_updates::Receiver,
     pub(super) lifecycle: mpsc::Receiver<LifecycleCommand>,
     pub(super) fetch_stream: mpsc::Receiver<FetchStreamEvent>,
+    pub(super) stylesheet_stream: mpsc::Receiver<FetchStreamEvent>,
     pub(super) database_events: mpsc::Receiver<crate::renderer_protocol::DatabaseEvent>,
     pub(super) database_queued_bytes: Arc<std::sync::atomic::AtomicUsize>,
     pub(super) database_overflow: Arc<std::sync::atomic::AtomicBool>,
@@ -136,8 +137,9 @@ struct Broker {
     outgoing_fetch: HashMap<u64, stream::OutgoingFetch>,
     fetch_response_streaming: HashMap<u64, bool>,
     outgoing_state_update: Option<OutgoingStateUpdate>,
-    /// Whether a Fetch stream message goes before the next document chunk; see `process_streams`.
-    fetch_turn: bool,
+    /// How many Fetch stream messages still go before the next document chunk; see
+    /// `process_streams`.
+    fetch_turn: u8,
 }
 
 impl Broker {
@@ -164,7 +166,7 @@ impl Broker {
             outgoing_fetch: HashMap::new(),
             fetch_response_streaming: HashMap::new(),
             outgoing_state_update: None,
-            fetch_turn: true,
+            fetch_turn: navigation::FETCH_EVENTS_PER_DOCUMENT_CHUNK,
         }
     }
 

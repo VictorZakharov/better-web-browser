@@ -5,7 +5,7 @@ use crate::limits::{
     MAX_FETCH_STREAM_CHUNK_BYTES, MAX_RENDERER_FETCH_STREAM_BYTES, MAX_RESPONSE_BODY_BYTES,
 };
 use crate::renderer_protocol::FetchResponseResult;
-use crate::renderer_protocol::RendererFetchRequest;
+use crate::renderer_protocol::{RendererFetchRequest, ResourceDestination};
 
 pub(super) struct OutgoingFetch {
     offset: usize,
@@ -268,6 +268,11 @@ impl Broker {
                     request.head.initiator.streams_response(),
                 )
                 .map_err(|_| ProtocolError::InvalidPayload("duplicate Fetch flow identity"))?;
+            if request.head.destination == ResourceDestination::Style {
+                self.resources()
+                    .fetch_flow
+                    .mark_stylesheet(request.head.document, request.head.request_id);
+            }
             if self
                 .fetch_response_streaming
                 .insert(
@@ -289,11 +294,18 @@ impl Broker {
             if !self.writer().has_background_command_capacity() {
                 break;
             }
-            let event = match self.resources().fetch_stream.try_recv() {
-                Ok(event) => event,
-                Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
+            // Stylesheet responses go first and do not use up the turn; see `process_streams`.
+            let resources = self.resources();
+            let (event, stylesheet) = match resources.stylesheet_stream.try_recv() {
+                Ok(event) => (event, true),
+                Err(_) => match resources.fetch_stream.try_recv() {
+                    Ok(event) => (event, false),
+                    Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
+                },
             };
-            self.fetch_turn = false;
+            if !stylesheet {
+                self.fetch_turn = self.fetch_turn.saturating_sub(1);
+            }
             if let Err(error) = self.process_fetch_stream_event(event) {
                 self.protocol_failure(error);
                 break;

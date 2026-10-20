@@ -19,6 +19,8 @@ struct State {
 
 struct Credit {
     limited: bool,
+    /// Stylesheet responses travel in their own lane; see `FetchResponseSink::send`.
+    stylesheet: bool,
     reserved: u32,
     consumed: u32,
 }
@@ -41,11 +43,27 @@ impl FetchFlow {
             (document, id),
             Credit {
                 limited,
+                stylesheet: false,
                 reserved: 0,
                 consumed: 0,
             },
         );
         Ok(())
+    }
+
+    pub(super) fn mark_stylesheet(&self, document: DocumentId, id: u64) {
+        if let Some(credit) = self.state.lock().unwrap().requests.get_mut(&(document, id)) {
+            credit.stylesheet = true;
+        }
+    }
+
+    pub(super) fn is_stylesheet(&self, document: DocumentId, id: u64) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .requests
+            .get(&(document, id))
+            .is_some_and(|credit| credit.stylesheet)
     }
 
     pub(super) fn reserve(

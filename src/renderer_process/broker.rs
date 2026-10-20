@@ -60,6 +60,7 @@ pub struct RendererSession {
     state_updates: state_updates::Sender,
     lifecycle: mpsc::Sender<worker::LifecycleCommand>,
     fetch_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
+    stylesheet_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
     database_events: mpsc::SyncSender<crate::renderer_protocol::DatabaseEvent>,
     database_queued_bytes: Arc<std::sync::atomic::AtomicUsize>,
     database_overflow: Arc<std::sync::atomic::AtomicBool>,
@@ -189,6 +190,9 @@ impl RendererSession {
         let (lifecycle_tx, lifecycle_rx) = mpsc::channel();
         let (fetch_stream_tx, fetch_stream_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS);
+        // Render-blocking stylesheets cannot wait for slots behind image and script responses.
+        let (stylesheet_stream_tx, stylesheet_stream_rx) =
+            mpsc::sync_channel(crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS);
         // Required database replies cannot wait behind Fetch body chunks.
         let (database_events_tx, database_events_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS);
@@ -255,6 +259,7 @@ impl RendererSession {
                     state_updates: state_updates_rx,
                     lifecycle: lifecycle_rx,
                     fetch_stream: fetch_stream_rx,
+                    stylesheet_stream: stylesheet_stream_rx,
                     database_events: database_events_rx,
                     database_queued_bytes: worker_database_queued_bytes,
                     database_overflow: worker_database_overflow,
@@ -292,6 +297,7 @@ impl RendererSession {
             state_updates: state_updates_tx,
             lifecycle: lifecycle_tx,
             fetch_stream: fetch_stream_tx,
+            stylesheet_stream: stylesheet_stream_tx,
             database_events: database_events_tx,
             database_queued_bytes,
             database_overflow,
