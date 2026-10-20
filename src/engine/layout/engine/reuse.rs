@@ -49,8 +49,9 @@ pub(crate) struct LayoutReuse {
     pub(super) probes: HashMap<MeasureKey, probe_cache::ProbeEntry>,
     pub(super) subtrees: HashMap<subtree_replay::SubtreeKey, subtree_replay::SubtreeEntry>,
     pub(super) used: HashSet<NodeId>,
-    /// The pass in which each subtree key was last laid out; see `subtree_replay`.
-    pub(super) sighted: HashMap<subtree_replay::SubtreeKey, u64>,
+    /// The first and the last pass in which each node was laid out as a subtree root; see
+    /// `subtree_replay`. Unlike results, this survives an environment change.
+    pub(super) sighted: HashMap<NodeId, (u64, u64)>,
     pub(super) pass: u64,
 }
 
@@ -60,7 +61,6 @@ impl LayoutReuse {
         if self.environment != environment {
             self.probes.clear();
             self.subtrees.clear();
-            self.sighted.clear();
             self.environment = environment;
         }
         self.used.clear();
@@ -73,7 +73,7 @@ impl LayoutReuse {
         self.probes.retain(|key, _| used.contains(&key.node()));
         self.subtrees.retain(|key, _| used.contains(&key.node));
         let pass = self.pass;
-        self.sighted.retain(|_, sighted| *sighted == pass);
+        self.sighted.retain(|_, (_, last)| *last == pass);
     }
 
     pub(super) fn keep(&mut self, node: NodeId) {

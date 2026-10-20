@@ -16,8 +16,11 @@
 // its own copy of what it emitted, captured as soon as its layout finishes and before any
 // ancestor moves it, so a nested subtree can still be replayed after an enclosing one changes.
 // Entries are bounded by size so that very large containers recompute while their children
-// replay. A subtree is retained only when a later pass lays it out again with the same
-// arguments, so a document's first layout does not pay for copying what it emits.
+// replay. A subtree is retained only when its root was laid out in an earlier pass too, so a
+// document's first layout, and new content, do not pay for copying what they emit. That holds
+// across a change of arguments or environment: after a scrollbar narrows the viewport, which
+// invalidates every result, the next pass at the new width replays instead of laying out the
+// whole document a second time.
 use super::layout_reads::LayoutReads;
 use super::reuse::{Inputs, LayoutReuse};
 use super::*;
@@ -93,11 +96,12 @@ impl LayoutReuse {
         self.subtrees.get(key)
     }
 
-    /// Whether a layout of `key` should be retained: it was laid out in an earlier pass too.
+    /// Whether a layout of `key` should be retained: its root was laid out in an earlier pass.
     fn seen_before(&mut self, key: SubtreeKey) -> bool {
         let pass = self.pass;
-        let earlier = self.sighted.insert(key, pass);
-        self.subtrees.contains_key(&key) || earlier.is_some_and(|sighted| sighted < pass)
+        let (first, last) = self.sighted.entry(key.node).or_insert((pass, pass));
+        *last = pass;
+        self.subtrees.contains_key(&key) || *first < pass
     }
 }
 
