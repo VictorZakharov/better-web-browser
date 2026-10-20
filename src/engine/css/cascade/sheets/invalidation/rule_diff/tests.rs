@@ -73,6 +73,12 @@ fn an_added_sheet_restyles_its_rule_subjects_and_their_subtrees() {
         "main > .z:hover{color:red}",
         ".y:has(span){color:red}",
         "[class=y]{color:red}",
+        ":is(.y, .z){color:red}",
+        ":where(#target, aside p){color:red}",
+        // Keyless subjects restyle the subtrees of their nearest keyed ancestor.
+        "main :not(.z){color:red}",
+        ".y > :not(b){color:red}",
+        "aside *::before{content:'x'}",
     ] {
         let (stats, total) = refresh(&[".z{color:blue}"], append_sheet(css));
         assert!(!stats.full_rebuild, "{css}");
@@ -102,12 +108,15 @@ fn removing_or_editing_a_sheet_restyles_previous_and_new_subjects() {
 }
 
 #[test]
-fn keyless_subjects_layer_order_keyframes_and_sheet_order_rebuild_the_document() {
+fn keyless_subjects_layer_order_and_sheet_order_rebuild_the_document() {
     for css in [
         "*{color:red}",
-        ":is(.y, .z){color:red}",
+        ":not(.y){color:red}",
+        ":is(.y, *){color:red}",
+        // A sibling's subject is outside the keyed element's subtree.
+        ".y + :not(b){color:red}",
+        ".y ~ *{color:red}",
         ":root{--x:1}",
-        "@keyframes spin{to{opacity:0}}",
     ] {
         let (stats, _) = refresh(
             &["@layer first{.y{color:blue}} @layer second{.y{color:green}}"],
@@ -136,4 +145,62 @@ fn keyless_subjects_layer_order_keyframes_and_sheet_order_rebuild_the_document()
         head
     });
     assert!(stats.full_rebuild);
+}
+
+#[test]
+fn added_keyframes_restyle_only_the_subjects_of_added_rules() {
+    // Wikipedia's late module styles define keyframes; each used to restyle the whole document.
+    let (stats, total) = refresh(
+        &[".z{color:blue}"],
+        append_sheet("@keyframes spin{to{opacity:0}} .y{animation-name:spin}"),
+    );
+    assert!(!stats.full_rebuild);
+    assert!(stats.recomputed_styles < total, "{stats:?}");
+    let (stats, total) = refresh(
+        &[".z{color:blue}"],
+        append_sheet("@keyframes spin{to{opacity:0}}"),
+    );
+    assert!(!stats.full_rebuild);
+    assert!(stats.recomputed_styles < total, "{stats:?}");
+}
+
+#[test]
+fn animation_discovery_finds_keyframes_added_without_a_full_rebuild() {
+    let dom = dom::parse(&format!(
+        "<head><style>.y{{animation-name:spin}}</style><style></style></head><body>{BODY}</body>"
+    ));
+    let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
+    let target = dom.elements_named("p").next().unwrap();
+    assert!(styles.animation_keyframes(&target, "spin").is_none());
+    let head = append_sheet("@keyframes spin{to{opacity:0}}")(&dom);
+    let stats = styles.refresh_rules_after_invalidation(
+        &dom,
+        "",
+        &[],
+        environment(),
+        &RenderInvalidation {
+            roots: vec![head.id()],
+            impact: crate::engine::invalidation::MutationKind::ChildList.impact(),
+            mutation_count: 1,
+            rebuild_style_rules: true,
+            ..Default::default()
+        },
+    );
+    assert!(!stats.full_rebuild);
+    assert!(styles.animation_keyframes(&target, "spin").is_some());
+}
+
+#[test]
+fn subjects_restyle_their_subtrees_only_when_their_own_style_changes() {
+    // An added rule that does not apply yet (`:hover`) leaves the subject's style and its
+    // subtree alone; one that applies restyles the subtree for inheritance.
+    let (unchanged, _) = refresh(&[".z{color:blue}"], append_sheet("main:hover{color:red}"));
+    let (changed, _) = refresh(&[".z{color:blue}"], append_sheet("main{color:red}"));
+    assert!(!unchanged.full_rebuild && !changed.full_rebuild);
+    assert!(
+        unchanged.recomputed_styles < changed.recomputed_styles,
+        "{} vs {}",
+        unchanged.recomputed_styles,
+        changed.recomputed_styles
+    );
 }

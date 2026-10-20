@@ -7,25 +7,60 @@
 use super::*;
 
 impl StyleSet {
-    pub(super) fn refresh_element_roots(
+    /// Recomputes `subtrees` whole and `elements` with an early cutoff, top-down, so that a
+    /// node inside a subtree already recomputed in this pass (a subtree root, or an element
+    /// root whose style changed) is not recomputed again.
+    pub(super) fn refresh_roots(
         &mut self,
+        subtrees: &[NodeRef],
         elements: &[NodeRef],
-        subtree_roots: &[NodeRef],
         stats: &mut StyleRefreshStats,
     ) {
-        let covered = subtree_roots.iter().map(node_id).collect::<HashSet<_>>();
-        for node in elements {
-            let inside_subtree_root =
-                std::iter::successors(Some(node.clone()), |node| node.shadow_including_parent())
-                    .any(|ancestor| covered.contains(&node_id(&ancestor)));
-            if inside_subtree_root || self.has_deferred_ancestor(node) {
+        let mut roots = subtrees
+            .iter()
+            .map(|node| (node, true))
+            .chain(elements.iter().map(|node| (node, false)))
+            .map(|(node, subtree)| {
+                let ancestors = std::iter::successors(Some(node.clone()), |node| {
+                    node.shadow_including_parent()
+                })
+                .map(|ancestor| node_id(&ancestor))
+                .collect::<Vec<_>>();
+                (ancestors, !subtree, node)
+            })
+            .collect::<Vec<_>>();
+        // Ancestors first; at equal depth a subtree root goes before an element root.
+        roots.sort_by_key(|(ancestors, element, _)| (ancestors.len(), *element));
+        let mut covered = HashSet::new();
+        for (ancestors, element, node) in roots {
+            if ancestors.iter().any(|ancestor| covered.contains(ancestor)) {
                 continue;
             }
-            self.recompute_element_with_cutoff(node, stats);
+            if self.has_deferred_ancestor(node) {
+                if !element {
+                    stats.removed_styles += self.forget_deferred_styles(node, true);
+                }
+                continue;
+            }
+            if element {
+                if self.recompute_element_with_cutoff(node, stats) {
+                    covered.insert(node_id(node));
+                }
+            } else {
+                let parent_style = Node::composed_parent(node)
+                    .and_then(|parent| self.styles.get(&node_id(&parent)).cloned());
+                self.recompute_subtree(node, parent_style.as_ref(), stats);
+                covered.insert(node_id(node));
+            }
         }
     }
 
-    fn recompute_element_with_cutoff(&mut self, node: &NodeRef, stats: &mut StyleRefreshStats) {
+    /// Returns whether the element's style changed, in which case its subtree was recomputed.
+    fn recompute_element_with_cutoff(
+        &mut self,
+        node: &NodeRef,
+        stats: &mut StyleRefreshStats,
+    ) -> bool {
         let id = node_id(node);
         let parent_style = Node::composed_parent(node)
             .and_then(|parent| self.styles.get(&node_id(&parent)).cloned());
@@ -34,7 +69,7 @@ impl StyleSet {
         stats.element_style_time += started.elapsed();
         if self.styles.get(&id) != Some(&style) {
             self.recompute_subtree(node, parent_style.as_ref(), stats);
-            return;
+            return true;
         }
         stats.invalidated_nodes += 1;
         stats.recomputed_styles += 1;
@@ -48,5 +83,6 @@ impl StyleSet {
         if pseudo_changes.paint_changed {
             stats.first_changed_node.get_or_insert(node.id());
         }
+        false
     }
 }

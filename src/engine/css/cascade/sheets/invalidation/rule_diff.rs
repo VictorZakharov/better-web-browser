@@ -3,10 +3,12 @@
 // A rule can only change the computed style of elements its rightmost compound can match (and,
 // through inheritance and generated content, their subtrees). When two compiled rule sets share
 // every other rule's parsed payload, cascade layer and relative order, the matched rules of an
-// element that no changed rule can target are identical, so its computed style is too. Changes
-// to keyframes, font faces, the media environment, or cross-tree and scoped rules keep the
-// whole-document rebuild. This mirrors stylesheet invalidation in engines that compute rule-set
-// diffs instead of restyling the document for every inserted or removed sheet.
+// element that no changed rule can target are identical, so its computed style is too. Computed
+// styles name animations but do not contain their keyframes, which animation discovery looks up
+// in the new rule set, so `@keyframes` changes alone restyle nothing. Changes to font faces, the
+// media environment, or cross-tree and scoped rules keep the whole-document rebuild. This
+// mirrors stylesheet invalidation in engines that compute rule-set diffs instead of restyling
+// the document for every inserted or removed sheet.
 // https://drafts.csswg.org/cssom/#add-a-css-style-sheet
 use super::*;
 use std::collections::{HashMap, HashSet};
@@ -14,36 +16,16 @@ use std::collections::{HashMap, HashSet};
 #[cfg(test)]
 mod tests;
 
-/// Keys an element must carry to be a subject of at least one changed rule.
+/// Keys of one kind of affected element.
 #[derive(Default)]
-struct SubjectKeys {
+struct KeySet {
     ids: HashSet<String>,
     classes: HashSet<String>,
     tags: HashSet<String>,
     attributes: HashSet<String>,
 }
 
-impl SubjectKeys {
-    /// Adds the rule's least selective positive key, or fails for a keyless subject.
-    fn include(&mut self, rule: &Rule) -> Option<()> {
-        let subject = rule.selector.compounds.last()?;
-        // ASCII case-insensitive keys are a superset of both standards and quirks matching.
-        if let Some(id) = &subject.id {
-            self.ids.insert(id.to_ascii_lowercase());
-        } else if let Some(class) = subject.classes.first() {
-            self.classes.insert(class.to_ascii_lowercase());
-        } else if let Some(tag) = &subject.tag {
-            self.tags.insert(tag.to_ascii_lowercase());
-        } else if let Some(attribute) = subject.attributes.first() {
-            self.attributes.insert(attribute.name.to_ascii_lowercase());
-        } else if subject.requires_link {
-            self.tags.insert("a".into());
-        } else {
-            return None;
-        }
-        Some(())
-    }
-
+impl KeySet {
     fn may_match(&self, node: &NodeRef) -> bool {
         let Some(element) = node.element() else {
             return false;
@@ -67,9 +49,79 @@ impl SubjectKeys {
     }
 }
 
+/// Keys of the elements whose style a changed rule may change: its subjects themselves, or,
+/// for a subject without a key, ancestors whose subtrees contain every possible subject.
+#[derive(Default)]
+struct SubjectKeys {
+    subjects: KeySet,
+    ancestors: KeySet,
+}
+
+impl SubjectKeys {
+    fn include(&mut self, rule: &Rule) -> Option<()> {
+        self.include_selector(&rule.selector, true)
+    }
+
+    /// The subject compound's own key, or else the nearest compound to its left that has
+    /// one when only descendant and child combinators separate them: every subject then lies
+    /// in the subtree of an element carrying that key, and that subtree is restyled whole.
+    fn include_selector(&mut self, selector: &Selector, subject: bool) -> Option<()> {
+        let last = selector.compounds.len().checked_sub(1)?;
+        for index in (0..=last).rev() {
+            if self
+                .include_compound(&selector.compounds[index], subject && index == last)
+                .is_some()
+            {
+                return Some(());
+            }
+            let combinator = selector.combinators.get(index.checked_sub(1)?)?;
+            if !matches!(combinator, Combinator::Descendant | Combinator::Child) {
+                return None;
+            }
+        }
+        None
+    }
+
+    /// Adds the compound's least selective positive key, or fails for a keyless compound.
+    fn include_compound(&mut self, compound: &CompoundSelector, subject: bool) -> Option<()> {
+        let keys = if subject {
+            &mut self.subjects
+        } else {
+            &mut self.ancestors
+        };
+        // ASCII case-insensitive keys are a superset of both standards and quirks matching.
+        if let Some(id) = &compound.id {
+            keys.ids.insert(id.to_ascii_lowercase());
+        } else if let Some(class) = compound.classes.first() {
+            keys.classes.insert(class.to_ascii_lowercase());
+        } else if let Some(tag) = &compound.tag {
+            keys.tags.insert(tag.to_ascii_lowercase());
+        } else if let Some(attribute) = compound.attributes.first() {
+            keys.attributes.insert(attribute.name.to_ascii_lowercase());
+        } else if compound.requires_link {
+            keys.tags.insert("a".into());
+        } else {
+            // `:is()` and `:where()` match what one of their arguments matches.
+            let alternatives = compound.functional.iter().find(|functional| {
+                matches!(
+                    functional.kind,
+                    FunctionalSelectorKind::Is | FunctionalSelectorKind::Where
+                )
+            })?;
+            for alternative in &alternatives.selectors {
+                self.include_selector(alternative, subject)?;
+            }
+        }
+        Some(())
+    }
+}
+
 pub(super) struct RuleDiff {
-    /// Elements whose computed style can differ between the two rule sets.
+    /// Elements a changed rule may match. Only their own style (with generated content) can
+    /// change, and their subtrees through inheritance, so they restyle with an early cutoff.
     pub(super) subjects: Vec<NodeRef>,
+    /// Elements whose whole subtrees a changed rule with a keyless subject may match.
+    pub(super) subtrees: Vec<NodeRef>,
     /// A changed rule contains `:has()`, so remembered anchor results no longer line up.
     pub(super) relational: bool,
 }
@@ -84,7 +136,6 @@ pub(super) fn changed_rule_subjects(
     if old.environment != new.environment
         || old.cross_tree_or_scoped
         || new.cross_tree_or_scoped
-        || old.keyframes != new.keyframes
         || old.font_faces != new.font_faces
     {
         return None;
@@ -118,10 +169,17 @@ pub(super) fn changed_rule_subjects(
         keys.include(rule)?;
         relational |= super::has_anchors::HasAnchors::is_relational(&rule.selector);
     }
+    let (mut subjects, mut subtrees) = (Vec::new(), Vec::new());
+    for node in Node::composed_descendants(document) {
+        if keys.ancestors.may_match(&node) {
+            subtrees.push(node);
+        } else if keys.subjects.may_match(&node) {
+            subjects.push(node);
+        }
+    }
     Some(RuleDiff {
-        subjects: Node::composed_descendants(document)
-            .filter(|node| keys.may_match(node))
-            .collect(),
+        subjects,
+        subtrees,
         relational,
     })
 }

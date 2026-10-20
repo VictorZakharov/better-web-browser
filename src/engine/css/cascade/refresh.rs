@@ -8,6 +8,8 @@ mod deferred_paint_tests;
 #[cfg(test)]
 mod effect_roots_tests;
 mod element_roots;
+#[cfg(test)]
+mod element_roots_tests;
 
 impl StyleSet {
     pub(crate) fn refresh_subtrees(
@@ -77,16 +79,7 @@ impl StyleSet {
             opacity_only: true,
             ..StyleRefreshStats::default()
         };
-        for root in &roots {
-            if self.has_deferred_ancestor(root) {
-                stats.removed_styles += self.forget_deferred_styles(root, true);
-                continue;
-            }
-            let parent_style = Node::composed_parent(root)
-                .and_then(|parent| self.styles.get(&node_id(&parent)).cloned());
-            self.recompute_subtree(root, parent_style.as_ref(), &mut stats);
-        }
-        self.refresh_element_roots(element_roots, &roots, &mut stats);
+        self.refresh_roots(&roots, element_roots, &mut stats);
 
         // A node may be removed and reinserted before the rendering checkpoint. Its identifier
         // remains in the removal log, but its newly recomputed style must remain available. Sweep
