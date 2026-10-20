@@ -4,6 +4,7 @@ use super::*;
 use crate::engine::dom::incremental::{HtmlParser, ParserStep};
 use crate::engine::page::PageScript;
 mod elements;
+mod registration;
 
 pub(crate) type PrepareWrittenScript =
     Rc<RefCell<dyn FnMut(NodeRef, usize, &[NodeRef]) -> (Option<PageScript>, bool)>>;
@@ -267,95 +268,6 @@ fn prepare_written_import_map(host: &mut HostState, node: &NodeRef) -> JsValue {
 
 fn limit_error(message: String) -> JsError {
     JsNativeError::range().with_message(message).into()
-}
-
-/// Elements the parser created since the last registration, for the realm's parser hook.
-pub(super) struct ParserChanges {
-    /// Comma-separated IDs of the new elements whose wrappers must exist now: elements with
-    /// event handler content attributes, iframes, shadow hosts and possible custom elements.
-    /// Other wrappers are created on first use, as for any node.
-    pub(super) ids: String,
-    /// Window named-property names (`named_values`) of the new elements in the realm's document
-    /// and of its <html> and <body>, whose attributes the parser can merge.
-    pub(super) names: JsValue,
-}
-
-impl HostState {
-    pub(super) fn register_parser_changes(&mut self) -> ParserChanges {
-        let document = self.document.clone();
-        self.register_parser_changes_in(&document)
-    }
-
-    pub(super) fn register_parser_changes_in(&mut self, document: &NodeRef) -> ParserChanges {
-        self.computed_styles = None;
-        self.offset_parent_styles = None;
-        self.layout_geometry_initialized = false;
-        self.pending_layout_invalidation
-            .record(document, Some(document), MutationKind::Stylesheet);
-        let new_elements = Node::shadow_including_descendants(document)
-            .filter(|node| {
-                node.element().is_some()
-                    && (!self.node_ids.contains_key(&node.id())
-                        || node
-                            .shadow_root()
-                            .is_some_and(|root| !self.node_ids.contains_key(&root.id())))
-            })
-            .collect::<Vec<_>>();
-        self.register_subtree(document);
-        let mut names = Vec::new();
-        if document.id() == self.document.id() {
-            let child_element = |parent: &NodeRef, tag: Option<&str>| {
-                parent
-                    .children
-                    .borrow()
-                    .iter()
-                    .find(|child| {
-                        child.element().is_some()
-                            && tag.is_none_or(|tag| child.tag_name() == Some(tag))
-                    })
-                    .cloned()
-            };
-            let root = child_element(&self.document, None);
-            let body = root
-                .as_ref()
-                .and_then(|root| child_element(root, Some("body")));
-            for node in new_elements.iter().chain(root.iter()).chain(body.iter()) {
-                if Node::tree_root(node).id() == self.document.id() {
-                    names.extend(
-                        super::dom_host::named_values(node)
-                            .into_iter()
-                            .map(JsValue::from),
-                    );
-                }
-            }
-        }
-        let ids = new_elements
-            .iter()
-            .filter(|node| needs_parser_wrapper(node))
-            .map(|node| self.id_for(node).to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        ParserChanges {
-            ids,
-            names: JsValue::Array(names),
-        }
-    }
-}
-
-/// Whether the parser hook must wrap `element` as soon as it is parsed: wrapping activates
-/// event handler content attributes, and the hook upgrades custom elements (whose names
-/// contain a hyphen), exposes iframe windows and registers shadow roots for traversal.
-fn needs_parser_wrapper(element: &NodeRef) -> bool {
-    element.shadow_root().is_some()
-        || element
-            .tag_name()
-            .is_some_and(|name| name == "iframe" || name.contains('-'))
-        || element.element().is_some_and(|data| {
-            data.attrs.borrow().iter().any(|attribute| {
-                attribute.name.ns.as_ref().is_empty()
-                    && attribute.name.local.as_ref().starts_with("on")
-            })
-        })
 }
 
 pub(super) fn parser_mutation_records(

@@ -244,3 +244,41 @@ fn resolve_replaced_css_length(
         .filter(|value| value.is_finite())
         .map(|value| value.max(0.0))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::page::Page;
+
+    fn ignores(markup: &str) -> bool {
+        let page = Page::parse(&format!("<body>{markup}</body>"), "https://example.test/");
+        let image = page.dom.elements_named("img").next().expect("img");
+        replaced_size_ignores_natural_size(page.style(800.0).get(&image))
+    }
+
+    #[test]
+    fn only_definite_fill_sizes_ignore_the_natural_size() {
+        for markup in [
+            "<img width=40 height=30>",
+            "<img style='width:2em;height:10px'>",
+            "<img width=40 style='height:3rem'>",
+            "<img style='width:10vw;height:5vh;object-fit:fill'>",
+            "<img width=40 height=30 style='max-width:10px'>",
+        ] {
+            assert!(ignores(markup), "{markup}");
+        }
+        for markup in [
+            "<img>",
+            "<img width=40>",
+            "<img width=40 height=30 style='height:auto'>",
+            "<img style='width:50%;height:20px'>",
+            "<img style='width:calc(10% + 4px);height:20px'>",
+            "<img width=40 height=30 style='object-fit:contain'>",
+            "<img width=40 height=30 style='object-fit:cover'>",
+            "<img width=40 height=30 style='object-fit:none'>",
+            "<img width=40 height=30 style='object-fit:scale-down'>",
+        ] {
+            assert!(!ignores(markup), "{markup}");
+        }
+    }
+}

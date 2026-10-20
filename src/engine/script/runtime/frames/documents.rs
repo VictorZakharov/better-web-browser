@@ -57,7 +57,7 @@ impl FrameDocument {
         let version = parser.dom().document.subtree_mutation_version();
         let changed = version != self.last_layout_version;
         self.last_layout_version = version;
-        let mut outcome = runtime.parser_dom_changed(mutations);
+        let mut outcome = runtime.parser_dom_changed(mutations, None);
         // The parent owns the frame paint list. Parser mutations bypass normal JS
         // mutation recording, so explicitly recompose it as a child stream advances.
         if changed {

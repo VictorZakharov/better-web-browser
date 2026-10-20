@@ -78,6 +78,7 @@ impl DocumentRuntime {
             if dom_changed {
                 self.page.discover_parsed_resources();
                 self.record_parser_stylesheets(&previous_links);
+                let registration_roots = self.page.dom.take_parser_registration_roots();
                 if let Some(runtime) = self.script_runtime.as_mut() {
                     runtime.set_quirks_mode(
                         self.page.dom.quirks_mode.get()
@@ -85,7 +86,10 @@ impl DocumentRuntime {
                     );
                     merge_outcome(
                         outcome,
-                        runtime.parser_dom_changed(self.page.dom.take_parser_mutations()),
+                        runtime.parser_dom_changed(
+                            self.page.dom.take_parser_mutations(),
+                            registration_roots,
+                        ),
                         self.page.dom.document.id(),
                     );
                 }
