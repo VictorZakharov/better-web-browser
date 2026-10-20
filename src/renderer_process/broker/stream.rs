@@ -28,6 +28,7 @@ pub(super) const MAX_QUEUED_DATABASE_RESPONSE_BYTES: usize =
 pub struct FetchResponseSink {
     document: DocumentId,
     sender: mpsc::SyncSender<FetchStreamEvent>,
+    stylesheets: mpsc::SyncSender<FetchStreamEvent>,
     wake: super::wake::BrokerWake,
     flow: Arc<super::flow::FetchFlow>,
 }
@@ -86,6 +87,19 @@ pub(super) enum FetchStreamEvent {
     WebSocket(WebSocketEvent),
     Speech(SpeechUpdate),
     Notification(NotificationUpdate),
+}
+
+impl FetchStreamEvent {
+    /// The renderer Fetch request this event belongs to, if any.
+    fn request_id(&self) -> Option<u64> {
+        match self {
+            Self::Start { head, .. } => Some(head.request_id),
+            Self::Chunk { chunk, .. } => Some(chunk.transfer_id),
+            Self::End { end, .. } => Some(end.request_id),
+            Self::Abort { abort, .. } => Some(abort.request_id),
+            Self::WebSocket(_) | Self::Speech(_) | Self::Notification(_) => None,
+        }
+    }
 }
 
 impl NotificationUpdateSink {
@@ -209,12 +223,14 @@ impl FetchResponseSink {
     pub(super) fn new(
         document: DocumentId,
         sender: mpsc::SyncSender<FetchStreamEvent>,
+        stylesheets: mpsc::SyncSender<FetchStreamEvent>,
         wake: super::wake::BrokerWake,
         flow: Arc<super::flow::FetchFlow>,
     ) -> Self {
         Self {
             document,
             sender,
+            stylesheets,
             wake,
             flow,
         }
@@ -289,10 +305,22 @@ impl FetchResponseSink {
         })
     }
 
+    /// Stylesheet responses use their own bounded lane, which the broker drains first: the
+    /// network delivers responses in parallel, but a render-blocking stylesheet waiting for a
+    /// slot behind dozens of image responses keeps the page blank while the renderer handles
+    /// them. Browsers likewise load stylesheets at the highest priority. A response always uses
+    /// one lane, so its own events stay in order.
     fn send(&self, event: FetchStreamEvent) -> Result<(), String> {
+        let stylesheet = event
+            .request_id()
+            .is_some_and(|id| self.flow.is_stylesheet(self.document, id));
+        let sender = if stylesheet {
+            &self.stylesheets
+        } else {
+            &self.sender
+        };
         self.wake.notify();
-        let result = self
-            .sender
+        let result = sender
             .send(event)
             .map_err(|_| "renderer Fetch stream is no longer available".to_string());
         self.wake.notify();
@@ -326,6 +354,49 @@ mod tests {
     }
 
     #[test]
+    fn stylesheet_responses_do_not_wait_behind_a_full_stream_queue() {
+        let document = DocumentId::new(1).unwrap();
+        let (sender, receiver) = mpsc::sync_channel(MAX_QUEUED_FETCH_STREAM_CHUNKS);
+        let (stylesheets, stylesheet_receiver) = mpsc::sync_channel(MAX_QUEUED_FETCH_STREAM_CHUNKS);
+        let flow = Arc::new(super::super::flow::FetchFlow::default());
+        flow.register(document, 1, false).unwrap();
+        flow.register(document, 2, false).unwrap();
+        flow.mark_stylesheet(document, 2);
+        let sink = FetchResponseSink::new(
+            document,
+            sender,
+            stylesheets,
+            super::super::wake::BrokerWake::default(),
+            flow,
+        );
+        for offset in 0..MAX_QUEUED_FETCH_STREAM_CHUNKS {
+            sink.chunk(TransferChunk {
+                transfer_id: 1,
+                offset: offset as u32,
+                bytes: vec![b'x'],
+            })
+            .unwrap();
+        }
+        // The shared queue is full, which would block this thread; the stylesheet goes through.
+        sink.chunk(TransferChunk {
+            transfer_id: 2,
+            offset: 0,
+            bytes: b"p{}".to_vec(),
+        })
+        .unwrap();
+        sink.end(2, 3).unwrap();
+        assert!(matches!(
+            stylesheet_receiver.try_recv(),
+            Ok(FetchStreamEvent::Chunk { chunk, .. }) if chunk.transfer_id == 2
+        ));
+        assert!(matches!(
+            stylesheet_receiver.try_recv(),
+            Ok(FetchStreamEvent::End { end, .. }) if end.request_id == 2
+        ));
+        assert_eq!(receiver.try_iter().count(), MAX_QUEUED_FETCH_STREAM_CHUNKS);
+    }
+
+    #[test]
     fn producer_blocks_when_the_bounded_stream_queue_is_full() {
         let (sender, receiver) = mpsc::sync_channel(MAX_QUEUED_FETCH_STREAM_CHUNKS);
         let flow = Arc::new(super::super::flow::FetchFlow::default());
@@ -334,6 +405,7 @@ mod tests {
         let sink = FetchResponseSink::new(
             DocumentId::new(1).unwrap(),
             sender,
+            mpsc::sync_channel(1).0,
             super::super::wake::BrokerWake::default(),
             flow,
         );

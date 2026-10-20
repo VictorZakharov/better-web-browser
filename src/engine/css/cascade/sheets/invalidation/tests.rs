@@ -37,13 +37,13 @@ fn identical_rule_inputs_refresh_only_dirty_dom_and_keep_generated_content_live(
 #[test]
 fn changed_keyless_rules_widen_a_small_dirty_root_to_the_document() {
     let dom = dom::parse(
-        "<style>:is(p){color:red}</style><section><b>x</b></section><aside><p>affected</p></aside>",
+        "<style>:not(b){color:red}</style><section><b>x</b></section><aside><p>affected</p></aside>",
     );
     let root = dom.elements_named("section").next().unwrap();
     let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
     Node::set_text_content(
         &dom.elements_named("style").next().unwrap(),
-        ":is(p){color:blue}",
+        ":not(b){color:blue}",
     );
     let stats =
         styles.refresh_rules_after_invalidation(&dom, "", &[], environment(), &dirty(&root));
@@ -108,4 +108,34 @@ fn viewport_and_inline_url_base_changes_cannot_take_the_scoped_path() {
             .as_deref(),
         Some("https://example.test/new/image.png")
     );
+}
+
+#[test]
+fn a_rule_change_with_a_body_insertion_restyles_only_the_insertion_and_rule_subjects() {
+    // Wikipedia inserts module styles and body content in the same checkpoint; the body
+    // child-list root used to restyle the whole document.
+    let dom = dom::parse(&format!(
+        "<head><style>.a{{color:red}}</style></head><body>{}</body>",
+        "<p>unaffected</p>".repeat(200)
+    ));
+    let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
+    let style = dom.elements_named("style").next().unwrap();
+    Node::set_text_content(&style, ".a{color:red} .b{color:blue}");
+    let body = dom.elements_named("body").next().unwrap();
+    let inserted = Node::create_element_for(&dom.document, "div");
+    inserted.set_attr("class", "b");
+    Node::append_child(&body, inserted);
+    let invalidation = RenderInvalidation {
+        roots: vec![style.id(), body.id()],
+        child_list_roots: vec![body.id()],
+        impact: crate::engine::invalidation::MutationKind::ChildList.impact(),
+        mutation_count: 2,
+        rebuild_style_rules: true,
+        ..Default::default()
+    };
+    let stats =
+        styles.refresh_rules_after_invalidation(&dom, "", &[], environment(), &invalidation);
+    assert!(!stats.full_rebuild);
+    assert!(stats.recomputed_styles < 20, "{stats:?}");
+    assert_eq!(styles.styles, StyleSet::from_dom(&dom, &[], 800.0).styles);
 }

@@ -191,3 +191,44 @@ fn retains_disjoint_component_roots() {
     expected.sort_unstable();
     assert_eq!(roots, expected);
 }
+
+#[test]
+fn attribute_writes_to_a_probe_removed_in_the_same_task_do_not_root_its_parent() {
+    // jQuery's Sizzle appends a fieldset to <html>, sets `disabled` and removes it again.
+    let dom = dom::parse("<main><b></b></main>");
+    let html = dom.elements_named("html").next().unwrap();
+    let probe = Node::create_element_for(&dom.document, "fieldset");
+    let mut pending = PendingInvalidation::default();
+    Node::append_child(&html, probe.clone());
+    pending.record(&dom.document, Some(&html), MutationKind::ChildList);
+    probe.set_attr("disabled", "");
+    pending.record(
+        &dom.document,
+        Some(&probe),
+        MutationKind::Attribute("disabled"),
+    );
+    Node::remove_from_parent(&probe);
+    pending.record_removed_subtree(&probe);
+    let invalidation = pending.snapshot(3);
+    assert_eq!(invalidation.child_list_roots, vec![html.id()]);
+    // Only the bounded child-list root and the detached probe's own validation root remain.
+    assert!(
+        invalidation
+            .roots
+            .iter()
+            .all(|root| *root == html.id() || *root == probe.id()),
+        "{:?}",
+        invalidation.roots
+    );
+
+    // A target still connected when the invalidation is taken roots its parent as before.
+    let target = dom.elements_named("b").next().unwrap();
+    let parent = dom.elements_named("main").next().unwrap();
+    let mut pending = PendingInvalidation::default();
+    pending.record(
+        &dom.document,
+        Some(&target),
+        MutationKind::Attribute("title"),
+    );
+    assert_eq!(pending.take(1).roots, vec![parent.id()]);
+}

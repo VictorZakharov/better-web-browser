@@ -4,7 +4,7 @@ mod resources;
 mod unchanged;
 use crate::engine::css::Display;
 use crate::engine::dom::Node;
-use crate::engine::invalidation::RenderInvalidation;
+use crate::engine::invalidation::{MAX_DEFERRED_INVALIDATION_ROOTS, RenderInvalidation};
 use profile::Phase;
 use std::collections::HashSet;
 
@@ -128,7 +128,7 @@ impl Page {
     }
 
     /// Discovers resources as a refresh does but leaves the cascade to a later refresh, which
-    /// rebuilds every style because the cached set is marked stale. Style-dependent discovery
+    /// rebuilds every style through a deferred whole-document invalidation. Style-dependent discovery
     /// (background images and fonts) waits for that refresh as well.
     pub fn refresh_resources_deferring_styles(
         &mut self,
@@ -140,6 +140,29 @@ impl Page {
         if let Some(styles) = self.cached_styles.take() {
             self.previous_styles = Some(styles);
         }
+        let root = self.dom.document.id();
+        self.deferred_style_invalidation = Some(RenderInvalidation::full(root));
+    }
+
+    /// Discovers resources as a refresh does but keeps `invalidation` for the next style
+    /// refresh, whichever path performs it, so that a rendering checkpoint can skip its frame
+    /// without making the next frame restyle the whole document.
+    pub fn defer_style_invalidation(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
+        invalidation: &RenderInvalidation,
+    ) {
+        self.resource_profile.reset();
+        self.discover_refreshed_resources(viewport_width, viewport_height);
+        let root = self.dom.document.id();
+        self.deferred_style_invalidation
+            .get_or_insert_with(RenderInvalidation::default)
+            .merge_with_root_limit(invalidation.clone(), root, MAX_DEFERRED_INVALIDATION_ROOTS);
+    }
+
+    pub fn has_deferred_style_invalidation(&self) -> bool {
+        self.deferred_style_invalidation.is_some()
     }
 
     fn discover_refreshed_resources(&mut self, viewport_width: f32, viewport_height: f32) {
@@ -205,6 +228,26 @@ impl Page {
     ) -> (StyleSet, StyleRefreshStats) {
         let viewport_width = viewport_width.max(1.0);
         let viewport_height = viewport_height.max(1.0);
+        // A layout-only flush computes part of each style, so deferred work stays pending for
+        // the next complete refresh as well.
+        let deferred = if layout_only {
+            self.deferred_style_invalidation.clone()
+        } else {
+            self.deferred_style_invalidation.take()
+        };
+        let merged;
+        let invalidation = match deferred {
+            Some(mut deferred) => {
+                deferred.merge_with_root_limit(
+                    invalidation.clone(),
+                    self.dom.document.id(),
+                    MAX_DEFERRED_INVALIDATION_ROOTS,
+                );
+                merged = deferred;
+                &merged
+            }
+            None => invalidation,
+        };
         let mut invalidation_roots = invalidation
             .roots
             .iter()
@@ -272,15 +315,9 @@ impl Page {
                 (styles, stats)
             }
             Some((_, _, mut styles)) => {
-                // Stale styles may predate DOM changes that a deferred refresh never saw
-                // (`refresh_resources_deferring_styles`), so they are refreshed throughout.
-                let full;
-                let invalidation = if stale {
-                    full = RenderInvalidation::full(self.dom.document.id());
-                    &full
-                } else {
-                    invalidation
-                };
+                // Changed rules restyle their subjects (`refresh_rules_after_invalidation`).
+                // DOM changes made while styles were deferred arrive as the deferred
+                // invalidation merged above.
                 let stats = styles.refresh_rules_after_invalidation(
                     &self.dom,
                     &self.base_url,

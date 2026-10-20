@@ -116,7 +116,10 @@ fn replacing_element_children_and_style_text_never_gets_a_text_only_shortcut() {
     );
     let stats = run_with_geometry(&html);
     assert!(stats[1].recomputed_styles > 600);
-    assert!(stats.last().unwrap().recomputed_styles > 600);
+    // Replacing the style text restyles the subjects of the removed and added rules (`body`
+    // and `section`), not just the text node; the script checks the resulting values.
+    let last = stats.last().unwrap();
+    assert!((2..600).contains(&last.recomputed_styles), "{last:?}");
 }
 
 #[test]

@@ -15,6 +15,12 @@ pub(super) struct PendingInvalidation {
     /// Parents whose child lists changed and that no other mutation made a full root. They
     /// never cover other roots: the cascade may restyle only part of their subtrees.
     child_lists: Vec<NodeRef>,
+    /// Targets of attribute writes, whose parents become roots only if the targets are still
+    /// connected when the invalidation is taken. Feature detection (jQuery's Sizzle) appends a
+    /// probe element to `<html>`, sets attributes on it and removes it again within one task;
+    /// its parent root would restyle the whole document for an element that never rendered.
+    /// Its removal is recorded as a child-list change of the parent like any other.
+    attribute_targets: Vec<NodeRef>,
 }
 
 impl PendingInvalidation {
@@ -93,6 +99,11 @@ impl PendingInvalidation {
             // A stylesheet's text replacement keeps the old child-list scope;
             // rebuilding rules already clears local-content evidence above.
             MutationKind::TextChildren if rebuild_rules => target.clone(),
+            MutationKind::Attribute(_) if target.shadow_including_parent().is_some() => {
+                self.extend_attribute_target(document, target);
+                self.extend_validation_dependents(document, target, kind);
+                return;
+            }
             MutationKind::Attribute(_)
             | MutationKind::CharacterData
             | MutationKind::TextChildren
@@ -139,14 +150,9 @@ impl PendingInvalidation {
     }
 
     pub(super) fn extend(&mut self, document: &NodeRef, target: &NodeRef) {
-        if self.roots.iter().any(|root| is_descendant_of(target, root)) {
-            return;
+        if extend_roots(&mut self.roots, &mut self.child_lists, target) {
+            self.limit(document);
         }
-        self.roots.retain(|root| !is_descendant_of(root, target));
-        self.child_lists
-            .retain(|parent| !is_descendant_of(parent, target));
-        self.roots.push(target.clone());
-        self.limit(document);
     }
 
     /// Records that `parent`'s children changed, unless a full root already restyles it.
@@ -163,12 +169,30 @@ impl PendingInvalidation {
         self.limit(document);
     }
 
+    fn extend_attribute_target(&mut self, document: &NodeRef, target: &NodeRef) {
+        let parent = target.shadow_including_parent();
+        if parent.is_some_and(|parent| {
+            self.roots
+                .iter()
+                .any(|root| is_descendant_of(&parent, root))
+        }) || self
+            .attribute_targets
+            .iter()
+            .any(|known| known.id() == target.id())
+        {
+            return;
+        }
+        self.attribute_targets.push(target.clone());
+        self.limit(document);
+    }
+
     fn limit(&mut self, document: &NodeRef) {
-        if self.roots.len() + self.child_lists.len()
+        if self.roots.len() + self.child_lists.len() + self.attribute_targets.len()
             > crate::engine::invalidation::MAX_INVALIDATION_ROOTS
         {
             self.roots.clear();
             self.child_lists.clear();
+            self.attribute_targets.clear();
             self.roots.push(document.clone());
         }
     }
@@ -194,11 +218,20 @@ impl PendingInvalidation {
     }
 
     pub(super) fn snapshot(&self, mutation_count: usize) -> RenderInvalidation {
+        let (mut roots, mut child_lists) = (self.roots.clone(), self.child_lists.clone());
+        for target in self
+            .attribute_targets
+            .iter()
+            .filter(|target| is_connected(target))
+        {
+            if let Some(parent) = target.shadow_including_parent() {
+                extend_roots(&mut roots, &mut child_lists, &parent);
+            }
+        }
         RenderInvalidation {
-            roots: self
-                .roots
+            roots: roots
                 .iter()
-                .chain(&self.child_lists)
+                .chain(&child_lists)
                 .map(|root| root.id())
                 .collect(),
             impact: self.impact,
@@ -207,7 +240,7 @@ impl PendingInvalidation {
             removed_nodes: self.removed_nodes.iter().copied().collect(),
             removals_are_local: !self.removed_nodes.is_empty() && !self.removed_global_dependency,
             class_changes: self.class_changes.clone(),
-            child_list_roots: self.child_lists.iter().map(|root| root.id()).collect(),
+            child_list_roots: child_lists.iter().map(|root| root.id()).collect(),
         }
     }
 
@@ -235,6 +268,27 @@ fn is_in_style_element(node: &NodeRef) -> bool {
         current.shadow_including_parent()
     })
     .any(|current| current.tag_name() == Some("style"))
+}
+
+/// Adds `target` as a full root unless one already covers it; returns whether it was added.
+fn extend_roots(
+    roots: &mut Vec<NodeRef>,
+    child_lists: &mut Vec<NodeRef>,
+    target: &NodeRef,
+) -> bool {
+    if roots.iter().any(|root| is_descendant_of(target, root)) {
+        return false;
+    }
+    roots.retain(|root| !is_descendant_of(root, target));
+    child_lists.retain(|parent| !is_descendant_of(parent, target));
+    roots.push(target.clone());
+    true
+}
+
+fn is_connected(node: &NodeRef) -> bool {
+    std::iter::successors(Some(node.clone()), |node| node.shadow_including_parent())
+        .last()
+        .is_some_and(|root| matches!(root.data, NodeData::Document))
 }
 
 fn is_descendant_of(node: &NodeRef, ancestor: &NodeRef) -> bool {

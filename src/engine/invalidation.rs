@@ -4,6 +4,10 @@ use super::dom::NodeId;
 use super::dom::{Node, NodeRef};
 
 pub(crate) const MAX_INVALIDATION_ROOTS: usize = 256;
+/// Roots kept for checkpoints that skipped their frame while a document streams in. Each
+/// parser checkpoint adds up to `MAX_INVALIDATION_ROOTS` appended subtrees; collapsing their
+/// union to the whole document would restyle everything styled by earlier frames again.
+pub(crate) const MAX_DEFERRED_INVALIDATION_ROOTS: usize = 16 * MAX_INVALIDATION_ROOTS;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct InvalidationImpact(u8);
@@ -252,7 +256,17 @@ impl RenderInvalidation {
     /// Combines rendering work produced by sequential callbacks before an embedder checkpoint.
     /// Ancestry is normalized against the live DOM at refresh time. Keep a bounded set here so
     /// independent component updates do not become a document-wide style pass.
-    pub fn merge_conservatively(&mut self, mut other: Self, document_root: NodeId) {
+    pub fn merge_conservatively(&mut self, other: Self, document_root: NodeId) {
+        self.merge_with_root_limit(other, document_root, MAX_INVALIDATION_ROOTS);
+    }
+
+    /// `merge_conservatively` with a different bound on the merged roots.
+    pub(crate) fn merge_with_root_limit(
+        &mut self,
+        mut other: Self,
+        document_root: NodeId,
+        limit: usize,
+    ) {
         if other.is_empty() {
             return;
         }
@@ -284,8 +298,8 @@ impl RenderInvalidation {
             class_changes::merge_class_change(&mut self.class_changes, change);
         }
         if self.roots.contains(&document_root)
-            || self.roots.len() > MAX_INVALIDATION_ROOTS
-            || self.class_changes.len() > MAX_INVALIDATION_ROOTS
+            || self.roots.len() > limit
+            || self.class_changes.len() > limit
         {
             self.roots.clear();
             self.roots.push(document_root);
@@ -364,6 +378,7 @@ pub(crate) fn is_validation_attribute(name: &str) -> bool {
 mod tests {
     use super::*;
     mod local_content;
+    mod merge_limits;
     mod removals;
     mod style_only;
     use crate::engine::dom::parse;

@@ -4,6 +4,9 @@
 use super::*;
 use crate::engine::dom::{Node, NodeId, NodeRef};
 
+mod frame_waits;
+pub(super) use frame_waits::FrameArrivals;
+
 pub(super) struct RenderBlocking {
     links: HashMap<NodeId, NodeRef>,
     scripts: HashMap<NodeId, NodeRef>,
@@ -11,6 +14,12 @@ pub(super) struct RenderBlocking {
     pub(super) dirty: bool,
     /// A checkpoint skipped its style refresh while rendering was blocked.
     pub(super) styles_deferred: bool,
+    /// When the last frame was presented, and its style and layout time.
+    pub(super) last_frame: Option<(Instant, Duration)>,
+    /// A background checkpoint skipped its frame; see `background_frame_waits`.
+    pub(super) frame_delayed: bool,
+    /// When the parser last received streamed document input, while more is expected.
+    pub(super) parser_input: Option<Instant>,
 }
 impl Default for RenderBlocking {
     fn default() -> Self {
@@ -20,6 +29,9 @@ impl Default for RenderBlocking {
             started: Instant::now(),
             dirty: false,
             styles_deferred: false,
+            last_frame: None,
+            frame_delayed: false,
+            parser_input: None,
         }
     }
 }
@@ -151,9 +163,70 @@ impl DocumentRuntime {
         }
     }
     pub(super) fn rendering_deadline(&self) -> Option<u64> {
-        self.rendering_is_blocked().then(|| {
-            micros(Duration::from_secs(30).saturating_sub(self.rendering.started.elapsed()))
+        if self.rendering_is_blocked() {
+            return Some(micros(
+                Duration::from_secs(30).saturating_sub(self.rendering.started.elapsed()),
+            ));
+        }
+        // Wake when the wait ends; that checkpoint decides again.
+        self.rendering.frame_delayed.then(|| {
+            micros(
+                self.background_frame_remaining(FrameArrivals {
+                    resources: self.resource_render_pending,
+                    only: true,
+                })
+                .unwrap_or_default(),
+            )
         })
+    }
+    /// Whether a scheduled rendering checkpoint skips its frame; see `frame_waits`.
+    pub(super) fn background_frame_waits(&self, arrivals: FrameArrivals) -> bool {
+        self.background_frame_remaining(arrivals).is_some()
+    }
+    fn background_frame_remaining(&self, arrivals: FrameArrivals) -> Option<Duration> {
+        if self.rendering_is_blocked() {
+            return None;
+        }
+        let streaming = self
+            .rendering
+            .parser_input
+            .filter(|_| self.parser.is_some() && !self.parser_scripts.blocked());
+        frame_waits::remaining(
+            Instant::now(),
+            self.rendering.last_frame?,
+            streaming,
+            arrivals,
+        )
+    }
+    /// Skips this checkpoint's frame (see `background_frame_waits`). Arrived resources and the
+    /// style invalidation carry over to whichever path presents the next frame.
+    pub(super) fn delay_background_frame(
+        &mut self,
+        outcome: ScriptOutcome,
+        resources: [bool; 3],
+        load: PageLoadReport,
+    ) -> AdvanceResult {
+        if outcome.render_requested || !outcome.invalidation.is_empty() {
+            let (width, height) = (self.viewport.style_width, self.viewport.height);
+            let invalidation = if outcome.invalidation.is_empty() {
+                crate::engine::invalidation::RenderInvalidation::full(self.page.dom.document.id())
+            } else {
+                outcome.invalidation.clone()
+            };
+            self.page
+                .defer_style_invalidation(width, height, &invalidation);
+            self.rendering.dirty = true;
+        }
+        let [render, style, non_style] = resources;
+        self.resource_render_pending |= render;
+        self.resource_style_refresh_pending |= style;
+        self.resource_non_style_render_pending |= non_style;
+        self.rendering.frame_delayed = true;
+        let mut update = self.blocked_render_update(outcome, load, None);
+        if let AdvanceResult::Runtime(update) = &mut update {
+            update.clock_advanced = true;
+        }
+        update
     }
     pub(super) fn blocked_render_update(
         &mut self,

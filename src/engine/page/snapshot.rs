@@ -41,6 +41,7 @@ impl Page {
             font_faces_cache: std::cell::RefCell::new(None),
             cached_styles: None,
             previous_styles: None,
+            deferred_style_invalidation: None,
             images: layout_image_metadata(&self.images),
             canvas_gpu_frames: HashMap::new(),
             image_origin_clean: HashMap::new(),

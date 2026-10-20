@@ -90,6 +90,8 @@ pub struct Page {
     font_faces_cache: std::cell::RefCell<Option<FontFaceCatalog>>,
     cached_styles: Option<(f32, f32, StyleSet)>,
     previous_styles: Option<(f32, f32, StyleSet)>,
+    /// Style work of skipped rendering checkpoints; see `defer_style_invalidation`.
+    deferred_style_invalidation: Option<crate::engine::invalidation::RenderInvalidation>,
     pub images: HashMap<String, DecodedImage>,
     pub(crate) canvas_gpu_frames: HashMap<String, crate::gpu_frame::GpuFrame>,
     image_origin_clean: HashMap<String, bool>,
@@ -170,6 +172,7 @@ impl Page {
             font_faces_cache: std::cell::RefCell::new(None),
             cached_styles: None,
             previous_styles: None,
+            deferred_style_invalidation: None,
             images,
             image_updates: HashSet::new(),
             canvas_gpu_frames: HashMap::new(),

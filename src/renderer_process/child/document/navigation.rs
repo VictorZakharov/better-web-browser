@@ -61,6 +61,7 @@ impl DocumentRuntime {
         bytes: &[u8],
         eof: bool,
     ) -> Result<(), String> {
+        self.rendering.parser_input = (!eof).then(Instant::now);
         let input = self
             .navigation
             .as_mut()

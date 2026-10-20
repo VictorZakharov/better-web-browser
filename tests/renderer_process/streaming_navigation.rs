@@ -1,7 +1,10 @@
 use super::support::*;
 use better_web_browser::engine::DisplayItem;
 use better_web_browser::renderer_process::{NavigationBody, RendererEvent, RendererSession};
-use better_web_browser::renderer_protocol::{DocumentId, RendererPresentation};
+use better_web_browser::renderer_protocol::{
+    DocumentId, FetchResponseHead, FetchResponseResult, FetchResponseType, PresentedViewport,
+    RendererPresentation, TransferChunk,
+};
 use std::time::{Duration, Instant};
 
 fn start(content_type: &str) -> (RendererSession, DocumentId, NavigationBody) {
@@ -21,6 +24,17 @@ fn until_text(
     document: DocumentId,
     needle: &str,
 ) -> RendererPresentation {
+    presentations_until_text(session, document, needle).1
+}
+
+/// Waits for a presentation containing `needle`, acknowledging and counting the
+/// presentations up to it as the browser would.
+fn presentations_until_text(
+    session: &RendererSession,
+    document: DocumentId,
+    needle: &str,
+) -> (usize, RendererPresentation) {
+    let mut presentations = 0;
     let deadline = Instant::now() + Duration::from_secs(8);
     loop {
         assert!(Instant::now() < deadline, "never painted {needle}");
@@ -31,8 +45,10 @@ fn until_text(
                     "{:?}",
                     presentation.runtime.errors
                 );
+                presentations += 1;
+                acknowledge(session, &presentation);
                 if text(&presentation).contains(needle) {
-                    return *presentation;
+                    return (presentations, *presentation);
                 }
                 presentation.next_timer_micros
             }
@@ -196,5 +212,130 @@ fn encoding_restart_preserves_pending_storage_journal_and_write_sequence() {
         }
     }
     body.finish(Ok(()));
+    session.shutdown().unwrap();
+}
+
+#[test]
+fn stylesheet_bytes_go_ahead_of_document_chunks_that_are_already_waiting() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let (mut session, document, body) = start("text/html; charset=utf-8");
+    body.append(b"<!doctype html><head><link rel=stylesheet href=/sheet.css></head><body>")
+        .unwrap();
+    let request = loop {
+        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            RendererEvent::FetchBatch { requests, .. } => {
+                if let Some(request) = requests
+                    .into_iter()
+                    .find(|request| request.head.url.ends_with("/sheet.css"))
+                {
+                    break request;
+                }
+            }
+            RendererEvent::RuntimeUpdate(_)
+            | RendererEvent::Diagnostic { .. }
+            | RendererEvent::StorageMutation(_) => {}
+            event => panic!("unexpected event before the stylesheet request: {event:?}"),
+        }
+    };
+    // About eight document chunks are waiting when the stylesheet's sixteen chunks arrive.
+    // Taking turns would deliver the whole document before the stylesheet ends.
+    let paragraph = format!("<p>{}</p>", "filler ".repeat(140));
+    for slice in paragraph.repeat(512).as_bytes().chunks(64 * 1024) {
+        body.append(slice).unwrap();
+    }
+    body.append(b"<p>end of document</p>").unwrap();
+    body.finish(Ok(()));
+    let mut sheet = format!("/*{}*/", " ".repeat(15 * 64 * 1024)).into_bytes();
+    sheet.extend_from_slice(b"p{color:rgb(1,2,3)}");
+    let id = request.head.request_id;
+    let sink = session.fetch_response_sink(document);
+    sink.start(FetchResponseHead {
+        request_id: id,
+        result: FetchResponseResult::Success {
+            response_type: FetchResponseType::Basic,
+            urls: vec![request.head.url.clone()],
+            status: 200,
+            headers: vec![("content-type".into(), "text/css".into())],
+        },
+    })
+    .unwrap();
+    for (index, bytes) in sheet.chunks(64 * 1024).enumerate() {
+        sink.chunk(TransferChunk {
+            transfer_id: id,
+            offset: (index * 64 * 1024) as u32,
+            bytes: bytes.to_vec(),
+        })
+        .unwrap();
+    }
+    sink.end(id, sheet.len() as u32).unwrap();
+    let first = until_text(&session, document, "filler");
+    assert!(first.layout.items.iter().any(|item| matches!(
+        item,
+        DisplayItem::Text { color, .. } if (color.red, color.green, color.blue) == (1, 2, 3)
+    )));
+    assert!(
+        !text(&first).contains("end of document"),
+        "the first frame waited for the whole document"
+    );
+    session.shutdown().unwrap();
+}
+
+/// Appends `count` paragraphs, each padded by a comment to fill a document chunk of its own.
+fn parts(body: &NavigationBody, count: usize) {
+    for index in 0..count {
+        let filler = "x".repeat(60 * 1024);
+        body.append(format!("<p class=part>part {index}</p><!--{filler}-->").as_bytes())
+            .unwrap();
+    }
+}
+
+#[test]
+fn content_parsed_after_the_first_frame_waits_for_the_parser() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let (mut session, document, body) = start("text/html; charset=utf-8");
+    body.append(b"<!doctype html><p>first part</p>").unwrap();
+    until_text(&session, document, "first part");
+    // Twelve chunks arrive back to back. Each would otherwise restyle, lay out and present the
+    // growing document; the next frame waits until the input ends instead.
+    parts(&body, 12);
+    body.append(b"<p>end</p>").unwrap();
+    body.finish(Ok(()));
+    let (presentations, last) = presentations_until_text(&session, document, "end");
+    assert!(presentations <= 3, "{presentations} frames while parsing");
+    assert!(text(&last).contains("part 0"));
+    session.shutdown().unwrap();
+}
+
+#[test]
+fn a_resize_while_a_parsing_frame_waits_styles_the_parsed_content() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let (mut session, document, body) = start("text/html; charset=utf-8");
+    body.append(b"<!doctype html><style>.part{color:rgb(7,8,9)}</style><p>first part</p>")
+        .unwrap();
+    until_text(&session, document, "first part");
+    // The resize presents while the parsed paragraphs still wait for a frame; it must restyle
+    // them although no parser checkpoint refreshed their styles.
+    parts(&body, 4);
+    session
+        .update_viewport(
+            document,
+            PresentedViewport {
+                width: 640.0,
+                style_width: 640.0,
+                ..document_start(document, 0).viewport
+            },
+        )
+        .unwrap();
+    let resized = until_text(&session, document, "part 0");
+    body.append(b"<p class=part>part end</p>").unwrap();
+    body.finish(Ok(()));
+    let last = until_text(&session, document, "part end");
+    for presentation in [resized, last] {
+        assert!(presentation.layout.items.iter().all(|item| match item {
+            DisplayItem::Text { text, color, .. } if text.starts_with("part") =>
+                (color.red, color.green, color.blue) == (7, 8, 9),
+            _ => true,
+        }));
+    }
     session.shutdown().unwrap();
 }

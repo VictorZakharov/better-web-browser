@@ -69,11 +69,21 @@ impl StyleSet {
             self.resolve_class_changes(dom, &invalidation.class_changes, &mut roots, &mut elements);
             self.compiled = compiled;
             self.resolve_class_changes(dom, &invalidation.class_changes, &mut roots, &mut elements);
+            // Unchanged rules are all in the new set, so the new rules bound what an inserted
+            // or removed child can restyle; elements a changed rule may match are subjects.
+            self.resolve_child_list_changes(
+                dom,
+                &invalidation.child_list_roots,
+                &invalidation.removed_nodes,
+                &mut roots,
+                &mut elements,
+            );
             // Remembered :has() results follow the anchor order of the rules with :has().
             if diff.relational {
                 self.has_results.clear();
             }
-            roots.extend(diff.subjects);
+            roots.extend(diff.subtrees);
+            elements.extend(diff.subjects);
             let (removed_styles, removed_generated) = self.prune_uncomposed_styles(dom);
             let mut stats = self.refresh_subtrees_after_invalidation(
                 &dom.document,

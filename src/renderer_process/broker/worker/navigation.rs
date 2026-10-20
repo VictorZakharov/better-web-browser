@@ -10,6 +10,10 @@ pub(super) struct OutgoingNavigation {
     offset: usize,
 }
 
+/// Stream messages (response starts, chunks and ends) are cheap for the renderer next to a
+/// document chunk, which costs a parser checkpoint.
+pub(super) const FETCH_EVENTS_PER_DOCUMENT_CHUNK: u8 = 64;
+
 impl Broker {
     pub(super) fn begin_navigation(
         &mut self,
@@ -53,11 +57,13 @@ impl Broker {
     }
 
     /// Main-document chunks and Fetch response streams share the renderer pipe. A document
-    /// chunk waits for the writer to drain, as stream messages do, and the two take turns: a
-    /// render-blocking stylesheet is not queued behind the rest of a long document, and a burst
-    /// of response bytes cannot stall parsing.
+    /// chunk waits for the writer to drain, as stream messages do, and the two take turns: up
+    /// to `FETCH_EVENTS_PER_DOCUMENT_CHUNK` stream messages go before each document chunk, so
+    /// responses already on hand are not queued behind the rest of a long document, and a burst
+    /// of response bytes cannot stall parsing. Stylesheet responses do not use up the turn:
+    /// the first frame waits for them, and browsers load stylesheets at the highest priority.
     pub(super) fn process_streams(&mut self) {
-        if self.fetch_turn {
+        if self.fetch_turn > 0 {
             self.process_fetch_stream();
             self.process_navigation();
         } else {
@@ -79,7 +85,7 @@ impl Broker {
             }
             let message = match navigation.body.read(navigation.offset) {
                 Input::Chunk(bytes) => {
-                    self.fetch_turn = true;
+                    self.fetch_turn = FETCH_EVENTS_PER_DOCUMENT_CHUNK;
                     let offset = navigation.offset as u32;
                     navigation.offset += bytes.len();
                     let document = navigation.document;
