@@ -84,3 +84,40 @@ fn images_beyond_the_per_pass_limit_are_found_by_the_next_pass() {
     set_class(&mut page, "other", "x");
     assert_eq!(found(&page), count);
 }
+
+#[test]
+fn a_refresh_after_deferred_styles_restyles_the_whole_document() {
+    let mut page = page("<div id=a class=icon></div>");
+    // Rendering checkpoints defer the cascade while stylesheets block rendering; the DOM keeps
+    // changing in between, and the next refresh is scoped to an unrelated element.
+    page.refresh_resources_deferring_styles(800.0, 800.0);
+    let body = page.dom.elements_named("body").next().expect("body");
+    let added = Node::create_element_for(&page.dom.document, "p");
+    added.set_attr("class", "shown");
+    Node::append_child(&body, added.clone());
+    page.refresh_resources_deferring_styles(800.0, 800.0);
+    assert!(page.cached_style(800.0).is_none());
+    assert!(
+        !has_image(&page, "shown.png"),
+        "style images wait for the cascade"
+    );
+
+    let target = by_id(&page, "a");
+    let stats = page.refresh_resources_after_invalidation(
+        800.0,
+        &RenderInvalidation {
+            impact: MutationKind::Attribute("title").impact(),
+            mutation_count: 1,
+            roots: vec![target.id()],
+            ..RenderInvalidation::default()
+        },
+    );
+    assert!(stats.recomputed_styles >= stats.total_styles, "{stats:?}");
+    let fresh = page.style(800.0);
+    let refreshed = page.cached_style(800.0).expect("refreshed styles");
+    for node in Node::descendants(&page.dom.document).filter(|node| node.element().is_some()) {
+        assert!(refreshed.styles.get(&node.id()) == fresh.styles.get(&node.id()));
+    }
+    assert!(refreshed.styles.contains_key(&added.id()));
+    assert!(has_image(&page, "shown.png"));
+}

@@ -332,11 +332,7 @@ impl DocumentRuntime {
             || !outcome.invalidation.is_empty();
         let style_started = Instant::now();
         let style = if needs_present {
-            self.page.refresh_resources_after_invalidation_for_viewport(
-                self.viewport.style_width,
-                self.viewport.height,
-                &outcome.invalidation,
-            )
+            self.refresh_checkpoint_styles(Some(&outcome.invalidation))
         } else {
             StyleRefreshStats::default()
         };

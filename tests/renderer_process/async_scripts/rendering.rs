@@ -179,3 +179,34 @@ fn explicit_head_blocker_created_before_body_remains_blocking_after_body_inserti
     assert!(first.layout.items.iter().any(|item| matches!(item, DisplayItem::Text{color,..} if color.red==4 && color.green==5 && color.blue==6)));
     driver.session.shutdown().unwrap();
 }
+
+#[test]
+fn content_added_while_rendering_is_blocked_is_styled_by_the_first_frame() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let mut driver = Driver::new(
+        "<!doctype html><head><link rel=stylesheet href=/slow.css><script async src=/add.js></script></head><body><p>styled later</p>",
+    );
+    blocked_until_request(&mut driver, "slow.css");
+    blocked_until_request(&mut driver, "add.js");
+    // Style recalculation is deferred while rendering is blocked; this insertion must still be
+    // styled by the first frame. The marker request shows that the script has run.
+    driver.respond(
+        "add.js",
+        r#"
+        const late = document.createElement('p');
+        late.className = 'late';
+        late.textContent = 'added while blocked';
+        document.body.append(late);
+        const marker = document.createElement('script');
+        marker.async = true;
+        marker.src = '/marker.js';
+        document.head.append(marker);
+    "#,
+        200,
+    );
+    blocked_until_request(&mut driver, "marker.js");
+    driver.respond_bytes("slow.css", b".late{color:rgb(7,8,9)}", "text/css", 200);
+    let first = driver.until_text("added while blocked");
+    assert!(first.layout.items.iter().any(|item| matches!(item, DisplayItem::Text{color,..} if color.red==7 && color.green==8 && color.blue==9)));
+    driver.session.shutdown().unwrap();
+}
