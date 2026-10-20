@@ -213,6 +213,19 @@ pub(super) fn resolve_replaced_length(
         .map(|value| value.max(0.0))
 }
 
+/// Whether a replaced element's used size and painted image are independent of its natural
+/// size: both dimensions resolve without a percentage basis (HTML `width` and `height`
+/// attributes arrive here as presentational hints), so min/max constraints clamp each one on
+/// its own, and `object-fit: fill` stretches the image over the content box. Layout then need
+/// not read, or be invalidated by, the decoded image's dimensions, as when an image arrives
+/// after the first frame.
+/// https://drafts.csswg.org/css-images-3/#the-object-fit
+pub(super) fn replaced_size_ignores_natural_size(style: &ComputedStyle) -> bool {
+    style.object_fit == ObjectFit::Fill
+        && resolve_replaced_css_length(style.width.clone(), None, style.font_size).is_some()
+        && resolve_replaced_css_length(style.height.clone(), None, style.font_size).is_some()
+}
+
 fn resolve_replaced_css_length(
     length: Length,
     percentage_basis: Option<f32>,

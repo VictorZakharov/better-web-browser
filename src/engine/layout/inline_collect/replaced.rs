@@ -16,7 +16,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         } else {
             self.image_url_for(node)
         };
-        let intrinsic = url.as_ref().and_then(|url| self.decoded_image(url));
+        let intrinsic = url
+            .as_ref()
+            .filter(|_| !replaced_size_ignores_natural_size(style))
+            .and_then(|url| self.decoded_image(url));
         let is_video = node.tag_name() == Some("video");
         let canvas = (node.tag_name() == Some("canvas"))
             .then(|| crate::engine::page::canvas_intrinsic_size(node));

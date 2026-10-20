@@ -83,14 +83,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         } else {
             (16.0, 16.0)
         };
-        let (intrinsic_width, intrinsic_height) =
-            if url == crate::engine::page::MEDIA_VIDEO_PLACEHOLDER {
-                default_size
-            } else {
-                self.decoded_image(&url)
-                    .map(|image| (image.width as f32, image.height as f32))
-                    .unwrap_or(default_size)
-            };
+        let (intrinsic_width, intrinsic_height) = if url
+            == crate::engine::page::MEDIA_VIDEO_PLACEHOLDER
+            || replaced_size_ignores_natural_size(self.styles.get(node))
+        {
+            default_size
+        } else {
+            self.decoded_image(&url)
+                .map(|image| (image.width as f32, image.height as f32))
+                .unwrap_or(default_size)
+        };
         Some(BlockImage {
             url,
             intrinsic_width,
