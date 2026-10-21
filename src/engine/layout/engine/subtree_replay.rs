@@ -21,6 +21,12 @@
 // across a change of arguments or environment: after a scrollbar narrows the viewport, which
 // invalidates every result, the next pass at the new width replays instead of laying out the
 // whole document a second time.
+//
+// Measuring layouts (block-size probes, which neither paint nor keep fragments) discard their
+// output, emit no items and so retain nothing of their own. Geometry does not depend on whether a
+// layout paints, so a measuring layout replays the painted entry with the same arguments and takes
+// only its block size and floats. Without that, a grid probing an item whose subtree changed,
+// such as Wikipedia's page grids, laid out the item's entire subtree again.
 use super::layout_reads::LayoutReads;
 use super::reuse::{Inputs, LayoutReuse};
 use super::*;
@@ -40,6 +46,17 @@ pub(in crate::engine::layout) struct SubtreeKey {
     height: Option<u32>,
     used_width: Option<(u32, u32)>,
     used_height: Option<u32>,
+}
+
+impl SubtreeKey {
+    /// The same layout as a painting pass that retains fragments performs it.
+    fn painted(self) -> Self {
+        Self {
+            paint: true,
+            fragments: true,
+            ..self
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -150,12 +167,35 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         let inputs = self.reuse_inputs(node)?;
         let mut reuse = self.page.layout_reuse.borrow_mut();
-        let entry = reuse.subtree(key, inputs, self.page, self.styles)?;
+        // A measuring layout discards its output, so it emits no items and retains nothing of its
+        // own. It replays the geometry of the painted layout with the same arguments instead.
+        let measuring = !self.emit_paint && !self.retain_fragments;
+        let key = if measuring && !reuse.subtrees.contains_key(key) {
+            key.painted()
+        } else {
+            *key
+        };
+        let entry = reuse.subtree(&key, inputs, self.page, self.styles)?;
         let (dx, dy) = (x - entry.origin.0, y - entry.origin.1);
         if let Some((top, _)) = &entry.shared_floats
             && !self.floats.clear_below(self.floats.len(), top + dy)
         {
             return None;
+        }
+        for (side, rect) in entry.shared_floats.iter().flat_map(|(_, floats)| floats) {
+            let rect = RectF {
+                x: rect.x + dx,
+                y: rect.y + dy,
+                ..*rect
+            };
+            self.floats.add(*side, rect);
+        }
+        if measuring {
+            let bottom = entry.bottom + dy;
+            let reads = entry.reads.clone();
+            drop(reuse);
+            self.replay_reads(&reads);
+            return Some(BlockMetrics { bottom });
         }
         let item_start = self.output.items.len();
         let node_start = self.output.node_paint_order.len();
@@ -182,14 +222,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         replayed.shift_lines(first_line.wrapping_sub(entry.first_line) as i64);
         fragments.extend_subtree(&replayed);
         fragments.next_line = first_line + entry.lines;
-        for (side, rect) in entry.shared_floats.iter().flat_map(|(_, floats)| floats) {
-            let rect = RectF {
-                x: rect.x + dx,
-                y: rect.y + dy,
-                ..*rect
-            };
-            self.floats.add(*side, rect);
-        }
         let bottom = entry.bottom + dy;
         let flow_level = entry.flow_level;
         let reads = entry.reads.clone();
