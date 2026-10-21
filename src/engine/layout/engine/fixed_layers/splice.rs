@@ -49,7 +49,7 @@ pub(super) fn replace(
         output.scroll_boxes.remove(&id);
         output.sticky_offsets.remove(&id);
     }
-    fragments.extend_subtree(&layer.fragments);
+    fragments.extend_subtree(&layer.fragments, 0);
     output.transformed.extend(layer.transformed);
     output.node_bounds.extend(layer.node_bounds);
     output.resize_boxes.extend(layer.resize_boxes);

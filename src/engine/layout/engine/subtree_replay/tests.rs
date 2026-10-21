@@ -2,6 +2,7 @@ use super::*;
 use crate::engine::layout::test_support::FixedMeasurer;
 
 mod arrivals;
+mod cells;
 mod measuring;
 mod settling;
 
@@ -235,6 +236,12 @@ fn recorded_inputs_outside_dom_and_style_invalidate_replays() {
     element(&page, "link").set_attr("href", "two.html");
     page.refresh_resources_for_viewport(WIDTH, HEIGHT);
     assert_warm_matches_cold(&page);
+    // History navigation moves the URL a relative link resolves against without mutating the
+    // document.
+    settle(&page);
+    page.source_url = "https://example.test/moved/".into();
+    let warm = assert_warm_matches_cold(&page);
+    assert!(format!("{:?}", warm.items).contains("https://example.test/moved/two.html"));
 
     // Zoom on an ancestor scales the used styles inside every section.
     let body = page.dom.elements_named("body").next().unwrap();
