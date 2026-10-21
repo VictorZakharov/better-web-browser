@@ -33,8 +33,9 @@ use super::layout_reads::LayoutReads;
 use super::reuse::{Inputs, LayoutReuse};
 use super::*;
 
-/// Subtrees emitting fewer items are cheaper to lay out than to copy and validate.
-const MIN_ITEMS: usize = 8;
+/// Even a subtree emitting one item is cheaper to replay than to lay out again: the cells of a
+/// large table hold a few items each, and a change in one cell lays out every other cell twice.
+const MIN_ITEMS: usize = 1;
 /// Larger containers recompute; their retained children still replay.
 const MAX_ITEMS: usize = 32_768;
 const MAX_ENTRIES: usize = 16_384;
@@ -239,9 +240,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         self.output.transformed.extend(entry.transformed.clone());
         let fragments = std::sync::Arc::make_mut(&mut self.output.fragments);
         let first_line = fragments.next_line;
-        let mut replayed = entry.fragments.clone();
-        replayed.shift_lines(first_line.wrapping_sub(entry.first_line) as i64);
-        fragments.extend_subtree(&replayed);
+        fragments.extend_subtree(
+            &entry.fragments,
+            first_line.wrapping_sub(entry.first_line) as i64,
+        );
         fragments.next_line = first_line + entry.lines;
         let bottom = entry.bottom + dy;
         let flow_level = entry.flow_level;

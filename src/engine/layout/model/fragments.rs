@@ -49,16 +49,32 @@ pub struct FragmentGeometry {
 }
 
 impl FragmentGeometry {
-    pub(in crate::engine::layout) fn extend_subtree(&mut self, other: &Self) {
+    /// Adds `other`'s entries with every line renumbered by `line_shift`, for a subset laid out
+    /// at another point in the pass.
+    pub(in crate::engine::layout) fn extend_subtree(&mut self, other: &Self, line_shift: i64) {
+        let shift = |line: u64| line.wrapping_add_signed(line_shift);
         self.extend_transforms(other);
-        self.elements.extend(
-            other
-                .elements
+        self.elements
+            .extend(other.elements.iter().map(|(&id, fragments)| {
+                let fragments = fragments
+                    .iter()
+                    .map(|fragment| InlineFragment {
+                        line: shift(fragment.line),
+                        rect: fragment.rect,
+                    })
+                    .collect();
+                (id, fragments)
+            }));
+        self.text.extend(other.text.iter().map(|(&id, fragments)| {
+            let fragments = fragments
                 .iter()
-                .map(|(&id, value)| (id, value.clone())),
-        );
-        self.text
-            .extend(other.text.iter().map(|(&id, value)| (id, value.clone())));
+                .map(|fragment| TextFragment {
+                    line: shift(fragment.line),
+                    clusters: fragment.clusters.clone(),
+                })
+                .collect();
+            (id, fragments)
+        }));
         self.next_line = self.next_line.max(other.next_line);
     }
     pub(in crate::engine::layout) fn extend_transforms(&mut self, other: &Self) {
@@ -141,21 +157,6 @@ impl FragmentGeometry {
             }
         }
         subset
-    }
-
-    /// Renumbers every line by `delta`, for a subset replayed at another point in the pass.
-    pub(in crate::engine::layout) fn shift_lines(&mut self, delta: i64) {
-        let shift = |line: &mut u64| *line = line.wrapping_add_signed(delta);
-        for fragments in self.elements.values_mut() {
-            fragments
-                .iter_mut()
-                .for_each(|fragment| shift(&mut fragment.line));
-        }
-        for fragments in self.text.values_mut() {
-            fragments
-                .iter_mut()
-                .for_each(|fragment| shift(&mut fragment.line));
-        }
     }
 
     pub(crate) fn remove(&mut self, id: NodeId) {

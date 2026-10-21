@@ -26,38 +26,63 @@ pub(in crate::engine::layout) fn finish(
     styles: &StyleSet,
     output: &mut LayoutOutput,
 ) {
-    // Existing atomic/decorated inline boxes already own their border geometry. Do not
-    // enlarge them with overflowing descendants, or enlarge any containing block.
-    let explicit: std::collections::HashSet<_> = output.node_bounds.keys().copied().collect();
-    for (&id, &rect) in &output.node_bounds {
-        // Decorated inline atoms already own a real border box. Their descendants' font
-        // bands must not replace that border area. Empty, undecorated inlines retain a caret band.
-        if rect.width > 0.0
+    // Children finish before their parents, so a plain inline's bounds include its nested plain
+    // inlines.
+    struct Open {
+        node: NodeRef,
+        children: Vec<NodeRef>,
+        next: usize,
+        /// A plain inline without bounds of its own takes the union of its children's.
+        aggregates: bool,
+        union: Option<RectF>,
+    }
+    let open = |node: NodeRef, output: &mut LayoutOutput| {
+        let inline = node.element().is_some()
             && styles
                 .styles
-                .get(&id)
-                .is_some_and(|style| style.display == Display::Inline)
-        {
+                .get(&node.id())
+                .is_some_and(|style| style.display == Display::Inline);
+        let own = output.node_bounds.get(&node.id()).copied();
+        // Existing atomic/decorated inline boxes already own their border geometry. Their
+        // descendants' font bands must not replace that border area, and they are never
+        // enlarged by overflowing descendants. Empty, undecorated inlines retain a caret band.
+        if inline && own.is_some_and(|rect| rect.width > 0.0) {
             std::sync::Arc::make_mut(&mut output.fragments)
                 .elements
-                .remove(&id);
+                .remove(&node.id());
         }
-    }
-    let nodes: Vec<_> = Node::composed_descendants(root).collect();
-    for node in nodes.into_iter().rev() {
-        let Some(rect) = output.node_bounds.get(&node.id()).copied() else {
+        Open {
+            children: Node::composed_children(&node),
+            node,
+            next: 0,
+            aggregates: inline && own.is_none(),
+            union: None,
+        }
+    };
+    let mut stack = vec![open(root.clone(), output)];
+    while let Some(top) = stack.last_mut() {
+        if let Some(child) = top.children.get(top.next).cloned() {
+            top.next += 1;
+            let child = open(child, output);
+            stack.push(child);
             continue;
+        }
+        let done = stack.pop().expect("the loop holds an open node");
+        let rect = match done.union {
+            Some(rect) => {
+                output.node_bounds.insert(done.node.id(), rect);
+                Some(rect)
+            }
+            None => output.node_bounds.get(&done.node.id()).copied(),
         };
-        let Some(parent) = Node::composed_parent(&node) else {
-            continue;
-        };
-        if !explicit.contains(&parent.id())
-            && styles
-                .styles
-                .get(&parent.id())
-                .is_some_and(|style| style.display == Display::Inline)
+        if let (Some(rect), Some(parent)) = (rect, stack.last_mut())
+            && parent.aggregates
         {
-            include(&mut output.node_bounds, parent.id(), rect);
+            parent.union = Some(
+                parent
+                    .union
+                    .map_or(rect, |union| fragments::union(union, rect)),
+            );
         }
     }
 }

@@ -11,6 +11,7 @@
 // frame includes everything its nested frames read. A cache hit appends the hit's recorded reads
 // to the log. Only a result that is actually retained copies its frame's distinct reads.
 use super::*;
+use std::cell::Cell;
 use std::collections::HashSet;
 use std::rc::Rc;
 
@@ -57,6 +58,11 @@ pub(in crate::engine::layout) enum LayoutRead {
 }
 
 impl LayoutRead {
+    /// Whether only the document tree and its URL decide this read.
+    fn depends_only_on_document(&self) -> bool {
+        matches!(self, Self::InheritedLink(..))
+    }
+
     /// Whether `page` and `styles` would still answer this read the same way.
     fn holds(&self, page: &Page, styles: &StyleSet) -> bool {
         match self {
@@ -82,13 +88,47 @@ impl LayoutRead {
 
 /// The reads one cached result depended on; usually empty.
 #[derive(Clone, Debug, Default)]
-pub(in crate::engine::layout) struct LayoutReads(Option<Rc<[LayoutRead]>>);
+pub(in crate::engine::layout) struct LayoutReads(Option<Rc<ReadSet>>);
+
+#[derive(Debug)]
+struct ReadSet {
+    reads: Box<[LayoutRead]>,
+    /// The document state at which the reads only it decides last held. A large retained
+    /// subtree records thousands of them, and checking each walks its ancestors, so they are
+    /// rechecked only after the document changes.
+    document_held: Cell<DocumentStamp>,
+}
+
+/// A document's mutation version and a hash of the URL relative links resolve against, which
+/// history navigation changes without mutating the document.
+type DocumentStamp = (u64, u64);
+
+fn document_stamp(page: &Page) -> DocumentStamp {
+    use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
+    (
+        page.dom.document.document_mutation_version(),
+        BuildHasherDefault::<DefaultHasher>::default().hash_one(&page.source_url),
+    )
+}
 
 impl LayoutReads {
     pub(in crate::engine::layout) fn hold(&self, page: &Page, styles: &StyleSet) -> bool {
-        self.0
-            .as_deref()
-            .is_none_or(|reads| reads.iter().all(|read| read.holds(page, styles)))
+        let Some(set) = self.0.as_deref() else {
+            return true;
+        };
+        let document = document_stamp(page);
+        let document_held = set.document_held.get() == document;
+        let hold = set.reads.iter().all(|read| {
+            (document_held && read.depends_only_on_document()) || read.holds(page, styles)
+        });
+        if hold {
+            set.document_held.set(document);
+        }
+        hold
+    }
+
+    fn reads(&self) -> &[LayoutRead] {
+        self.0.as_deref().map_or(&[], |set| &set.reads)
     }
 }
 
@@ -119,8 +159,8 @@ impl ReadFrames {
     }
 
     fn replay(&mut self, reads: &LayoutReads) {
-        if let (false, Some(reads)) = (self.frames.is_empty(), reads.0.as_deref()) {
-            self.log.extend_from_slice(reads);
+        if !self.frames.is_empty() {
+            self.log.extend_from_slice(reads.reads());
         }
     }
 
@@ -215,7 +255,11 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
             .filter(|read| seen.insert(*read))
             .cloned()
             .collect::<Vec<_>>();
-        LayoutReads(Some(distinct.into()))
+        // Layout does not mutate the document, so every read made in this pass holds now.
+        LayoutReads(Some(Rc::new(ReadSet {
+            reads: distinct.into(),
+            document_held: Cell::new(document_stamp(self.page)),
+        })))
     }
 
     /// Tells the enclosing frame that a retained result of `items` display items lies inside it.
