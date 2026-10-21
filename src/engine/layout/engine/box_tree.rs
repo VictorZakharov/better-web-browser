@@ -1,20 +1,22 @@
 //! CSS 2.2 §17.2.1 table fixup creates layout boxes, never DOM elements.
 //! https://www.w3.org/TR/CSS22/tables.html#anonymous-boxes
 use super::*;
-mod persistent;
-pub(crate) use persistent::AnonymousBoxes;
+mod retained;
+pub(crate) use retained::RetainedBoxes;
 
 pub(in crate::engine::layout) struct BoxTree<'a> {
     base: &'a StyleSet,
-    children: HashMap<NodeId, Vec<NodeRef>>,
-    anonymous: HashMap<NodeId, ComputedStyle>,
     zoomed: HashMap<NodeId, ComputedStyle>,
-    nodes: HashMap<NodeId, NodeRef>,
-    parents: HashMap<NodeId, NodeRef>,
-    /// Where anonymous boxes come from when their identity should outlive this tree.
-    persistent: Option<&'a std::cell::RefCell<AnonymousBoxes>>,
-    /// Anonymous boxes taken from `persistent`; others are new in this tree.
-    stable: HashSet<NodeId>,
+    boxes: RetainedBoxes,
+    /// Where `boxes` returns after the pass, when they outlive this tree.
+    store: Option<&'a std::cell::RefCell<RetainedBoxes>>,
+    /// Table-fixup boxes the parent being rebuilt had, by parent and first child.
+    pool: HashMap<(NodeId, NodeId), (Display, NodeRef)>,
+    /// Children the parent being rebuilt placed, directly or in a wrapper.
+    placed: HashSet<NodeId>,
+    /// Nodes whose children this tree built rather than retained.
+    #[cfg(test)]
+    rebuilt: usize,
 }
 
 impl std::ops::Deref for BoxTree<'_> {
@@ -25,65 +27,75 @@ impl std::ops::Deref for BoxTree<'_> {
 }
 
 impl<'a> BoxTree<'a> {
+    /// A box tree built for one pass; its anonymous boxes are new each time.
     pub fn new(root: &NodeRef, base: &'a StyleSet) -> Self {
-        Self::build(root, base, None)
-    }
-
-    /// A box tree whose anonymous boxes keep their identity across passes that build them alike.
-    pub fn with_persistent_anonymous_boxes(
-        root: &NodeRef,
-        base: &'a StyleSet,
-        boxes: &'a std::cell::RefCell<AnonymousBoxes>,
-    ) -> Self {
-        Self::build(root, base, Some(boxes))
-    }
-
-    fn build(
-        root: &NodeRef,
-        base: &'a StyleSet,
-        persistent: Option<&'a std::cell::RefCell<AnonymousBoxes>>,
-    ) -> Self {
-        let mut tree = Self {
-            base,
-            children: HashMap::new(),
-            anonymous: HashMap::new(),
-            zoomed: HashMap::new(),
-            nodes: HashMap::new(),
-            parents: HashMap::new(),
-            persistent,
-            stable: HashSet::new(),
-        };
-        tree.compute_zoomed_styles(root);
-        // Iterative postorder keeps malformed/deep documents off the native stack.
-        // Each node's children are collected once, before its descendants, and normalized after.
-        let mut stack: Vec<(NodeRef, Option<Vec<NodeRef>>)> = vec![(root.clone(), None)];
-        while let Some((node, collected)) = stack.pop() {
-            if tree.get(&node).display == Display::None {
-                continue;
-            }
-            if let Some(children) = collected {
-                let had_children = !children.is_empty();
-                let normalized = tree.normalize(&node, children);
-                if had_children || !normalized.is_empty() {
-                    // The box tree owns one immutable layout pass. Reuse ordinary
-                    // composed/pseudo/contents children too, not just table fixup.
-                    // Empty leaves keep their allocation-free fallback; pruned
-                    // nonempty lists must retain an explicit empty cache entry.
-                    tree.children.insert(node.id(), normalized);
-                }
-            } else {
-                tree.nodes.insert(node.id(), node.clone());
-                let children = tree.children(&node);
-                stack.push((node.clone(), Some(children.clone())));
-                stack.extend(children.into_iter().rev().map(|n| (n, None)));
-            }
-        }
+        let mut tree = Self::with_boxes(base, RetainedBoxes::default(), None);
+        tree.update(root);
         tree
     }
 
+    /// The box tree retained in `store`, updated under `root` for the DOM and `base`.
+    ///
+    /// A layout of the whole document (`whole`) starts over when its root changes. A layout of a
+    /// subtree updates the retained tree when the tree contains its root, and otherwise builds a
+    /// tree for one pass.
+    pub fn retained(
+        root: &NodeRef,
+        base: &'a StyleSet,
+        store: &'a std::cell::RefCell<RetainedBoxes>,
+        whole: bool,
+    ) -> Self {
+        let mut boxes = std::mem::take(&mut *store.borrow_mut());
+        if whole && boxes.root != Some(root.id()) {
+            boxes = RetainedBoxes::default();
+            boxes.root = Some(root.id());
+        } else if !whole && !boxes.nodes.contains_key(&root.id()) {
+            *store.borrow_mut() = boxes;
+            return Self::new(root, base);
+        }
+        let mut tree = Self::with_boxes(base, boxes, Some(store));
+        tree.update(root);
+        tree
+    }
+
+    fn with_boxes(
+        base: &'a StyleSet,
+        boxes: RetainedBoxes,
+        store: Option<&'a std::cell::RefCell<RetainedBoxes>>,
+    ) -> Self {
+        Self {
+            base,
+            zoomed: HashMap::new(),
+            boxes,
+            store,
+            pool: HashMap::new(),
+            placed: HashSet::new(),
+            #[cfg(test)]
+            rebuilt: 0,
+        }
+    }
+
+    fn update(&mut self, root: &NodeRef) {
+        self.compute_zoomed_styles(root);
+        // Anonymous boxes inherit zoomed styles, which this tree does not track by generation.
+        let zoomed = !self.zoomed.is_empty();
+        let force = zoomed || self.boxes.zoomed;
+        self.boxes.zoomed = zoomed;
+        self.refresh(root, force);
+    }
+
+    /// Returns the retained boxes to the store they came from.
+    pub fn retain(self) {
+        if let Some(store) = self.store {
+            *store.borrow_mut() = self.boxes;
+        }
+    }
+
     pub fn get(&self, node: &NodeRef) -> &ComputedStyle {
-        self.anonymous
+        self.boxes
+            .anonymous
             .get(&node.id())
+            .map(|wrapper| &wrapper.style)
             .or_else(|| self.zoomed.get(&node.id()))
             .unwrap_or_else(|| self.base.get(node))
     }
@@ -122,19 +134,20 @@ impl<'a> BoxTree<'a> {
 
     #[cfg(test)]
     pub fn is_anonymous(&self, id: NodeId) -> bool {
-        self.anonymous.contains_key(&id)
+        self.boxes.anonymous.contains_key(&id)
     }
 
     /// Whether `id` is a table-fixup box whose identifier a later pass will not reuse.
     pub fn is_transient_anonymous(&self, id: NodeId) -> bool {
-        self.anonymous.contains_key(&id) && !self.stable.contains(&id)
+        self.store.is_none() && self.boxes.anonymous.contains_key(&id)
     }
 
     pub fn node(&self, id: NodeId) -> Option<NodeRef> {
-        self.nodes.get(&id).cloned()
+        self.boxes.nodes.get(&id).cloned()
     }
     pub fn parent(&self, node: &NodeRef) -> Option<NodeRef> {
-        self.parents
+        self.boxes
+            .parents
             .get(&node.id())
             .cloned()
             .or_else(|| Node::composed_parent(node))
@@ -151,7 +164,7 @@ impl<'a> BoxTree<'a> {
     }
 
     pub fn children(&self, node: &NodeRef) -> Vec<NodeRef> {
-        if let Some(children) = self.children.get(&node.id()) {
+        if let Some(children) = self.boxes.children.get(&node.id()) {
             return children.clone();
         }
         let mut output = Vec::new();
@@ -173,45 +186,42 @@ impl<'a> BoxTree<'a> {
     }
 
     pub fn remove_anonymous_geometry(&self, output: &mut LayoutOutput) {
-        for &id in self.anonymous.keys() {
+        let anonymous = &self.boxes.anonymous;
+        for &id in anonymous.keys() {
             output.transformed.remove(id);
             std::sync::Arc::make_mut(&mut output.fragments).remove(id);
         }
         output
             .node_bounds
-            .retain(|id, _| !self.anonymous.contains_key(id));
+            .retain(|id, _| !anonymous.contains_key(id));
         output
             .resize_boxes
-            .retain(|id, _| !self.anonymous.contains_key(id));
+            .retain(|id, _| !anonymous.contains_key(id));
         output
             .node_paint_order
-            .retain(|id| !self.anonymous.contains_key(id));
+            .retain(|id| !anonymous.contains_key(id));
     }
 
     fn wrap(&mut self, parent: &NodeRef, display: Display, children: Vec<NodeRef>) -> NodeRef {
-        let node = self.anonymous_box(parent, display, &children);
-        self.nodes.insert(node.id(), node.clone());
-        self.parents.insert(node.id(), parent.clone());
-        for child in &children {
-            self.parents.insert(child.id(), node.clone());
-        }
+        let first = children[0].id();
+        let node = match self.pool.remove(&(parent.id(), first)) {
+            Some((pooled, node)) if pooled == display => node,
+            _ => retained::new_anonymous_box(),
+        };
         let mut style = ComputedStyle::inherit_from(Some(self.get(parent)));
         style.display = display;
-        self.anonymous.insert(node.id(), style);
-        let children = self.normalize(&node, children);
-        self.children.insert(node.id(), children);
-        node
-    }
-
-    fn anonymous_box(&mut self, parent: &NodeRef, display: Display, run: &[NodeRef]) -> NodeRef {
-        if let (Some(boxes), Some(first)) = (self.persistent, run.first()) {
-            let node = boxes.borrow_mut().wrapper(parent.id(), first.id(), display);
-            // A key repeated within one tree cannot share a box; the repeat gets a new one.
-            if self.stable.insert(node.id()) {
-                return node;
-            }
+        self.boxes.nodes.insert(node.id(), node.clone());
+        self.boxes.place(&node, parent);
+        self.boxes
+            .anonymous
+            .insert(node.id(), retained::Wrapper { style, first });
+        for child in &children {
+            self.boxes.place(child, &node);
+            self.placed.insert(child.id());
         }
-        persistent::new_anonymous_box()
+        let children = self.normalize(&node, children);
+        self.boxes.children.insert(node.id(), children);
+        node
     }
 
     fn normalize(&mut self, parent: &NodeRef, mut children: Vec<NodeRef>) -> Vec<NodeRef> {

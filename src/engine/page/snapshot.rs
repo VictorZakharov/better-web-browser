@@ -57,7 +57,7 @@ impl Page {
             document_base: Default::default(),
             style_images_pending: false,
             layout_reuse: Default::default(),
-            layout_anonymous_boxes: Default::default(),
+            layout_box_tree: Default::default(),
         }
     }
 
