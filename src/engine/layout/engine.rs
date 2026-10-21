@@ -140,12 +140,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         };
         root = parent;
     }
-    page.layout_anonymous_boxes.borrow_mut().begin_pass();
-    let box_tree = box_tree::BoxTree::with_persistent_anonymous_boxes(
-        &root,
-        styles,
-        &page.layout_anonymous_boxes,
-    );
+    let box_tree = box_tree::BoxTree::retained(&root, styles, &page.layout_box_tree, !partial);
     page.layout_reuse
         .borrow_mut()
         .begin_pass(
@@ -286,9 +281,10 @@ fn layout_page_for_output<M: TextMeasurer>(
     fixed_layers::retain_image_inputs(page, &mut engine.output);
     if !partial {
         page.layout_reuse.borrow_mut().finish_pass();
-        page.layout_anonymous_boxes.borrow_mut().finish_pass();
     }
-    engine.output
+    let output = engine.output;
+    box_tree.retain();
+    output
 }
 
 pub(super) struct LayoutEngine<'a, M> {

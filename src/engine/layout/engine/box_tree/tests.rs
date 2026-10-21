@@ -42,11 +42,12 @@ fn ordinary_cached_children_equal_fresh_composed_pseudo_contents_and_popover_tra
         .collect();
     assert_eq!(ids(elements), expected);
     let cached = tree
+        .boxes
         .children
         .remove(&main.id())
         .expect("ordinary parent cached");
     assert_eq!(ids(tree.children(&main)), complete);
-    tree.children.insert(main.id(), cached);
+    tree.boxes.children.insert(main.id(), cached);
     assert_eq!(ids(tree.children(&main)), complete);
 }
 
@@ -66,11 +67,12 @@ fn slot_assignment_order_is_cached_without_substituting_light_dom_children() {
     let styles = page.style(800.0);
     let mut tree = BoxTree::new(&page.dom.document, &styles);
     let cached = tree
+        .boxes
         .children
         .remove(&main.id())
         .expect("composed parent cached");
     assert_eq!(ids(cached.clone()), ids(tree.children(&main)));
-    tree.children.insert(main.id(), cached);
+    tree.boxes.children.insert(main.id(), cached);
     let assigned = tree
         .children(&main)
         .into_iter()
@@ -90,7 +92,7 @@ fn empty_table_column_cache_preserves_pruning_without_mutating_dom_identity() {
     let version = page.dom.document.document_mutation_version();
     let styles = page.style(800.0);
     let tree = BoxTree::new(&page.dom.document, &styles);
-    assert!(tree.children.contains_key(&main.id()));
+    assert!(tree.boxes.children.contains_key(&main.id()));
     assert!(tree.children(&main).is_empty());
     assert_eq!(ids(main.children.borrow().clone()), original);
     assert_eq!(page.dom.document.document_mutation_version(), version);
@@ -117,7 +119,7 @@ fn each_new_layout_pass_observes_new_topology_and_styles() {
 }
 
 #[test]
-fn persistent_anonymous_boxes_keep_their_identity_while_the_tree_is_unchanged() {
+fn retained_anonymous_boxes_keep_their_identity_while_the_tree_is_unchanged() {
     let page = Page::parse(
         "<style>.cell{display:table-cell}.row{display:table-row}</style>
          <main><span class=cell>a</span><span class=cell>b</span></main>",
@@ -125,20 +127,19 @@ fn persistent_anonymous_boxes_keep_their_identity_while_the_tree_is_unchanged() 
     );
     let main = page.dom.elements_named("main").next().unwrap();
     let styles = page.style(800.0);
-    let boxes = std::cell::RefCell::new(AnonymousBoxes::default());
-    let build = |boxes: &std::cell::RefCell<AnonymousBoxes>| {
-        boxes.borrow_mut().begin_pass();
-        let tree = BoxTree::with_persistent_anonymous_boxes(&page.dom.document, &styles, boxes);
+    let store = std::cell::RefCell::new(RetainedBoxes::default());
+    let build = |store: &std::cell::RefCell<RetainedBoxes>| {
+        let tree = BoxTree::retained(&page.dom.document, &styles, store, true);
         let table = tree.children(&main)[0].clone();
         assert!(tree.is_anonymous(table.id()) && !tree.is_transient_anonymous(table.id()));
         let row = tree.children(&table)[0].clone();
-        boxes.borrow_mut().finish_pass();
+        tree.retain();
         (table.id(), row.id())
     };
-    assert_eq!(build(&boxes), build(&boxes));
-    // Without a persistent source every pass creates new boxes, which layout must not retain.
+    assert_eq!(build(&store), build(&store));
+    // Without a store every pass creates new boxes, which layout must not retain.
     let tree = BoxTree::new(&page.dom.document, &styles);
     let table = tree.children(&main)[0].clone();
     assert!(tree.is_transient_anonymous(table.id()));
-    assert_ne!(table.id(), build(&boxes).0);
+    assert_ne!(table.id(), build(&store).0);
 }

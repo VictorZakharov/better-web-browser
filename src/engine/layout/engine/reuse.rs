@@ -17,7 +17,7 @@
 // complete pass neither computed nor reused are dropped at its end, which bounds the cache by
 // the live document.
 use super::block_measure::MeasureKey;
-pub(crate) use super::box_tree::AnonymousBoxes;
+pub(crate) use super::box_tree::RetainedBoxes;
 use super::*;
 use std::collections::HashSet;
 

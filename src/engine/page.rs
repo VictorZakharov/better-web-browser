@@ -110,9 +110,9 @@ pub struct Page {
     style_images_pending: bool,
     /// Layout results reused across passes; see `layout::engine::reuse`.
     pub(crate) layout_reuse: std::cell::RefCell<crate::engine::layout::engine::reuse::LayoutReuse>,
-    /// Table-fixup boxes whose identity persists across passes; see `layout::engine::box_tree`.
-    pub(crate) layout_anonymous_boxes:
-        std::cell::RefCell<crate::engine::layout::engine::reuse::AnonymousBoxes>,
+    /// The box tree retained across passes; see `layout::engine::box_tree::retained`.
+    pub(crate) layout_box_tree:
+        std::cell::RefCell<crate::engine::layout::engine::reuse::RetainedBoxes>,
 }
 
 impl Page {
@@ -188,7 +188,7 @@ impl Page {
             document_base: Default::default(),
             style_images_pending: false,
             layout_reuse: Default::default(),
-            layout_anonymous_boxes: Default::default(),
+            layout_box_tree: Default::default(),
         };
         page.refresh_media_sources();
         page.install_embedded_images();
