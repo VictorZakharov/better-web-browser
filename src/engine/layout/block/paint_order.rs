@@ -76,17 +76,63 @@ enum Phase {
     Positioned,
 }
 
+/// Items and hit-test node identifiers in final paint order, as a linked run of arena entries.
+/// Paint order nests one level per box, so contents are linked rather than copied: appending a
+/// child's contents or wrapping them in a begin/end pair costs the same at every depth, and each
+/// display item moves only into and out of the arena.
 #[derive(Default)]
 struct Contents {
-    items: Vec<DisplayItem>,
-    nodes: Vec<NodeId>,
+    /// The first and last entry, or `None` when empty.
+    ends: Option<(usize, usize)>,
 }
-impl Contents {
-    fn append(&mut self, other: Self) {
-        self.items.extend(other.items);
-        self.nodes.extend(other.nodes);
+
+enum Entry {
+    Item(DisplayItem),
+    Node(NodeId),
+}
+
+/// Each entry and the index of the entry that follows it.
+#[derive(Default)]
+struct Arena {
+    entries: Vec<(Option<Entry>, Option<usize>)>,
+}
+
+impl Arena {
+    fn single(&mut self, entry: Entry) -> Contents {
+        let index = self.entries.len();
+        self.entries.push((Some(entry), None));
+        Contents {
+            ends: Some((index, index)),
+        }
+    }
+
+    fn append(&mut self, contents: &mut Contents, other: Contents) {
+        let Some((other_head, other_tail)) = other.ends else {
+            return;
+        };
+        contents.ends = Some(match contents.ends {
+            Some((head, tail)) => {
+                self.entries[tail].1 = Some(other_head);
+                (head, other_tail)
+            }
+            None => (other_head, other_tail),
+        });
+    }
+
+    fn push(&mut self, contents: &mut Contents, entry: Entry) {
+        let single = self.single(entry);
+        self.append(contents, single);
+    }
+
+    /// Wraps `contents` in a begin/end item pair.
+    fn wrap(&mut self, contents: &mut Contents, begin: DisplayItem, end: DisplayItem) {
+        let mut wrapped = self.single(Entry::Item(begin));
+        self.append(&mut wrapped, std::mem::take(contents));
+        self.push(&mut wrapped, Entry::Item(end));
+        *contents = wrapped;
     }
 }
+
 struct Chunk {
     phase: Phase,
     level: i32,
@@ -106,7 +152,7 @@ impl Chunk {
 
 // Clips do not establish stacking contexts. Each escaped paint chunk keeps a balanced
 // clip pair, so moving it in z order cannot remove an ancestor's clipping constraint.
-fn parse(items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
+fn parse(arena: &mut Arena, items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
     let mut chunks = Vec::new();
     while let Some(item) = items.next() {
         match item {
@@ -127,10 +173,12 @@ fn parse(items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
                 isolates,
                 node_id,
             } => {
-                let children = parse(items);
+                let children = parse(arena, items);
                 if kind == DECORATION {
-                    let mut content = flatten(children);
-                    content.nodes.extend(node_id);
+                    let mut content = flatten(arena, children);
+                    if let Some(node_id) = node_id {
+                        arena.push(&mut content, Entry::Node(node_id));
+                    }
                     chunks.push(Chunk::new(Phase::Background, content));
                 } else {
                     let phase = match kind {
@@ -148,65 +196,72 @@ fn parse(items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
                         phase,
                         level,
                         escapes: isolates || matches!(phase, Phase::Negative | Phase::Positioned),
-                        content: order_context(local),
+                        content: order_context(arena, local),
                     });
                     chunks.extend(escaping);
                 }
             }
             DisplayItem::BeginClip { bounds } => {
-                let mut children = parse(items);
+                let mut children = parse(arena, items);
                 if children.is_empty() {
                     children.push(Chunk::new(Phase::Content, Contents::default()));
                 }
                 for mut child in children {
-                    child
-                        .content
-                        .items
-                        .insert(0, DisplayItem::BeginClip { bounds });
-                    child.content.items.push(DisplayItem::EndClip { bounds });
+                    arena.wrap(
+                        &mut child.content,
+                        DisplayItem::BeginClip { bounds },
+                        DisplayItem::EndClip { bounds },
+                    );
                     chunks.push(child);
                 }
             }
             DisplayItem::BeginCssMask { bounds, layers } => {
-                let mut content = order_context(parse(items));
-                content
-                    .items
-                    .insert(0, DisplayItem::BeginCssMask { bounds, layers });
-                content.items.push(DisplayItem::EndMask { bounds });
+                let children = parse(arena, items);
+                let mut content = order_context(arena, children);
+                arena.wrap(
+                    &mut content,
+                    DisplayItem::BeginCssMask { bounds, layers },
+                    DisplayItem::EndMask { bounds },
+                );
                 chunks.push(Chunk::new(Phase::Content, content));
             }
             DisplayItem::BeginOpacity { bounds, opacity } => {
-                let mut content = order_context(parse(items));
-                content
-                    .items
-                    .insert(0, DisplayItem::BeginOpacity { bounds, opacity });
-                content.items.push(DisplayItem::EndOpacity { bounds });
+                let children = parse(arena, items);
+                let mut content = order_context(arena, children);
+                arena.wrap(
+                    &mut content,
+                    DisplayItem::BeginOpacity { bounds, opacity },
+                    DisplayItem::EndOpacity { bounds },
+                );
                 chunks.push(Chunk::new(Phase::Content, content));
             }
             DisplayItem::BeginTransform { bounds, matrix } => {
-                let mut content = order_context(parse(items));
-                content
-                    .items
-                    .insert(0, DisplayItem::BeginTransform { bounds, matrix });
-                content.items.push(DisplayItem::EndTransform { bounds });
+                let children = parse(arena, items);
+                let mut content = order_context(arena, children);
+                arena.wrap(
+                    &mut content,
+                    DisplayItem::BeginTransform { bounds, matrix },
+                    DisplayItem::EndTransform { bounds },
+                );
                 chunks.push(Chunk::new(Phase::Content, content));
             }
             DisplayItem::NodeBoundary {
                 node_id,
                 entering: true,
             } => {
-                let mut content = order_context(parse(items));
-                content.items.insert(
-                    0,
+                let children = parse(arena, items);
+                let mut content = order_context(arena, children);
+                arena.wrap(
+                    &mut content,
                     DisplayItem::NodeBoundary {
                         node_id,
                         entering: true,
                     },
+                    DisplayItem::NodeBoundary {
+                        node_id,
+                        entering: false,
+                    },
                 );
-                content.items.push(DisplayItem::NodeBoundary {
-                    node_id,
-                    entering: false,
-                });
                 chunks.push(Chunk::new(Phase::Content, content));
             }
             item => {
@@ -216,20 +271,16 @@ fn parse(items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
                     DisplayItem::Control(control) => Some(control.node_id),
                     _ => None,
                 };
-                if let Some(last) = chunks
-                    .last_mut()
-                    .filter(|last| last.phase == Phase::Content && !last.escapes)
+                if !chunks
+                    .last()
+                    .is_some_and(|last| last.phase == Phase::Content && !last.escapes)
                 {
-                    last.content.items.push(item);
-                    last.content.nodes.extend(control_id);
-                } else {
-                    chunks.push(Chunk::new(
-                        Phase::Content,
-                        Contents {
-                            items: vec![item],
-                            nodes: control_id.into_iter().collect(),
-                        },
-                    ));
+                    chunks.push(Chunk::new(Phase::Content, Contents::default()));
+                }
+                let content = &mut chunks.last_mut().expect("a content chunk").content;
+                arena.push(content, Entry::Item(item));
+                if let Some(control_id) = control_id {
+                    arena.push(content, Entry::Node(control_id));
                 }
             }
         }
@@ -237,14 +288,14 @@ fn parse(items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
     chunks
 }
 
-fn flatten(chunks: Vec<Chunk>) -> Contents {
+fn flatten(arena: &mut Arena, chunks: Vec<Chunk>) -> Contents {
     let mut result = Contents::default();
     for chunk in chunks {
-        result.append(chunk.content);
+        arena.append(&mut result, chunk.content);
     }
     result
 }
-fn order_context(mut chunks: Vec<Chunk>) -> Contents {
+fn order_context(arena: &mut Arena, mut chunks: Vec<Chunk>) -> Contents {
     // The context's own background precedes its negative descendants; other backgrounds
     // follow them. Stable sorting preserves tree order for equal stack levels.
     let mut own = if chunks
@@ -256,15 +307,32 @@ fn order_context(mut chunks: Vec<Chunk>) -> Contents {
         Contents::default()
     };
     chunks.sort_by_key(|chunk| (chunk.phase, chunk.level));
-    own.append(flatten(chunks));
+    let rest = flatten(arena, chunks);
+    arena.append(&mut own, rest);
     own
 }
 pub(in crate::engine::layout) fn finalize(output: &mut LayoutOutput) {
-    let content = flatten(parse(&mut std::mem::take(&mut output.items).into_iter()));
-    output.items = content.items;
+    let items = std::mem::take(&mut output.items);
+    let mut arena = Arena {
+        entries: Vec::with_capacity(items.len() + items.len() / 4),
+    };
+    let chunks = parse(&mut arena, &mut items.into_iter());
+    let content = flatten(&mut arena, chunks);
+    let mut items = Vec::with_capacity(arena.entries.len());
     // Hit-test geometry must follow the same final order as visible paint, including
     // backgrounds without text (popup padding is interactive too).
-    output.node_paint_order = content.nodes;
+    let mut nodes = Vec::new();
+    let mut next = content.ends.map(|(head, _)| head);
+    while let Some(index) = next {
+        let (entry, following) = &mut arena.entries[index];
+        match entry.take().expect("each paint-order entry is linked once") {
+            Entry::Item(item) => items.push(item),
+            Entry::Node(node) => nodes.push(node),
+        }
+        next = *following;
+    }
+    output.items = items;
+    output.node_paint_order = nodes;
 }
 
 #[cfg(test)]
