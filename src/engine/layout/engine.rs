@@ -4,6 +4,7 @@ pub(super) mod box_tree;
 pub(crate) mod fixed_layers;
 mod intrinsic_widths;
 mod layout_reads;
+mod measured;
 pub(in crate::engine::layout) use layout_reads::LayoutReads;
 mod popover;
 mod probe_cache;

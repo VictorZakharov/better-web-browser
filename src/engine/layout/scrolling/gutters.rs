@@ -19,11 +19,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if let Some(metrics) = self.replay_subtree(&key, node, x, y) {
             return metrics;
         }
+        if let Some(metrics) = self.replay_measured(&key, node, x, y) {
+            return metrics;
+        }
+        let measured = self.measures_alone(node);
+        if measured {
+            self.begin_reads();
+        }
         let capture = self.begin_capture(key, node, x, y);
         let metrics =
             self.layout_block_with_gutters(node, x, y, width, height, used_width, used_height);
         if let Some(capture) = capture {
             self.finish_capture(capture, node, metrics);
+        }
+        if measured {
+            self.remember_measured(key, x, y, metrics);
         }
         metrics
     }

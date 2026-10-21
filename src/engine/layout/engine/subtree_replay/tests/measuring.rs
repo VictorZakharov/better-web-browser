@@ -44,3 +44,35 @@ fn probes_inside_a_grid_replay_the_unchanged_sections() {
     );
     assert_warm_matches_cold(&page);
 }
+
+const ITEM: &str =
+    "<div id=item><section><p id=text>alpha beta gamma delta epsilon zeta eta theta iota
+  kappa lambda mu nu xi omicron pi rho sigma tau upsilon</p></section></div>";
+
+/// Text measurements in the pass after the item's text changed.
+fn measurements_after_a_change(markup: &str) -> usize {
+    let mut page = Page::parse(markup, "https://example.test/");
+    page.refresh_resources_for_viewport(WIDTH, HEIGHT);
+    settle(&page);
+    Node::set_text_content(&element(&page, "text"), "a changed paragraph of words");
+    page.refresh_resources_for_viewport(WIDTH, HEIGHT);
+    let mut changed = Counting::default();
+    layout(&page, &mut changed);
+    changed.calls
+}
+
+#[test]
+fn nested_grids_measure_a_changed_item_once_per_pass() {
+    let style = "<style>.grid{display:grid} section{display:flow-root}</style>";
+    let single = measurements_after_a_change(&format!("{style}<main class=grid>{ITEM}</main>"));
+    let nested = measurements_after_a_change(&format!(
+        "{style}<div class=grid><div><main class=grid>{ITEM}</main></div></div>"
+    ));
+    // The outer grid's probe lays the inner grid out, which probes and lays out the item again;
+    // the second measuring layout of the item reuses the first.
+    assert!(single > 0);
+    assert!(
+        nested <= single,
+        "nested grids measured the item {nested} times, a single grid {single}"
+    );
+}

@@ -16,8 +16,10 @@
 // its own copy of what it emitted, captured as soon as its layout finishes and before any
 // ancestor moves it, so a nested subtree can still be replayed after an enclosing one changes.
 // Entries are bounded by size so that very large containers recompute while their children
-// replay. A subtree is retained only when its root was laid out in an earlier pass too, so a
-// document's first layout, and new content, do not pay for copying what they emit. That holds
+// replay. A subtree is retained only when its root was laid out from the same DOM and styles in
+// the previous pass too, so a document's first layout, new content, and the ancestors of content
+// that keeps changing (as scripts fill a page in) do not pay for copying what they emit on every
+// pass; once a subtree is unchanged for a pass, the next one retains it. That holds
 // across a change of arguments or environment: after a scrollbar narrows the viewport, which
 // invalidates every result, the next pass at the new width replays instead of laying out the
 // whole document a second time.
@@ -84,6 +86,16 @@ pub(super) struct SubtreeEntry {
     shared_floats: Option<(f32, Vec<(Float, RectF)>)>,
 }
 
+/// The last pass that laid a node out as a subtree root, and the inputs it used.
+#[derive(Debug)]
+pub(super) struct Sighting {
+    /// Zero before the first sighting; passes count from one.
+    pub(super) last: u64,
+    inputs: Inputs,
+    /// The inputs equal those of the sighting in an earlier pass.
+    settled: bool,
+}
+
 /// A layout in progress whose result may be retained.
 pub(in crate::engine::layout) struct Capture {
     key: SubtreeKey,
@@ -113,12 +125,21 @@ impl LayoutReuse {
         self.subtrees.get(key)
     }
 
-    /// Whether a layout of `key` should be retained: its root was laid out in an earlier pass.
-    fn seen_before(&mut self, key: SubtreeKey) -> bool {
+    /// Whether a layout of `key` should be retained: its root was laid out from the same inputs
+    /// in the previous pass, or its retained result is being replaced.
+    fn settled(&mut self, key: SubtreeKey, inputs: Inputs) -> bool {
         let pass = self.pass;
-        let (first, last) = self.sighted.entry(key.node).or_insert((pass, pass));
-        *last = pass;
-        self.subtrees.contains_key(&key) || *first < pass
+        let sighting = self.sighted.entry(key.node).or_insert(Sighting {
+            last: 0,
+            inputs,
+            settled: false,
+        });
+        if sighting.last != pass {
+            sighting.settled = sighting.last != 0 && sighting.inputs == inputs;
+            sighting.last = pass;
+            sighting.inputs = inputs;
+        }
+        self.subtrees.contains_key(&key) || sighting.settled
     }
 }
 
@@ -144,7 +165,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     }
 
     /// Whether `node` may be retained at all; checked before laying it out.
-    fn replayable_root(&self, node: &NodeRef) -> bool {
+    pub(super) fn replayable_root(&self, node: &NodeRef) -> bool {
         let style = self.styles.get(node);
         matches!(style.position, Position::Static | Position::Relative)
             && style.float == Float::None
@@ -258,7 +279,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return None;
         }
         let inputs = self.reuse_inputs(node)?;
-        if !self.page.layout_reuse.borrow_mut().seen_before(key) {
+        if !self.page.layout_reuse.borrow_mut().settled(key, inputs) {
             return None;
         }
         self.begin_reads();

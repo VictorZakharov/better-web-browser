@@ -3,6 +3,7 @@ use crate::engine::layout::test_support::FixedMeasurer;
 
 mod arrivals;
 mod measuring;
+mod settling;
 
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;
