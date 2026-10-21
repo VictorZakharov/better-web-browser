@@ -2,6 +2,7 @@ use super::*;
 use crate::engine::layout::test_support::FixedMeasurer;
 
 mod arrivals;
+mod measuring;
 
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;
