@@ -71,6 +71,32 @@ fn trailing_structural_selectors_restyle_previous_siblings() {
 }
 
 #[test]
+fn previous_last_children_restyle_as_elements_unless_a_condition_reaches_below() {
+    let style = concat!(
+        "<style>div:last-child{margin-left:3px} section:last-child{color:red}",
+        "li:last-child b{color:blue} aside.deep:last-child p{color:green}",
+        "main:has(> div:last-child) p{color:blue}",
+        "</style>",
+    );
+    for (previous, reaches_below) in [
+        ("<div><p>a</p><p>b</p></div>", false),
+        ("<section><p>a</p></section>", false),
+        ("<aside class=deep><p>a</p></aside>", true),
+    ] {
+        let first = format!("{style}<main>{previous}");
+        let (page, invalidation, _) = stream(&first, "<span>new</span></main>");
+        let main = page.dom.elements_named("main").next().unwrap();
+        let previous = main.children.borrow()[0].clone();
+        assert!(invalidation.roots.contains(&previous.id()), "{first}");
+        assert_eq!(
+            invalidation.element_roots.contains(&previous.id()),
+            !reaches_below,
+            "{first}"
+        );
+    }
+}
+
+#[test]
 fn parent_dependencies_widen_to_the_parent() {
     for (style, first, rest) in [
         ("div:empty{color:red}", "<div> ", "text</div>"),

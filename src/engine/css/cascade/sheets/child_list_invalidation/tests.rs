@@ -88,6 +88,7 @@ fn change_children(html: &str, change: &Change) -> StyleRefreshStats {
         mutation_count: 1,
         roots: roots.iter().map(|root| root.id()).collect(),
         child_list_roots: vec![parent.id()],
+        element_roots: Vec::new(),
         removed_nodes,
         ..RenderInvalidation::default()
     };

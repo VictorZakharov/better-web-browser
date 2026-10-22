@@ -128,6 +128,7 @@ fn a_rule_change_with_a_body_insertion_restyles_only_the_insertion_and_rule_subj
     let invalidation = RenderInvalidation {
         roots: vec![style.id(), body.id()],
         child_list_roots: vec![body.id()],
+        element_roots: Vec::new(),
         impact: crate::engine::invalidation::MutationKind::ChildList.impact(),
         mutation_count: 2,
         rebuild_style_rules: true,

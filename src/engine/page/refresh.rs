@@ -322,6 +322,11 @@ impl Page {
                         &mut invalidation_roots,
                         &mut element_roots,
                     );
+                    styles.resolve_element_roots(
+                        &invalidation.element_roots,
+                        &mut invalidation_roots,
+                        &mut element_roots,
+                    );
                     styles.refresh_subtrees_after_invalidation(
                         &self.dom.document,
                         &invalidation_roots,

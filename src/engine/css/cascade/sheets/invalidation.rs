@@ -38,6 +38,7 @@ impl StyleSet {
                 &mut roots,
                 &mut elements,
             );
+            self.resolve_element_roots(&invalidation.element_roots, &mut roots, &mut elements);
             let (removed_styles, removed_generated) = self.prune_uncomposed_styles(dom);
             let mut stats = self.refresh_subtrees_after_invalidation(
                 &dom.document,
@@ -78,6 +79,7 @@ impl StyleSet {
                 &mut roots,
                 &mut elements,
             );
+            self.resolve_element_roots(&invalidation.element_roots, &mut roots, &mut elements);
             roots.extend(diff.subtrees);
             // Remembered :has() results follow the anchor order of the rules with :has(), so
             // relational changes also keep every key-matched subject.

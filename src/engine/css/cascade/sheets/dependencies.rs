@@ -20,7 +20,7 @@ pub(in crate::engine::css::cascade) struct NonlocalDependencies {
 /// Selectors through which appending a child can restyle elements outside the new subtree.
 /// Positions counted from the start are unchanged by an append; these count from the end.
 /// https://drafts.csswg.org/selectors-4/#structural-pseudos
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct AppendedChildDependencies {
     /// `:last-child` or `:only-child`: the previous last element child.
     pub(crate) last_child: bool,
@@ -30,6 +30,15 @@ pub(crate) struct AppendedChildDependencies {
     pub(crate) nth_last: bool,
     /// `:empty`: the parent, while it had no element or non-whitespace text children.
     pub(crate) empty: bool,
+    previous_subtrees: super::previous_sibling::PreviousSubtrees,
+}
+
+impl AppendedChildDependencies {
+    /// Whether appending after `previous`, the previous last element child or last of its
+    /// type, can restyle its descendants and not only itself.
+    pub(crate) fn previous_subtree(&self, previous: &NodeRef) -> bool {
+        self.previous_subtrees.reaches(previous)
+    }
 }
 
 impl NonlocalDependencies {
@@ -37,6 +46,10 @@ impl NonlocalDependencies {
         let mut dependencies = Self::default();
         for rule in rules {
             dependencies.include(&rule.selector);
+            dependencies
+                .appended_child
+                .previous_subtrees
+                .include(&rule.selector);
             dependencies.has_anchors.include(&rule.selector);
         }
         dependencies
@@ -67,8 +80,8 @@ impl NonlocalDependencies {
         Some(relational)
     }
 
-    pub(in crate::engine::css::cascade) fn appended_child(&self) -> AppendedChildDependencies {
-        self.appended_child
+    pub(in crate::engine::css::cascade) fn appended_child(&self) -> &AppendedChildDependencies {
+        &self.appended_child
     }
 
     /// See [`super::has_anchors::HasAnchors::sibling_relations`].
@@ -196,7 +209,7 @@ pub(super) fn cross_tree_or_scoped(rules: &[Rule]) -> bool {
 }
 
 impl StyleSet {
-    pub(crate) fn appended_child_dependencies(&self) -> AppendedChildDependencies {
+    pub(crate) fn appended_child_dependencies(&self) -> &AppendedChildDependencies {
         self.compiled.nonlocal_dependencies.appended_child()
     }
 

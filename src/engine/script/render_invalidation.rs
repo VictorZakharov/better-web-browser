@@ -241,6 +241,7 @@ impl PendingInvalidation {
             removals_are_local: !self.removed_nodes.is_empty() && !self.removed_global_dependency,
             class_changes: self.class_changes.clone(),
             child_list_roots: child_lists.iter().map(|root| root.id()).collect(),
+            element_roots: Vec::new(),
         }
     }
 

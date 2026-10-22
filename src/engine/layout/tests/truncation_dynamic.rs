@@ -25,6 +25,7 @@ fn refresh(
             removals_are_local: false,
             class_changes: Vec::new(),
             child_list_roots: Vec::new(),
+            element_roots: Vec::new(),
         },
     )
 }
