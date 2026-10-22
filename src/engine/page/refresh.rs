@@ -213,10 +213,13 @@ impl Page {
             .with_viewport(viewport_width, viewport_height);
         let viewport_width = viewport_width.max(1.0);
         let viewport_height = viewport_height.max(1.0);
-        self.adopt_style_seed();
-        let (styles, stats) =
+        let seeded = self.adopt_style_seed();
+        let (styles, mut stats) =
             self.refresh_style_cache(viewport_width, viewport_height, invalidation, true);
         self.store_styles(viewport_width, viewport_height, styles);
+        // Geometry published before the seed may predate it; lay out once, as a full style
+        // build would.
+        stats.layout_changed |= seeded;
         stats
     }
 

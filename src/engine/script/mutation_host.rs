@@ -323,7 +323,7 @@ fn child_list_kind(root: &NodeRef) -> MutationKind<'static> {
     }
 }
 
-fn subtree_contains_style(root: &NodeRef) -> bool {
+pub(in crate::engine::script) fn subtree_contains_style(root: &NodeRef) -> bool {
     Node::shadow_including_descendants(root).any(|node| {
         matches!(node.tag_name(), Some("style" | "link")) || !node.adopted_stylesheets().is_empty()
     })

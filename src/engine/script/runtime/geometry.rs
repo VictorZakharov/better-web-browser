@@ -82,6 +82,13 @@ impl ScriptRuntime {
         host.acknowledge_font_layout();
     }
 
+    /// Forgets the mutations recorded for the next layout flush. The renderer calls this when
+    /// the flush will start from the page's styles of the current document, which already
+    /// reflect them; the startup and parser records would otherwise restyle every element.
+    pub(crate) fn discard_layout_invalidation(&mut self) {
+        self.host.borrow_mut().pending_layout_invalidation = Default::default();
+    }
+
     pub(crate) fn set_layout_flush_callback(&mut self, callback: LayoutFlushCallback) {
         self.host.borrow_mut().layout_flush = Some(callback);
     }

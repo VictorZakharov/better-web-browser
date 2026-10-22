@@ -122,6 +122,11 @@ impl DocumentRuntime {
         snapshot.synchronize_layout_snapshot(&self.page);
         // The CSSOM flush callback below builds missing styles on demand. Publishing already
         // computed geometry must not eagerly build a second style tree that script may never read.
+        let seeded = snapshot.awaits_style_seed();
+        drop(snapshot);
+        if seeded && let Some(runtime) = self.script_runtime.as_mut() {
+            runtime.discard_layout_invalidation();
+        }
     }
 
     pub(super) fn script_layout_flush_callback(
