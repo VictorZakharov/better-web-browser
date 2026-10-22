@@ -61,7 +61,7 @@ impl Page {
         let mut reference_index = references::IndexCache::default();
         for svg in svgs {
             let key = inline_svg_key(&svg);
-            let styles = self.cached_styles.as_ref().map(|(_, _, styles)| styles);
+            let styles = self.cached_styles.as_ref().map(|(_, _, styles)| &**styles);
             if styles.is_some_and(|styles| super::render_visibility::suppressed(&svg, styles)) {
                 // Keep the DOM and referenced definitions intact. No new stamp
                 // is installed: revealing the subtree recomputes the complete

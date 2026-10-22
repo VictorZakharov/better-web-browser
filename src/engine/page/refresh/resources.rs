@@ -57,7 +57,7 @@ impl Page {
         let started = self.resource_profile.start();
         self.request_visible_fonts(&mut styles);
         self.resource_profile.finish(Phase::Fonts, started);
-        self.cached_styles = Some((viewport_width.max(1.0), viewport_height.max(1.0), styles));
+        self.store_styles(viewport_width, viewport_height, styles);
         let started = self.resource_profile.start();
         self.refresh_inline_svgs();
         self.resource_profile.finish(Phase::Svg, started);

@@ -57,7 +57,7 @@ impl Page {
             .filter(|(width, height, _)| {
                 (*width - viewport_width).abs() < 0.5 && (*height - viewport_height).abs() < 0.5
             })
-            .map(|(_, _, styles)| styles)
+            .map(|(_, _, styles)| &**styles)
     }
 
     pub fn resource_blocks_first_paint(&self, resource: &PageResource) -> bool {
@@ -213,10 +213,26 @@ impl Page {
             .with_viewport(viewport_width, viewport_height);
         let viewport_width = viewport_width.max(1.0);
         let viewport_height = viewport_height.max(1.0);
+        self.adopt_style_seed();
         let (styles, stats) =
             self.refresh_style_cache(viewport_width, viewport_height, invalidation, true);
-        self.cached_styles = Some((viewport_width, viewport_height, styles));
+        self.store_styles(viewport_width, viewport_height, styles);
         stats
+    }
+
+    /// Stores refreshed styles with the document version they describe.
+    pub(super) fn store_styles(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
+        styles: StyleSet,
+    ) {
+        self.styled_version = Some(self.dom.document.subtree_mutation_version());
+        self.cached_styles = Some((
+            viewport_width.max(1.0),
+            viewport_height.max(1.0),
+            std::rc::Rc::new(styles),
+        ));
     }
 
     fn refresh_style_cache(
@@ -276,6 +292,11 @@ impl Page {
         let cached = self.cached_styles.take();
         let stale = cached.is_none() && self.previous_styles.is_some();
         let cached = cached.or_else(|| self.previous_styles.take());
+        // A snapshot's seed holds only a weak reference, so this unwraps without copying.
+        let cached = cached.map(|(width, height, styles)| {
+            let styles = std::rc::Rc::try_unwrap(styles).unwrap_or_else(|shared| shared.fork());
+            (width, height, styles)
+        });
         match cached {
             Some((cached_width, cached_height, mut styles))
                 if !stale

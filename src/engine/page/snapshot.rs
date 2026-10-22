@@ -41,6 +41,8 @@ impl Page {
             font_faces_cache: std::cell::RefCell::new(None),
             cached_styles: None,
             previous_styles: None,
+            styled_version: None,
+            style_seed: self.style_seed_for_snapshot(),
             deferred_style_invalidation: None,
             images: layout_image_metadata(&self.images),
             canvas_gpu_frames: HashMap::new(),
@@ -85,8 +87,56 @@ impl Page {
         if style_sources_changed {
             self.cached_styles = None;
         }
+        self.style_seed = source.style_seed_for_snapshot();
+    }
+
+    /// The page's styles, when they describe the document exactly as it is now.
+    ///
+    /// The seed holds a weak reference. The page replaces or unwraps its styles before changing
+    /// them, so a seed that still upgrades holds exactly the styles of this synchronization.
+    fn style_seed_for_snapshot(&self) -> Option<StyleSeed> {
+        let (width, height, styles) = self.cached_styles.as_ref()?;
+        (self.deferred_style_invalidation.is_none()
+            && self.styled_version == Some(self.dom.document.subtree_mutation_version()))
+        .then(|| StyleSeed {
+            styles: std::rc::Rc::downgrade(styles),
+            width: *width,
+            height: *height,
+        })
+    }
+
+    /// Starts a snapshot without styles from its seed instead of computing the whole document.
+    ///
+    /// Only the first flush after the snapshot's styles were dropped adopts a seed, and every
+    /// such drop happens at a synchronization, so no earlier flush has consumed script
+    /// mutations made after the seed's document version. The flush's invalidation therefore
+    /// covers every change since then, and the seeded set refreshes like the page's own.
+    pub(super) fn adopt_style_seed(&mut self) {
+        let seed = self.style_seed.take();
+        if self.cached_styles.is_some() || self.previous_styles.is_some() {
+            return;
+        }
+        let Some(seed) = seed else {
+            return;
+        };
+        let Some(styles) = seed.styles.upgrade() else {
+            return;
+        };
+        // A different flush viewport takes the cached path's media-environment refresh.
+        self.cached_styles = Some((seed.width, seed.height, std::rc::Rc::new(styles.fork())));
     }
 }
+
+/// A weak reference to a page's styles, current at a snapshot synchronization.
+#[derive(Debug)]
+pub(super) struct StyleSeed {
+    styles: std::rc::Weak<StyleSet>,
+    width: f32,
+    height: f32,
+}
+
+#[cfg(test)]
+mod seed_tests;
 
 #[cfg(test)]
 mod tests {

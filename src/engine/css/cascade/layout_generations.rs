@@ -41,6 +41,18 @@ impl LayoutGenerations {
         }
     }
 
+    /// A copy for another style set in which every known node carries one fresh generation, so
+    /// no value a layout recorded against this set matches the copy.
+    pub(super) fn renumbered(&self) -> Self {
+        let fresh = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
+        Self {
+            own: self.own.keys().map(|&node| (node, fresh)).collect(),
+            subtree: self.subtree.keys().map(|&node| (node, fresh)).collect(),
+            current: Cell::new(fresh),
+            observed: Cell::new(false),
+        }
+    }
+
     /// Forgets every node; their generations stay unknown until they are computed again.
     pub(super) fn clear(&mut self) {
         self.own.clear();
