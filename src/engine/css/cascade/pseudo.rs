@@ -40,11 +40,9 @@ impl StyleSet {
         self.pseudo_styles.get(&(origin.id(), pseudo))
     }
 
-    pub(super) fn sync_generated_pseudos(
-        &mut self,
-        origin: &NodeRef,
-        origin_style: &ComputedStyle,
-    ) -> PseudoChanges {
+    /// Brings `origin`'s generated pseudo-elements up to date with its style, which the caller
+    /// has already stored. Reading it from the store lets the caller move a new style in.
+    pub(super) fn sync_generated_pseudos(&mut self, origin: &NodeRef) -> PseudoChanges {
         if origin.element().is_none() {
             return PseudoChanges::default();
         }
@@ -52,7 +50,11 @@ impl StyleSet {
         if origin.attr("placeholder").is_some() {
             let key = (origin.id(), PseudoElement::Placeholder);
             let style = self
-                .compute_pseudo_style(origin, PseudoElement::Placeholder, origin_style)
+                .compute_pseudo_style(
+                    origin,
+                    PseudoElement::Placeholder,
+                    &self.styles[&origin.id()],
+                )
                 .0;
             // A retained control owns the placeholder paint, not a generated child box.
             let changed = self.pseudo_styles.get(&key) != Some(&style);
@@ -70,12 +72,17 @@ impl StyleSet {
             // Most elements have no generated-content rule. Resolve inheritance and values only
             // for matching rules; explicit CSSOM queries still compute initial/inherited values.
             let matching = self.matching_rules(origin, Some(pseudo));
-            if !matching.is_empty() {
-                let style =
-                    self.compute_pseudo_style_from_rules(origin, pseudo, origin_style, &matching);
-                self.install_pseudo(origin, pseudo, style);
-            } else {
-                self.remove_pseudo(origin.id(), pseudo);
+            let style = (!matching.is_empty()).then(|| {
+                self.compute_pseudo_style_from_rules(
+                    origin,
+                    pseudo,
+                    &self.styles[&origin.id()],
+                    &matching,
+                )
+            });
+            match style {
+                Some(style) => self.install_pseudo(origin, pseudo, style),
+                None => self.remove_pseudo(origin.id(), pseudo),
             }
             // Matching a rule is not a geometry change. Compare materialized boxes as well as
             // their resolved text: attr() content can change without a computed-style change.

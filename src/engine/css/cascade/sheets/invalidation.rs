@@ -78,12 +78,15 @@ impl StyleSet {
                 &mut roots,
                 &mut elements,
             );
-            // Remembered :has() results follow the anchor order of the rules with :has().
+            roots.extend(diff.subtrees);
+            // Remembered :has() results follow the anchor order of the rules with :has(), so
+            // relational changes also keep every key-matched subject.
             if diff.relational {
                 self.has_results.clear();
+                elements.extend(diff.subjects);
+            } else {
+                elements.extend(self.subjects_matched_by(&diff.changed, diff.subjects));
             }
-            roots.extend(diff.subtrees);
-            elements.extend(diff.subjects);
             let (removed_styles, removed_generated) = self.prune_uncomposed_styles(dom);
             let mut stats = self.refresh_subtrees_after_invalidation(
                 &dom.document,

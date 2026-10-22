@@ -11,6 +11,8 @@
 // the document for every inserted or removed sheet.
 // https://drafts.csswg.org/cssom/#add-a-css-style-sheet
 use super::*;
+use crate::engine::css::rule_index::RuleIndex;
+use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
@@ -124,6 +126,8 @@ pub(super) struct RuleDiff {
     pub(super) subtrees: Vec<NodeRef>,
     /// A changed rule contains `:has()`, so remembered anchor results no longer line up.
     pub(super) relational: bool,
+    /// The added and removed rules.
+    pub(super) changed: Vec<Rule>,
 }
 
 /// Compares two rule sets, or returns `None` when their difference is not limited to whole
@@ -144,11 +148,13 @@ pub(super) fn changed_rule_subjects(
     let new_rules = positions(&new.rules)?;
     let mut keys = SubjectKeys::default();
     let mut relational = false;
+    let mut changed = Vec::new();
     let mut previous = None;
     for rule in &new.rules {
         let Some(&index) = old_rules.get(&identity(rule)) else {
             keys.include(rule)?;
             relational |= super::has_anchors::HasAnchors::is_relational(&rule.selector);
+            changed.push(rule.clone());
             continue;
         };
         let shared = &old.rules[index];
@@ -168,6 +174,7 @@ pub(super) fn changed_rule_subjects(
     {
         keys.include(rule)?;
         relational |= super::has_anchors::HasAnchors::is_relational(&rule.selector);
+        changed.push(rule.clone());
     }
     let (mut subjects, mut subtrees) = (Vec::new(), Vec::new());
     for node in Node::composed_descendants(document) {
@@ -181,7 +188,43 @@ pub(super) fn changed_rule_subjects(
         subjects,
         subtrees,
         relational,
+        changed,
     })
+}
+
+impl StyleSet {
+    /// Keeps the key-matched subjects that a changed rule matches in full. A subject key alone
+    /// names every `<a>` for a rule like `.ve-activated #catlinks a`, which matches none of them
+    /// until an ancestor gains its class.
+    ///
+    /// Removed rules are matched against the current document too. Since the previous cascade,
+    /// every DOM change has its own invalidation root and every class change is resolved against
+    /// both rule sets, so outside those roots a rule matched then exactly when it matches now.
+    pub(super) fn subjects_matched_by(
+        &self,
+        changed: &[Rule],
+        subjects: Vec<NodeRef>,
+    ) -> Vec<NodeRef> {
+        let index = RuleIndex::new(changed);
+        let mut pseudos = Vec::new();
+        for rule in changed {
+            if !pseudos.contains(&rule.pseudo) {
+                pseudos.push(rule.pseudo);
+            }
+        }
+        subjects
+            .into_iter()
+            .filter(|node| {
+                let tree_root = Node::tree_root(node);
+                let ancestors = OnceCell::new();
+                pseudos.iter().any(|&pseudo| {
+                    index.candidates(node, pseudo).into_iter().any(|position| {
+                        self.rule_matches(&changed[position], node, pseudo, &tree_root, &ancestors)
+                    })
+                })
+            })
+            .collect()
+    }
 }
 
 fn identity(rule: &Rule) -> *const crate::engine::css::stylesheet::RuleData {

@@ -7,6 +7,8 @@
 // or in an ancestor compound, the affected elements are the element itself plus descendants that
 // can match the subjects of those ancestor-position rules. Those are restyled as element roots:
 // recalculated alone, with their subtree following only when their own style changes.
+// A keyless subject (`.a > :not(.b)`) reached only through child combinators is bounded by its
+// depth below the element, so only the elements at that depth are restyled.
 // Sibling combinators, `:has()` and nested complex selectors keep the parent-subtree scope.
 // An attribute selector on `class` (`[class*=x]`) can match differently after any token change,
 // so it counts as a use of every changed token at its position; inside a complex nested
@@ -26,6 +28,8 @@ struct ClassUse {
     subject: bool,
     /// Subject keys of rules that use the token in an ancestor compound.
     descendant_subjects: Vec<SubjectKey>,
+    /// Depths below the element of keyless subjects reached only through child combinators.
+    keyless_child_depths: Vec<usize>,
     /// The token's effect is not bounded by the element and its descendants.
     parent_scope: bool,
 }
@@ -78,7 +82,15 @@ impl ClassInvalidation {
                 } else if position == last {
                     class_use.subject = true;
                 } else {
-                    class_use.descendant_subjects.push(SubjectKey::of(subject));
+                    let key = SubjectKey::of(subject);
+                    let children_only = selector.combinators[position..]
+                        .iter()
+                        .all(|combinator| matches!(combinator, Combinator::Child));
+                    if key.matches_any() && children_only {
+                        class_use.keyless_child_depths.push(last - position);
+                    } else {
+                        class_use.descendant_subjects.push(key);
+                    }
                 }
             };
             for token in tokens {
@@ -103,6 +115,7 @@ impl ClassInvalidation {
             return None;
         }
         let mut keys = HashSet::new();
+        let mut depths = HashSet::new();
         let token_uses = tokens
             .iter()
             .filter_map(|token| self.uses.get(&token.to_ascii_lowercase()));
@@ -111,25 +124,42 @@ impl ClassInvalidation {
                 return None;
             }
             keys.extend(class_use.descendant_subjects.iter());
+            depths.extend(class_use.keyless_child_depths.iter().copied());
         }
         // `attr(class)` and presentational state still read the element's own attribute.
         let mut roots = ClassChangeRoots {
             elements: vec![node.clone()],
             ..ClassChangeRoots::default()
         };
-        if keys.is_empty() {
-            return Some(roots);
-        }
         if keys.iter().any(|key| key.matches_any()) {
             roots.subtrees.push(node.clone());
             return Some(roots);
         }
+        let mut level = vec![node.clone()];
+        for depth in 1..=depths.iter().copied().max().unwrap_or(0) {
+            level = level
+                .iter()
+                .flat_map(|parent| parent.children.borrow().clone())
+                .filter(|child| child.element().is_some())
+                .collect();
+            if depths.contains(&depth) {
+                roots.elements.extend(level.iter().cloned());
+            }
+        }
+        if keys.is_empty() {
+            return Some(roots);
+        }
         let index = KeyIndex::new(keys);
-        roots.elements.extend(
-            Node::descendants(node)
-                .skip(1)
-                .filter(|descendant| index.may_match(descendant)),
-        );
+        let at_depth = roots
+            .elements
+            .iter()
+            .map(|element| element.id())
+            .collect::<HashSet<_>>();
+        roots
+            .elements
+            .extend(Node::descendants(node).skip(1).filter(|descendant| {
+                !at_depth.contains(&descendant.id()) && index.may_match(descendant)
+            }));
         Some(roots)
     }
 }

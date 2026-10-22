@@ -262,7 +262,7 @@ impl StyleSet {
                     known.unwrap_or_else(|| self.compute_style(&ancestor, parent_style.as_ref()));
                 self.styles.insert(node_id(&ancestor), style.clone());
                 self.style_log.record(node_id(&ancestor));
-                self.sync_generated_pseudos(&ancestor, &style);
+                self.sync_generated_pseudos(&ancestor);
                 parent_style = Some(style);
             }
         }
