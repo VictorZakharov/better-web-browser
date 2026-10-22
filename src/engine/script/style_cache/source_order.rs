@@ -44,6 +44,10 @@ fn external_source_order_updates_and_removal_match_the_layout_cascade() {
         assert!(state.offset_parent_styles.is_none());
         assert!(!state.layout_geometry_initialized);
         assert_eq!(dom.document.document_mutation_version(), version);
+        // The layout flush rebuilds its rules; no DOM root forces every style to recompute.
+        let flushed = state.pending_layout_invalidation.take(0);
+        assert!(flushed.rebuild_style_rules);
+        assert!(flushed.roots.is_empty(), "{:?}", flushed.roots);
 
         let mut page = Page::parse(HTML, URL);
         for source in &sources {

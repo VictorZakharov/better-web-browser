@@ -92,11 +92,12 @@ impl HostState {
             self.computed_styles = None;
             self.offset_parent_styles = None;
             self.layout_geometry_initialized = false;
-            self.pending_layout_invalidation.record(
-                &self.document,
-                Some(&self.document),
-                MutationKind::Stylesheet,
-            );
+            // No DOM node changed. The layout flush rebuilds its rules from the new sources,
+            // and its rule diff restyles what the changed rules can reach; a document root
+            // would recompute every style instead, including a snapshot already started from
+            // the page's styles for these sources.
+            self.pending_layout_invalidation
+                .record(&self.document, None, MutationKind::Stylesheet);
         }
     }
 

@@ -7,6 +7,9 @@
 use super::*;
 use std::collections::HashSet;
 
+#[cfg(test)]
+mod tests;
+
 /// Elements the parser created since the last registration, for the realm's parser hook.
 pub(in crate::engine::script) struct ParserChanges {
     /// Comma-separated IDs, in tree order, of the new elements whose wrappers must exist now:
@@ -48,7 +51,7 @@ impl HostState {
     /// attached) since the last registration. A root's subtree is complete by now, so a root
     /// already visited inside an earlier one is skipped.
     fn register_parser_roots(&mut self, document: &NodeRef, roots: &[NodeRef]) -> ParserChanges {
-        self.invalidate_parser_layout(document);
+        self.invalidate_parser_layout_for(document, roots);
         let mut visited = HashSet::new();
         let mut new_elements = Vec::new();
         for root in roots {
@@ -68,11 +71,41 @@ impl HostState {
     }
 
     fn invalidate_parser_layout(&mut self, document: &NodeRef) {
+        self.clear_parser_layout_caches();
+        self.pending_layout_invalidation
+            .record(document, Some(document), MutationKind::Stylesheet);
+    }
+
+    /// Scopes the layout flush's restyle to the journaled roots, called before they are
+    /// registered. An inserted subtree is a child-list change of its parent, which also
+    /// rebuilds rules when the subtree holds a style sheet. An element the realm already knew
+    /// had its attributes or shadow root changed, which may add style sheets too, so its
+    /// parent's subtree restyles against rebuilt rules.
+    fn invalidate_parser_layout_for(&mut self, document: &NodeRef, roots: &[NodeRef]) {
+        self.clear_parser_layout_caches();
+        for root in roots {
+            if Node::shadow_including_root(root).id() != document.id() {
+                continue;
+            }
+            let Some(parent) = root.shadow_including_parent() else {
+                continue;
+            };
+            let kind = if self.node_ids.contains_key(&root.id())
+                || crate::engine::script::mutation_host::subtree_contains_style(root)
+            {
+                MutationKind::Stylesheet
+            } else {
+                MutationKind::ChildList
+            };
+            self.pending_layout_invalidation
+                .record(document, Some(&parent), kind);
+        }
+    }
+
+    fn clear_parser_layout_caches(&mut self) {
         self.computed_styles = None;
         self.offset_parent_styles = None;
         self.layout_geometry_initialized = false;
-        self.pending_layout_invalidation
-            .record(document, Some(document), MutationKind::Stylesheet);
     }
 
     fn is_new_parser_element(&self, node: &NodeRef) -> bool {

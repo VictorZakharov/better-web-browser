@@ -108,6 +108,33 @@ fn a_page_behind_the_document_or_with_deferred_work_does_not_seed() {
 }
 
 #[test]
+fn a_rule_rebuild_without_dom_roots_refreshes_a_seed_incrementally() {
+    // Script reports a stylesheet source change as a rule rebuild with no DOM root.
+    let mut page = styled_page();
+    let mut snapshot = page.layout_snapshot();
+    page.stylesheet_sources = vec![crate::engine::css::StylesheetSource::injected(
+        "https://example.com/late.css",
+        "p{margin-left:3px}".into(),
+    )];
+    page.refresh_resources(800.0);
+    snapshot.synchronize_layout_snapshot(&page);
+    let stats = snapshot.refresh_layout_styles_after_invalidation_for_viewport(
+        800.0,
+        800.0,
+        &RenderInvalidation {
+            impact: MutationKind::Stylesheet.impact(),
+            mutation_count: 1,
+            rebuild_style_rules: true,
+            ..RenderInvalidation::default()
+        },
+    );
+    assert!(!stats.full_rebuild, "{stats:?}");
+    // Geometry published before the seed may predate it, so adopting one lays out again.
+    assert!(stats.layout_changed, "{stats:?}");
+    assert!(!flush_class_change(&mut snapshot).full_rebuild);
+}
+
+#[test]
 fn synchronizing_reseeds_a_snapshot_whose_styles_were_dropped() {
     let mut page = styled_page();
     let mut snapshot = page.layout_snapshot();

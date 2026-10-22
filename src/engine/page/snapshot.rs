@@ -111,19 +111,26 @@ impl Page {
     /// such drop happens at a synchronization, so no earlier flush has consumed script
     /// mutations made after the seed's document version. The flush's invalidation therefore
     /// covers every change since then, and the seeded set refreshes like the page's own.
-    pub(super) fn adopt_style_seed(&mut self) {
+    pub(super) fn adopt_style_seed(&mut self) -> bool {
         let seed = self.style_seed.take();
         if self.cached_styles.is_some() || self.previous_styles.is_some() {
-            return;
+            return false;
         }
         let Some(seed) = seed else {
-            return;
+            return false;
         };
         let Some(styles) = seed.styles.upgrade() else {
-            return;
+            return false;
         };
         // A different flush viewport takes the cached path's media-environment refresh.
         self.cached_styles = Some((seed.width, seed.height, std::rc::Rc::new(styles.fork())));
+        true
+    }
+
+    /// Whether the next flush will start from a seed of the current document. Every mutation
+    /// script recorded so far is then in the seed, so the flush needs only later ones.
+    pub(crate) fn awaits_style_seed(&self) -> bool {
+        self.cached_styles.is_none() && self.previous_styles.is_none() && self.style_seed.is_some()
     }
 }
 
