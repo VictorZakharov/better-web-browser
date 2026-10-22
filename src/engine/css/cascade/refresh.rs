@@ -159,6 +159,18 @@ impl StyleSet {
         parent: Option<&ComputedStyle>,
         stats: &mut StyleRefreshStats,
     ) {
+        self.recompute_tree(node, parent, stats, |_, _| true);
+    }
+
+    /// Recomputes `node` and the descendants below each node for which `descend(node,
+    /// changed)` holds; `changed` says whether that node's computed style changed.
+    pub(super) fn recompute_tree(
+        &mut self,
+        node: &NodeRef,
+        parent: Option<&ComputedStyle>,
+        stats: &mut StyleRefreshStats,
+        mut descend: impl FnMut(&NodeRef, bool) -> bool,
+    ) {
         let root = node_id(node);
         let mut pending = vec![node.clone()];
         while let Some(node) = pending.pop() {
@@ -215,7 +227,9 @@ impl StyleSet {
             }
             stats.pseudo_style_time += pseudo_started.elapsed();
             if !self.defer_nonrendered_descendants || displayed {
-                pending.extend(Node::composed_children(&node).into_iter().rev());
+                if descend(&node, changed) {
+                    pending.extend(Node::composed_children(&node).into_iter().rev());
+                }
             } else {
                 stats.removed_styles += self.forget_deferred_styles(&node, false);
             }

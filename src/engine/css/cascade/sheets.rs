@@ -18,6 +18,7 @@ pub(super) use has_anchors::HasResults;
 mod invalidation;
 mod owners;
 mod parsed;
+mod previous_sibling;
 #[cfg(test)]
 mod rebuild_tests;
 mod registry;

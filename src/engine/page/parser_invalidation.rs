@@ -5,7 +5,9 @@
 // selectors that count from the start, so the new subtree is the only style root unless the
 // previous rules count from the end (`:last-child`, `:nth-last-of-type()`, ...) or test the
 // parent's `:empty`. Those rules styled the earlier siblings, so their dependencies decide which
-// neighbors widen the roots. A changed rule set restyles its own subjects in the cascade, and
+// neighbors widen the roots. The previous last child is restyled as an element root (its own
+// style, then its children only where styles changed) unless a condition can reach its
+// descendants (`previous_sibling` in the cascade). A changed rule set restyles its own subjects in the cascade, and
 // relational `:has()` anchors widen inside the style refresh itself.
 // https://drafts.csswg.org/selectors-4/#structural-pseudos
 use super::*;
@@ -23,6 +25,8 @@ mod tests;
 #[derive(Default)]
 struct ParserRoots {
     roots: Vec<NodeRef>,
+    /// Elements whose own sibling position changed; see `RenderInvalidation::element_roots`.
+    elements: Vec<NodeRef>,
     removed: Vec<NodeId>,
     rebuild_style_rules: bool,
     document_wide: bool,
@@ -54,13 +58,13 @@ impl Page {
             collected.include(document, change, dependencies);
         }
         let roots = (!collected.document_wide)
-            .then(|| bounded_roots(document, &collected.roots))
+            .then(|| bounded_roots(document, &collected.roots, &collected.elements))
             .flatten();
-        let Some(roots) = roots else {
+        let Some((roots, element_roots)) = roots else {
             return RenderInvalidation::full(document.id());
         };
         RenderInvalidation {
-            roots,
+            roots: roots.iter().chain(&element_roots).copied().collect(),
             impact: MutationKind::ChildList.impact(),
             mutation_count: changes.len(),
             rebuild_style_rules: collected.rebuild_style_rules,
@@ -68,6 +72,7 @@ impl Page {
             removals_are_local: false,
             class_changes: Vec::new(),
             child_list_roots: Vec::new(),
+            element_roots,
         }
     }
 }
@@ -77,7 +82,7 @@ impl ParserRoots {
         &mut self,
         document: &NodeRef,
         change: &ParserRenderChange,
-        dependencies: AppendedChildDependencies,
+        dependencies: &AppendedChildDependencies,
     ) {
         match change {
             ParserRenderChange::Inserted {
@@ -101,15 +106,19 @@ impl ParserRoots {
                 {
                     return;
                 }
-                if dependencies.last_child
-                    && let Some(previous) = previous_element(child, |_| true)
-                {
-                    self.roots.push(previous);
+                let mut previous = Vec::new();
+                if dependencies.last_child {
+                    previous.extend(previous_element(child, |_| true));
                 }
-                if dependencies.last_of_type
-                    && let Some(previous) = previous_element(child, |node| same_type(node, child))
-                {
-                    self.roots.push(previous);
+                if dependencies.last_of_type {
+                    previous.extend(previous_element(child, |node| same_type(node, child)));
+                }
+                for element in previous {
+                    if dependencies.previous_subtree(&element) {
+                        self.roots.push(element);
+                    } else {
+                        self.elements.push(element);
+                    }
                 }
             }
             ParserRenderChange::Removed { parent, child } => {
@@ -211,19 +220,32 @@ fn previous_element(node: &NodeRef, matches: impl Fn(&NodeRef) -> bool) -> Optio
         .cloned()
 }
 
-/// Connected, disjoint roots in first-seen order, or `None` when the set is too large to be
-/// cheaper than a whole-document refresh. Shadow-tree content restyles from its host, since
-/// slot assignment and `:host` rules couple the two trees.
-fn bounded_roots(document: &NodeRef, requested: &[NodeRef]) -> Option<Vec<NodeId>> {
+/// Connected, disjoint subtree roots in first-seen order, and the element roots outside them,
+/// or `None` when the set is too large to be cheaper than a whole-document refresh. Shadow-tree
+/// content restyles from its host, since slot assignment and `:host` rules couple the two trees.
+fn bounded_roots(
+    document: &NodeRef,
+    requested: &[NodeRef],
+    elements: &[NodeRef],
+) -> Option<(Vec<NodeId>, Vec<NodeId>)> {
     let mut candidates = Vec::with_capacity(requested.len());
-    for node in requested {
+    let mut element_candidates = Vec::with_capacity(elements.len());
+    for (node, element) in requested
+        .iter()
+        .map(|node| (node, false))
+        .chain(elements.iter().map(|node| (node, true)))
+    {
         let Some(root) = light_tree_root(document, node) else {
             continue;
         };
         if root.id() == document.id() {
             return None;
         }
-        candidates.push(root);
+        if element && root.id() == node.id() {
+            element_candidates.push(root);
+        } else {
+            candidates.push(root);
+        }
     }
     let ids = candidates
         .iter()
@@ -241,7 +263,17 @@ fn bounded_roots(document: &NodeRef, requested: &[NodeRef]) -> Option<Vec<NodeId
         .filter(|node| seen.insert(node.id()))
         .map(|node| node.id())
         .collect::<Vec<_>>();
-    (roots.len() <= MAX_INVALIDATION_ROOTS).then_some(roots)
+    // A subtree root restyles an element inside it anyway; one below an element root stays.
+    let elements = element_candidates
+        .iter()
+        .filter(|node| {
+            std::iter::successors(Some((*node).clone()), |node| node.shadow_including_parent())
+                .all(|ancestor| !ids.contains(&ancestor.id()))
+        })
+        .filter(|node| seen.insert(node.id()))
+        .map(|node| node.id())
+        .collect::<Vec<_>>();
+    (roots.len() + elements.len() <= MAX_INVALIDATION_ROOTS).then_some((roots, elements))
 }
 
 /// Maps `node` to the document-tree node whose subtree covers it, or `None` when it is not

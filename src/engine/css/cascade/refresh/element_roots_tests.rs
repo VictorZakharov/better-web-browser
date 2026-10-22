@@ -50,3 +50,39 @@ fn subtree_roots_inside_a_changed_element_root_are_recomputed_once() {
     );
     assert_eq!(styles.styles, StyleSet::from_dom(&dom, &[], 800.0).styles);
 }
+
+/// A changed element root continues only below children whose styles changed in turn: a
+/// property nothing inherits stops at the children, while subtree roots below still recompute.
+#[test]
+fn a_changed_element_root_restyles_only_descendants_whose_styles_change() {
+    let dom = dom::parse(
+        "<style>.on{margin-left:3px} .y{color:blue}</style><main class=x><section><p>a<b>b</b></p><p>c</p></section></main>",
+    );
+    let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
+    let main = dom.elements_named("main").next().unwrap();
+    main.set_attr("class", "x on");
+    let stats = styles.refresh_subtrees_after_invalidation(
+        &dom.document,
+        &[],
+        std::slice::from_ref(&main),
+        &[],
+        MutationKind::Attribute("class").impact(),
+    );
+    assert_eq!(
+        stats.recomputed_styles,
+        1 + Node::composed_children(&main).len()
+    );
+    assert_eq!(styles.styles, StyleSet::from_dom(&dom, &[], 800.0).styles);
+
+    main.set_attr("class", "x");
+    let paragraph = dom.elements_named("p").nth(1).unwrap();
+    paragraph.set_attr("class", "y");
+    styles.refresh_subtrees_after_invalidation(
+        &dom.document,
+        std::slice::from_ref(&paragraph),
+        std::slice::from_ref(&main),
+        &[],
+        MutationKind::Attribute("class").impact(),
+    );
+    assert_eq!(styles.styles, StyleSet::from_dom(&dom, &[], 800.0).styles);
+}

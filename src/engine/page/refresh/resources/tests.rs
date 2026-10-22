@@ -58,6 +58,7 @@ fn incremental_refreshes_discover_images_of_changed_styles() {
         mutation_count: 1,
         roots: vec![list.id()],
         child_list_roots: vec![list.id()],
+        element_roots: Vec::new(),
         ..RenderInvalidation::default()
     };
     page.refresh_resources_after_invalidation(800.0, &invalidation);
@@ -138,6 +139,7 @@ fn a_deferred_invalidation_reaches_whichever_refresh_comes_next() {
             mutation_count: 1,
             roots: vec![body.id()],
             child_list_roots: vec![body.id()],
+            element_roots: Vec::new(),
             ..RenderInvalidation::default()
         },
     );

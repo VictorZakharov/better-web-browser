@@ -36,3 +36,28 @@ fn deferred_checkpoints_keep_more_roots_before_collapsing_to_the_document() {
     );
     assert_eq!(deferred.roots, vec![document]);
 }
+
+/// An element root stays bounded only while no merged mutation made it a full or child-list
+/// root, which already restyle the element itself.
+#[test]
+fn element_roots_yield_to_full_and_child_list_roots() {
+    let document = id(1);
+    let element = |node| RenderInvalidation {
+        element_roots: vec![id(node)],
+        ..roots(node..node + 1)
+    };
+    let mut merged = element(2);
+    merged.merge_conservatively(element(3), document);
+    merged.merge_conservatively(element(4), document);
+    merged.merge_conservatively(roots(3..4), document);
+    merged.merge_conservatively(
+        RenderInvalidation {
+            child_list_roots: vec![id(4)],
+            ..roots(4..5)
+        },
+        document,
+    );
+    assert_eq!(merged.roots, vec![id(2), id(3), id(4)]);
+    assert_eq!(merged.element_roots, vec![id(2)]);
+    assert_eq!(merged.child_list_roots, vec![id(4)]);
+}

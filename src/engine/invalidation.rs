@@ -211,6 +211,11 @@ pub struct RenderInvalidation {
     /// consumers that need every possibly changed subtree; the cascade may bound their restyle
     /// to new children, the parent itself and siblings that structural selectors can reach.
     pub child_list_roots: Vec<NodeId>,
+    /// Roots recorded only because the element's own selector matching may have changed: no
+    /// descendant can match differently except through inheritance. They stay in `roots` for
+    /// consumers that need every possibly changed subtree; the cascade restyles them as element
+    /// roots, continuing into their subtrees only where their own style changed.
+    pub element_roots: Vec<NodeId>,
 }
 
 impl RenderInvalidation {
@@ -224,6 +229,7 @@ impl RenderInvalidation {
             removals_are_local: false,
             class_changes: Vec::new(),
             child_list_roots: Vec::new(),
+            element_roots: Vec::new(),
         }
     }
 
@@ -237,6 +243,7 @@ impl RenderInvalidation {
             removals_are_local: false,
             class_changes: Vec::new(),
             child_list_roots: Vec::new(),
+            element_roots: Vec::new(),
         }
     }
 
@@ -251,6 +258,13 @@ impl RenderInvalidation {
             .iter()
             .copied()
             .chain(self.class_changes.iter().map(|change| change.node))
+    }
+
+    /// Roots whose whole subtree may have changed.
+    fn full_roots(&self) -> impl Iterator<Item = NodeId> + '_ {
+        self.roots.iter().copied().filter(|root| {
+            !self.child_list_roots.contains(root) && !self.element_roots.contains(root)
+        })
     }
 
     /// Combines rendering work produced by sequential callbacks before an embedder checkpoint.
@@ -274,23 +288,21 @@ impl RenderInvalidation {
             *self = other;
             return;
         }
-        // A child-list root stays bounded only while no other mutation made it a full root.
+        // Child-list and element roots stay bounded only while no other mutation made them full
+        // roots. A child-list resolution already restyles its parent as an element root.
         let full = self
-            .roots
-            .iter()
-            .filter(|root| !self.child_list_roots.contains(root))
-            .chain(
-                other
-                    .roots
-                    .iter()
-                    .filter(|root| !other.child_list_roots.contains(root)),
-            )
-            .copied()
+            .full_roots()
+            .chain(other.full_roots())
             .collect::<std::collections::HashSet<_>>();
         self.child_list_roots.append(&mut other.child_list_roots);
         self.child_list_roots.retain(|root| !full.contains(root));
         self.child_list_roots.sort_unstable();
         self.child_list_roots.dedup();
+        self.element_roots.append(&mut other.element_roots);
+        self.element_roots
+            .retain(|root| !full.contains(root) && !self.child_list_roots.contains(root));
+        self.element_roots.sort_unstable();
+        self.element_roots.dedup();
         self.roots.append(&mut other.roots);
         self.roots.sort_unstable();
         self.roots.dedup();
@@ -305,6 +317,7 @@ impl RenderInvalidation {
             self.roots.push(document_root);
             self.class_changes.clear();
             self.child_list_roots.clear();
+            self.element_roots.clear();
         }
         self.impact = self.impact.union(other.impact);
         self.mutation_count = self.mutation_count.saturating_add(other.mutation_count);
@@ -440,6 +453,7 @@ mod tests {
             removals_are_local: true,
             class_changes: Vec::new(),
             child_list_roots: Vec::new(),
+            element_roots: Vec::new(),
         };
         invalidation.merge_conservatively(
             RenderInvalidation {
@@ -451,6 +465,7 @@ mod tests {
                 removals_are_local: false,
                 class_changes: Vec::new(),
                 child_list_roots: Vec::new(),
+                element_roots: Vec::new(),
             },
             document,
         );
