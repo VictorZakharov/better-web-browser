@@ -191,3 +191,31 @@ fn flips_around_an_unbounded_refresh_never_reuse_stale_results() {
     styles.refresh_subtrees(&dom.document, &[root], &[]);
     assert_fresh(&styles, "clear");
 }
+
+/// Walks from several roots share their ancestors and visit every earlier sibling of each walked
+/// node, whichever root reaches a level first.
+#[test]
+fn walks_from_several_roots_recheck_every_earlier_sibling_once() {
+    let css = "li:has(~ .x){color:red} li:has(+ .y) b{color:blue}";
+    let body = "<ul><li id=a><b>a</b></li><li id=b><b>b</b></li><li id=c><b>c</b></li>\
+        <li id=d><b>d</b><i id=deep>i</i></li><li id=e><b>e</b></li></ul>";
+    for order in [["e", "deep", "b"], ["b", "deep", "e"]] {
+        let dom = dom::parse(&format!("<style>{css}</style><body>{body}</body>"));
+        let mut styles = StyleSet::from_sources_for_layout(&dom, "", &[], environment());
+        by_id(&dom, "e").set_attr("class", "x");
+        by_id(&dom, "c").set_attr("class", "y");
+        let roots = order.map(|id| by_id(&dom, id));
+        let stats = styles.refresh_subtrees(&dom.document, &roots, &[]);
+        let fresh = StyleSet::from_sources_for_layout(&dom, "", &[], environment());
+        assert!(stats.recomputed_styles < fresh.styles.len(), "{stats:?}");
+        for node in Node::descendants(&dom.document) {
+            assert_eq!(
+                styles.styles.get(&node.id()),
+                fresh.styles.get(&node.id()),
+                "{order:?} :: <{}> {:?}",
+                node.tag_name().unwrap_or_default(),
+                node.attr("id")
+            );
+        }
+    }
+}

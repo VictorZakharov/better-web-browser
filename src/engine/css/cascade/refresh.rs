@@ -265,20 +265,34 @@ fn normalized_roots(
     requested: &[NodeRef],
     default_document: bool,
 ) -> Vec<NodeRef> {
-    let mut roots = Vec::<NodeRef>::new();
-    for requested in requested {
-        let requested = requested.shadow_host().unwrap_or_else(|| requested.clone());
-        let root = if is_descendant_of(&requested, document) {
-            requested
-        } else {
-            document.clone()
-        };
-        if roots.iter().any(|known| is_descendant_of(&root, known)) {
-            continue;
-        }
-        roots.retain(|known| !is_descendant_of(known, &root));
-        roots.push(root);
-    }
+    let candidates = requested
+        .iter()
+        .map(|requested| {
+            let requested = requested.shadow_host().unwrap_or_else(|| requested.clone());
+            if is_descendant_of(&requested, document) {
+                requested
+            } else {
+                document.clone()
+            }
+        })
+        .collect::<Vec<_>>();
+    // Keep each root whose ancestors were not requested too, once, in request order. A pass
+    // over every pair of roots is quadratic for the thousands a streamed chunk can bring.
+    let ids = candidates
+        .iter()
+        .map(|root| root.id())
+        .collect::<HashSet<_>>();
+    let mut seen = HashSet::new();
+    let mut roots = candidates
+        .into_iter()
+        .filter(|root| {
+            std::iter::successors(root.shadow_including_parent(), |node| {
+                node.shadow_including_parent()
+            })
+            .all(|ancestor| !ids.contains(&ancestor.id()))
+                && seen.insert(root.id())
+        })
+        .collect::<Vec<_>>();
     if roots.is_empty() && default_document {
         roots.push(document.clone());
     }

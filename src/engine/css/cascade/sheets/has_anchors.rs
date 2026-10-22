@@ -164,19 +164,37 @@ impl HasAnchors {
                 self.add_changed_anchor(node, known, &mut relational);
             }
         };
+        // Each node's walk continues to the same ancestors, so a walk ends where an earlier one
+        // passed. The earlier siblings of all walked children of one parent are the children
+        // before the last walked one, visited once per parent instead of once per child.
+        let mut walked = HashSet::new();
+        let mut parents = Vec::new();
         for root in requested {
             let mut node = root.clone();
             visit(&node);
-            loop {
-                if self.sibling_relations {
-                    preceding_elements(&node).iter().for_each(&mut visit);
-                }
+            while walked.insert(node.id()) {
                 let Some(parent) = node.parent() else {
                     break;
                 };
+                if self.sibling_relations && !walked.contains(&parent.id()) {
+                    parents.push(parent.clone());
+                }
                 visit(&parent);
                 node = parent;
             }
+        }
+        for parent in parents {
+            let children = parent.children.borrow();
+            let Some(last) = children
+                .iter()
+                .rposition(|child| walked.contains(&child.id()))
+            else {
+                continue;
+            };
+            children[..last]
+                .iter()
+                .filter(|child| child.element().is_some())
+                .for_each(&mut visit);
         }
         Some(relational)
     }
@@ -220,17 +238,4 @@ impl HasAnchors {
         });
         output.results.push((node.id(), results));
     }
-}
-
-fn preceding_elements(node: &NodeRef) -> Vec<NodeRef> {
-    let Some(parent) = node.parent() else {
-        return Vec::new();
-    };
-    let children = parent.children.borrow();
-    children
-        .iter()
-        .take_while(|sibling| sibling.id() != node.id())
-        .filter(|sibling| sibling.element().is_some())
-        .cloned()
-        .collect()
 }
