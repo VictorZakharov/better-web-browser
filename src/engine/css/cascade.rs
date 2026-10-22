@@ -3,6 +3,7 @@
 mod author;
 mod computed;
 mod effect_cache;
+mod fork;
 mod keyframe_values;
 mod layout;
 mod layout_generations;

@@ -243,7 +243,7 @@ impl StyleSet {
 }
 
 impl PseudoElement {
-    fn tag_name(self) -> &'static str {
+    pub(super) fn tag_name(self) -> &'static str {
         match self {
             Self::Before => "breeze-pseudo-before",
             Self::After => "breeze-pseudo-after",

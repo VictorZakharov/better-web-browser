@@ -88,8 +88,12 @@ pub struct Page {
     stylesheet_sources: Vec<crate::engine::css::StylesheetSource>,
     stylesheet_discovery: Option<(u64, usize, MediaEnvironment)>,
     font_faces_cache: std::cell::RefCell<Option<FontFaceCatalog>>,
-    cached_styles: Option<(f32, f32, StyleSet)>,
-    previous_styles: Option<(f32, f32, StyleSet)>,
+    // Shared only weakly, with a layout snapshot's style seed; see `snapshot.rs`.
+    cached_styles: Option<(f32, f32, std::rc::Rc<StyleSet>)>,
+    previous_styles: Option<(f32, f32, std::rc::Rc<StyleSet>)>,
+    /// The document mutation version `cached_styles` were last refreshed for.
+    styled_version: Option<u64>,
+    style_seed: Option<snapshot::StyleSeed>,
     /// Style work of skipped rendering checkpoints; see `defer_style_invalidation`.
     deferred_style_invalidation: Option<crate::engine::invalidation::RenderInvalidation>,
     pub images: HashMap<String, DecodedImage>,
@@ -172,6 +176,8 @@ impl Page {
             font_faces_cache: std::cell::RefCell::new(None),
             cached_styles: None,
             previous_styles: None,
+            styled_version: None,
+            style_seed: None,
             deferred_style_invalidation: None,
             images,
             image_updates: HashSet::new(),

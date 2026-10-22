@@ -93,3 +93,19 @@ fn removed_and_cleared_styles_have_unknown_generations() {
     styles.clear_computed_styles();
     assert_eq!(generations(&styles, &main), (None, None));
 }
+
+#[test]
+fn a_forked_style_set_shares_no_generation_with_its_source() {
+    // The script layout snapshot forks the page's styles; a layout result recorded against
+    // the page must not be reused against the fork, or the other way around.
+    let dom = dom::parse("<main><section><p>a</p></section></main>");
+    let styles = StyleSet::from_dom(&dom, &[], 800.0);
+    let fork = styles.fork();
+    for node in Node::descendants(&dom.document).filter(|node| node.element().is_some()) {
+        let (own, subtree) = generations(&styles, &node);
+        let (fork_own, fork_subtree) = generations(&fork, &node);
+        assert!(fork_own.is_some() && fork_subtree.is_some());
+        assert_ne!(own, fork_own);
+        assert_ne!(subtree, fork_subtree);
+    }
+}

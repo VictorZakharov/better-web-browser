@@ -31,7 +31,7 @@ impl Page {
         if unchanged || (stats.opacity_only && !stats.full_rebuild) {
             // An exact opacity-only change cannot introduce resource inputs. Its
             // retained group may be repainted after the caller verifies ownership.
-            self.cached_styles = Some((width.max(1.0), height.max(1.0), styles));
+            self.store_styles(width, height, styles);
         } else {
             // Do not refresh the cascade twice: that would erase the first
             // comparison's evidence (e.g. hiding a previously visible box).
