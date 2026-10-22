@@ -86,3 +86,38 @@ fn a_changed_element_root_restyles_only_descendants_whose_styles_change() {
     );
     assert_eq!(styles.styles, StyleSet::from_dom(&dom, &[], 800.0).styles);
 }
+
+/// Requested roots reduce to the outermost ones, once each, in request order; a detached node
+/// means the whole document.
+#[test]
+fn requested_roots_normalize_to_the_outermost_in_request_order() {
+    let dom =
+        dom::parse("<main><section><p>a</p></section><aside><b>b</b></aside></main><nav></nav>");
+    let [main, section, p, aside, b, nav] = ["main", "section", "p", "aside", "b", "nav"]
+        .map(|name| dom.elements_named(name).next().unwrap());
+    let ids = |roots: Vec<NodeRef>| roots.iter().map(|root| root.id()).collect::<Vec<_>>();
+    let requested = [
+        p.clone(),
+        nav.clone(),
+        section.clone(),
+        b.clone(),
+        p,
+        aside.clone(),
+        nav.clone(),
+    ];
+    assert_eq!(
+        ids(super::normalized_roots(&dom.document, &requested, true)),
+        ids(vec![nav.clone(), section.clone(), aside])
+    );
+    let requested = [section, nav.clone(), main.clone(), b];
+    assert_eq!(
+        ids(super::normalized_roots(&dom.document, &requested, true)),
+        ids(vec![nav, main])
+    );
+    let detached = Node::create_element_for(&dom.document, "div");
+    assert_eq!(
+        ids(super::normalized_roots(&dom.document, &[detached], true)),
+        vec![dom.document.id()]
+    );
+    assert!(super::normalized_roots(&dom.document, &[], false).is_empty());
+}
