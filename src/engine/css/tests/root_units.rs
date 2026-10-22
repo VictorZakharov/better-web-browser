@@ -50,3 +50,22 @@ fn calc_preserves_rem_until_the_root_basis_is_known() {
         Length::Px(15.0)
     );
 }
+
+#[test]
+fn rem_deep_in_the_tree_uses_the_root_not_an_ancestor_font_size() {
+    let dom = dom::parse(
+        r#"<style>
+            html { font-size: 10px }
+            body, section, article { font-size: 2em }
+            #target { width: 3rem }
+        </style><section><article><p><span id="target">deep</span></p></article></section>"#,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 800.0);
+    let target = dom
+        .elements_named("span")
+        .find(|node| node.attr("id").as_deref() == Some("target"))
+        .unwrap();
+
+    assert_eq!(styles.get(&target).font_size, 80.0);
+    assert_eq!(styles.get(&target).width, Length::Px(30.0));
+}

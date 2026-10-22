@@ -12,11 +12,14 @@ impl StyleSet {
         if node.element().is_none() {
             return Vec::new();
         }
+        let candidates = self.compiled.index.candidates(node, pseudo);
+        // Most elements have no rule for a given pseudo-element; skip the walk to the tree root.
+        if candidates.is_empty() {
+            return Vec::new();
+        }
         let tree_root = Node::tree_root(node);
         let ancestors = OnceCell::new();
-        self.compiled
-            .index
-            .candidates(node, pseudo)
+        candidates
             .into_iter()
             .filter_map(|index| self.compiled.rules.get(index))
             .filter(|rule| self.rule_matches(rule, node, pseudo, &tree_root, &ancestors))

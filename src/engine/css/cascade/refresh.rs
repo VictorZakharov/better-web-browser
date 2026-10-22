@@ -142,11 +142,12 @@ impl StyleSet {
                 self.compute_style(&node, Some(parent_style))
             };
             self.remember_has_results(&node, node_id(&node) == root);
-            self.styles.insert(node_id(&node), style.clone());
+            let displayed = style.display != Display::None;
+            self.styles.insert(node_id(&node), style);
             self.style_log.record(node_id(&node));
             self.layout_generations.mark(&node);
-            self.sync_generated_pseudos(&node, &style);
-            if !self.defer_nonrendered_descendants || style.display != Display::None {
+            self.sync_generated_pseudos(&node);
+            if !self.defer_nonrendered_descendants || displayed {
                 pending.extend(Node::composed_children(&node).into_iter().rev());
             }
         }
@@ -196,12 +197,13 @@ impl StyleSet {
                 _ => changed = false,
             }
             self.remember_has_results(&node, node_id(&node) == root);
-            self.styles.insert(node_id(&node), style.clone());
+            let displayed = style.display != Display::None;
+            self.styles.insert(node_id(&node), style);
             self.style_log.record(node_id(&node));
             // Attribute-backed generated content and pseudo-only declarations can change box
             // geometry without changing the originating element's computed style.
             let pseudo_started = std::time::Instant::now();
-            let pseudo_changes = self.sync_generated_pseudos(&node, &style);
+            let pseudo_changes = self.sync_generated_pseudos(&node);
             if changed || pseudo_changes.layout_changed || pseudo_changes.paint_changed {
                 self.layout_generations.mark(&node);
             }
@@ -212,7 +214,7 @@ impl StyleSet {
                 stats.first_changed_node.get_or_insert(node.id());
             }
             stats.pseudo_style_time += pseudo_started.elapsed();
-            if !self.defer_nonrendered_descendants || style.display != Display::None {
+            if !self.defer_nonrendered_descendants || displayed {
                 pending.extend(Node::composed_children(&node).into_iter().rev());
             } else {
                 stats.removed_styles += self.forget_deferred_styles(&node, false);

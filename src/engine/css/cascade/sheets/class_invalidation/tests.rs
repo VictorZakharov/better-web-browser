@@ -173,3 +173,46 @@ fn sibling_and_nested_complex_class_attribute_selectors_keep_the_parent_scope() 
         change_class(&format!("<style>{css}</style>{html}"), "a");
     }
 }
+
+#[test]
+fn keyless_child_subjects_restyle_only_the_elements_at_their_depth() {
+    // VisualEditor marks its article container with a class used by
+    // `.ve-loading .container > :not(.toolbar)`. That reaches the container's children, not
+    // every element of the article.
+    for css in [
+        ".client-js > :not(head):not(body){color:red}",
+        ".client-js > body > :not(main){margin-left:3px}",
+    ] {
+        let html = page(css, "client-nojs");
+        let stats = change_class(&html, "client-js");
+        assert!(!stats.full_rebuild, "{css}");
+        assert!(stats.recomputed_styles <= 6, "{css}: {stats:?}");
+    }
+    // A matched child still restyles, along with its subtree when its style changes.
+    for css in [
+        ".open > :not(.x){margin-left:3px}",
+        ".open > :not(b){color:red}",
+        ".open > p > :not(.x){margin-left:3px}",
+    ] {
+        change_class(
+            &format!(
+                "<style>{css}</style><main id=target><p>a <b>b</b></p><p class=x>c</p></main>"
+            ),
+            "open",
+        );
+    }
+}
+
+#[test]
+fn keyless_subjects_behind_a_descendant_combinator_restyle_the_subtree() {
+    // The unmatched intermediate element keeps its style, so only a subtree restyle reaches `i`.
+    for css in [
+        ".open :not(p){margin-left:3px}",
+        ".open > p :not(b){margin-left:3px}",
+    ] {
+        change_class(
+            &format!("<style>{css}</style><main id=target><p>a <b>b <i>i</i></b></p></main>"),
+            "open",
+        );
+    }
+}

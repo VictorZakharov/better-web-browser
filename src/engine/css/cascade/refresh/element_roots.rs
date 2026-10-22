@@ -75,7 +75,7 @@ impl StyleSet {
         stats.recomputed_styles += 1;
         self.remember_has_results(node, true);
         let started = std::time::Instant::now();
-        let pseudo_changes = self.sync_generated_pseudos(node, &style);
+        let pseudo_changes = self.sync_generated_pseudos(node);
         stats.pseudo_style_time += started.elapsed();
         stats.layout_changed |= pseudo_changes.layout_changed;
         stats.non_deferable_paint_changes |= pseudo_changes.paint_changed;

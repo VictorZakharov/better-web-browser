@@ -204,3 +204,34 @@ fn subjects_restyle_their_subtrees_only_when_their_own_style_changes() {
         changed.recomputed_styles
     );
 }
+
+#[test]
+fn subjects_restyle_only_where_the_whole_selector_matches() {
+    // VisualEditor's `.ve-activated #catlinks a` names every link by key, but matches none until
+    // an ancestor gains the class.
+    let (baseline, _) = refresh(&[".z{color:blue}"], append_sheet(".absent{color:red}"));
+    for css in [
+        ".absent p{color:red}",
+        ".absent > p::before{content:'x'}",
+        "aside.absent p, .absent main p{color:red}",
+    ] {
+        let (stats, _) = refresh(&[".z{color:blue}"], append_sheet(css));
+        assert!(!stats.full_rebuild, "{css}");
+        assert_eq!(
+            stats.recomputed_styles, baseline.recomputed_styles,
+            "{css}: {stats:?}"
+        );
+    }
+    // Matching subjects, their generated content and removed rules still restyle.
+    for css in [
+        "main > p{color:red}",
+        "aside p::before{content:'x'}",
+        "body .y span{color:red}",
+    ] {
+        refresh(&[".z{color:blue}"], append_sheet(css));
+        refresh(&[".z{color:blue}", css], |dom| {
+            Node::set_text_content(&sheet(dom, 1), "");
+            sheet(dom, 1).parent().unwrap()
+        });
+    }
+}

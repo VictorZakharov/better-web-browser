@@ -33,7 +33,7 @@ impl StyleSet {
                     && parent.text_decoration_underline
             });
         }
-        style.root_font_size = root_font_size_for(&self.styles, node);
+        style.root_font_size = root_font_size_for(&self.styles, node, parent);
         user_agent::apply_user_agent_defaults(node, &mut style, parent);
         let lower_origin = style.clone();
         // HTML hints precede author rules, including an explicit width/height:auto.
