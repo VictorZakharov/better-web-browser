@@ -65,5 +65,5 @@ fn singular_matrices_are_valid_css_values_and_remain_balanced_over_ipc() {
     });
     assert_eq!(result.items.len(), 3);
     let mut writer = crate::renderer_protocol::wire::WireWriter::new();
-    assert!(super::super::layout::encode_layout(&mut writer, &result).is_ok());
+    assert!(super::super::layout::encode_layout(&mut writer, &result, None).is_ok());
 }

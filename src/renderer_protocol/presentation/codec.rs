@@ -1,6 +1,6 @@
 use super::super::wire::{WireReader, WireWriter};
 use super::diagnostics::{decode_diagnostics, encode_diagnostics};
-use super::layout::{decode_layout, encode_layout};
+use super::layout::{ItemBase, decode_layout, encode_layout};
 use super::reader::{decode_reader, encode_reader};
 pub(in crate::renderer_protocol) use super::runtime_codec::{decode_runtime, encode_runtime};
 use super::*;
@@ -12,7 +12,10 @@ use crate::limits::{
 };
 use std::collections::HashSet;
 
-pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolError> {
+pub(super) fn encode(
+    value: &RendererPresentation,
+    base: Option<ItemBase<'_>>,
+) -> Result<Vec<u8>, ProtocolError> {
     validate_glyph_rasters(value.glyph_epoch, &value.glyphs)?;
     validate_retired_keys(&value.retired_image_keys, &value.images)?;
     if value.images.len() > MAX_PRESENTED_IMAGES {
@@ -36,7 +39,7 @@ pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolEr
     if let Some(delay) = value.next_timer_micros {
         writer.u64(delay);
     }
-    encode_layout(&mut writer, &value.layout)?;
+    encode_layout(&mut writer, &value.layout, base)?;
     writer.u32(value.images.len() as u32);
     for image in &value.images {
         writer.string(&image.url)?;
@@ -119,7 +122,10 @@ fn validate_glyph_rasters(
     Ok(())
 }
 
-pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError> {
+pub(super) fn decode(
+    bytes: &[u8],
+    base: Option<ItemBase<'_>>,
+) -> Result<RendererPresentation, ProtocolError> {
     if bytes.len() > MAX_RENDERER_PRESENTATION_BYTES {
         return Err(ProtocolError::PayloadTooLarge(bytes.len() as u32));
     }
@@ -144,7 +150,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
     let page_diagnostics = decode_diagnostics(&reader.bytes(MAX_PAGE_DIAGNOSTIC_BYTES)?)?;
     let accessibility = AccessibilityUpdate::decode_from(&mut reader)?;
     let next_timer_micros = reader.bool()?.then(|| reader.u64()).transpose()?;
-    let layout = decode_layout(&mut reader)?;
+    let layout = decode_layout(&mut reader, base)?;
     let image_count = reader.u32()? as usize;
     if image_count > MAX_PRESENTED_IMAGES {
         return Err(ProtocolError::InvalidPayload("presented image count"));

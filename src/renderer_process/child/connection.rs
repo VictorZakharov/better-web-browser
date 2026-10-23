@@ -65,6 +65,9 @@ pub(super) struct ChildConnection {
     next_request_id: u64,
     next_batch_id: u64,
     last_processed_work_ack: Instant,
+    /// The display items of the last presentation sent, which the broker also keeps; the next
+    /// presentation of that document sends its items as edits to them.
+    presented_items: Option<(DocumentId, u64, Vec<crate::engine::DisplayItem>)>,
 }
 
 impl ChildConnection {
@@ -97,6 +100,7 @@ impl ChildConnection {
             next_request_id: 1,
             next_batch_id: 1,
             last_processed_work_ack: Instant::now(),
+            presented_items: None,
         }
     }
 
@@ -239,9 +243,19 @@ impl ChildConnection {
         }
     }
 
-    fn send_presentation(&mut self, presentation: &RendererPresentation) -> Result<(), String> {
+    fn send_presentation(&mut self, presentation: Box<RendererPresentation>) -> Result<(), String> {
         let encode_started = std::time::Instant::now();
-        let bytes = presentation.encode().map_err(|error| error.to_string())?;
+        let base = self
+            .presented_items
+            .as_ref()
+            .filter(|(document, _, _)| *document == presentation.document)
+            .map(|(_, revision, items)| crate::renderer_protocol::ItemBase {
+                revision: *revision,
+                items,
+            });
+        let bytes = presentation
+            .encode_with_base(base)
+            .map_err(|error| error.to_string())?;
         let encode_micros = encode_started
             .elapsed()
             .as_micros()
@@ -271,6 +285,13 @@ impl ChildConnection {
             })
             .map_err(|error| error.to_string())?;
         self.video_revision(presentation.document, presentation.revision);
+        let RendererPresentation {
+            document,
+            revision,
+            layout,
+            ..
+        } = *presentation;
+        self.presented_items = Some((document, revision, layout.items));
         Ok(())
     }
 

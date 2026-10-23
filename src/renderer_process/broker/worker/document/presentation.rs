@@ -47,7 +47,17 @@ impl Broker {
             return Err(ProtocolError::InvalidPayload("presentation identity"));
         }
         let decode_started = std::time::Instant::now();
-        let mut presentation = RendererPresentation::decode(&incoming.body.finish(revision)?)?;
+        let base = self
+            .presented_items
+            .as_ref()
+            .filter(|(owner, _, _)| *owner == document)
+            .map(|(_, revision, items)| crate::renderer_protocol::ItemBase {
+                revision: *revision,
+                items,
+            });
+        let mut presentation =
+            RendererPresentation::decode_with_base(&incoming.body.finish(revision)?, base)?;
+        self.presented_items = Some((document, revision, presentation.layout.items.clone()));
         presentation.load.presentation_encode_micros = incoming.encode_micros;
         presentation.load.presentation_decode_micros = decode_started
             .elapsed()

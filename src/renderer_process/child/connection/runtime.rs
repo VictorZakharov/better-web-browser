@@ -16,7 +16,7 @@ impl ChildConnection {
     pub(super) fn send_document_update(&mut self, update: AdvanceResult) -> Result<(), String> {
         match update {
             AdvanceResult::EncodingRestart => Err("unsettled encoding restart".into()),
-            AdvanceResult::Presentation(presentation) => self.send_presentation(&presentation),
+            AdvanceResult::Presentation(presentation) => self.send_presentation(presentation),
             AdvanceResult::Runtime(update) => self
                 .writer
                 .send_renderer(&RendererMessage::RuntimeUpdate(update))
@@ -69,7 +69,7 @@ impl ChildConnection {
         }));
         match result {
             Ok(Ok(Some(AdvanceResult::Presentation(presentation)))) => {
-                self.send_presentation(&presentation)?;
+                self.send_presentation(presentation)?;
             }
             Ok(Ok(Some(AdvanceResult::EncodingRestart))) => {
                 let result = runtime.restart_encoding(self);
@@ -211,7 +211,7 @@ impl ChildConnection {
             }
             Ok(Ok(AdvanceResult::Presentation(mut presentation))) => {
                 presentation.clock_advanced = clock_advanced;
-                self.send_presentation(&presentation)?
+                self.send_presentation(presentation)?
             }
             Ok(Ok(AdvanceResult::Runtime(mut update))) => {
                 update.clock_advanced = clock_advanced;

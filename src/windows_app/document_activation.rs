@@ -210,8 +210,9 @@ impl BrowserState {
             || page_controls::native_controls_changed(&self.page_layout, &next_layout);
         if layout_changed {
             self.page_layout = next_layout;
-            let retained_items = self.page_layout.items.clone();
-            self.paint_index.rebuild(&retained_items);
+            let mut paint_index = std::mem::take(&mut self.paint_index);
+            paint_index.rebuild(&self.page_layout.items);
+            self.paint_index = paint_index;
             if !self.processing_background_tab {
                 self.metrics
                     .set_retained_draw_items(self.page_layout.items.len());
