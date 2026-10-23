@@ -35,7 +35,7 @@ impl RunKey {
     ) -> Self {
         Self {
             text: text.into(),
-            family: font.family.clone(),
+            family: font.family.to_string(),
             size: font.size.to_bits(),
             weight: font.weight,
             italic: font.italic,

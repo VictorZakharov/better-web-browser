@@ -224,7 +224,7 @@ fn font_spec(value: Option<&JsValue>) -> Option<FontSpec> {
         (value.is_finite() && value.abs() <= 1_000_000.0).then_some(value as f32)
     };
     Some(FontSpec {
-        family,
+        family: family.into(),
         size: size as f32,
         weight: weight as u16,
         italic: parts[3].as_boolean()?,
@@ -291,7 +291,7 @@ fn dispatch_with(
         let result = crate::engine::css::font_family::parse_canvas_font(&value)
             .map(|spec| {
                 JsValue::Array(vec![
-                    JsValue::from(spec.family),
+                    JsValue::from(spec.family.to_string()),
                     JsValue::from(f64::from(spec.size)),
                     JsValue::from(f64::from(spec.weight)),
                     JsValue::from(spec.italic),

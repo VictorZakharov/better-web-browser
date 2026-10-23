@@ -197,7 +197,7 @@ mod windows {
 
     fn specification(family: String, weight: u16, italic: bool) -> FontSpec {
         FontSpec {
-            family,
+            family: family.into(),
             size: 16.0,
             weight,
             italic,
