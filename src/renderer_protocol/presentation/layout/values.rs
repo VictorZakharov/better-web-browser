@@ -84,7 +84,7 @@ pub(super) fn decode_font(reader: &mut WireReader<'_>) -> Result<FontSpec, Proto
     let features = crate::engine::css::FontFeatures::from_settings(&settings)
         .ok_or(ProtocolError::InvalidPayload("font feature tag"))?;
     Ok(FontSpec {
-        family,
+        family: family.into(),
         size,
         weight,
         italic,

@@ -15,7 +15,7 @@ pub(crate) fn parse_canvas_font(value: &str) -> Option<crate::engine::FontSpec> 
         return None;
     }
     Some(crate::engine::FontSpec {
-        family: style.font_family,
+        family: style.font_family.into(),
         size: style.font_size,
         weight: style.font_weight,
         italic: style.italic,

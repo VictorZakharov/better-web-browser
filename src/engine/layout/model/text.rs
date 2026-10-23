@@ -1,7 +1,7 @@
 use super::*;
 #[derive(Debug, Clone, PartialEq)]
 pub struct FontSpec {
-    pub family: String,
+    pub family: std::sync::Arc<str>,
     pub size: f32,
     pub weight: u16,
     pub italic: bool,
@@ -18,7 +18,7 @@ pub struct FontSpec {
 impl FontSpec {
     pub(in crate::engine::layout) fn from_style(style: &ComputedStyle) -> Self {
         Self {
-            family: style.font_family.clone(),
+            family: style.font_family.as_str().into(),
             size: style.font_size,
             weight: style.font_weight,
             italic: style.italic,
