@@ -203,7 +203,7 @@ impl BrowserState {
                     link: Some(url),
                     node_id: Some(node),
                     ..
-                } if url == expected_url => renderer_input::wire_node(*node).map(|target| {
+                } if &**url == expected_url => renderer_input::wire_node(*node).map(|target| {
                     (
                         rect.x + rect.width / 2.0,
                         rect.y + rect.height / 2.0,

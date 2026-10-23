@@ -124,7 +124,7 @@ fn duckduckgo_link_navigation_replaces_a_document_under_command_backpressure() {
             .expect("activate DuckDuckGo result link");
     }
     let (url, disposition, cause) = wait_for_navigation(&session, initial.document);
-    assert_eq!(url, expected_url);
+    assert_eq!(url, &*expected_url);
     assert_eq!(
         url,
         "https://duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FMain_Page&rut=test"
@@ -427,7 +427,7 @@ fn wait_for_text(
                     .items
                     .iter()
                     .filter_map(|item| match item {
-                        DisplayItem::Text { text, .. } => Some(text.as_str()),
+                        DisplayItem::Text { text, .. } => Some(&**text),
                         _ => None,
                     })
                     .collect::<String>();

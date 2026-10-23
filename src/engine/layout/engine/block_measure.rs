@@ -23,6 +23,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         height_basis: Option<f32>,
         used_width: Option<UsedInlineSize>,
     ) -> f32 {
+        let height_basis = self.read_height_basis(node, height_basis);
         let key = MeasureKey {
             node: node.id(),
             width: width.to_bits(),

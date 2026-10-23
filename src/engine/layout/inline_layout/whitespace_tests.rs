@@ -16,7 +16,7 @@ fn lines(output: &LayoutOutput) -> Vec<(String, f32, f32)> {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, rect, .. } => Some((text.clone(), rect.x, rect.y)),
+            DisplayItem::Text { text, rect, .. } => Some((text.to_string(), rect.x, rect.y)),
             _ => None,
         })
         .collect()

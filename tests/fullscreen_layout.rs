@@ -26,7 +26,7 @@ fn fullscreen_element_becomes_the_only_viewport_layout_root() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect::<Vec<_>>()

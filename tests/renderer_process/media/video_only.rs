@@ -119,7 +119,7 @@ fn contained_renderer_plays_url_backed_h264_without_audio() {
                 if let Some(text) = presentation.layout.items.iter().find_map(|item| {
                     match item {
                         DisplayItem::Text { text, .. } if text.contains("loaded:")
-                            || text.contains("error:") => Some(text.as_str()),
+                            || text.contains("error:") => Some(&**text),
                         _ => None,
                     }
                 }) {

@@ -103,7 +103,7 @@ fn auto_float_respects_fixed_width_descendants_instead_of_their_unwrapped_text()
         .items
         .iter()
         .find_map(|item| match item {
-            DisplayItem::Text { rect, text, .. } if text == "Article" => Some(rect),
+            DisplayItem::Text { rect, text, .. } if &**text == "Article" => Some(rect),
             _ => None,
         })
         .unwrap();

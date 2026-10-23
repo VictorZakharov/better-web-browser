@@ -1,9 +1,9 @@
 //! Layout results that survive from one pass to the next, and when they still hold.
 //
-// Two kinds of results are retained: intrinsic block-size probes (`probe_cache`) and laid-out
-// subtrees (`subtree_replay`). Each depends only on one box's composed subtree, the arguments it
-// was laid out with, the layout environment and the image or scroll inputs it read. A result is
-// reused while:
+// Three kinds of results are retained: intrinsic block-size probes (`probe_cache`), intrinsic
+// inline-size contributions (`width_cache`) and laid-out subtrees (`subtree_replay`). Each
+// depends only on one box's composed subtree, the arguments it was laid out with, the layout
+// environment and the image or scroll inputs it read. A result is reused while:
 //
 // - the subtree's DOM (`Node::subtree_mutation_version`, which also covers control state,
 //   focus and popover changes) and computed styles (`StyleSet` subtree generation) are
@@ -34,7 +34,7 @@ pub(super) struct ReuseEnvironment {
 
 /// The DOM and style state of one box's subtree that a retained result was computed from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Inputs {
+pub(in crate::engine::layout) struct Inputs {
     dom: u64,
     own: u64,
     subtree: u64,
@@ -47,6 +47,7 @@ pub(super) struct Inputs {
 pub(crate) struct LayoutReuse {
     environment: Option<ReuseEnvironment>,
     pub(super) probes: HashMap<MeasureKey, probe_cache::ProbeEntry>,
+    pub(super) widths: HashMap<width_cache::WidthKey, width_cache::WidthEntry>,
     pub(super) subtrees: HashMap<subtree_replay::SubtreeKey, subtree_replay::SubtreeEntry>,
     /// Measuring layouts of this pass; see `measured`.
     pub(super) measured: HashMap<subtree_replay::SubtreeKey, measured::Measured>,
@@ -62,6 +63,7 @@ impl LayoutReuse {
     pub(super) fn begin_pass(&mut self, environment: Option<ReuseEnvironment>) {
         if self.environment != environment {
             self.probes.clear();
+            self.widths.clear();
             self.subtrees.clear();
             self.environment = environment;
         }
@@ -74,6 +76,7 @@ impl LayoutReuse {
     pub(super) fn finish_pass(&mut self) {
         let used = std::mem::take(&mut self.used);
         self.probes.retain(|key, _| used.contains(&key.node()));
+        self.widths.retain(|key, _| used.contains(&key.0));
         self.subtrees.retain(|key, _| used.contains(&key.node));
         let pass = self.pass;
         self.sighted.retain(|_, sighting| sighting.last == pass);

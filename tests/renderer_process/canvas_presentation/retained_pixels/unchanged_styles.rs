@@ -66,7 +66,7 @@ fn equal_inline_css_recomputes_styles_but_retains_boxes_and_publishes_new_pixels
             .layout
             .items
             .iter()
-            .any(|item| matches!(item, DisplayItem::Text{text,..}if text=="changed"))
+            .any(|item| matches!(item, DisplayItem::Text{text,..}if &**text == "changed"))
     );
     session.shutdown().unwrap();
 }

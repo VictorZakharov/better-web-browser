@@ -49,7 +49,7 @@ fn text_paint_centers_font_metrics_in_extra_line_leading() {
         .items
         .iter()
         .find_map(|item| match item {
-            DisplayItem::Text { rect, text, .. } if text == "Label" => Some(*rect),
+            DisplayItem::Text { rect, text, .. } if &**text == "Label" => Some(*rect),
             _ => None,
         })
         .unwrap();
@@ -112,7 +112,7 @@ fn authored_flex_button_preserves_child_layout_and_form_metadata() {
         output
             .items
             .iter()
-            .any(|item| matches!(item, DisplayItem::Text { text, .. } if text == "Save"))
+            .any(|item| matches!(item, DisplayItem::Text { text, .. } if &**text == "Save"))
     );
     for child in Node::composed_children(&button) {
         assert!(output.node_bounds.contains_key(&child.id()));

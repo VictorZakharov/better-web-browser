@@ -26,7 +26,7 @@ fn transformed_text_controls_intrinsic_flex_width_without_changing_dom_text() {
         assert_eq!(span.text_content(), source);
         assert!(
             output.items.iter().any(|item| matches!(item,
-            DisplayItem::Text { text, .. } if text == expected)),
+            DisplayItem::Text { text, .. } if &**text == expected)),
             "{transform}"
         );
     }

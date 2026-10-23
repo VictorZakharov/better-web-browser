@@ -124,7 +124,7 @@ fn contained_renderer_decodes_opus_audio_buffers_with_real_resampled_pcm_and_asy
                 .iter()
                 .filter_map(|item| {
                     if let DisplayItem::Text { text, .. } = item {
-                        Some(text.as_str())
+                        Some(&**text)
                     } else {
                         None
                     }

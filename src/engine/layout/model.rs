@@ -94,16 +94,18 @@ pub enum DisplayItem {
         colors: [Color; 4],
         radius: f32,
     },
+    /// Only `rect` changes once a run is laid out, so replaying or translating a retained text
+    /// item shares its text, link and glyphs instead of copying them.
     Text {
         rect: RectF,
-        text: String,
+        text: std::sync::Arc<str>,
         font: FontSpec,
         color: Color,
-        link: Option<String>,
+        link: Option<std::sync::Arc<str>>,
         /// Stable renderer DOM target for hit-testable text such as anchor contents.
         node_id: Option<NodeId>,
         raster_run_id: u64,
-        glyphs: Vec<PositionedGlyph>,
+        glyphs: std::sync::Arc<[PositionedGlyph]>,
     },
     Image {
         rect: RectF,

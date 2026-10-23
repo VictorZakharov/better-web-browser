@@ -45,6 +45,6 @@ fn opacity_wraps_complete_nested_subtrees_without_removing_geometry() {
         2
     );
     assert!(output.items.iter().any(
-        |item| matches!(item, DisplayItem::Text { link: Some(link), .. } if link == "https://example.com/kept")
+        |item| matches!(item, DisplayItem::Text { link: Some(link), .. } if &**link == "https://example.com/kept")
     ));
 }

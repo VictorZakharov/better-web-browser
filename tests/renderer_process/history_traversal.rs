@@ -73,7 +73,7 @@ fn document_scoped_history_input_restores_state_before_ordered_events() {
                     .items
                     .iter()
                     .filter_map(|item| match item {
-                        DisplayItem::Text { text, .. } => Some(text.as_str()),
+                        DisplayItem::Text { text, .. } => Some(&**text),
                         _ => None,
                     })
                     .collect::<String>();

@@ -34,7 +34,7 @@ fn manual_shadow_slots_render_only_explicitly_assigned_light_children() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -52,7 +52,7 @@ fn manual_shadow_slots_render_only_explicitly_assigned_light_children() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect::<Vec<_>>()

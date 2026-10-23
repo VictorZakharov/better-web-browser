@@ -78,7 +78,7 @@ fn live_audio_context_streams_after_trusted_input_and_closes() {
                         let DisplayItem::Text { text, .. } = item else {
                             return None;
                         };
-                        Some(text.as_str())
+                        Some(&**text)
                     })
                     .collect::<String>();
                 last_text = text.clone();

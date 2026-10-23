@@ -61,7 +61,7 @@ fn canvas_opacity_updates_publish_pixels_and_mixed_changes_rebuild() {
     let white = next_canvas_pixels(&session, &yellow, &[255, 255, 255, 255].repeat(3));
     assert!(!retained(&white), "mixed text/opacity changes need layout");
     assert!(white.layout.items.iter().any(|item| matches!(
-        item, DisplayItem::Text { text, .. } if text == "after"
+        item, DisplayItem::Text { text, .. } if &**text == "after"
     )));
     session.shutdown().unwrap();
 }
