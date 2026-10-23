@@ -12,10 +12,12 @@ use crate::limits::{
 pub(super) mod affine;
 mod controls;
 mod groups;
+mod splice;
 pub(super) mod sticky;
 mod values;
 use controls::{decode_control, decode_form, encode_control, encode_form};
 use groups::validate_display_groups;
+pub use splice::ItemBase;
 use values::*;
 
 const MAX_CONTROL_OPTIONS: usize = 10_000;
@@ -27,14 +29,12 @@ const MAX_GLYPHS_PER_TEXT_ITEM: usize = 65_536;
 pub(super) fn encode_layout(
     writer: &mut WireWriter,
     layout: &PresentedLayout,
+    base: Option<ItemBase<'_>>,
 ) -> Result<(), ProtocolError> {
     validate_display_groups(&layout.items)?;
     writer.f32(layout.content_height);
     encode_color(writer, layout.background);
-    writer.u32(layout.items.len() as u32);
-    for item in &layout.items {
-        encode_item(writer, item)?;
-    }
+    splice::encode_items(writer, &layout.items, base)?;
     writer.u32(layout.forms.len() as u32);
     for form in &layout.forms {
         encode_form(writer, form)?;
@@ -43,7 +43,10 @@ pub(super) fn encode_layout(
     Ok(())
 }
 
-pub(super) fn decode_layout(reader: &mut WireReader<'_>) -> Result<PresentedLayout, ProtocolError> {
+pub(super) fn decode_layout(
+    reader: &mut WireReader<'_>,
+    base: Option<ItemBase<'_>>,
+) -> Result<PresentedLayout, ProtocolError> {
     let content_height = finite(
         reader.f32()?,
         0.0,
@@ -51,11 +54,8 @@ pub(super) fn decode_layout(reader: &mut WireReader<'_>) -> Result<PresentedLayo
         "content height",
     )?;
     let background = decode_color(reader)?;
-    let item_count = bounded_count(reader.u32()?, MAX_DOM_NODES * 4, "display items")?;
-    let mut items = Vec::with_capacity(item_count);
-    for _ in 0..item_count {
-        items.push(decode_item(reader)?);
-    }
+    let items = splice::decode_items(reader, base)?;
+    let item_count = items.len();
     validate_display_groups(&items)?;
     let form_count = bounded_count(reader.u32()?, MAX_DOM_NODES, "forms")?;
     let mut forms = Vec::with_capacity(form_count);

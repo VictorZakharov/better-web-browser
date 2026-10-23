@@ -19,7 +19,7 @@ pub(crate) mod webgl;
 
 pub use css::StyleRefreshStats;
 pub(crate) use css::media::MediaEnvironment;
-pub use display_list::DisplayListDamage;
+pub use display_list::{DisplayListDamage, same_display_item};
 pub use font::WebFont;
 pub use layout::{
     CheckableState, ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, LayoutOutput,

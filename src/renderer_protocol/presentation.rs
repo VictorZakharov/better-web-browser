@@ -10,6 +10,7 @@ mod layout_sanitize;
 mod reader;
 mod runtime_codec;
 mod wheel;
+pub use layout::ItemBase;
 pub use wheel::{MAX_WHEEL_ACKNOWLEDGEMENTS, WheelAcknowledgement, WheelDecision};
 
 pub use diagnostics::{
@@ -225,11 +226,24 @@ pub struct RendererPresentation {
 
 impl RendererPresentation {
     pub fn encode(&self) -> Result<Vec<u8>, ProtocolError> {
-        codec::encode(self)
+        codec::encode(self, None)
+    }
+
+    /// Encodes the display items as edits to `base`, the items of this document's previous
+    /// presentation, which the decoder must be given; see `layout::splice`.
+    pub fn encode_with_base(&self, base: Option<ItemBase<'_>>) -> Result<Vec<u8>, ProtocolError> {
+        codec::encode(self, base)
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, ProtocolError> {
-        codec::decode(bytes)
+        codec::decode(bytes, None)
+    }
+
+    pub fn decode_with_base(
+        bytes: &[u8],
+        base: Option<ItemBase<'_>>,
+    ) -> Result<Self, ProtocolError> {
+        codec::decode(bytes, base)
     }
 }
 

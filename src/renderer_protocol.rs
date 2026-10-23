@@ -100,11 +100,11 @@ pub use message::{
     RendererLimits, RendererMessage, RendererSessionId, RestrictionReport, TestCommand,
 };
 pub use presentation::{
-    AttributeDiagnostics, CustomPropertyDiagnostics, HistoryAction, MAX_WHEEL_ACKNOWLEDGEMENTS,
-    MediaRuntimeReport, NativeTextRejection, NodeDiagnostics, NodeIdentityDiagnostics,
-    PageDiagnostics, PageLoadReport, PresentedGlyphRaster, PresentedImage, PresentedLayout,
-    RendererPresentation, RendererRuntimeUpdate, ResourceDiagnostics, RuntimeReport,
-    SelectorDiagnostics, ShadowRootDiagnostics, StyleDiagnostics, StyleReport,
+    AttributeDiagnostics, CustomPropertyDiagnostics, HistoryAction, ItemBase,
+    MAX_WHEEL_ACKNOWLEDGEMENTS, MediaRuntimeReport, NativeTextRejection, NodeDiagnostics,
+    NodeIdentityDiagnostics, PageDiagnostics, PageLoadReport, PresentedGlyphRaster, PresentedImage,
+    PresentedLayout, RendererPresentation, RendererRuntimeUpdate, ResourceDiagnostics,
+    RuntimeReport, SelectorDiagnostics, ShadowRootDiagnostics, StyleDiagnostics, StyleReport,
     WheelAcknowledgement, WheelDecision,
 };
 pub use state::{

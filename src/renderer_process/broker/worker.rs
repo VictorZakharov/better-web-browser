@@ -130,6 +130,9 @@ struct Broker {
     exit_reason: Option<RendererExitReason>,
     incoming_fetch: Option<IncomingFetchBatch>,
     incoming_presentation: Option<IncomingPresentation>,
+    /// The display items of the last presentation decoded, the base of the renderer's next one
+    /// for that document (`ItemBase`).
+    presented_items: Option<(DocumentId, u64, Vec<crate::engine::DisplayItem>)>,
     incoming_video: crate::renderer_protocol::VideoFrameAssembler,
     active_document: Option<DocumentId>,
     navigation: Option<navigation::OutgoingNavigation>,
@@ -159,6 +162,7 @@ impl Broker {
             exit_reason: None,
             incoming_fetch: None,
             incoming_presentation: None,
+            presented_items: None,
             incoming_video: Default::default(),
             active_document: None,
             navigation: None,

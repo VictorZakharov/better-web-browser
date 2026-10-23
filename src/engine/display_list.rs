@@ -14,7 +14,12 @@ impl DisplayListDamage {
         if previous.items.is_empty()
             || previous.background != next.background
             || (!same_number(previous.content_height, next.content_height)
-                && previous.items == next.items)
+                && previous.items.len() == next.items.len()
+                && previous
+                    .items
+                    .iter()
+                    .zip(&next.items)
+                    .all(|(left, right)| same_display_item(left, right)))
         {
             return Self::full(previous.items.len().max(next.items.len()));
         }
@@ -23,7 +28,7 @@ impl DisplayListDamage {
             .items
             .iter()
             .zip(&next.items)
-            .take_while(|(left, right)| left == right)
+            .take_while(|(left, right)| same_display_item(left, right))
             .count();
         let suffix_limit = previous.items.len().min(next.items.len()) - prefix;
         let suffix = previous
@@ -32,7 +37,7 @@ impl DisplayListDamage {
             .rev()
             .zip(next.items.iter().rev())
             .take(suffix_limit)
-            .take_while(|(left, right)| left == right)
+            .take_while(|(left, right)| same_display_item(left, right))
             .count();
         let previous_changed = &previous.items[prefix..previous.items.len() - suffix];
         let next_changed = &next.items[prefix..next.items.len() - suffix];
@@ -69,6 +74,49 @@ impl DisplayListDamage {
 
     pub fn is_empty(self) -> bool {
         !self.full_repaint && self.rect.is_none()
+    }
+}
+
+/// Item equality that recognises a retained text run by its shared glyphs before comparing
+/// them. Retained layout and the presentation splice share glyph runs between successive lists,
+/// so unchanged runs compare by pointer instead of by every glyph position.
+pub fn same_display_item(a: &DisplayItem, b: &DisplayItem) -> bool {
+    match (a, b) {
+        (
+            DisplayItem::Text {
+                rect,
+                text,
+                font,
+                color,
+                link,
+                node_id,
+                color_owner,
+                raster_run_id,
+                glyphs,
+            },
+            DisplayItem::Text {
+                rect: other_rect,
+                text: other_text,
+                font: other_font,
+                color: other_color,
+                link: other_link,
+                node_id: other_node,
+                color_owner: other_owner,
+                raster_run_id: other_run,
+                glyphs: other_glyphs,
+            },
+        ) => {
+            rect == other_rect
+                && color == other_color
+                && raster_run_id == other_run
+                && node_id == other_node
+                && color_owner == other_owner
+                && text == other_text
+                && link == other_link
+                && font == other_font
+                && (std::sync::Arc::ptr_eq(glyphs, other_glyphs) || glyphs == other_glyphs)
+        }
+        _ => a == b,
     }
 }
 
@@ -199,5 +247,28 @@ mod tests {
         next = output(vec![text(0.0, "one")]);
         next.background = Color::BLACK;
         assert!(DisplayListDamage::between(&previous, &next).full_repaint);
+    }
+
+    #[test]
+    fn glyph_runs_compare_by_content_when_not_shared() {
+        let run = |x: f32| {
+            let mut item = text(0.0, "run");
+            if let DisplayItem::Text { glyphs, .. } = &mut item {
+                *glyphs = std::sync::Arc::from([crate::engine::layout::PositionedGlyph {
+                    raster_id: 1,
+                    x,
+                    y: 0.0,
+                    width: 8.0,
+                    height: 16.0,
+                    color: false,
+                }]);
+            }
+            item
+        };
+        let first = run(1.0);
+        assert!(same_display_item(&first, &first.clone()));
+        assert!(same_display_item(&first, &run(1.0)));
+        assert!(!same_display_item(&first, &run(2.0)));
+        assert!(!same_display_item(&first, &text(0.0, "run")));
     }
 }
