@@ -7,6 +7,7 @@ pub(super) fn collect_text_atoms(
     style: &ComputedStyle,
     link: Option<(String, NodeId)>,
     source_node: Option<NodeId>,
+    color_owner: NodeId,
     output: &mut Vec<InlineAtom>,
     pending: &mut PendingSpace,
 ) {
@@ -31,7 +32,15 @@ pub(super) fn collect_text_atoms(
         };
         if style.white_space.preserves_spaces() {
             if ch == '\n' {
-                emit(&mut word, &mut units, style, &link, source_node, output);
+                emit(
+                    &mut word,
+                    &mut units,
+                    style,
+                    &link,
+                    source_node,
+                    color_owner,
+                    output,
+                );
                 output.push(InlineAtom::Break);
             } else {
                 // Preserved spaces belong to the preceding line, unlike collapsed spaces.
@@ -40,13 +49,29 @@ pub(super) fn collect_text_atoms(
                     && !matches!(ch, ' ' | '\t')
                     && word.ends_with([' ', '\t'])
                 {
-                    emit(&mut word, &mut units, style, &link, source_node, output);
+                    emit(
+                        &mut word,
+                        &mut units,
+                        style,
+                        &link,
+                        source_node,
+                        color_owner,
+                        output,
+                    );
                 }
                 word.push(ch);
                 units.extend(std::iter::repeat_n(unit, ch.len_utf16()));
             }
         } else if matches!(ch, ' ' | '\t' | '\n' | '\u{000c}') {
-            emit(&mut word, &mut units, style, &link, source_node, output);
+            emit(
+                &mut word,
+                &mut units,
+                style,
+                &link,
+                source_node,
+                color_owner,
+                output,
+            );
             if let Some(space) = pending.as_mut() {
                 if space.node == unit.node {
                     space.end = unit.end;
@@ -63,7 +88,15 @@ pub(super) fn collect_text_atoms(
             units.extend(std::iter::repeat_n(unit, ch.len_utf16()));
         }
     }
-    emit(&mut word, &mut units, style, &link, source_node, output);
+    emit(
+        &mut word,
+        &mut units,
+        style,
+        &link,
+        source_node,
+        color_owner,
+        output,
+    );
 }
 
 fn emit(
@@ -72,12 +105,19 @@ fn emit(
     style: &ComputedStyle,
     link: &Option<(String, NodeId)>,
     source_node: Option<NodeId>,
+    color_owner: NodeId,
     output: &mut Vec<InlineAtom>,
 ) {
     if text.is_empty() {
         return;
     }
-    let mut atom = text_atom(std::mem::take(text), style, link.clone(), source_node);
+    let mut atom = text_atom(
+        std::mem::take(text),
+        style,
+        link.clone(),
+        source_node,
+        Some(color_owner),
+    );
     if let InlineAtom::Text { source_units, .. } = &mut atom {
         *source_units = std::mem::take(units);
     }
@@ -87,9 +127,10 @@ fn emit(
 pub(super) fn pending_space_atom(
     pending: &mut PendingSpace,
     style: &ComputedStyle,
+    color_owner: Option<NodeId>,
     link: Option<(String, NodeId)>,
 ) -> InlineAtom {
-    let mut atom = text_atom(" ".into(), style, link, None);
+    let mut atom = text_atom(" ".into(), style, link, None, color_owner);
     if let InlineAtom::Text { source_units, .. } = &mut atom {
         source_units.extend(pending.take());
     }
@@ -101,6 +142,7 @@ pub(super) fn text_atom(
     style: &ComputedStyle,
     link: Option<(String, NodeId)>,
     source_node: Option<NodeId>,
+    color_owner: Option<NodeId>,
 ) -> InlineAtom {
     let (link, interaction_node) = match link {
         Some((url, node_id)) => (Some(url), Some(node_id)),
@@ -113,6 +155,7 @@ pub(super) fn text_atom(
         link,
         node_id: interaction_node,
         source_node,
+        color_owner,
         source_units: Vec::new(),
         text_transform: style.text_transform,
         visible: style.visibility,

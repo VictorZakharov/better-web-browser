@@ -141,6 +141,7 @@ fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
             color,
             link,
             node_id,
+            color_owner,
             raster_run_id,
             glyphs,
         } => DisplayItem::Text {
@@ -150,6 +151,7 @@ fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
             color,
             link,
             node_id,
+            color_owner,
             raster_run_id,
             glyphs: glyphs.iter().cloned().filter_map(sanitize_glyph).collect(),
         },

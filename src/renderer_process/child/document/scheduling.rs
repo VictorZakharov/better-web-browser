@@ -329,11 +329,10 @@ impl DocumentRuntime {
             retained_style_repaint = retained;
             stats
         } else if outcome.render_requested {
-            connection.report_renderer_task_stage(format!(
-                "refreshing styles for {}",
-                self.page.source_url
-            ))?;
-            self.refresh_checkpoint_styles(Some(&outcome.invalidation))
+            let flags = [resources_changed, resource_style_changed, media_changed];
+            let (stats, repainted) = self.refresh_requested_styles(connection, &outcome, flags)?;
+            retained_style_repaint = repainted;
+            stats
         } else if self.styles_deferred() {
             self.refresh_checkpoint_styles(None)
         } else if resource_style_changed || self.page.has_deferred_style_invalidation() {

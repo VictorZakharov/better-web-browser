@@ -77,6 +77,7 @@ impl StyleSet {
         };
         let mut stats = StyleRefreshStats {
             opacity_only: true,
+            text_color_only: true,
             ..StyleRefreshStats::default()
         };
         self.refresh_roots(&roots, element_roots, &mut stats);
@@ -121,6 +122,8 @@ impl StyleSet {
         self.refresh_deferred_fullscreen_roots(&fullscreen, &mut stats);
         stats.non_deferable_paint_changes |= stats.removed_styles != 0;
         stats.opacity_only &=
+            !stats.layout_changed && stats.removed_styles == 0 && !removed_pseudos;
+        stats.text_color_only &=
             !stats.layout_changed && stats.removed_styles == 0 && !removed_pseudos;
         stats.total_styles = self.styles.len();
         stats
@@ -198,6 +201,8 @@ impl StyleSet {
                     stats.non_deferable_paint_changes |=
                         !previous.deferred_paint_equivalent(&style);
                     stats.opacity_only &= previous.retained_opacity_equivalent(&style);
+                    stats.text_color_only &=
+                        previous.text_color_equivalent(&style) && !paints_color_outside_text(&node);
                 }
                 None => {
                     stats.first_changed_node.get_or_insert(node.id());
@@ -205,6 +210,7 @@ impl StyleSet {
                     stats.layout_changed = true;
                     stats.non_deferable_paint_changes = true;
                     stats.opacity_only = false;
+                    stats.text_color_only = false;
                 }
                 _ => changed = false,
             }
@@ -222,6 +228,7 @@ impl StyleSet {
             stats.layout_changed |= pseudo_changes.layout_changed;
             stats.non_deferable_paint_changes |= pseudo_changes.paint_changed;
             stats.opacity_only &= !pseudo_changes.paint_changed;
+            stats.text_color_only &= !pseudo_changes.paint_changed;
             if pseudo_changes.paint_changed {
                 stats.first_changed_node.get_or_insert(node.id());
             }
@@ -304,4 +311,34 @@ fn is_descendant_of(node: &NodeRef, ancestor: &NodeRef) -> bool {
         current.shadow_including_parent()
     })
     .any(|current| current.id() == ancestor.id())
+}
+
+/// Elements that paint their own `color` outside text runs: replaced content (SVG
+/// `currentColor`, image tints), form controls and their accent colors, and anything in the SVG
+/// namespace.
+fn paints_color_outside_text(node: &NodeRef) -> bool {
+    node.namespace_uri()
+        .is_some_and(|namespace| namespace != "http://www.w3.org/1999/xhtml")
+        || matches!(
+            node.tag_name(),
+            Some(
+                "img"
+                    | "image"
+                    | "video"
+                    | "canvas"
+                    | "iframe"
+                    | "embed"
+                    | "object"
+                    | "svg"
+                    | "input"
+                    | "textarea"
+                    | "select"
+                    | "button"
+                    | "option"
+                    | "optgroup"
+                    | "meter"
+                    | "progress"
+                    | "math"
+            )
+        )
 }

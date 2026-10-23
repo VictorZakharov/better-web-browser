@@ -359,3 +359,31 @@ fn non_color_hover_effects_and_hit_changes_are_not_deferred() {
         session.shutdown().unwrap();
     }
 }
+
+#[test]
+fn class_changes_that_only_recolor_text_present_the_new_colors() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut session = RendererSession::launch(options()).expect("hidden renderer");
+    let html = "<!doctype html><style>body{margin:0} .dark p{color:rgb(51,51,51)}</style>\
+        <p>plain <a href=/x>link</a></p><script>\
+        addEventListener('pointermove', () => document.body.classList.toggle('dark'));</script>";
+    let initial = load_scripted_html_document(&session, 360, html);
+    for (sequence, expected) in [(1, [51, 51, 51]), (2, [0, 0, 0])] {
+        move_pointer(&session, initial.document, sequence, 20.0);
+        let changed = paint(&session);
+        let colors = changed
+            .layout
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                DisplayItem::Text { text, color, .. } if text.contains("plain") => {
+                    Some([color.red, color.green, color.blue])
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(colors, vec![expected], "toggle {sequence}");
+        acknowledge(&session, &changed);
+    }
+    session.shutdown().unwrap();
+}

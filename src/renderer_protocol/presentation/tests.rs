@@ -112,6 +112,7 @@ pub(super) fn sample() -> RendererPresentation {
                 color: Color::BLACK,
                 link: None,
                 node_id: None,
+                color_owner: None,
                 raster_run_id: 7,
                 glyphs: vec![PositionedGlyph {
                     raster_id: 1,

@@ -104,6 +104,10 @@ pub enum DisplayItem {
         link: Option<std::sync::Arc<str>>,
         /// Stable renderer DOM target for hit-testable text such as anchor contents.
         node_id: Option<NodeId>,
+        /// Renderer-local: the node whose computed `color` this run was painted with, so a
+        /// color-only restyle can repaint it without layout (`try_refresh_text_color`). Not
+        /// sent to the browser.
+        color_owner: Option<NodeId>,
         raster_run_id: u64,
         glyphs: std::sync::Arc<[PositionedGlyph]>,
     },
@@ -192,6 +196,8 @@ pub(super) enum InlineAtom {
         link: Option<String>,
         node_id: Option<NodeId>,
         source_node: Option<NodeId>,
+        /// The node whose computed style supplied `color`; see `DisplayItem::Text`.
+        color_owner: Option<NodeId>,
         source_units: Vec<fragments::SourceUnit>,
         text_transform: TextTransform,
         visible: bool,

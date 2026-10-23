@@ -43,6 +43,9 @@ pub struct StyleRefreshStats {
     pub non_deferable_paint_changes: bool,
     /// Every changed computed style differs only in opacity below one; no pseudo paint changed.
     pub(crate) opacity_only: bool,
+    /// Every changed computed style differs only in a `color` that only text runs paint (see
+    /// `ComputedStyle::text_color_equivalent`); no pseudo paint changed.
+    pub(crate) text_color_only: bool,
     pub(crate) first_changed_node: Option<NodeId>,
     pub full_rebuild: bool,
     pub element_style_time: std::time::Duration,

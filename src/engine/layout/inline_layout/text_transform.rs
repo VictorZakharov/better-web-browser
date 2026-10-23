@@ -107,6 +107,7 @@ mod tests {
             link: None,
             node_id: None,
             source_node: None,
+            color_owner: None,
             source_units: Vec::new(),
             text_transform: style.text_transform,
             visible: true,
