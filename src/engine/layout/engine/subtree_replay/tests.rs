@@ -151,6 +151,10 @@ fn assert_same_output(warm: &LayoutOutput, cold: &LayoutOutput) {
         normalized(&warm.content_height),
         normalized(&cold.content_height)
     );
+    assert_eq!(
+        normalized(&warm.sticky_layers),
+        normalized(&cold.sticky_layers)
+    );
 }
 
 /// Lays out with whatever the page retained, then from nothing, and compares the two.
@@ -264,20 +268,59 @@ fn relatively_positioned_sections_keep_their_stacking_order_when_replayed() {
 }
 
 #[test]
-fn viewport_dependent_subtrees_are_never_retained() {
+fn subtrees_with_fixed_boxes_are_never_retained() {
     let mut page = Page::parse(
-        "<style>section{display:flow-root}.pin{position:fixed;top:0}.stick{position:sticky;top:0}</style>
-         <section id=fixed><p>a</p><p>b</p><div class=pin><p>pinned</p></div></section>
-         <section id=sticky><p>a</p><p>b</p><div class=stick><p>stuck</p></div></section>",
+        "<style>section{display:flow-root}.pin{position:fixed;top:0}</style>
+         <section id=fixed><p>a</p><p>b</p><div class=pin><p>pinned</p></div></section>",
         "https://example.test/",
     );
     page.refresh_resources_for_viewport(WIDTH, HEIGHT);
     settle(&page);
-    let reuse = page.layout_reuse.borrow();
-    for id in ["fixed", "sticky"] {
-        let node = element(&page, id).id();
-        assert!(!reuse.subtrees.keys().any(|key| key.node == node), "{id}");
-    }
+    assert!(!is_retained(&page, "fixed"));
+}
+
+fn is_retained(page: &Page, id: &str) -> bool {
+    let node = element(page, id).id();
+    page.layout_reuse
+        .borrow()
+        .subtrees
+        .keys()
+        .any(|key| key.node == node)
+}
+
+#[test]
+fn sticky_boxes_replay_with_their_subtree_and_stick_at_the_current_scroll() {
+    // A sticky box's offset follows the scroll position, which is not a layout input.
+    let mut page = Page::parse(
+        "<style>section{display:flow-root}p{height:200px;margin:0}.stick{position:sticky;top:10px}</style>
+         <section id=changing><p id=text>changing</p></section>
+         <section id=holder><div class=stick id=stuck>stuck</div><p>alpha beta</p><p>gamma delta</p>
+           <p>epsilon zeta</p><p>eta theta</p><p>iota kappa</p><p>lambda mu</p></section>",
+        "https://example.test/",
+    );
+    page.refresh_resources_for_viewport(WIDTH, HEIGHT);
+    page.dom.document.scroll_offset.set((0.0, 400.0));
+    settle(&page);
+    assert!(is_retained(&page, "holder"));
+    Node::set_text_content(&element(&page, "text"), "changed");
+    page.refresh_resources_for_viewport(WIDTH, HEIGHT);
+    let mut replayed = Counting::default();
+    let warm = layout(&page, &mut replayed);
+    let retained = std::mem::take(&mut *page.layout_reuse.borrow_mut());
+    let mut cold = Counting::default();
+    layout(&page, &mut cold);
+    *page.layout_reuse.borrow_mut() = retained;
+    assert!(
+        replayed.calls * 3 < cold.calls,
+        "the sticky box's section replays ({} vs {} measurements)",
+        replayed.calls,
+        cold.calls
+    );
+    let stuck = element(&page, "stuck").id();
+    // In flow at 208px (body margin and the first section); stuck 10px below the viewport's
+    // top edge at a 400px scroll.
+    assert_eq!(warm.sticky_offsets[&stuck], (0.0, 202.0));
+    assert_warm_matches_cold(&page);
 }
 
 #[test]

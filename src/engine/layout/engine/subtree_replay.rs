@@ -11,10 +11,13 @@
 // a later pass can append a copy and translate it to the new position, exactly as an ancestor
 // moves an already laid-out subtree (`translate_layout_subtree`).
 //
-// Subtrees containing viewport-dependent boxes (fixed or sticky positioning) or table-fixup
-// boxes whose identifiers are new in every pass are not retained. Each retained subtree keeps
-// its own copy of what it emitted, captured as soon as its layout finishes and before any
-// ancestor moves it, so a nested subtree can still be replayed after an enclosing one changes.
+// Subtrees containing fixed-position boxes, which are laid out against the viewport, or
+// table-fixup boxes whose identifiers are new in every pass are not retained. Sticky boxes are
+// laid out like relatively positioned ones; their scroll-dependent offset is applied to the
+// finished output afterwards (`update_sticky_positions`), so a subtree retains them unshifted.
+// Each retained subtree keeps its own copy of what it emitted, captured as soon as its layout
+// finishes and before any ancestor moves it, so a nested subtree can still be replayed after an
+// enclosing one changes.
 // Entries are bounded by size so that very large containers recompute while their children
 // replay. A subtree is retained only when its root was laid out from the same DOM and styles in
 // the previous pass too, so a document's first layout, new content, and the ancestors of content
@@ -316,7 +319,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let retainable = nodes.iter().all(|descendant| {
             let style = self.styles.get(descendant);
             !self.styles.is_transient_anonymous(descendant.id())
-                && !matches!(style.position, Position::Fixed | Position::Sticky)
+                && style.position != Position::Fixed
         });
         if !retainable {
             return;
