@@ -1,6 +1,6 @@
 //! Comparisons that separate geometry-affecting style changes from paint-only changes.
 
-use super::{ComputedStyle, Display};
+use super::{ComputedStyle, Display, Length};
 
 impl ComputedStyle {
     pub(crate) fn retained_opacity_equivalent(&self, other: &Self) -> bool {
@@ -11,6 +11,33 @@ impl ComputedStyle {
         let mut normalized = other.clone();
         normalized.opacity = self.opacity;
         self == &normalized
+    }
+
+    /// Whether `other` differs from this style only in `color`, and that color reaches paint only
+    /// through text runs, which record it as their `color_owner`. `currentColor` is resolved while
+    /// painting, so a box whose borders, shadows or images use it is excluded, as are replaced
+    /// elements and controls (checked by the caller, which has the node).
+    /// https://www.w3.org/TR/css-color-4/#currentcolor-color
+    pub(crate) fn text_color_equivalent(&self, other: &Self) -> bool {
+        let mut normalized = other.clone();
+        normalized.color = self.color;
+        self == &normalized && !other.paints_current_color()
+    }
+
+    fn paints_current_color(&self) -> bool {
+        let widths = [
+            &self.border_width.top,
+            &self.border_width.right,
+            &self.border_width.bottom,
+            &self.border_width.left,
+        ];
+        widths
+            .iter()
+            .zip(self.border_colors)
+            .any(|(width, color)| color.is_none() && !matches!(width, Length::Px(0.0)))
+            || self.box_shadows.iter().any(|shadow| shadow.color.is_none())
+            || !self.background_image.is_none()
+            || !self.mask_image.is_none()
     }
 
     /// A deferred full repaint may reuse current geometry, but not topology-changing

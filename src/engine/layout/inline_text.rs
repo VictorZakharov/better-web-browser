@@ -1,6 +1,8 @@
 //! Original source geometry is independent of the elided paint string.
 use super::*;
 
+mod recolor;
+
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn used_line_height(&mut self, style: &ComputedStyle) -> f32 {
         if style.normal_line_height() {
@@ -24,6 +26,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             link,
             node_id,
             source_node,
+            color_owner,
             visible,
             ..
         } = measured.atom
@@ -65,6 +68,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 color: *color,
                 link: link.as_deref().map(Into::into),
                 node_id: *node_id,
+                color_owner: *color_owner,
                 raster_run_id: shaped.raster_run_id,
                 glyphs: shaped.glyphs,
             });

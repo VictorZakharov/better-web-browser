@@ -55,6 +55,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     style,
                     inherited_link,
                     (!node.is_generated_pseudo_content()).then_some(node.id()),
+                    node.id(),
                     output,
                     pending_space,
                 );
@@ -71,6 +72,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     output.push(pending_space_atom(
                         pending_space,
                         self.styles.get(&parent),
+                        Some(parent.id()),
                         inherited_link.clone(),
                     ));
                     *pending_space = None;
@@ -121,6 +123,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                                 output.push(pending_space_atom(
                                     pending_space,
                                     surrounding,
+                                    parent
+                                        .as_ref()
+                                        .map_or(node.id(), |parent| parent.id())
+                                        .into(),
                                     link.clone(),
                                 ));
                                 *pending_space = None;
@@ -146,7 +152,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             || !style.mask_image.0.is_empty()
                         {
                             if pending_space.is_some() {
-                                output.push(pending_space_atom(pending_space, style, link.clone()));
+                                output.push(pending_space_atom(
+                                    pending_space,
+                                    style,
+                                    Some(node.id()),
+                                    link.clone(),
+                                ));
                                 *pending_space = None;
                             }
                             let mut children = Vec::new();

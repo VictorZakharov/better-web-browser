@@ -164,6 +164,7 @@ mod tests {
             color: Color::BLACK,
             link: None,
             node_id: None,
+            color_owner: None,
             raster_run_id: 0,
             glyphs: Default::default(),
         }

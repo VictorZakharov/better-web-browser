@@ -130,6 +130,7 @@ impl StyleSet {
         stats.layout_changed |= pseudo_changes.layout_changed;
         stats.non_deferable_paint_changes |= pseudo_changes.paint_changed;
         stats.opacity_only &= !pseudo_changes.paint_changed;
+        stats.text_color_only &= !pseudo_changes.paint_changed;
         if pseudo_changes.paint_changed {
             stats.first_changed_node.get_or_insert(node.id());
         }

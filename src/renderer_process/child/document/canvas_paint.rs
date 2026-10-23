@@ -29,6 +29,38 @@ impl DocumentRuntime {
         (stats, retained)
     }
 
+    /// Refreshes styles for a requested rendering checkpoint. Returns whether the retained
+    /// display list was repainted in place because a class change only recolored text
+    /// (`LayoutOutput::try_refresh_text_color`), so the checkpoint keeps its geometry. A failed
+    /// install takes normal layout, which regenerates every item.
+    pub(super) fn refresh_requested_styles(
+        &mut self,
+        connection: &mut ChildConnection,
+        outcome: &ScriptOutcome,
+        [resources_changed, resource_style_changed, media_changed]: [bool; 3],
+    ) -> Result<(StyleRefreshStats, bool), String> {
+        connection.report_renderer_task_stage(format!(
+            "refreshing styles for {}",
+            self.page.source_url
+        ))?;
+        let stats = self.refresh_checkpoint_styles(Some(&outcome.invalidation));
+        let viewport = [
+            self.viewport.width,
+            self.viewport.height,
+            self.viewport.style_width,
+        ];
+        let repainted =
+            self.can_retain_geometry(resources_changed, resource_style_changed, media_changed)
+                && self.layout.try_refresh_text_color(
+                    &self.page,
+                    viewport,
+                    &outcome.invalidation,
+                    &stats,
+                )
+                && self.install_canvas_presentation();
+        Ok((stats, repainted))
+    }
+
     pub(in crate::renderer_process::child) fn set_gpu_canvas_enabled(&mut self, enabled: bool) {
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_gpu_canvas_enabled(enabled);

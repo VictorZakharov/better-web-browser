@@ -32,6 +32,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 link: None,
                 node_id: None,
                 source_node: None,
+                color_owner: Some(node.id()),
                 source_units: Vec::new(),
                 text_transform: TextTransform::None,
                 visible: style.visibility,

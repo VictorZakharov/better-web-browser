@@ -106,6 +106,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 color: marker.color,
                 link: marker.link.as_deref().map(Into::into),
                 node_id: marker.node_id,
+                // The marker takes its container's color, which has no owner here; a
+                // color-only restyle that reaches it lays out again.
+                color_owner: None,
                 raster_run_id: shaped.raster_run_id,
                 glyphs: shaped.glyphs,
             });

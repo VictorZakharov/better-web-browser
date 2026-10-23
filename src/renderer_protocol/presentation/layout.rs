@@ -148,6 +148,7 @@ fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), Protoc
             color,
             link,
             node_id,
+            color_owner: _,
             raster_run_id,
             glyphs,
         } => {
@@ -310,6 +311,7 @@ fn decode_item(reader: &mut WireReader<'_>) -> Result<DisplayItem, ProtocolError
                 color,
                 link: link.map(Into::into),
                 node_id,
+                color_owner: None,
                 raster_run_id,
                 glyphs: glyphs.into(),
             })

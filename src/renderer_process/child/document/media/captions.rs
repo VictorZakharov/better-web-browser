@@ -152,6 +152,7 @@ fn caption_items(
                 color: Color::WHITE,
                 link: None,
                 node_id: None,
+                color_owner: None,
                 raster_run_id: shaped.raster_run_id,
                 glyphs: shaped.glyphs,
             });
