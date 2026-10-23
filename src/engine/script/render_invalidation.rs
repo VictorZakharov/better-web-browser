@@ -11,7 +11,7 @@ pub(super) struct PendingInvalidation {
     rebuild_style_rules: bool,
     removed_nodes: BTreeSet<NodeId>,
     removed_global_dependency: bool,
-    class_changes: Vec<crate::engine::invalidation::ClassChange>,
+    attribute_changes: Vec<crate::engine::invalidation::AttributeChange>,
     /// Parents whose child lists changed and that no other mutation made a full root. They
     /// never cover other roots: the cascade may restyle only part of their subtrees.
     child_lists: Vec<NodeRef>,
@@ -34,8 +34,7 @@ impl PendingInvalidation {
     }
 
     /// Records changed class tokens on `target` for the cascade to bound, instead of the
-    /// target's parent subtree. A proper ancestor root already restyles the element and every
-    /// sibling, so the change adds nothing there.
+    /// target's parent subtree.
     pub(super) fn record_class_change(
         &mut self,
         document: &NodeRef,
@@ -43,6 +42,20 @@ impl PendingInvalidation {
         tokens: Vec<String>,
     ) {
         self.impact = self.impact.union(MutationKind::Attribute("class").impact());
+        self.record_bounded_change(document, target, |changes| {
+            crate::engine::invalidation::record_class_change(changes, target, tokens);
+        });
+    }
+
+    /// Records an attribute change for the cascade to bound like a class change, falling back
+    /// to the target's parent subtree. A proper ancestor root already restyles the element and
+    /// every sibling, so the change adds nothing there.
+    fn record_bounded_change(
+        &mut self,
+        document: &NodeRef,
+        target: &NodeRef,
+        record: impl FnOnce(&mut Vec<crate::engine::invalidation::AttributeChange>),
+    ) {
         let covered = target.shadow_including_parent().is_some_and(|parent| {
             self.roots
                 .iter()
@@ -51,14 +64,14 @@ impl PendingInvalidation {
         if covered {
             return;
         }
-        if self.class_changes.len() >= crate::engine::invalidation::MAX_INVALIDATION_ROOTS {
+        if self.attribute_changes.len() >= crate::engine::invalidation::MAX_INVALIDATION_ROOTS {
             let parent = target
                 .shadow_including_parent()
                 .unwrap_or_else(|| document.clone());
             self.extend(document, &parent);
             return;
         }
-        crate::engine::invalidation::record_class_change(&mut self.class_changes, target, tokens);
+        record(&mut self.attribute_changes);
     }
 
     pub(super) fn record_selector_independent_style(
@@ -99,6 +112,14 @@ impl PendingInvalidation {
             // A stylesheet's text replacement keeps the old child-list scope;
             // rebuilding rules already clears local-content evidence above.
             MutationKind::TextChildren if rebuild_rules => target.clone(),
+            MutationKind::Attribute(name)
+                if crate::engine::invalidation::selector_only_attribute(name) =>
+            {
+                self.record_bounded_change(document, target, |changes| {
+                    crate::engine::invalidation::record_attribute_change(changes, target, name);
+                });
+                return;
+            }
             MutationKind::Attribute(_) if target.shadow_including_parent().is_some() => {
                 self.extend_attribute_target(document, target);
                 self.extend_validation_dependents(document, target, kind);
@@ -239,7 +260,7 @@ impl PendingInvalidation {
             rebuild_style_rules: self.rebuild_style_rules,
             removed_nodes: self.removed_nodes.iter().copied().collect(),
             removals_are_local: !self.removed_nodes.is_empty() && !self.removed_global_dependency,
-            class_changes: self.class_changes.clone(),
+            attribute_changes: self.attribute_changes.clone(),
             child_list_roots: child_lists.iter().map(|root| root.id()).collect(),
             element_roots: Vec::new(),
         }

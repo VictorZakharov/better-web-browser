@@ -178,3 +178,23 @@ fn moving_a_connected_child_to_a_detached_parent_requests_removal_rendering() {
         assert!(!outcome.invalidation.removed_nodes.is_empty());
     }
 }
+
+#[test]
+fn data_and_aria_attribute_writes_restyle_what_their_selectors_reach() {
+    let stats = run_with_geometry(&format!(
+        "<style>b{{display:block;width:100px}} [data-state=open] b{{width:200px}}</style>
+        <section id=pane><b id=target>x</b></section><aside>{}</aside><script>
+        const pane=document.getElementById('pane'), target=document.getElementById('target');
+        target.getBoundingClientRect();
+        pane.setAttribute('aria-busy', 'true');
+        if(target.getBoundingClientRect().width !== 100) throw new Error('aria');
+        pane.setAttribute('data-state', 'open');
+        if(target.getBoundingClientRect().width !== 200) throw new Error('data');</script>",
+        "<p>unrelated</p>".repeat(500)
+    ));
+    assert_eq!(stats.len(), 3);
+    for stats in &stats[1..] {
+        assert!(!stats.full_rebuild);
+        assert!(stats.recomputed_styles < 10, "{stats:?}");
+    }
+}

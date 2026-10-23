@@ -23,11 +23,13 @@ const LOCAL_CONTENT_ONLY: u8 = 1 << 6;
 // Replaced-resource attributes can change intrinsic geometry, while their
 // effect on a relational selector requires that selector to read the attribute.
 const RESOURCE_ATTRIBUTE_ONLY: u8 = 1 << 7;
+mod attribute_changes;
 mod attributes;
-mod class_changes;
+pub use attribute_changes::AttributeChange;
+pub(crate) use attribute_changes::{
+    changed_class_tokens, record_attribute_change, record_class_change, selector_only_attribute,
+};
 pub(crate) use attributes::is_local_graphics_attribute;
-pub use class_changes::ClassChange;
-pub(crate) use class_changes::{changed_class_tokens, record_class_change};
 
 impl InvalidationImpact {
     pub const STYLE: Self = Self(1 << 0);
@@ -206,7 +208,7 @@ pub struct RenderInvalidation {
     pub removals_are_local: bool,
     /// Class token changes whose restyle scope the cascade bounds. Their elements are also
     /// conservative subtree roots for consumers that only need to know what may have changed.
-    pub class_changes: Vec<ClassChange>,
+    pub attribute_changes: Vec<AttributeChange>,
     /// Roots recorded only because their child lists changed. They stay in `roots` for
     /// consumers that need every possibly changed subtree; the cascade may bound their restyle
     /// to new children, the parent itself and siblings that structural selectors can reach.
@@ -227,7 +229,7 @@ impl RenderInvalidation {
             rebuild_style_rules: true,
             removed_nodes: Vec::new(),
             removals_are_local: false,
-            class_changes: Vec::new(),
+            attribute_changes: Vec::new(),
             child_list_roots: Vec::new(),
             element_roots: Vec::new(),
         }
@@ -241,14 +243,14 @@ impl RenderInvalidation {
             rebuild_style_rules: true,
             removed_nodes: Vec::new(),
             removals_are_local: false,
-            class_changes: Vec::new(),
+            attribute_changes: Vec::new(),
             child_list_roots: Vec::new(),
             element_roots: Vec::new(),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.roots.is_empty() && self.class_changes.is_empty()
+        self.roots.is_empty() && self.attribute_changes.is_empty()
     }
 
     /// Every node whose subtree may contain changed rendering: the roots plus elements with
@@ -257,7 +259,7 @@ impl RenderInvalidation {
         self.roots
             .iter()
             .copied()
-            .chain(self.class_changes.iter().map(|change| change.node))
+            .chain(self.attribute_changes.iter().map(|change| change.node))
     }
 
     /// Roots whose whole subtree may have changed.
@@ -306,16 +308,16 @@ impl RenderInvalidation {
         self.roots.append(&mut other.roots);
         self.roots.sort_unstable();
         self.roots.dedup();
-        for change in other.class_changes {
-            class_changes::merge_class_change(&mut self.class_changes, change);
+        for change in other.attribute_changes {
+            attribute_changes::merge_attribute_change(&mut self.attribute_changes, change);
         }
         if self.roots.contains(&document_root)
             || self.roots.len() > limit
-            || self.class_changes.len() > limit
+            || self.attribute_changes.len() > limit
         {
             self.roots.clear();
             self.roots.push(document_root);
-            self.class_changes.clear();
+            self.attribute_changes.clear();
             self.child_list_roots.clear();
             self.element_roots.clear();
         }
@@ -451,7 +453,7 @@ mod tests {
             rebuild_style_rules: false,
             removed_nodes: vec![left],
             removals_are_local: true,
-            class_changes: Vec::new(),
+            attribute_changes: Vec::new(),
             child_list_roots: Vec::new(),
             element_roots: Vec::new(),
         };
@@ -463,7 +465,7 @@ mod tests {
                 rebuild_style_rules: false,
                 removed_nodes: vec![left, right],
                 removals_are_local: false,
-                class_changes: Vec::new(),
+                attribute_changes: Vec::new(),
                 child_list_roots: Vec::new(),
                 element_roots: Vec::new(),
             },

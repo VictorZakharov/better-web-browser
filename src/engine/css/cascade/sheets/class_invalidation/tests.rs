@@ -1,9 +1,11 @@
 use crate::engine::css::StyleRefreshStats;
 use crate::engine::dom::Node;
 use crate::engine::invalidation::{
-    ClassChange, MutationKind, RenderInvalidation, changed_class_tokens,
+    AttributeChange, MutationKind, RenderInvalidation, changed_class_tokens,
 };
 use crate::engine::page::Page;
+
+mod attributes;
 
 /// Changes `#target`'s class, refreshes only the class-change roots, and asserts every element
 /// matches a from-scratch cascade of the final document.
@@ -18,9 +20,10 @@ fn change_class(html: &str, class: &str) -> StyleRefreshStats {
     let invalidation = RenderInvalidation {
         impact: MutationKind::Attribute("class").impact(),
         mutation_count: 1,
-        class_changes: vec![ClassChange {
+        attribute_changes: vec![AttributeChange {
             node: target.id(),
             tokens: changed_class_tokens(&previous, class).expect("tokens changed"),
+            attributes: Vec::new(),
         }],
         ..RenderInvalidation::default()
     };

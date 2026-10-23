@@ -30,7 +30,12 @@ impl StyleSet {
                 .filter_map(|id| dom.find_node(*id))
                 .collect::<Vec<_>>();
             let mut elements = Vec::new();
-            self.resolve_class_changes(dom, &invalidation.class_changes, &mut roots, &mut elements);
+            self.resolve_attribute_changes(
+                dom,
+                &invalidation.attribute_changes,
+                &mut roots,
+                &mut elements,
+            );
             self.resolve_child_list_changes(
                 dom,
                 &invalidation.child_list_roots,
@@ -67,9 +72,19 @@ impl StyleSet {
                 .filter_map(|id| dom.find_node(*id))
                 .collect::<Vec<_>>();
             let mut elements = Vec::new();
-            self.resolve_class_changes(dom, &invalidation.class_changes, &mut roots, &mut elements);
+            self.resolve_attribute_changes(
+                dom,
+                &invalidation.attribute_changes,
+                &mut roots,
+                &mut elements,
+            );
             self.compiled = compiled;
-            self.resolve_class_changes(dom, &invalidation.class_changes, &mut roots, &mut elements);
+            self.resolve_attribute_changes(
+                dom,
+                &invalidation.attribute_changes,
+                &mut roots,
+                &mut elements,
+            );
             // Unchanged rules are all in the new set, so the new rules bound what an inserted
             // or removed child can restyle; elements a changed rule may match are subjects.
             self.resolve_child_list_changes(

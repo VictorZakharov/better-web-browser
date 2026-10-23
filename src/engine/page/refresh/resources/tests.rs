@@ -1,6 +1,6 @@
 use crate::engine::dom::{Node, NodeRef};
 use crate::engine::invalidation::{
-    ClassChange, MutationKind, RenderInvalidation, changed_class_tokens,
+    AttributeChange, MutationKind, RenderInvalidation, changed_class_tokens,
 };
 use crate::engine::page::{Page, PageResource};
 use crate::limits::MAX_STYLE_IMAGES;
@@ -33,9 +33,10 @@ fn set_class(page: &mut Page, id: &str, class: &str) {
     let invalidation = RenderInvalidation {
         impact: MutationKind::Attribute("class").impact(),
         mutation_count: 1,
-        class_changes: vec![ClassChange {
+        attribute_changes: vec![AttributeChange {
             node: target.id(),
             tokens: changed_class_tokens(&previous, class).expect("tokens changed"),
+            attributes: Vec::new(),
         }],
         ..RenderInvalidation::default()
     };

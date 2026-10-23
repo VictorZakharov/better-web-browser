@@ -4,7 +4,7 @@ use super::*;
 use crate::engine::css::{PseudoElement, StyleRefreshStats};
 use crate::engine::dom::Node;
 use crate::engine::invalidation::{
-    ClassChange, MutationKind, RenderInvalidation, changed_class_tokens,
+    AttributeChange, MutationKind, RenderInvalidation, changed_class_tokens,
 };
 
 const PAGE: &str = "<style>.on{color:red} .on::before{content:'on'} p::after{content:attr(data-x)}\
@@ -30,9 +30,10 @@ fn flush_class_change(snapshot: &mut Page) -> StyleRefreshStats {
     let invalidation = RenderInvalidation {
         impact: MutationKind::Attribute("class").impact(),
         mutation_count: 1,
-        class_changes: vec![ClassChange {
+        attribute_changes: vec![AttributeChange {
             node: node.id(),
             tokens: changed_class_tokens("", "on").expect("tokens changed"),
+            attributes: Vec::new(),
         }],
         ..RenderInvalidation::default()
     };

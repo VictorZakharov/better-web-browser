@@ -272,7 +272,7 @@ impl Page {
             .iter()
             .filter_map(|root| self.dom.find_node(*root))
             .collect::<Vec<_>>();
-        if invalidation_roots.is_empty() && invalidation.class_changes.is_empty() {
+        if invalidation_roots.is_empty() && invalidation.attribute_changes.is_empty() {
             invalidation_roots.push(self.dom.document.clone());
         }
         // Roots inside another root add nothing; the rest cover disjoint subtrees.
@@ -309,9 +309,9 @@ impl Page {
             {
                 let stats = if invalidation.impact.affects_style() {
                     let mut element_roots = Vec::new();
-                    styles.resolve_class_changes(
+                    styles.resolve_attribute_changes(
                         &self.dom,
-                        &invalidation.class_changes,
+                        &invalidation.attribute_changes,
                         &mut invalidation_roots,
                         &mut element_roots,
                     );

@@ -52,7 +52,7 @@ impl DocumentRuntime {
             style.changed_styles, style.recomputed_styles, style.full_rebuild,
             outcome.invalidation.roots.len(),
             outcome.invalidation.roots.iter().take(8).map(|id| style_owner(&self.page, *id)).collect::<Vec<_>>(),
-            outcome.invalidation.class_changes.len(),
+            outcome.invalidation.attribute_changes.len(),
             style.removed_styles, outcome.invalidation.removals_are_local,
             style.layout_changed, style.opacity_only,
             style.first_changed_node.and_then(|id| style_owner(&self.page, id)),
