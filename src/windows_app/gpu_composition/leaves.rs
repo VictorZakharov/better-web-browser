@@ -107,7 +107,7 @@ impl Compositor {
                 glyphs: run,
                 ..
             } => {
-                for glyph in run {
+                for glyph in run.iter() {
                     let Some(resource) = glyphs
                         .get(&glyph.raster_id)
                         .filter(|resource| resource.color == glyph.color)

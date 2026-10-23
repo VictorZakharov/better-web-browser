@@ -25,7 +25,7 @@ fn trusted_custom_scheme_anchor_click_reaches_browser_navigation_boundary() {
         .items
         .iter()
         .find_map(|item| match item {
-            DisplayItem::Text { rect, text, .. } if text == "Soup" => Some(*rect),
+            DisplayItem::Text { rect, text, .. } if &**text == "Soup" => Some(*rect),
             _ => None,
         })
         .expect("custom link text geometry");

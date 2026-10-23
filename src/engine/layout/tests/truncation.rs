@@ -23,7 +23,7 @@ fn painted_text(output: &LayoutOutput) -> Vec<(String, RectF, Option<String>)> {
         .filter_map(|item| match item {
             DisplayItem::Text {
                 text, rect, link, ..
-            } => Some((text.clone(), *rect, link.clone())),
+            } => Some((text.to_string(), *rect, link.as_deref().map(str::to_owned))),
             _ => None,
         })
         .collect()

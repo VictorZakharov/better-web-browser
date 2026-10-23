@@ -147,7 +147,7 @@ fn caption_items(
                     width: shaped.width,
                     height: line_height,
                 },
-                text: line,
+                text: line.into(),
                 font: font.clone(),
                 color: Color::WHITE,
                 link: None,
@@ -249,7 +249,7 @@ mod tests {
         assert!(box_rect.x >= video.x && box_rect.right() <= video.right());
         assert!(box_rect.y > video.y && box_rect.bottom() <= video.bottom());
         assert!(items.iter().any(|item| matches!(item,
-            DisplayItem::Text { text, glyphs, .. } if text == "An accessible subtitle" && !glyphs.is_empty())));
+            DisplayItem::Text { text, glyphs, .. } if &**text == "An accessible subtitle" && !glyphs.is_empty())));
     }
 
     #[test]

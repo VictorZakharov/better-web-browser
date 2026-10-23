@@ -120,7 +120,8 @@ pub(super) fn sample() -> RendererPresentation {
                     width: 1.0,
                     height: 1.0,
                     color: false,
-                }],
+                }]
+                .into(),
             }],
             content_height: 10.0,
             background: Color::WHITE,

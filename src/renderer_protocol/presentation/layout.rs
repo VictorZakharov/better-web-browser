@@ -305,13 +305,13 @@ fn decode_item(reader: &mut WireReader<'_>) -> Result<DisplayItem, ProtocolError
             }
             Ok(DisplayItem::Text {
                 rect,
-                text,
+                text: text.into(),
                 font,
                 color,
-                link,
+                link: link.map(Into::into),
                 node_id,
                 raster_run_id,
-                glyphs,
+                glyphs: glyphs.into(),
             })
         }
         4 => Ok(DisplayItem::Image {

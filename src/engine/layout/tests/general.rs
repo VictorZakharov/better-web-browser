@@ -50,7 +50,7 @@ fn lays_out_centered_image_form_and_links() {
         .filter(|item| matches!(item, DisplayItem::Control(_)))
         .count();
     assert_eq!(controls, 2);
-    assert!(output.items.iter().any(|item| matches!(item, DisplayItem::Text { link: Some(link), .. } if link == "https://example.com/about")));
+    assert!(output.items.iter().any(|item| matches!(item, DisplayItem::Text { link: Some(link), .. } if &**link == "https://example.com/about")));
 }
 
 #[test]
@@ -110,7 +110,7 @@ fn evaluates_media_queries_against_the_style_viewport() {
 
     assert!(output.items.iter().any(|item| {
         matches!(item, DisplayItem::Text { text, color, .. }
-            if text == "Wide" && *color == Color::rgb(204, 0, 0))
+            if &**text == "Wide" && *color == Color::rgb(204, 0, 0))
     }));
 }
 
@@ -141,7 +141,7 @@ fn resolves_viewport_units_against_the_correct_viewport_axis() {
         .items
         .iter()
         .find_map(|item| match item {
-            DisplayItem::Text { text, font, .. } if text == "Speed" => Some(font.size),
+            DisplayItem::Text { text, font, .. } if &**text == "Speed" => Some(font.size),
             _ => None,
         })
         .unwrap();
@@ -385,7 +385,7 @@ fn preserves_spaces_between_inline_elements() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect::<String>();
@@ -404,7 +404,7 @@ fn caches_measurements_for_nested_inline_boxes() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect::<String>();
@@ -451,7 +451,7 @@ fn vertical_margins_do_not_make_normal_inline_text_unbreakable() {
                 rect,
                 link: Some(link),
                 ..
-            } if link == "https://example.com/result" => Some(rect.y),
+            } if &**link == "https://example.com/result" => Some(rect.y),
             _ => None,
         })
         .fold(Vec::<f32>::new(), |mut lines, y| {
@@ -479,7 +479,7 @@ fn does_not_break_before_punctuation_at_inline_boundaries() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { rect, text, .. } => Some((text.as_str(), rect.y)),
+            DisplayItem::Text { rect, text, .. } => Some((&**text, rect.y)),
             _ => None,
         })
         .collect::<Vec<_>>();

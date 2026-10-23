@@ -53,7 +53,7 @@ fn retained_app_title_events_reach_each_navigation_presentation() {
             .items
             .iter()
             .filter_map(|item| match item {
-                DisplayItem::Text { text, .. } => Some(text.as_str()),
+                DisplayItem::Text { text, .. } => Some(&**text),
                 _ => None,
             })
             .collect::<String>();

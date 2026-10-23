@@ -85,7 +85,7 @@ fn hit_tested_pointer_drag_delivers_default_link_uri_to_accepted_drop() {
                     .items
                     .iter()
                     .filter_map(|item| match item {
-                        DisplayItem::Text { text, .. } => Some(text.as_str()),
+                        DisplayItem::Text { text, .. } => Some(&**text),
                         _ => None,
                     })
                     .collect::<Vec<_>>()

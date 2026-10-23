@@ -151,7 +151,7 @@ fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
             link,
             node_id,
             raster_run_id,
-            glyphs: glyphs.into_iter().filter_map(sanitize_glyph).collect(),
+            glyphs: glyphs.iter().cloned().filter_map(sanitize_glyph).collect(),
         },
         DisplayItem::Image {
             rect,

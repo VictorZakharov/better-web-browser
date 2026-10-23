@@ -55,7 +55,7 @@ fn held_mouse_button_survives_motion_across_renderer_boundary() {
                     .items
                     .iter()
                     .filter_map(|item| match item {
-                        DisplayItem::Text { text, .. } => Some(text.as_str()),
+                        DisplayItem::Text { text, .. } => Some(&**text),
                         _ => None,
                     })
                     .collect::<Vec<_>>()

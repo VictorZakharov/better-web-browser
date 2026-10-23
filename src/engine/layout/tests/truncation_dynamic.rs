@@ -35,7 +35,7 @@ fn painted_text(output: &LayoutOutput) -> Vec<String> {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.clone()),
+            DisplayItem::Text { text, .. } => Some(text.to_string()),
             _ => None,
         })
         .collect()

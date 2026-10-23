@@ -16,7 +16,7 @@ fn generated_content_participates_in_inline_flow_in_tree_order() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect::<String>();
@@ -79,7 +79,7 @@ fn generated_boxes_become_flex_items_without_entering_the_dom() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect::<Vec<_>>();

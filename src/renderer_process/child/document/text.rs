@@ -185,6 +185,7 @@ impl RendererTextSystem {
             ..ShapedText::default()
         };
         let raster_started = Instant::now();
+        let mut glyphs = Vec::with_capacity(output.glyphs.len());
         for glyph in output.glyphs {
             let Some(raster) = self.rasters.get_or_insert(
                 &glyph.font,
@@ -196,8 +197,9 @@ impl RendererTextSystem {
             ) else {
                 continue;
             };
-            shaped.glyphs.push(positioned_glyph(scale, raster));
+            glyphs.push(positioned_glyph(scale, raster));
         }
+        shaped.glyphs = glyphs.into();
         self.glyph_raster_time += raster_started.elapsed();
         if text.len() <= MAX_CACHED_TEXT_BYTES {
             let cached_bytes = shape_cache_entry_bytes(&key, &shaped);

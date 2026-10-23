@@ -311,7 +311,7 @@ fn renders_noscript_fallback_when_script_execution_is_unavailable() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect::<String>();
@@ -337,7 +337,7 @@ fn honors_hidden_list_markers_and_clips_accessibility_text() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect::<String>();
@@ -398,7 +398,7 @@ fn renders_shadow_content_and_assigned_nodes_once_in_composed_order() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect::<Vec<_>>()

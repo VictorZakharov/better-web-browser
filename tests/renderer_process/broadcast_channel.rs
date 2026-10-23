@@ -133,7 +133,7 @@ fn two_isolated_renderers_exchange_a_structured_clone_through_browser_registry()
                     .items
                     .iter()
                     .filter_map(|item| match item {
-                        DisplayItem::Text { text, .. } => Some(text.as_str()),
+                        DisplayItem::Text { text, .. } => Some(&**text),
                         _ => None,
                     })
                     .collect::<String>();

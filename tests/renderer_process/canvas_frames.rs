@@ -128,7 +128,7 @@ fn srcdoc_canvas_pixels_cross_the_child_frame_paint_boundary() {
                     .items
                     .iter()
                     .filter_map(|item| match item {
-                        DisplayItem::Text { text, .. } => Some(text.as_str()),
+                        DisplayItem::Text { text, .. } => Some(&**text),
                         _ => None,
                     })
                     .collect::<String>();

@@ -54,7 +54,7 @@ fn placeholder_cascade_preserves_entered_text_color_and_never_generates_content(
         !output
             .items
             .iter()
-            .any(|item| matches!(item, DisplayItem::Text { text, .. } if text == "wrong"))
+            .any(|item| matches!(item, DisplayItem::Text { text, .. } if &**text == "wrong"))
     );
 }
 

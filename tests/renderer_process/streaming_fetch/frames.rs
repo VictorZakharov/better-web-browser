@@ -52,7 +52,7 @@ fn iframe_external_script_keeps_client_identity_and_delivers_message() {
                     .items
                     .iter()
                     .filter_map(|item| match item {
-                        DisplayItem::Text { text, .. } => Some(text.as_str()),
+                        DisplayItem::Text { text, .. } => Some(&**text),
                         _ => None,
                     })
                     .collect::<String>();

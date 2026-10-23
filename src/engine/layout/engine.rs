@@ -2,6 +2,7 @@ use super::*;
 mod block_measure;
 pub(super) mod box_tree;
 pub(crate) mod fixed_layers;
+mod height_basis;
 mod intrinsic_widths;
 mod layout_reads;
 mod measured;
@@ -10,6 +11,7 @@ mod popover;
 mod probe_cache;
 pub(crate) mod reuse;
 mod subtree_replay;
+pub(in crate::engine::layout) mod width_cache;
 
 #[cfg(test)]
 mod fullscreen;

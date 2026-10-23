@@ -111,7 +111,7 @@ fn inline_buttons_use_measured_children_without_a_native_minimum_width() {
         output
             .items
             .iter()
-            .any(|item| matches!(item,DisplayItem::Text{text,..} if text=="hide"))
+            .any(|item| matches!(item,DisplayItem::Text{text,..} if &**text == "hide"))
     );
 }
 

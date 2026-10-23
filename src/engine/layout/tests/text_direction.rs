@@ -28,7 +28,7 @@ fn text_direction_resolves_logical_alignment_but_preserves_physical_values() {
             .find_map(|item| match item {
                 DisplayItem::Text {
                     text, rect, font, ..
-                } if text == "XX" => Some((rect, font)),
+                } if &**text == "XX" => Some((rect, font)),
                 _ => None,
             })
             .unwrap();
@@ -52,7 +52,7 @@ fn text_direction_inherited_alignment_resolves_at_the_child_used_value() {
             .items
             .iter()
             .find_map(|item| match item {
-                DisplayItem::Text { text, rect, .. } if text == wanted => Some(rect),
+                DisplayItem::Text { text, rect, .. } if &**text == wanted => Some(rect),
                 _ => None,
             })
             .unwrap();

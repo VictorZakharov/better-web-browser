@@ -52,7 +52,8 @@ pub struct ShapedText {
     pub width: f32,
     pub height: f32,
     pub raster_run_id: u64,
-    pub glyphs: Vec<PositionedGlyph>,
+    /// Shared with the display items and cache entries that reuse this run.
+    pub glyphs: std::sync::Arc<[PositionedGlyph]>,
 }
 
 pub trait TextMeasurer {
@@ -84,7 +85,7 @@ pub trait TextMeasurer {
             width,
             height,
             raster_run_id: 0,
-            glyphs: Vec::new(),
+            glyphs: Default::default(),
             geometry: TextGeometry::default(),
         }
     }

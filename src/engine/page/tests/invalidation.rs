@@ -278,13 +278,13 @@ fn rebuilt_layout_does_not_retain_text_or_insertion_geometry() {
         text_layout
             .items
             .iter()
-            .any(|item| matches!(item, DisplayItem::Text { text, .. } if text == "after"))
+            .any(|item| matches!(item, DisplayItem::Text { text, .. } if &**text == "after"))
     );
     assert!(
         !text_layout
             .items
             .iter()
-            .any(|item| matches!(item, DisplayItem::Text { text, .. } if text == "before"))
+            .any(|item| matches!(item, DisplayItem::Text { text, .. } if &**text == "before"))
     );
 
     let inserted = Node::create_element_for(&page.dom.document, "div");

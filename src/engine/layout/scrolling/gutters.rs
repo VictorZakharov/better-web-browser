@@ -14,6 +14,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         used_width: Option<UsedInlineSize>,
         used_height: Option<f32>,
     ) -> BlockMetrics {
+        let height = self.read_height_basis(node, height);
         // An unchanged subtree replays the layout an earlier pass retained.
         let key = self.subtree_key(node, width, height, used_width, used_height);
         if let Some(metrics) = self.replay_subtree(&key, node, x, y) {

@@ -13,6 +13,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             self.replay_reads(&reads);
             return widths;
         }
+        let cached = self.cached_widths(node, percentage_basis, true);
+        if let crate::engine::layout::engine::width_cache::CachedWidths::Hit(widths, reads) = cached
+        {
+            self.replay_reads(&reads);
+            self.intrinsic_widths
+                .insert(node.id(), percentage_basis, true, widths, reads);
+            return widths;
+        }
         self.begin_reads();
         let basis = percentage_basis.unwrap_or(0.0);
         let style = self.styles.get(node).clone();
@@ -86,6 +94,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         let widths = (minimum.max(0.0) + margin, preferred.max(0.0) + margin);
         let reads = self.end_reads();
+        if let crate::engine::layout::engine::width_cache::CachedWidths::Miss(inputs) = cached {
+            self.remember_widths(node, percentage_basis, true, inputs, widths, reads.clone());
+        }
         self.intrinsic_widths
             .insert(node.id(), percentage_basis, true, widths, reads);
         widths

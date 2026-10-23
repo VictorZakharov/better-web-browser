@@ -1,5 +1,5 @@
 //! Intrinsic contributions are stable within a layout pass, including its sizing probes.
-//! A new pass gets a fresh cache so DOM, style, font and image changes cannot leave stale sizes.
+//! A new pass gets a fresh cache; `width_cache` carries validated results across passes.
 //! Each entry keeps the image inputs it read, which a hit replays into the enclosing result.
 use super::*;
 

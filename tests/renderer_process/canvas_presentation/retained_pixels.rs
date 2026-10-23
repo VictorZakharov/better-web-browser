@@ -142,7 +142,7 @@ fn retained_canvas_pixels_preserve_geometry_and_dom_work_overrides_the_shortcut(
             .layout
             .items
             .iter()
-            .any(|item| matches!(item, DisplayItem::Text { text, .. } if text == "after"))
+            .any(|item| matches!(item, DisplayItem::Text { text, .. } if &**text == "after"))
     );
     session.shutdown().unwrap();
 }

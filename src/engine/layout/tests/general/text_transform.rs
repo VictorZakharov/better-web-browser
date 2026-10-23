@@ -7,7 +7,7 @@ fn rendered_text(html: &str) -> (String, String) {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect::<String>();
@@ -63,7 +63,7 @@ fn selection_ranges_stay_addressed_by_source_utf16_offsets() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect::<String>();
@@ -97,7 +97,7 @@ fn transformed_glyphs_drive_inline_measurement_and_following_positions() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, rect, .. } => Some((text.as_str(), *rect)),
+            DisplayItem::Text { text, rect, .. } => Some((&**text, *rect)),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -121,7 +121,7 @@ fn generated_content_receives_its_own_cascaded_text_transform() {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect::<String>();
@@ -143,7 +143,7 @@ fn mixed_case_styles_do_not_let_a_previous_run_change_dom_text() {
             .items
             .iter()
             .filter_map(|item| match item {
-                DisplayItem::Text { text, .. } => Some(text.as_str()),
+                DisplayItem::Text { text, .. } => Some(&**text),
                 _ => None,
             })
             .collect::<String>();

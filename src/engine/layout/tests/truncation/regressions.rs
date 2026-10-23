@@ -88,7 +88,7 @@ fn marker_uses_block_font_and_color_not_last_run() {
         .find_map(|item| match item {
             DisplayItem::Text {
                 text, font, color, ..
-            } if text == "…" => Some((font, color)),
+            } if &**text == "…" => Some((font, color)),
             _ => None,
         })
         .unwrap();

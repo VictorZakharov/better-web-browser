@@ -37,7 +37,7 @@ impl DocumentRuntime {
                     ..
                 } if *node_id == node.id() => Some(HitTarget {
                     node: node.clone(),
-                    link: Some(link.clone()),
+                    link: Some(link.to_string()),
                     control: None,
                 }),
                 _ => None,
@@ -72,7 +72,7 @@ impl DocumentRuntime {
                     })
                     .map(|node| HitTarget {
                         node,
-                        link: Some(link.clone()),
+                        link: Some(link.to_string()),
                         control: None,
                     }),
                 DisplayItem::Control(control) if contains(control.rect, x, y) => self

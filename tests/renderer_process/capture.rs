@@ -314,7 +314,7 @@ fn presentation_text(presentation: &RendererPresentation) -> String {
         .items
         .iter()
         .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            DisplayItem::Text { text, .. } => Some(&**text),
             _ => None,
         })
         .collect()
