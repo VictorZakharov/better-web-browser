@@ -1,4 +1,5 @@
-//! Bounded restyle scopes for `class` attribute changes.
+//! Bounded restyle scopes for `class` attribute changes, and for attributes that only
+//! selectors read (`invalidation::selector_only_attribute`).
 //
 // A class token can only change matching for the element that carries it, for its descendants
 // through descendant/child combinators, or for later siblings through sibling combinators.
@@ -13,6 +14,11 @@
 // An attribute selector on `class` (`[class*=x]`) can match differently after any token change,
 // so it counts as a use of every changed token at its position; inside a complex nested
 // selector it keeps the parent-subtree scope for every change.
+// An attribute name is indexed like a class token: `[data-state=open] h2` bounds a `data-state`
+// change to the element and its `h2` descendants, and a name no selector mentions restyles the
+// element alone, since only `attr()` and its own style can read it. These are the descendant
+// invalidation sets of Blink's style invalidation.
+// https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/renderer/core/css/style-invalidation.md
 // https://drafts.csswg.org/selectors-4/#combinators
 use super::subject_keys::{KeyIndex, SubjectKey};
 use super::*;
@@ -37,6 +43,8 @@ struct ClassUse {
 #[derive(Debug, Default)]
 pub(super) struct ClassInvalidation {
     uses: HashMap<String, ClassUse>,
+    /// Positions of attribute selectors other than `[class]`, by ASCII-lowercase name.
+    attribute_uses: HashMap<String, ClassUse>,
     /// Positions of `[class]` attribute selectors, which apply to every token.
     any_token: ClassUse,
     /// Nested complex `[class]` selectors or scoped/cross-tree rules: no token can be bounded.
@@ -73,9 +81,17 @@ impl ClassInvalidation {
                     Combinator::AdjacentSibling | Combinator::GeneralSibling
                 )
             });
-            let mut tokens = compound.classes.iter().collect::<Vec<_>>();
+            let mut tokens = compound.classes.clone();
             let mut nested_complex = Vec::new();
-            nested_simple_classes(compound, &mut tokens, &mut nested_complex);
+            nested_simple_features(compound, Feature::Class, &mut tokens, &mut nested_complex);
+            let mut names = Feature::Attribute.of(compound);
+            let mut nested_complex_names = Vec::new();
+            nested_simple_features(
+                compound,
+                Feature::Attribute,
+                &mut names,
+                &mut nested_complex_names,
+            );
             let record = |class_use: &mut ClassUse| {
                 if siblings {
                     class_use.parent_scope = true;
@@ -96,6 +112,12 @@ impl ClassInvalidation {
             for token in tokens {
                 record(self.uses.entry(token.to_ascii_lowercase()).or_default());
             }
+            for name in names {
+                record(self.attribute_uses.entry(name).or_default());
+            }
+            for name in nested_complex_names {
+                self.attribute_uses.entry(name).or_default().parent_scope = true;
+            }
             if simple_class_attribute(compound) {
                 record(&mut self.any_token);
             }
@@ -110,7 +132,12 @@ impl ClassInvalidation {
     }
 
     /// Returns `None` when the change needs the existing parent-subtree scope.
-    fn roots(&self, node: &NodeRef, tokens: &[String]) -> Option<ClassChangeRoots> {
+    fn roots(
+        &self,
+        node: &NodeRef,
+        tokens: &[String],
+        attributes: &[String],
+    ) -> Option<ClassChangeRoots> {
         if self.unbounded {
             return None;
         }
@@ -119,7 +146,11 @@ impl ClassInvalidation {
         let token_uses = tokens
             .iter()
             .filter_map(|token| self.uses.get(&token.to_ascii_lowercase()));
-        for class_use in token_uses.chain([&self.any_token]) {
+        let class_attribute = (!tokens.is_empty()).then_some(&self.any_token);
+        let attribute_uses = attributes
+            .iter()
+            .filter_map(|name| self.attribute_uses.get(name));
+        for class_use in token_uses.chain(class_attribute).chain(attribute_uses) {
             if class_use.parent_scope {
                 return None;
             }
@@ -164,32 +195,55 @@ impl ClassInvalidation {
     }
 }
 
-/// Classes inside `:is()`, `:where()` and `:not()` arguments that are single compounds describe
+/// What a change names in selectors: a class token or an attribute name.
+#[derive(Clone, Copy)]
+enum Feature {
+    Class,
+    /// Attribute selectors other than `[class]`, which every token change affects.
+    Attribute,
+}
+
+impl Feature {
+    fn of(self, compound: &CompoundSelector) -> Vec<String> {
+        match self {
+            Self::Class => compound.classes.clone(),
+            Self::Attribute => compound
+                .attributes
+                .iter()
+                .map(|attribute| attribute.name.to_ascii_lowercase())
+                .filter(|name| name != "class")
+                .collect(),
+        }
+    }
+}
+
+/// Features inside `:is()`, `:where()` and `:not()` arguments that are single compounds describe
 /// the same element as `compound`. Any other nesting (complex arguments, `:has()`, `of S`) is
 /// collected as unbounded.
-fn nested_simple_classes<'a>(
-    compound: &'a CompoundSelector,
-    simple: &mut Vec<&'a String>,
+fn nested_simple_features(
+    compound: &CompoundSelector,
+    feature: Feature,
+    simple: &mut Vec<String>,
     complex: &mut Vec<String>,
 ) {
     for functional in &compound.functional {
         for selector in &functional.selectors {
             if selector.compounds.len() == 1 {
-                simple.extend(selector.compounds[0].classes.iter());
-                nested_simple_classes(&selector.compounds[0], simple, complex);
+                simple.extend(feature.of(&selector.compounds[0]));
+                nested_simple_features(&selector.compounds[0], feature, simple, complex);
             } else {
-                collect_all_classes(selector, complex);
+                collect_all_features(selector, feature, complex);
             }
         }
     }
     for relatives in &compound.has {
         for relative in relatives {
-            collect_all_classes(&relative.selector, complex);
+            collect_all_features(&relative.selector, feature, complex);
         }
     }
     for nth in &compound.nth {
         for selector in &nth.filter {
-            collect_all_classes(selector, complex);
+            collect_all_features(selector, feature, complex);
         }
     }
 }
@@ -238,34 +292,34 @@ fn nested_complex_class_attribute(compound: &CompoundSelector) -> bool {
             .any(anywhere)
 }
 
-fn collect_all_classes(selector: &Selector, classes: &mut Vec<String>) {
+fn collect_all_features(selector: &Selector, feature: Feature, found: &mut Vec<String>) {
     for compound in selector.compounds.iter() {
-        classes.extend(compound.classes.iter().cloned());
+        found.extend(feature.of(compound));
         for functional in &compound.functional {
             for nested in &functional.selectors {
-                collect_all_classes(nested, classes);
+                collect_all_features(nested, feature, found);
             }
         }
         for relatives in &compound.has {
             for relative in relatives {
-                collect_all_classes(&relative.selector, classes);
+                collect_all_features(&relative.selector, feature, found);
             }
         }
         for nth in &compound.nth {
             for nested in &nth.filter {
-                collect_all_classes(nested, classes);
+                collect_all_features(nested, feature, found);
             }
         }
     }
 }
 
 impl StyleSet {
-    /// Converts class changes into subtree roots and early-cutoff element roots. A change that
+    /// Converts class and attribute changes into subtree roots and early-cutoff element roots. A change that
     /// cannot be bounded keeps its parent subtree (or the document for the root element).
-    pub(crate) fn resolve_class_changes(
+    pub(crate) fn resolve_attribute_changes(
         &self,
         dom: &Dom,
-        changes: &[crate::engine::invalidation::ClassChange],
+        changes: &[crate::engine::invalidation::AttributeChange],
         subtrees: &mut Vec<NodeRef>,
         elements: &mut Vec<NodeRef>,
     ) {
@@ -276,7 +330,7 @@ impl StyleSet {
             match self
                 .compiled
                 .class_invalidation
-                .roots(&node, &change.tokens)
+                .roots(&node, &change.tokens, &change.attributes)
             {
                 Some(roots) => {
                     subtrees.extend(roots.subtrees);

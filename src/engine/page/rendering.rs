@@ -168,7 +168,7 @@ mod tests {
             roots: vec![root.id()],
             removed_nodes: vec![child.id()],
             removals_are_local: true,
-            class_changes: Vec::new(),
+            attribute_changes: Vec::new(),
             impact: MutationKind::ChildList.impact(),
             ..RenderInvalidation::default()
         };
