@@ -150,13 +150,15 @@ impl StyleSet {
         if pseudo == PseudoElement::Placeholder {
             style.color = Color::rgb(117, 117, 117);
         }
-        let lower_origin = style.clone();
+        let lower_origin = self
+            .may_read_revert_origin(origin, &style, matching, [&[], &[], &[]])
+            .then(|| style.clone());
         self.apply_author_cascade(
             &mut style,
             AuthorCascadeInput {
                 node: origin,
                 parent: Some(origin_style),
-                lower_origin: &lower_origin,
+                lower_origin: lower_origin.as_ref().unwrap_or(&*self.revert_placeholder),
                 matching,
                 inline_declarations: &[],
                 animation_declarations: &[],

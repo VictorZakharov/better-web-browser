@@ -36,6 +36,8 @@ impl StyleSet {
             compiled: std::rc::Rc::clone(&self.compiled),
             ancestor_filters: Default::default(),
             revert_layer_variables: Default::default(),
+            revert_variables: Default::default(),
+            revert_placeholder: self.revert_placeholder.clone(),
             has_results: self.has_results.clone(),
             defer_nonrendered_descendants: self.defer_nonrendered_descendants,
             deferred_fullscreen_roots: self.deferred_fullscreen_roots.clone(),
