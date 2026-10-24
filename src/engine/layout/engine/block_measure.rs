@@ -60,6 +60,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             positioned_flow_scopes: Vec::new(),
             floats: Default::default(),
             reads: std::mem::take(&mut self.reads),
+            replayed_roots: HashMap::new(),
         };
         probe.begin_reads();
         let height = probe

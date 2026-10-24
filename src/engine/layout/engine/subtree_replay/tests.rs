@@ -4,6 +4,7 @@ use crate::engine::layout::test_support::FixedMeasurer;
 mod arrivals;
 mod cells;
 mod measuring;
+mod overflow;
 mod settling;
 
 const WIDTH: f32 = 800.0;
@@ -53,7 +54,7 @@ fn layout(page: &Page, measurer: &mut Counting) -> LayoutOutput {
     layout_page_with_style_viewport(page, WIDTH, HEIGHT, WIDTH, measurer)
 }
 
-/// Lays the page out twice: a subtree is retained when a second pass lays it out again.
+/// Lays the page out twice, so the second pass replays what the first retained.
 fn settle(page: &Page) {
     layout(page, &mut Counting::default());
     layout(page, &mut Counting::default());
