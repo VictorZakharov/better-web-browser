@@ -15,6 +15,7 @@
 - On this workstation, LLVM 23.1.2 is at `G:\Git\better-web-browser\target\webgl2-admission-20261004\llvm-paired\clang+llvm-23.1.2-x86_64-pc-windows-msvc\bin`; set `LIBCLANG_PATH` to it. Do not delete that directory when cleaning `target`. CMake comes from Visual Studio 2022 Build Tools, which `scripts/prepare-build-tools.ps1` finds through `vswhere`.
 - Run repository scripts with PowerShell 7 (`pwsh`, installed through winget as `Microsoft.PowerShell` and reached through the `WindowsApps` alias on PATH). The scripts rely on `$IsWindows` and .NET Core APIs, and the full-test runner fails under Windows PowerShell 5.1, whose redirection turns native stderr into terminating errors.
 - Prepare a build shell in `pwsh` with: `$env:LIBCLANG_PATH = '<LLVM bin above>'; $env:CARGO_TARGET_DIR = 'G:\Git\better-web-browser\target'; . ./scripts/prepare-angle.ps1; . ./scripts/prepare-build-tools.ps1`, then run Cargo with `-j 4`. The final gate is `./scripts/run-impacted-tests.ps1 -Final -Run` from that shell.
+- `pwsh -File script.ps1 -Names a,b` passes `a,b` as one string, not an array. Make helper scripts take a string and split it with `-split '[ ,]+'`.
 
 ## Shared-machine resources and performance work
 
@@ -23,6 +24,17 @@
 - Use `scripts/run-impacted-tests.ps1` to inspect responsibility-based test selection during iteration. Keep its ownership/dependent-consumer map and isolated contract tests current as modules split; shared coordinators and unknown changes must select broader coverage, never a guessed safe subset. This local selector does not reduce the final pre-PR verification gate or change CI.
 - Optimize measured slow commands with small reproducible workloads, not a live application's end-to-end loading clock. Validate actual results/pixels and preserve ordering, ownership and error behavior. Keep the unchanged application as a separate functionality check.
 - Run timing comparisons without this agent's builds or heavy suites overlapping; rotate sequential candidate/reference order and retain individual samples and ranges. Other agents still affect scheduling, so do not silently discard busy-machine outliers or present elapsed time as isolated CPU cost.
+
+## Time budgets for checks and measurements
+
+- A performance benchmark or A/B finishes in about a minute, and every intermediate check in under 5 minutes. A broader regression check of about 15 minutes runs only after a short benchmark has confirmed the improvement. Never plan cold builds just to report build-time numbers: a 75-minute timing plan was abandoned for warm rebuilds that took minutes.
+- Regressions are caught while iterating, by focused tests of only the affected components (`scripts/run-impacted-tests.ps1` selection or targeted `cargo test` filters). The final gate is the last line of defense; when it finds something new, add the missing focused test for that component.
+- Build each A/B variant once and rerun the saved executables. Use the `performance` profile with `CARGO_INCREMENTAL=1` after `. ./scripts/prepare-v8.ps1 -Profile performance`, and copy the lib-test or browser executable to a variant name in the task folder. Swapping files and rebuilding a release profile every round made a 5-second probe take 20 minutes. `Copy-Item` keeps the source file's timestamp, so touch swapped sources or Cargo may not rebuild them.
+- Confirm that a probe or targeted test actually ran. Cargo exits successfully with `running 0 tests` when a filter matches nothing, for example after a stale file copy drops a test module.
+- Per-call probe timers inflate small, frequent costs. Compare phase totals, using the minimum over many passes, and remove probes before committing.
+- Name an executable by commit only after its build succeeded in that same run: check the exit code, and check that the file is newer than the build's start. A shared `CARGO_TARGET_DIR` can hold another session's binary.
+- Never delete a task's `TEMP`, `TMP` or target folders while any of your builds, tests or gates is running. Deleting the task `TEMP` during a release link failed with `LNK1104`.
+- When several sessions share this machine, announce heavy windows (gates, release builds, timing runs) to the other sessions, run one heavy job at a time, and take timing measurements only in a quiet window.
 
 ## Open-source quality
 
@@ -46,6 +58,7 @@
 - Preserve the required check names `windows` and `Linear PR history` when editing CI. The `windows` gate aggregates the parallel source/format, browser-smoke, dependency-policy and harness workers; coordinate any intentional rename with branch protection.
 - CI is a smoke gate, not full standards compliance: both source PRs and pushes to `main` run the dedicated small browser smoke target, source/format, dependency policy, and harness self-tests. Run full-target Clippy and relevant full unit, integration, WPT/Khronos, and visual suites locally before push. Markdown-only pull requests may skip Windows workers only when the checked-in classifier confirms every changed path ends in `.md`; main never skips its smoke workers. Keep classification fail-safe and make `windows` reject inconsistent classifier/worker results.
 - Optimize CI for wall-clock feedback. Independent checks may spend additional standard hosted-runner minutes in parallel; do not serialize them merely to minimize total runner usage. Preserve the compiler-level sccache configuration and Cargo registry caches, and measure end-to-end timing after material CI changes. Do not cache `target` directly: checkout timestamps and V8's large prebuilt archive make whole-target caches ineffective.
+- After the user reports a merge, confirm that specific pull request is merged (`gh api repos/VictorZakharov/better-web-browser/pulls/N --jq .merged`) before deleting its branch: with several PRs open, "merged" may refer to only one of them.
 - After a merge, delete the remote topic branch, fast-forward local `main` from `origin/main`, and create a new branch before starting unrelated work.
 - Preserve unrelated user changes. If the worktree is not clean or the branch cannot be rebased safely, stop and report the conflict instead of stashing, overwriting, or force-pushing.
 
