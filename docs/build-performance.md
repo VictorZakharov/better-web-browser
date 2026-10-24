@@ -6,7 +6,7 @@ only to shorten the local optimized edit/build loop.
 
 ## Local optimized rebuild
 
-These August measurements describe an older source tree and profile configuration. They are historical evidence, not current rebuild estimates for the much larger October browser. The current `performance` profile disables incremental compilation; see [PR feedback time](pr-feedback-time.md) for the current pipeline measurements and build entry point.
+These August measurements describe an older source tree and profile configuration. They are historical evidence, not current rebuild estimates for the much larger October browser. The `performance` profile and `.cargo/config.toml` disable incremental compilation by default, to keep `target` small; set `CARGO_INCREMENTAL=1` for an edit loop (see below). See [PR feedback time](pr-feedback-time.md) for the current pipeline measurements and build entry point.
 
 Measurements were collected on the Windows development host on 2026-08-16. The edited-source case
 touches a frequently changed top-level Windows coordinator and rebuilds without changing the
@@ -26,6 +26,23 @@ existing panic behavior.
 Rust's bundled MSVC-compatible `rust-lld` path was also measured. It reduced a warm edited
 `performance` build from roughly 3.5 seconds to 3.01 seconds in that experiment, which was too small
 and variable to justify changing the linker. The default MSVC linker therefore remains in use.
+
+## Warm edit loop (October 24)
+
+Measured on the Windows development host on 2026-10-24, with warm caches and no other heavy build running. Each edit added a private function to the named file:
+
+| Build after one edit | Wall time |
+| --- | ---: |
+| `performance` lib tests (`cargo test --profile performance --lib --no-run`) with `CARGO_INCREMENTAL=1`, layout `margins.rs` | 24-25 s |
+| Same, CSS `cascade.rs` | 24-33 s |
+| Same, inside the split-out `breeze-webgl` crate, building only that crate's tests (`-p breeze-webgl`) | 3.1 s |
+| Same, comment-only edit | about 22 s |
+| `release` lib tests, incremental compilation off | 4-5 min |
+| Dev `cargo check --lib --tests` | about 19 s |
+
+A warm edit that relinks the main browser library takes about 25 seconds, however small; only crates split out of it (see [crate layout](crate-layout.md)) reach a few seconds. The first `-p` build of a split crate takes about 3.5 minutes once, because per-package feature resolution rebuilds `windows` and ANGLE.
+
+For performance A/B work, build each variant once in this mode, copy its executable aside and rerun the saved executables; see the time budgets in `AGENTS.md`. Cold builds take over 10 minutes and are not needed to compare edits.
 
 ## Keep comparison builds isolated
 
