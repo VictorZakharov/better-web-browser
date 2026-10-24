@@ -167,12 +167,18 @@
             if (oldDocument !== this) adoptCustomElementTree(adopted, oldDocument, this);
             return adopted;
         }
+        // Legacy interface names: https://dom.spec.whatwg.org/#dom-document-createevent
         createEvent(type) {
             const interfaceName = String(type).toLowerCase();
             const event = interfaceName === 'customevent' ? new CustomEvent('') :
                 interfaceName === 'beforeunloadevent' ? new BeforeUnloadEvent(beforeUnloadConstructionToken) :
                 interfaceName === 'storageevent' ? new StorageEvent('') :
-                interfaceName === 'messageevent' ? new MessageEvent('') : new Event('');
+                interfaceName === 'messageevent' ? new MessageEvent('') :
+                interfaceName === 'uievent' || interfaceName === 'uievents' ? new UIEvent('') :
+                interfaceName === 'mouseevent' || interfaceName === 'mouseevents' ? new MouseEvent('') :
+                interfaceName === 'focusevent' ? new FocusEvent('') :
+                interfaceName === 'keyboardevent' ? new KeyboardEvent('') :
+                interfaceName === 'dragevent' ? new DragEvent('') : new Event('');
             event.__initialized = false;
             return event;
         }

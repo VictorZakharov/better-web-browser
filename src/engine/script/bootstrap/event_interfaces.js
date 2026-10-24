@@ -5,6 +5,14 @@
             this.view = init.view === undefined ? null : init.view;
             this.detail = Number(init.detail) || 0;
         }
+        // Legacy initializer for events made with document.createEvent().
+        // https://w3c.github.io/uievents/#dom-uievent-inituievent
+        initUIEvent(type, bubbles = false, cancelable = false, view = null, detail = 0) {
+            if (this.__dispatching) return;
+            this.initEvent(type, bubbles, cancelable);
+            this.view = view;
+            this.detail = Number(detail) || 0;
+        }
     }
     class FocusEvent extends UIEvent {
         constructor(type, init = {}) {
