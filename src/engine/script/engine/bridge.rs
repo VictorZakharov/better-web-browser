@@ -11,6 +11,8 @@ mod canvas_inspect;
 mod gpu;
 #[cfg(windows)]
 mod gpu_numeric;
+#[cfg(all(test, windows))]
+mod gpu_numeric_tests;
 #[cfg(windows)]
 mod gpu_packet;
 mod paint;

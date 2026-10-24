@@ -62,6 +62,8 @@ impl WorkerHostState {
         source_loader: Arc<WorkerSourceLoader>,
         policy: Arc<crate::fetch::csp::PolicyContainer>,
     ) -> Self {
+        #[cfg(all(test, windows))]
+        crate::engine::webgl::unit_test_backend::select();
         Self {
             source_url: source_url.into(),
             creator_secure_context,

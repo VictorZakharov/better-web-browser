@@ -196,6 +196,8 @@ impl HostState {
         character_set: &str,
         module_loader: Rc<module_loader::WebModuleLoader>,
     ) -> Self {
+        #[cfg(all(test, windows))]
+        crate::engine::webgl::unit_test_backend::select();
         let inline_transitions = style_cache::inline_transitions::InlineTransitions::new(&document);
         let mut state = Self {
             document,

@@ -5,6 +5,66 @@ edition = "2024"
 description = "A performance-first browser engine MVP"
 license = "MIT"
 
+[workspace]
+# Engine areas that rarely depend upward live in their own crates so an edit
+# there rebuilds and tests only that crate. See docs/crate-layout.md.
+members = [".", "crates/platform", "crates/webgl"]
+default-members = [".", "crates/platform", "crates/webgl"]
+
+[workspace.dependencies]
+# BSD-3-Clause ANGLE/GLES2 + WebGL shader validation, built from locked source.
+# EGL pbuffers only; no native window or borrowed browser DLLs.
+mozangle = { version = "=0.7.1", features = ["egl"] }
+serde = { version = "1.0.229", features = ["derive"] }
+# Native Canvas/DOM geometry must retain JavaScript's exact binary doubles.
+# The default fast decoder can shift a coefficient by one ULP at texel edges.
+serde_json = { version = "1.0.151", features = ["float_roundtrip"] }
+# Already locked/vetted MIT/Apache-2.0 inline storage for owned GPU command arguments.
+smallvec = "=1.15.2"
+windows = { version = "0.62.2", features = [
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectComposition",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Devices_Enumeration",
+    "Devices_Geolocation",
+    "Foundation",
+    "Devices_Sensors",
+    "Win32_Globalization",
+    "Win32_Media_Audio_XAudio2",
+    "Win32_Media_MediaFoundation",
+    "Win32_Media_Speech",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_System_WinRT",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+] }
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Devices_Display",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_Security_Isolation",
+    "Win32_System_Console",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_JobObjects",
+    "Win32_System_Pipes",
+    "Win32_System_Power",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
+    "Win32_UI_Input_XboxController",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [features]
 # Keep the auxiliary runner available in normal developer/release builds.
 # A smoke-only build omits this CLI, not any production browser capability.
@@ -12,6 +72,7 @@ default = ["wpt-harness"]
 wpt-harness = []
 
 [dependencies]
+breeze-platform = { version = "0.1.0", path = "crates/platform" }
 base64 = "0.22.1"
 # MPL-2.0 AVIF container parser; decode remains in the contained renderer.
 avif-parse = "=2.0.0"
@@ -53,16 +114,13 @@ kurbo = "=0.13.1"
 # Already locked through resvg/usvg; reuse its MIT/Apache-2.0 SVG path lexer.
 svgtypes = "=0.16.1"
 sha2 = "0.10.9"
-# Already locked/vetted MIT/Apache-2.0 inline storage for owned GPU command arguments.
-smallvec = "=1.15.2"
+smallvec.workspace = true
 # MPL-2.0 bounded audio demux/decode; only the admitted container/codec pairs are exposed.
 symphonia = { version = "=0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "mkv", "ogg", "vorbis", "flac"] }
 # Reuse the already-locked, vetted OpusHead parser; no second header parser.
 symphonia-common = "=0.6.1"
-serde = { version = "1.0.229", features = ["derive"] }
-# Native Canvas/DOM geometry must retain JavaScript's exact binary doubles.
-# The default fast decoder can shift a coefficient by one ULP at texel edges.
-serde_json = { version = "1.0.151", features = ["float_roundtrip"] }
+serde.workspace = true
+serde_json.workspace = true
 time = { version = "0.3.55", default-features = false, features = ["std", "parsing"] }
 unicode-bidi = "0.3.18"
 unicode-segmentation = "1.13.3"
@@ -76,9 +134,7 @@ xmlparser = "0.13.6"
 webm-iterable = "=0.7.1"
 
 [target.'cfg(windows)'.dependencies]
-# BSD-3-Clause ANGLE/GLES2 + WebGL shader validation, built from locked source.
-# EGL pbuffers only; no native window or borrowed browser DLLs.
-mozangle = { version = "=0.7.1", features = ["egl"] }
+breeze-webgl = { version = "0.1.0", path = "crates/webgl" }
 accesskit = "0.24.1"
 accesskit_windows = "0.34.0"
 fontique = { version = "0.11.1", default-features = false, features = ["system"] }
@@ -87,55 +143,14 @@ swash = { version = "0.2.10", default-features = false, features = ["std", "scal
 unicode-script = "0.5.8"
 # Reuse the ICU4X property data already locked through URL parsing (Unicode-3.0).
 icu_properties = "=2.0.2"
-windows = { version = "0.62.2", features = [
-    "Win32_Graphics_Direct3D",
-    "Win32_Graphics_Direct3D11",
-    "Win32_Graphics_Direct2D",
-    "Win32_Graphics_Direct2D_Common",
-    "Win32_Graphics_DirectComposition",
-    "Win32_Graphics_Dxgi",
-    "Win32_Graphics_Dxgi_Common",
-    "Devices_Enumeration",
-    "Devices_Geolocation",
-    "Foundation",
-    "Devices_Sensors",
-    "Win32_Globalization",
-    "Win32_Media_Audio_XAudio2",
-    "Win32_Media_MediaFoundation",
-    "Win32_Media_Speech",
-    "Win32_System_Com",
-    "Win32_System_Com_StructuredStorage",
-    "Win32_System_Variant",
-    "Win32_System_WinRT",
-    "Win32_UI_Shell",
-    "Win32_UI_Shell_Common",
-] }
+windows.workspace = true
+windows-sys.workspace = true
 # Already used by windows 0.62; direct access lets async handlers initialize
 # their callback apartment before calling GetResults (MIT OR Apache-2.0).
 windows-future = "0.3.2"
 # Already locked through windows 0.62; its public Direct2D geometry API takes
 # these Microsoft numeric types (MIT OR Apache-2.0).
 windows-numerics = "=0.3.1"
-windows-sys = { version = "0.61.2", features = [
-    "Win32_Devices_Display",
-    "Win32_Foundation",
-    "Win32_Graphics_Gdi",
-    "Win32_Security",
-    "Win32_Security_Cryptography",
-    "Win32_Security_Isolation",
-    "Win32_System_Console",
-    "Win32_System_Diagnostics_Debug",
-    "Win32_System_JobObjects",
-    "Win32_System_Pipes",
-    "Win32_System_Power",
-    "Win32_System_ProcessStatus",
-    "Win32_System_Registry",
-    "Win32_System_Threading",
-    "Win32_System_WindowsProgramming",
-    "Win32_UI_Input_XboxController",
-    "Win32_UI_Shell",
-    "Win32_UI_WindowsAndMessaging",
-] }
 
 [build-dependencies]
 # Build-only, MIT OR Apache-2.0; compiles the small adapter to the pinned V8 public API.

@@ -7,7 +7,7 @@ pub(crate) mod fragment_navigation;
 pub(crate) mod image_decode;
 pub mod invalidation;
 pub mod layout;
-pub(crate) mod owner_cpu;
+pub(crate) use breeze_platform::owner_cpu;
 pub mod page;
 pub(crate) mod pattern_eval;
 pub mod rendering;
@@ -15,7 +15,7 @@ pub mod scheduler;
 pub mod script;
 mod stylesheet;
 #[cfg(windows)]
-pub(crate) mod webgl;
+pub(crate) use breeze_webgl as webgl;
 
 pub use css::StyleRefreshStats;
 pub(crate) use css::media::MediaEnvironment;

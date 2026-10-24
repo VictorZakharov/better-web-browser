@@ -25,8 +25,16 @@ try {
     $artifacts = @(Get-Content -LiteralPath $buildMessages | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object {
         $_.reason -eq 'compiler-artifact' -and $_.profile.test -and $_.executable
     })
-    $library = @($artifacts | Where-Object { $_.target.kind -contains 'lib' })
-    if ($library.Count -ne 1 -or $library[0].target.name -ne 'better_web_browser') { throw 'Expected exactly one workspace library test harness.' }
+    $library = @($artifacts | Where-Object { $_.target.kind -contains 'lib' -and $_.target.name -eq 'better_web_browser' })
+    if ($library.Count -ne 1) { throw 'Expected exactly one browser library test harness.' }
+    # Split-out workspace crates (docs/crate-layout.md) are not CPU-partitioned:
+    # each runs whole in the serial native worker slot, like integration targets.
+    $crateLibraries = @($artifacts | Where-Object { $_.target.kind -contains 'lib' -and $_.target.name -ne 'better_web_browser' })
+    foreach ($crate in $crateLibraries) {
+        if ($crate.target.name -cnotin @('breeze_platform', 'breeze_webgl')) {
+            throw "Unclassified workspace library $($crate.target.name). Classify it in run-full-tests.ps1 before using it."
+        }
+    }
     foreach ($artifact in $artifacts) {
         if (@($artifact.target.kind | Where-Object { $_ -notin @('lib', 'bin', 'test', 'example') }).Count) {
             throw "Unclassified executable kind: $($artifact.target.kind). Extend the complete runner before using it."
@@ -48,6 +56,12 @@ try {
     $nativeNames = @($plan.NativeNames | Where-Object { $_ -cnotin $plan.ExclusiveNames })
     if ($nativeNames.Count) {
         $worker = Start-FullTestWorker -Name 'native-library' -Executable $library[0].executable -Arguments $skip -Expected $nativeNames -Directory $ReportDirectory
+        $workers.Add($worker)
+        Wait-FullTestWorker $worker $cpu
+    }
+    foreach ($artifact in @($crateLibraries | Sort-Object {$_.target.name})) {
+        $expected = @(Get-ExecutableTestNames $artifact.executable)
+        $worker = Start-FullTestWorker -Name ('crate-' + $artifact.target.name) -Executable $artifact.executable -Arguments @() -Expected $expected -Directory $ReportDirectory
         $workers.Add($worker)
         Wait-FullTestWorker $worker $cpu
     }

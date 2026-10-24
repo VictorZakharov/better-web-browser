@@ -12,6 +12,8 @@ function Get-TestImpactCatalog {
         'queued-uploads' = @{ Target='lib'; Filter='webgl_queued_upload_tests'; Covers=@() }
         'float-images' = @{ Target='lib'; Filter='webgl_float_textures'; Covers=@() }
         'image-api' = @{ Target='lib'; Filter='engine::script::tests::webgl::'; Covers=@() }
+        # Lib groups without Package test the browser library; workspace crates name theirs.
+        'webgl-crate' = @{ Target='lib'; Package='breeze-webgl'; Filter=''; Covers=@() }
         'webgl-lib' = @{ Target='lib'; Filter='webgl'; Covers=$images }
         'script-lib' = @{ Target='lib'; Filter='engine::script::'; Covers=@('canvas-lib','webgl-lib')+$images }
         'canvas-renderer' = @{ Target='renderer_process'; Filter='canvas'; Covers=@() }
@@ -23,7 +25,7 @@ function Get-TestImpactCatalog {
     }
     $owners = @(
         # Native ANGLE changes can affect every WebGL draw and its renderer process.
-        @{ Id='native-angle'; Paths=@('build/angle_api.rs');
+        @{ Id='native-angle'; Paths=@('crates/webgl/build.rs');
             Groups=@('full'); Consumers=@() }
         # Graph PCM clocks and ownership share the media control pipe with
         # decode/playback. Keep their downstream gate broad while modules split.
@@ -48,9 +50,10 @@ function Get-TestImpactCatalog {
             Groups=@('full'); Consumers=@() }
         # Shared presentation modules cross the renderer/native boundary. No
         # isolated native consumer target replaces their broader contracts yet.
-        @{ Id='gpu-presentation'; Paths=@('src/gpu_frame.rs','src/gpu_composition.rs','src/gpu_composition/*',
-            'src/engine/webgl/gpu_frames.rs','src/engine/webgl/gpu_frames/*',
-            'src/engine/webgl/context/gpu_surface*','src/engine/webgl/context/shared_copy.rs',
+        @{ Id='gpu-presentation'; Paths=@('crates/platform/src/gpu_frame.rs',
+            'crates/platform/src/gpu_composition.rs','crates/platform/src/gpu_composition/*',
+            'crates/webgl/src/gpu_frames.rs','crates/webgl/src/gpu_frames/*',
+            'crates/webgl/src/context/gpu_surface*','crates/webgl/src/context/shared_copy.rs',
             'src/renderer_protocol/gpu.rs','src/renderer_protocol/gpu/*',
             'src/renderer_protocol/codec/payload/gpu.rs','src/renderer_process/child/connection/gpu.rs',
             'src/windows_app/gpu_composition.rs','src/windows_app/gpu_composition/*',
@@ -59,6 +62,8 @@ function Get-TestImpactCatalog {
             'benchmarks/ui/fixtures/canvas-gpu-lifecycle.html','benchmarks/ui/fixtures/canvas-gpu-memory.html',
             'benchmarks/ui/fixtures/gpu-publication-cadence.html');
             Groups=@('full'); Consumers=@() }
+        # The foundation crate's limits and budgets reach every engine crate.
+        @{ Id='platform'; Paths=@('crates/platform/*'); Groups=@('full'); Consumers=@() }
         @{ Id='canvas'; Paths=@('src/engine/script/bootstrap/canvas*.js','src/engine/script/bootstrap/offscreen*.js',
             'src/engine/script/canvas_host.rs','src/engine/script/canvas_host/*',
             'src/engine/script/engine/bridge/canvas_inspect.rs',
@@ -72,11 +77,11 @@ function Get-TestImpactCatalog {
             'src/engine/script/engine/runtime/webgl2_image*tests.rs',
             'src/engine/script/engine/runtime/webgl_video_source_tests.rs');
             Groups=$images+@('webgl-renderer'); Consumers=@() }
-        @{ Id='webgl'; Paths=@('src/engine/webgl.rs','src/engine/webgl/*','src/engine/script/bootstrap/webgl*.js',
+        @{ Id='webgl'; Paths=@('crates/webgl/Cargo.toml','crates/webgl/src/*','src/engine/script/bootstrap/webgl*.js',
             'src/engine/script/engine/runtime/*webgl*tests.rs','src/engine/script/tests/webgl*',
             'src/engine/script/engine/bridge/gpu*','tests/renderer_process/webgl.rs',
             'tests/renderer_process/canvas_presentation/webgl.rs');
-            Groups=@('webgl-lib','webgl-renderer'); Consumers=@() }
+            Groups=@('webgl-crate','webgl-lib','webgl-renderer'); Consumers=@() }
         @{ Id='script'; Paths=@('src/engine/script.rs','src/engine/script/*');
             Groups=@('script-lib','renderer','live-runtime'); Consumers=@() }
         @{ Id='selector'; Paths=@('scripts/impacted-tests-plan.ps1','scripts/run-impacted-tests.ps1',
@@ -133,7 +138,7 @@ function Get-ImpactedTestPlan {
         @(@{ Id='full'; Target='all'; Filter='' },@{ Id='selector'; Target='selector'; Filter='' })
     } else {
         @($catalog.Groups.Keys | Where-Object { $ids.Contains($_) } | ForEach-Object {
-            @{ Id=$_; Target=$catalog.Groups[$_].Target; Filter=$catalog.Groups[$_].Filter }
+            @{ Id=$_; Target=$catalog.Groups[$_].Target; Package=$catalog.Groups[$_].Package; Filter=$catalog.Groups[$_].Filter }
         })
     }
     return [pscustomobject]@{ Full=$full; Commands=$commands; Reasons=@($reasons); Unknown=@($unknown) }

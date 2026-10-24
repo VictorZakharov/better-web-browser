@@ -3,11 +3,9 @@
 //! Codecs produce straight-alpha sRGB RGBA. Page presentation alone converts that
 //! representation to premultiplied BGRA; Canvas must not premultiply it a second time.
 
-mod alpha;
 mod avif;
-mod premultiply;
-pub(crate) use alpha::unpremultiply_rgba;
 pub(crate) use avif::decoder::VideoAv1Decoder;
+pub(crate) use breeze_platform::pixels::unpremultiply_rgba;
 mod color;
 #[cfg(test)]
 pub(crate) mod fixtures;
@@ -114,7 +112,7 @@ impl RasterImage {
     }
 
     pub fn into_premultiplied_bgra(mut self) -> crate::engine::page::DecodedImage {
-        premultiply::rgba_to_bgra(&mut self.rgba);
+        breeze_platform::pixels::rgba_to_bgra(&mut self.rgba);
         crate::engine::page::DecodedImage {
             width: self.width,
             height: self.height,

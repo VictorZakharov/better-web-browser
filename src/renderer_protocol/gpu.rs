@@ -4,13 +4,8 @@ use super::{
     wire::{WireReader, WireWriter},
 };
 use crate::gpu_frame::GpuFrame;
+pub use crate::gpu_frame::PresentedGpuCanvas;
 use std::collections::HashSet;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PresentedGpuCanvas {
-    pub url: String,
-    pub frame: GpuFrame,
-}
 
 fn validate(values: &[PresentedGpuCanvas]) -> Result<(), ProtocolError> {
     if values.len() > crate::limits::MAX_PRESENTED_CANVASES {

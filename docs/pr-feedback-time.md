@@ -8,6 +8,8 @@ Run `./scripts/build-browser.ps1` for the canonical release profile; `-Profile p
 
 Each invocation writes stage durations and the build revision to `target/build-reports/<UTC timestamp>/build.json`, including on failure. Completed Cargo timing reports are copied beside it. A failed preflight does not attach an earlier build's timing report. The performance profile is for iteration; final release handoffs and publishable runtime measurements retain the canonical release contract.
 
+An edit inside a split-out workspace crate can be tested without the browser library: `cargo test -p breeze-webgl --lib` rebuilds in about 3 s after a WebGL edit in the incremental performance profile, against about 25 s for the browser lib-test build. See [Crate layout](crate-layout.md) for the crate graph and planned splits.
+
 Use `./scripts/run-impacted-tests.ps1 -Base origin/main` to inspect development coverage, then add `-Run` to execute it. Prepare the compiler with `prepare-angle.ps1`, CMake with `prepare-build-tools.ps1`, and V8 with `prepare-v8.ps1 -Profile debug` in the same shell first. The final `-Final -Run` command retains the complete tests and doc tests and now includes full-target Clippy. It defaults local verification to the same zero-debug-info settings as CI, while retaining debug assertions, overflow checks and explicit user debug-info overrides. This avoids generating large PDBs for routine verification; ordinary debugger builds keep their existing settings.
 
 ## Hosted CI

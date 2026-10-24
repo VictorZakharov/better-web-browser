@@ -12,7 +12,7 @@ fn raw() -> (Context, Rc<RefCell<HostState>>) {
     )));
     let mut context = Context::new(HostBridge::Document(Rc::downgrade(&host))).unwrap();
     let id = host.borrow_mut().webgl.create(2, 2, "{}").unwrap();
-    let operations = include_str!("../../../webgl/numeric_packet/operations.json");
+    let operations = include_str!("../../../../../crates/webgl/src/numeric_packet/operations.json");
     check(
         &mut context,
         &format!(

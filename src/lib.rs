@@ -6,21 +6,20 @@ pub(crate) mod encoded_audio;
 pub mod engine;
 pub mod fetch;
 pub mod fuzzing;
+// Lower-layer contracts keep their historical `crate::` paths.
 #[cfg(windows)]
-pub mod gpu_composition;
-pub mod gpu_frame;
+pub use breeze_platform::gpu_composition;
+pub use breeze_platform::gpu_frame;
 pub mod indexed_db;
 pub mod limits;
 pub mod metrics;
 pub mod navigation;
-pub(crate) mod process_memory;
+pub(crate) use breeze_platform::process_memory;
 pub mod protocol_handlers;
-pub mod renderer_budget;
+pub use breeze_platform::renderer_budget;
 pub mod renderer_protocol;
 pub mod storage;
 pub mod storage_manager;
-#[cfg(test)]
-mod test_resources;
 pub(crate) mod text_decode;
 
 #[cfg(target_os = "windows")]

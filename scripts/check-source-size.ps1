@@ -26,7 +26,7 @@ $fileCeilings = @{
     'src/winhttp.rs'                        = 19
 }
 
-$sourceRoots = @('src', 'tests', 'benchmarks', 'scripts')
+$sourceRoots = @('src', 'crates', 'tests', 'benchmarks', 'scripts')
 $extensions = @('.rs', '.js', '.cs', '.ps1')
 $violations = [System.Collections.Generic.List[string]]::new()
 $warnings = [System.Collections.Generic.List[string]]::new()

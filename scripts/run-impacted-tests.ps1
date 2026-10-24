@@ -20,7 +20,7 @@ $plan.Reasons | ForEach-Object { Write-Host $_ }
 $plan.Unknown | ForEach-Object { Write-Warning "Unclassified/shared risk: $_" }
 if ($plan.Full) { Write-Host 'Full local tests selected (final gate or conservative fallback).' }
 foreach ($command in $plan.Commands) {
-    Write-Host "Test group $($command.Id): target=$($command.Target) filter=$($command.Filter)"
+    Write-Host "Test group $($command.Id): target=$($command.Target) package=$($command.Package) filter=$($command.Filter)"
 }
 if ($Final) { Write-Host 'Final gate also runs full-target Clippy before the complete test plan.' }
 if (-not $Run) { Write-Host 'Plan only. Add -Run to execute; subsets do not replace the final PR gate.'; return }
@@ -64,7 +64,10 @@ try {
             continue
         }
         $arguments = @('test','--locked')
-        if ($command.Target -eq 'lib') { $arguments += '--lib' }
+        if ($command.Target -eq 'lib') {
+            $package = if ($command.Package) { $command.Package } else { 'better-web-browser' }
+            $arguments += @('-p',$package,'--lib')
+        }
         else { $arguments += @('--test',$command.Target) }
         if ($command.Filter) {
             $arguments += $command.Filter
