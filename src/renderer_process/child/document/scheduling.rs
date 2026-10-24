@@ -291,7 +291,7 @@ impl DocumentRuntime {
         };
         if wants_frame && self.background_frame_waits(arrivals) {
             self.start_presentational_preloads(connection)?;
-            let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
+            let load = self.finish_load_report(PageLoadReport {
                 script_micros: micros(script_time),
                 ..PageLoadReport::default()
             });
@@ -398,7 +398,7 @@ impl DocumentRuntime {
                 retained_style_repaint,
             );
         }
-        let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
+        let load = self.finish_load_report(PageLoadReport {
             script_micros: micros(script_time),
             style_micros: micros(style_time),
             layout_micros: micros(layout_time),

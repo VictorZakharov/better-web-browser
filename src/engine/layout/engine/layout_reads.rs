@@ -111,15 +111,29 @@ fn document_stamp(page: &Page) -> DocumentStamp {
     )
 }
 
+/// Reads confirmed to hold during one layout pass. Layout does not change the document, so a
+/// read that holds once holds for the rest of the pass. Nested cached results record the same
+/// reads (a grid's probe and the retained content inside it each hold every read of that
+/// content), and after any document change each read is otherwise rechecked, walking its
+/// node's ancestors, once per result that recorded it.
+pub(in crate::engine::layout) type HeldReads = HashSet<LayoutRead>;
+
 impl LayoutReads {
-    pub(in crate::engine::layout) fn hold(&self, page: &Page, styles: &StyleSet) -> bool {
+    pub(in crate::engine::layout) fn hold(
+        &self,
+        page: &Page,
+        styles: &StyleSet,
+        held: &mut HeldReads,
+    ) -> bool {
         let Some(set) = self.0.as_deref() else {
             return true;
         };
         let document = document_stamp(page);
         let document_held = set.document_held.get() == document;
         let hold = set.reads.iter().all(|read| {
-            (document_held && read.depends_only_on_document()) || read.holds(page, styles)
+            (document_held && read.depends_only_on_document())
+                || held.contains(read)
+                || (read.holds(page, styles) && held.insert(read.clone()))
         });
         if hold {
             set.document_held.set(document);

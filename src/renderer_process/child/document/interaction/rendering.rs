@@ -49,7 +49,7 @@ impl DocumentRuntime {
         if rebuilt_layout {
             self.rebuild_layout();
         }
-        let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
+        let load = self.finish_load_report(PageLoadReport {
             style_micros: micros(style_time),
             layout_micros: micros(started.elapsed()),
             ..PageLoadReport::default()

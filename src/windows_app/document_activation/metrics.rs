@@ -92,6 +92,7 @@ impl BrowserState {
         benchmark.layout_time += layout_time;
         benchmark.layout_build_time += layout_time;
         benchmark.layout_tree_time += layout_time;
+        benchmark.layout_work = benchmark.layout_work.saturating_add(load.layout);
         benchmark.text_measure_count = benchmark
             .text_measure_count
             .saturating_add(load.text_measure_count as usize);
@@ -131,6 +132,8 @@ impl BrowserState {
                 script_fetch: benchmark.script_fetch_time,
                 style: benchmark.style_refresh_time,
                 layout: benchmark.layout_time,
+                layout_work: benchmark.layout_work,
+                styles_recomputed: benchmark.style_nodes_recomputed,
             },
             runtime.render_requested,
         );
@@ -172,16 +175,11 @@ impl BrowserState {
                 Duration::from_micros(presentation.load.resource_processing_micros);
             benchmark.page_ready = benchmark.process_started.elapsed();
         }
-        let benchmark_completed = self.record_renderer_runtime_metrics(
-            &presentation.runtime,
-            presentation.load,
-            reached_page_ready,
-        );
-        let Some(benchmark) = self.benchmark.as_mut() else {
-            return false;
-        };
-        let title_completed = benchmark.record_document_title(&presentation.title);
-        if !first && presentation.runtime.render_requested {
+        // Count this update's style and paint work before its runtime timeline sample.
+        if !first
+            && presentation.runtime.render_requested
+            && let Some(benchmark) = self.benchmark.as_mut()
+        {
             benchmark.render_checkpoints = benchmark.render_checkpoints.saturating_add(1);
             benchmark.render_mutations = benchmark
                 .render_mutations
@@ -198,6 +196,9 @@ impl BrowserState {
             benchmark.full_style_rebuilds = benchmark
                 .full_style_rebuilds
                 .saturating_add(usize::from(presentation.style.full_rebuild));
+            benchmark.invalidation_fallbacks = benchmark
+                .invalidation_fallbacks
+                .saturating_add(presentation.style.invalidation_fallbacks);
             benchmark.full_layout_rebuilds = benchmark.full_layout_rebuilds.saturating_add(1);
             benchmark.display_items_invalidated = benchmark
                 .display_items_invalidated
@@ -206,6 +207,15 @@ impl BrowserState {
                 .full_paint_repaints
                 .saturating_add(usize::from(damage.full_repaint));
         }
+        let benchmark_completed = self.record_renderer_runtime_metrics(
+            &presentation.runtime,
+            presentation.load,
+            reached_page_ready,
+        );
+        let Some(benchmark) = self.benchmark.as_mut() else {
+            return false;
+        };
+        let title_completed = benchmark.record_document_title(&presentation.title);
         benchmark_completed || title_completed
     }
 }

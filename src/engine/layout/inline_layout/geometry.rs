@@ -21,68 +21,32 @@ pub(in crate::engine::layout) fn include(
         .or_insert(rect);
 }
 
-pub(in crate::engine::layout) fn finish(
-    root: &NodeRef,
-    styles: &StyleSet,
-    output: &mut LayoutOutput,
-) {
-    // Children finish before their parents, so a plain inline's bounds include its nested plain
-    // inlines.
-    struct Open {
-        node: NodeRef,
-        children: Vec<NodeRef>,
-        next: usize,
-        /// A plain inline without bounds of its own takes the union of its children's.
-        aggregates: bool,
-        union: Option<RectF>,
-    }
-    let open = |node: NodeRef, output: &mut LayoutOutput| {
-        let inline = node.element().is_some()
-            && styles
-                .styles
-                .get(&node.id())
-                .is_some_and(|style| style.display == Display::Inline);
-        let own = output.node_bounds.get(&node.id()).copied();
-        // Existing atomic/decorated inline boxes already own their border geometry. Their
-        // descendants' font bands must not replace that border area, and they are never
-        // enlarged by overflowing descendants. Empty, undecorated inlines retain a caret band.
-        if inline && own.is_some_and(|rect| rect.width > 0.0) {
-            std::sync::Arc::make_mut(&mut output.fragments)
-                .elements
-                .remove(&node.id());
-        }
-        Open {
-            children: Node::composed_children(&node),
-            node,
-            next: 0,
-            aggregates: inline && own.is_none(),
-            union: None,
-        }
-    };
-    let mut stack = vec![open(root.clone(), output)];
-    while let Some(top) = stack.last_mut() {
-        if let Some(child) = top.children.get(top.next).cloned() {
-            top.next += 1;
-            let child = open(child, output);
-            stack.push(child);
-            continue;
-        }
-        let done = stack.pop().expect("the loop holds an open node");
-        let rect = match done.union {
-            Some(rect) => {
-                output.node_bounds.insert(done.node.id(), rect);
-                Some(rect)
+/// Finishes inline element geometry from `inlines`, a subtree's inline elements with children
+/// before their parents (see `PostLayoutIndex::composed`), so a plain inline's bounds include its
+/// nested plain inlines.
+pub(in crate::engine::layout) fn finish(inlines: &[NodeRef], output: &mut LayoutOutput) {
+    for node in inlines {
+        match output.node_bounds.get(&node.id()) {
+            // Existing atomic/decorated inline boxes already own their border geometry. Their
+            // descendants' font bands must not replace that border area, and they are never
+            // enlarged by overflowing descendants. Empty, undecorated inlines retain a caret band.
+            Some(own) => {
+                if own.width > 0.0 {
+                    std::sync::Arc::make_mut(&mut output.fragments)
+                        .elements
+                        .remove(&node.id());
+                }
             }
-            None => output.node_bounds.get(&done.node.id()).copied(),
-        };
-        if let (Some(rect), Some(parent)) = (rect, stack.last_mut())
-            && parent.aggregates
-        {
-            parent.union = Some(
-                parent
-                    .union
-                    .map_or(rect, |union| fragments::union(union, rect)),
-            );
+            // A plain inline without bounds of its own takes the union of its children's.
+            None => {
+                let union = Node::composed_children(node)
+                    .iter()
+                    .filter_map(|child| output.node_bounds.get(&child.id()).copied())
+                    .reduce(fragments::union);
+                if let Some(union) = union {
+                    output.node_bounds.insert(node.id(), union);
+                }
+            }
         }
     }
 }

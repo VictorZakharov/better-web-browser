@@ -61,8 +61,9 @@ fn wheel_direction_changed(previous: &RuntimeReport, next: &RuntimeReport) -> bo
 }
 
 pub(super) fn runtime_update_overhead(value: &RendererRuntimeUpdate) -> usize {
-    // Document id, clock flag, eighteen load counters, and the optional timer.
-    8 + 1 + 18 * 8 + 1 + usize::from(value.next_timer_micros.is_some()) * 8
+    // Document id, clock flag, eighteen load counters and thirteen layout counters, and the
+    // optional timer.
+    8 + 1 + (18 + 13) * 8 + 1 + usize::from(value.next_timer_micros.is_some()) * 8
 }
 
 pub(super) fn runtime_bytes(value: &RuntimeReport) -> usize {

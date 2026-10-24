@@ -1,4 +1,4 @@
-//! Subtrees are retained once their DOM and styles hold for a pass, not while they keep changing.
+//! Subtrees are retained when first laid out, but not while they keep changing from pass to pass.
 use super::*;
 
 fn retained(page: &Page, id: &str) -> bool {
@@ -15,13 +15,18 @@ fn a_section_that_keeps_changing_is_retained_once_it_holds_for_a_pass() {
     let mut page = page();
     settle(&page);
     assert!(retained(&page, "intro"));
-    for text in ["first change", "second change", "third change"] {
+    for (pass, text) in ["first change", "second change", "third change"]
+        .into_iter()
+        .enumerate()
+    {
         Node::set_text_content(&element(&page, "text"), text);
         page.refresh_resources_for_viewport(WIDTH, HEIGHT);
         assert_warm_matches_cold(&page);
-        assert!(
-            !retained(&page, "intro"),
-            "a section changed since the previous pass is not copied"
+        assert_eq!(
+            retained(&page, "intro"),
+            pass == 0,
+            "a section that replayed is retained again after one change, but not while it \
+             changes in consecutive passes"
         );
         assert!(retained(&page, "list"), "unchanged sections stay retained");
     }

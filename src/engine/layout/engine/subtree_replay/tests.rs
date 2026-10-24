@@ -172,15 +172,9 @@ fn unchanged_sections_replay_without_measuring_text() {
     let page = page();
     let mut first = Counting::default();
     let cold = layout(&page, &mut first);
-    assert_eq!(
-        page.layout_reuse.borrow().len().1,
-        0,
-        "a first layout retains nothing"
-    );
-    layout(&page, &mut Counting::default());
     assert!(
         page.layout_reuse.borrow().len().1 >= 5,
-        "a second layout retains the sections"
+        "a first layout retains the sections"
     );
     let mut second = Counting::default();
     let warm = layout(&page, &mut second);

@@ -9,6 +9,18 @@ mod telemetry;
 #[cfg(test)]
 mod tests;
 
+impl super::DocumentRuntime {
+    /// Completes an update's load report with the text and layout work done since the last one.
+    pub(super) fn finish_load_report(
+        &self,
+        report: crate::renderer_protocol::PageLoadReport,
+    ) -> crate::renderer_protocol::PageLoadReport {
+        let mut report = self.text.borrow_mut().finish_load_report(report);
+        report.layout = self.page.take_layout_stats();
+        report
+    }
+}
+
 pub(super) fn merge_outcome(
     target: &mut ScriptOutcome,
     mut source: ScriptOutcome,
@@ -194,6 +206,7 @@ pub(super) fn style_report(style: StyleRefreshStats) -> StyleReport {
         removed_styles: style.removed_styles as u64,
         layout_changed: style.layout_changed,
         full_rebuild: style.full_rebuild,
+        invalidation_fallbacks: style.invalidation_fallbacks,
     }
 }
 

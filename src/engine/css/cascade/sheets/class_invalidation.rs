@@ -22,6 +22,7 @@
 // https://drafts.csswg.org/selectors-4/#combinators
 use super::subject_keys::{KeyIndex, SubjectKey};
 use super::*;
+use crate::engine::css::cascade::InvalidationFallbacks;
 use crate::engine::css::selector_model::{Combinator, CompoundSelector};
 use std::collections::{HashMap, HashSet};
 
@@ -36,8 +37,16 @@ struct ClassUse {
     descendant_subjects: Vec<SubjectKey>,
     /// Depths below the element of keyless subjects reached only through child combinators.
     keyless_child_depths: Vec<usize>,
-    /// The token's effect is not bounded by the element and its descendants.
-    parent_scope: bool,
+    /// Why the token's effect is not bounded by the element and its descendants.
+    parent_scope: Option<Fallback>,
+}
+
+/// Why a change keeps the parent-subtree scope.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Fallback {
+    Siblings,
+    Nested,
+    Unbounded,
 }
 
 #[derive(Debug, Default)]
@@ -94,7 +103,7 @@ impl ClassInvalidation {
             );
             let record = |class_use: &mut ClassUse| {
                 if siblings {
-                    class_use.parent_scope = true;
+                    class_use.parent_scope.get_or_insert(Fallback::Siblings);
                 } else if position == last {
                     class_use.subject = true;
                 } else {
@@ -116,30 +125,29 @@ impl ClassInvalidation {
                 record(self.attribute_uses.entry(name).or_default());
             }
             for name in nested_complex_names {
-                self.attribute_uses.entry(name).or_default().parent_scope = true;
+                let class_use = self.attribute_uses.entry(name).or_default();
+                class_use.parent_scope.get_or_insert(Fallback::Nested);
             }
             if simple_class_attribute(compound) {
                 record(&mut self.any_token);
             }
             self.unbounded |= nested_complex_class_attribute(compound);
             for token in nested_complex {
-                self.uses
-                    .entry(token.to_ascii_lowercase())
-                    .or_default()
-                    .parent_scope = true;
+                let class_use = self.uses.entry(token.to_ascii_lowercase()).or_default();
+                class_use.parent_scope.get_or_insert(Fallback::Nested);
             }
         }
     }
 
-    /// Returns `None` when the change needs the existing parent-subtree scope.
+    /// Returns why the change needs the existing parent-subtree scope instead, if it does.
     fn roots(
         &self,
         node: &NodeRef,
         tokens: &[String],
         attributes: &[String],
-    ) -> Option<ClassChangeRoots> {
+    ) -> Result<ClassChangeRoots, Fallback> {
         if self.unbounded {
-            return None;
+            return Err(Fallback::Unbounded);
         }
         let mut keys = HashSet::new();
         let mut depths = HashSet::new();
@@ -151,8 +159,8 @@ impl ClassInvalidation {
             .iter()
             .filter_map(|name| self.attribute_uses.get(name));
         for class_use in token_uses.chain(class_attribute).chain(attribute_uses) {
-            if class_use.parent_scope {
-                return None;
+            if let Some(fallback) = class_use.parent_scope {
+                return Err(fallback);
             }
             keys.extend(class_use.descendant_subjects.iter());
             depths.extend(class_use.keyless_child_depths.iter().copied());
@@ -164,7 +172,7 @@ impl ClassInvalidation {
         };
         if keys.iter().any(|key| key.matches_any()) {
             roots.subtrees.push(node.clone());
-            return Some(roots);
+            return Ok(roots);
         }
         let mut level = vec![node.clone()];
         for depth in 1..=depths.iter().copied().max().unwrap_or(0) {
@@ -178,7 +186,7 @@ impl ClassInvalidation {
             }
         }
         if keys.is_empty() {
-            return Some(roots);
+            return Ok(roots);
         }
         let index = KeyIndex::new(keys);
         let at_depth = roots
@@ -191,7 +199,7 @@ impl ClassInvalidation {
             .extend(Node::descendants(node).skip(1).filter(|descendant| {
                 !at_depth.contains(&descendant.id()) && index.may_match(descendant)
             }));
-        Some(roots)
+        Ok(roots)
     }
 }
 
@@ -315,14 +323,16 @@ fn collect_all_features(selector: &Selector, feature: Feature, found: &mut Vec<S
 
 impl StyleSet {
     /// Converts class and attribute changes into subtree roots and early-cutoff element roots. A change that
-    /// cannot be bounded keeps its parent subtree (or the document for the root element).
+    /// cannot be bounded keeps its parent subtree (or the document for the root element); the
+    /// result counts those and the whole subtrees of keyless descendant subjects.
     pub(crate) fn resolve_attribute_changes(
         &self,
         dom: &Dom,
         changes: &[crate::engine::invalidation::AttributeChange],
         subtrees: &mut Vec<NodeRef>,
         elements: &mut Vec<NodeRef>,
-    ) {
+    ) -> InvalidationFallbacks {
+        let mut fallbacks = InvalidationFallbacks::default();
         for change in changes {
             let Some(node) = dom.find_node(change.node) else {
                 continue;
@@ -332,15 +342,24 @@ impl StyleSet {
                 .class_invalidation
                 .roots(&node, &change.tokens, &change.attributes)
             {
-                Some(roots) => {
+                Ok(roots) => {
+                    fallbacks.keyless_descendant += roots.subtrees.len() as u64;
                     subtrees.extend(roots.subtrees);
                     elements.extend(roots.elements);
                 }
-                None => subtrees.push(
-                    node.shadow_including_parent()
-                        .unwrap_or_else(|| dom.document.clone()),
-                ),
+                Err(fallback) => {
+                    *match fallback {
+                        Fallback::Siblings => &mut fallbacks.sibling_combinator,
+                        Fallback::Nested => &mut fallbacks.nested_selector,
+                        Fallback::Unbounded => &mut fallbacks.unbounded_rules,
+                    } += 1;
+                    subtrees.push(
+                        node.shadow_including_parent()
+                            .unwrap_or_else(|| dom.document.clone()),
+                    );
+                }
             }
         }
+        fallbacks
     }
 }

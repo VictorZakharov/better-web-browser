@@ -57,7 +57,8 @@ pub(super) fn append_top_layer<M: TextMeasurer>(
             },
         };
         engine.layout_block(&root, 0.0, 0.0, width.max(1.0), Some(height.max(1.0)), None);
-        inline_layout::geometry::finish(&root, styles, &mut engine.output);
+        let composed = page.layout_index.borrow_mut().composed(&root, styles);
+        inline_layout::geometry::finish(&composed.inlines(), &mut engine.output);
         block::paint_order::finalize(&mut engine.output);
         tree.remove_anonymous_geometry(&mut engine.output);
         let layer = engine.output;

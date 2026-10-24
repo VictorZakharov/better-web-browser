@@ -30,7 +30,7 @@ impl LayoutReuse {
         styles: &StyleSet,
     ) -> Option<((f32, f32), LayoutReads)> {
         let entry = self.widths.get(&key)?;
-        if entry.inputs != inputs || !entry.reads.hold(page, styles) {
+        if entry.inputs != inputs || !entry.reads.hold(page, styles, &mut self.held) {
             self.widths.remove(&key);
             return None;
         }

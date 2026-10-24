@@ -17,11 +17,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 continue;
             }
             let bounds = self.output.node_bounds.get(&node.id());
-            if let Some(rect) = bounds {
-                // Negative-side overflow is not reachable by downward viewport scrolling.
-                if rect.right() > 0.0 && rect.bottom().is_finite() {
-                    bottom = bottom.max(rect.bottom().min(clip_bottom));
-                }
+            // Negative-side overflow is not reachable by downward viewport scrolling.
+            let counted = bounds.filter(|rect| rect.right() > 0.0 && rect.bottom().is_finite());
+            if let Some(rect) = counted {
+                bottom = bottom.max(rect.bottom().min(clip_bottom));
             }
             // Root/body overflow propagates to the viewport. In particular,
             // overflow-x:hidden can compute overflow-y to auto; the latter
@@ -33,15 +32,23 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 style.overflow_axes().1 != Overflow::Visible
             };
             let child_clip = if clips_descendants {
+                if counted.is_some() {
+                    // Descendants are clipped to a bottom this box already counted.
+                    continue;
+                }
                 bounds.map_or(clip_bottom, |rect| clip_bottom.min(rect.bottom()))
             } else {
                 clip_bottom
             };
-            pending.extend(
-                self.box_children(&node)
-                    .into_iter()
-                    .map(|child| (child, child_clip)),
-            );
+            // Native select contents belong to its picker (see `box_children`).
+            if node.tag_name() == Some("select") {
+                continue;
+            }
+            let child = |child: &NodeRef| (child.clone(), child_clip);
+            match self.styles.retained_children(&node) {
+                Some(children) => pending.extend(children.iter().map(child)),
+                None => pending.extend(self.styles.children(&node).iter().map(child)),
+            }
         }
         bottom
     }
@@ -113,6 +120,23 @@ mod tests {
                 "<style>html{height:100%;overflow-y:hidden}</style><main style='height:1200px'></main>"
             ),
             600.0
+        );
+    }
+
+    #[test]
+    fn descendants_of_clipping_boxes_reach_at_most_the_box_bottom() {
+        assert_eq!(
+            height(
+                "<main style='height:900px;overflow:hidden'><div style='height:1200px'></div></main><div style='position:absolute;top:0;height:700px;overflow:auto'><p style='height:1000px'></p></div>"
+            ),
+            900.0
+        );
+        // A clipping box left of the viewport is not counted, but its clipped content is.
+        assert_eq!(
+            height(
+                "<main style='position:absolute;left:-200px;width:100px;height:1000px;overflow:hidden'><div style='margin-left:300px;width:50px;height:1500px'></div></main>"
+            ),
+            1000.0
         );
     }
 

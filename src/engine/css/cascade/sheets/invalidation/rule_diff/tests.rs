@@ -87,6 +87,17 @@ fn an_added_sheet_restyles_its_rule_subjects_and_their_subtrees() {
             "{css}: {}/{total}",
             stats.recomputed_styles
         );
+        // Only keyless subjects restyle whole subtrees, and the diagnostic counts them.
+        let keyless = [
+            "main :not(.z){color:red}",
+            ".y > :not(b){color:red}",
+            "aside *::before{content:'x'}",
+        ];
+        assert_eq!(
+            stats.invalidation_fallbacks.rule_diff_subtrees,
+            u64::from(keyless.contains(&css)),
+            "{css}"
+        );
     }
 }
 

@@ -56,6 +56,8 @@ pub(crate) struct LayoutReuse {
     /// Unlike results, this survives an environment change.
     pub(super) sighted: HashMap<NodeId, subtree_replay::Sighting>,
     pub(super) pass: u64,
+    /// Reads already confirmed this pass; see `LayoutReads::hold`.
+    pub(super) held: layout_reads::HeldReads,
 }
 
 impl LayoutReuse {
@@ -69,6 +71,7 @@ impl LayoutReuse {
         }
         self.used.clear();
         self.measured.clear();
+        self.held.clear();
         self.pass += 1;
     }
 

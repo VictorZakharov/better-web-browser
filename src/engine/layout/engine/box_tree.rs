@@ -15,8 +15,7 @@ pub(in crate::engine::layout) struct BoxTree<'a> {
     /// Children the parent being rebuilt placed, directly or in a wrapper.
     placed: HashSet<NodeId>,
     /// Nodes whose children this tree built rather than retained.
-    #[cfg(test)]
-    rebuilt: usize,
+    pub(super) rebuilt: usize,
 }
 
 impl std::ops::Deref for BoxTree<'_> {
@@ -70,7 +69,6 @@ impl<'a> BoxTree<'a> {
             store,
             pool: HashMap::new(),
             placed: HashSet::new(),
-            #[cfg(test)]
             rebuilt: 0,
         }
     }
@@ -161,6 +159,11 @@ impl<'a> BoxTree<'a> {
             result.push(node);
         }
         result
+    }
+
+    /// The retained children of `node`, when it has a retained list; see `children`.
+    pub fn retained_children(&self, node: &NodeRef) -> Option<&[NodeRef]> {
+        self.boxes.children.get(&node.id()).map(Vec::as_slice)
     }
 
     pub fn children(&self, node: &NodeRef) -> Vec<NodeRef> {

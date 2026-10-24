@@ -120,10 +120,7 @@ impl BoxTree<'_> {
 
     fn rebuild_children(&mut self, node: &NodeRef) {
         let id = node.id();
-        #[cfg(test)]
-        {
-            self.rebuilt += 1;
-        }
+        self.rebuilt += 1;
         // Release the previous children: anonymous boxes go to the pool for reuse, and each other
         // child is remembered with its owner, to be removed unless it is placed again.
         let mut previous = Vec::new();

@@ -46,6 +46,8 @@ pub(super) struct BenchmarkRun {
     pub(super) layout_build_time: Duration,
     pub(super) layout_tree_time: Duration,
     pub(super) layout_finalize_time: Duration,
+    /// Layout work counts and phase times summed over every renderer update.
+    pub(super) layout_work: better_web_browser::engine::layout::LayoutStats,
     pub(super) text_measure_count: usize,
     pub(super) text_shape_cache_hits: usize,
     pub(super) text_shape_cache_misses: usize,
@@ -73,6 +75,7 @@ pub(super) struct BenchmarkRun {
     pub(super) style_nodes_recomputed: usize,
     pub(super) style_nodes_full_rebuild: usize,
     pub(super) full_style_rebuilds: usize,
+    pub(super) invalidation_fallbacks: better_web_browser::engine::css::InvalidationFallbacks,
     pub(super) full_layout_rebuilds: usize,
     pub(super) display_items_invalidated: usize,
     pub(super) full_paint_repaints: usize,

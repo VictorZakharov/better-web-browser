@@ -30,5 +30,9 @@ fn single_item_cells_of_a_changed_table_replay() {
     page.refresh_resources_for_viewport(WIDTH, HEIGHT);
     assert_warm_matches_cold(&page);
     assert!(retained(&page, "c1"));
-    assert!(!retained(&page, "c0"), "the changed cell is laid out again");
+    // The changed cell is laid out again and, having replayed before, retained from that layout.
+    assert!(retained(&page, "c0"));
+    let mut replayed = Counting::default();
+    layout(&page, &mut replayed);
+    assert_eq!(replayed.calls, 0, "every cell replays in the next pass");
 }

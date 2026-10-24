@@ -284,6 +284,9 @@ fn encode_style(writer: &mut WireWriter, report: StyleReport) {
     writer.u64(report.removed_styles);
     writer.bool(report.layout_changed);
     writer.bool(report.full_rebuild);
+    for value in report.invalidation_fallbacks.to_fields() {
+        writer.u64(value);
+    }
 }
 
 fn decode_style(reader: &mut WireReader<'_>) -> Result<StyleReport, ProtocolError> {
@@ -295,6 +298,13 @@ fn decode_style(reader: &mut WireReader<'_>) -> Result<StyleReport, ProtocolErro
         removed_styles: reader.u64()?,
         layout_changed: reader.bool()?,
         full_rebuild: reader.bool()?,
+        invalidation_fallbacks: crate::engine::css::InvalidationFallbacks::from_fields([
+            reader.u64()?,
+            reader.u64()?,
+            reader.u64()?,
+            reader.u64()?,
+            reader.u64()?,
+        ]),
     })
 }
 
@@ -317,6 +327,9 @@ pub(in crate::renderer_protocol) fn encode_load(writer: &mut WireWriter, report:
     writer.u64(report.glyph_raster_micros);
     writer.u64(report.presentation_encode_micros);
     writer.u64(report.presentation_decode_micros);
+    for value in report.layout.to_fields() {
+        writer.u64(value);
+    }
 }
 
 pub(in crate::renderer_protocol) fn decode_load(
@@ -341,5 +354,12 @@ pub(in crate::renderer_protocol) fn decode_load(
         glyph_raster_micros: reader.u64()?,
         presentation_encode_micros: reader.u64()?,
         presentation_decode_micros: reader.u64()?,
+        layout: {
+            let mut fields = [0; 13];
+            for field in &mut fields {
+                *field = reader.u64()?;
+            }
+            crate::engine::layout::LayoutStats::from_fields(fields)
+        },
     })
 }

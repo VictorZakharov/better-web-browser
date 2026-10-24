@@ -23,6 +23,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if let Some(metrics) = self.replay_measured(&key, node, x, y) {
             return metrics;
         }
+        self.page.count_layout(|stats| stats.blocks_laid_out += 1);
         let measured = self.measures_alone(node);
         if measured {
             self.begin_reads();

@@ -8,7 +8,12 @@ mod layout_reads;
 mod measured;
 pub(in crate::engine::layout) use layout_reads::LayoutReads;
 mod popover;
+mod post_layout_index;
+pub(in crate::engine::layout) use post_layout_index::ComposedNodes;
+pub(crate) use post_layout_index::PostLayoutIndex;
 mod probe_cache;
+mod stats;
+pub use stats::LayoutStats;
 pub(crate) mod reuse;
 mod subtree_replay;
 pub(in crate::engine::layout) mod width_cache;
@@ -96,6 +101,11 @@ fn layout_page_for_output<M: TextMeasurer>(
     measurer: &mut M,
     request: fixed_layers::OutputRequest,
 ) -> LayoutOutput {
+    let mut clock = stats::PhaseClock::start();
+    let mut pass = LayoutStats {
+        passes: 1,
+        ..LayoutStats::default()
+    };
     let emit_paint = request.emit_paint;
     let partial = request.root.is_some();
     let computed_styles;
@@ -143,7 +153,9 @@ fn layout_page_for_output<M: TextMeasurer>(
         };
         root = parent;
     }
+    clock.restart();
     let box_tree = box_tree::BoxTree::retained(&root, styles, &page.layout_box_tree, !partial);
+    pass.box_tree_micros = clock.lap();
     page.layout_reuse
         .borrow_mut()
         .begin_pass(
@@ -158,6 +170,7 @@ fn layout_page_for_output<M: TextMeasurer>(
                     measurer_epoch,
                 }),
         );
+    clock.restart();
     let mut engine = LayoutEngine {
         page,
         styles: &box_tree,
@@ -230,6 +243,7 @@ fn layout_page_for_output<M: TextMeasurer>(
             engine.output.background = style.background_color.composite_over(Color::WHITE);
         }
     }
+    clock.restart();
     let metrics = engine.layout_block(
         &root,
         0.0,
@@ -238,12 +252,19 @@ fn layout_page_for_output<M: TextMeasurer>(
         Some(viewport_height.max(1.0)),
         None,
     );
-    inline_layout::geometry::finish(&root, styles, &mut engine.output);
+    pass.block_layout_micros = clock.lap();
+    // Before paint-order finalization turns stacking markers into node entries.
+    let emitted = engine.output.items.len() as u64;
+    let composed = page.layout_index.borrow_mut().composed(&root, styles);
+    inline_layout::geometry::finish(&composed.inlines(), &mut engine.output);
+    pass.inline_geometry_micros = clock.lap();
     engine.output.content_height = metrics
         .bottom
         .max(engine.scrollable_overflow_bottom(&root))
         .max(viewport_height);
+    pass.overflow_micros = clock.lap();
     block::paint_order::finalize(&mut engine.output);
+    pass.paint_order_micros = clock.lap();
     if !partial {
         popover::append_top_layer(
             page,
@@ -255,36 +276,30 @@ fn layout_page_for_output<M: TextMeasurer>(
             emit_paint,
         );
     }
+    clock.restart();
     if emit_paint {
-        // Text display items retain text-node IDs, so resolve their inherited
-        // eligibility alongside element IDs in one ancestor-first DOM walk.
+        // Text display items retain text-node IDs, so their inherited eligibility is resolved
+        // alongside element IDs.
         let hit_root = if partial { &root } else { &page.dom.document };
-        for node in Node::shadow_including_descendants(hit_root) {
-            let eligible = styles
-                .styles
-                .get(&node.id())
-                .map(|style| style.pointer_events && style.visibility)
-                .or_else(|| {
-                    Node::composed_parent(&node)
-                        .map(|parent| !engine.output.hit_excluded.contains(&parent.id()))
-                })
-                .unwrap_or(true);
-            if !eligible {
-                engine.output.hit_excluded.insert(node.id());
-            }
-        }
+        let excluded = page.layout_index.borrow_mut().excluded(hit_root, styles);
+        engine.output.hit_excluded.extend(excluded.nodes());
     }
+    pass.hit_test_micros = clock.lap();
     box_tree.remove_anonymous_geometry(&mut engine.output);
-    engine.output.update_sticky_positions(
-        page,
-        viewport_width,
-        viewport_height,
-        style_viewport_width,
-    );
+    clock.restart();
+    let document = (!partial).then_some(&*composed);
+    let (width, height) = (viewport_width, viewport_height);
+    engine
+        .output
+        .place_sticky_boxes(page, styles, document, width, height);
+    pass.sticky_micros = clock.lap();
     fixed_layers::retain_image_inputs(page, &mut engine.output);
     if !partial {
         page.layout_reuse.borrow_mut().finish_pass();
     }
+    pass.boxes_rebuilt = box_tree.rebuilt as u64;
+    pass.items_emitted = emitted;
+    page.count_layout(|counted| *counted = counted.saturating_add(pass));
     let output = engine.output;
     box_tree.retain();
     output

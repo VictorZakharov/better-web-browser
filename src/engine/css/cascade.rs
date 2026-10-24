@@ -3,6 +3,7 @@
 mod author;
 mod computed;
 mod effect_cache;
+mod fallbacks;
 mod fork;
 mod keyframe_values;
 mod layout;
@@ -17,6 +18,7 @@ mod scope;
 mod sheets;
 mod sources;
 mod svg_presentation;
+pub use fallbacks::InvalidationFallbacks;
 pub(crate) use sheets::AppendedChildDependencies;
 pub use sources::StylesheetSource;
 #[cfg(test)]
@@ -50,6 +52,7 @@ pub struct StyleRefreshStats {
     pub full_rebuild: bool,
     pub element_style_time: std::time::Duration,
     pub pseudo_style_time: std::time::Duration,
+    pub invalidation_fallbacks: InvalidationFallbacks,
 }
 
 #[derive(Debug, Default)]

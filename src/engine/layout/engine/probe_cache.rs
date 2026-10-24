@@ -25,7 +25,7 @@ impl LayoutReuse {
         styles: &StyleSet,
     ) -> Option<(f32, LayoutReads)> {
         let entry = self.probes.get(&key)?;
-        if entry.inputs != inputs || !entry.reads.hold(page, styles) {
+        if entry.inputs != inputs || !entry.reads.hold(page, styles, &mut self.held) {
             self.probes.remove(&key);
             return None;
         }

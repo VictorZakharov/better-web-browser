@@ -37,7 +37,7 @@ use super::page::{Page, inline_svg_key};
 use crate::navigation::resolve_url;
 use engine::{BlockMetrics, LayoutEngine, UsedInlineSize};
 pub use engine::{
-    layout_geometry_with_style_viewport, layout_page, layout_page_with_style_viewport,
+    LayoutStats, layout_geometry_with_style_viewport, layout_page, layout_page_with_style_viewport,
 };
 pub use model::{
     CheckableState, ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, FragmentGeometry,
