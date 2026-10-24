@@ -278,6 +278,7 @@ impl BrowserState {
                 "  \"video_paint_cadence\": {},\n",
                 "  \"javascript_runtime_stopped\": {},\n",
                 "  \"renderer_runtime_timeline\": {},\n",
+                "  \"fetch_timeline\": {},\n",
                 "  \"diagnostics\": {},\n",
                 "  \"retained_draw_items\": {}\n",
                 "}}\n"
@@ -378,6 +379,9 @@ impl BrowserState {
             benchmark.video_cadence.json(),
             benchmark.script_runtime_stopped,
             benchmark.runtime_timeline.to_json(),
+            benchmark
+                .fetch_timeline
+                .to_json(benchmark.navigation_started),
             diagnostics,
             metrics.retained_draw_items,
         );

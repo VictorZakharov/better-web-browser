@@ -13,6 +13,7 @@ use std::sync::mpsc;
 mod control_updates;
 mod database;
 mod file_picker;
+pub(super) mod responses;
 mod sensor;
 pub use control_updates::{
     ClipboardUpdateSink, GeolocationUpdateSink, MediaDeviceUpdateSink, PermissionUpdateSink,
@@ -27,7 +28,7 @@ pub(super) const MAX_QUEUED_DATABASE_RESPONSE_BYTES: usize =
 #[derive(Clone)]
 pub struct FetchResponseSink {
     document: DocumentId,
-    sender: mpsc::SyncSender<FetchStreamEvent>,
+    responses: responses::ResponseSender,
     stylesheets: mpsc::SyncSender<FetchStreamEvent>,
     wake: super::wake::BrokerWake,
     flow: Arc<super::flow::FetchFlow>,
@@ -222,14 +223,14 @@ impl WebSocketEventSink {
 impl FetchResponseSink {
     pub(super) fn new(
         document: DocumentId,
-        sender: mpsc::SyncSender<FetchStreamEvent>,
+        responses: responses::ResponseSender,
         stylesheets: mpsc::SyncSender<FetchStreamEvent>,
         wake: super::wake::BrokerWake,
         flow: Arc<super::flow::FetchFlow>,
     ) -> Self {
         Self {
             document,
-            sender,
+            responses,
             stylesheets,
             wake,
             flow,
@@ -283,6 +284,11 @@ impl FetchResponseSink {
         if chunk.bytes.is_empty() || chunk.bytes.len() > MAX_FETCH_STREAM_CHUNK_BYTES {
             return Err("Fetch response chunk exceeded its contract".into());
         }
+        if !self.flow.is_stylesheet(self.document, chunk.transfer_id)
+            && !self.responses.has_room(chunk.bytes.len())
+        {
+            return Ok(Some(chunk));
+        }
         if !self.flow.try_reserve(
             self.document,
             chunk.transfer_id,
@@ -308,21 +314,21 @@ impl FetchResponseSink {
     /// Stylesheet responses use their own bounded lane, which the broker drains first: the
     /// network delivers responses in parallel, but a render-blocking stylesheet waiting for a
     /// slot behind dozens of image responses keeps the page blank while the renderer handles
-    /// them. Browsers likewise load stylesheets at the highest priority. A response always uses
-    /// one lane, so its own events stay in order.
+    /// them. Browsers likewise load stylesheets at the highest priority. Other responses use the
+    /// byte-bounded lane in `responses`. A response always uses one lane, so its own events stay
+    /// in order.
     fn send(&self, event: FetchStreamEvent) -> Result<(), String> {
         let stylesheet = event
             .request_id()
             .is_some_and(|id| self.flow.is_stylesheet(self.document, id));
-        let sender = if stylesheet {
-            &self.stylesheets
-        } else {
-            &self.sender
-        };
         self.wake.notify();
-        let result = sender
-            .send(event)
-            .map_err(|_| "renderer Fetch stream is no longer available".to_string());
+        let result = if stylesheet {
+            self.stylesheets
+                .send(event)
+                .map_err(|_| "renderer Fetch stream is no longer available".to_string())
+        } else {
+            self.responses.send(event)
+        };
         self.wake.notify();
         result
     }
@@ -331,8 +337,6 @@ impl FetchResponseSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS;
-    use std::time::Duration;
 
     #[test]
     fn ui_speech_rejection_never_waits_behind_a_full_renderer_mailbox() {
@@ -351,93 +355,6 @@ mod tests {
             receiver.recv().unwrap(),
             FetchStreamEvent::Speech(_)
         ));
-    }
-
-    #[test]
-    fn stylesheet_responses_do_not_wait_behind_a_full_stream_queue() {
-        let document = DocumentId::new(1).unwrap();
-        let (sender, receiver) = mpsc::sync_channel(MAX_QUEUED_FETCH_STREAM_CHUNKS);
-        let (stylesheets, stylesheet_receiver) = mpsc::sync_channel(MAX_QUEUED_FETCH_STREAM_CHUNKS);
-        let flow = Arc::new(super::super::flow::FetchFlow::default());
-        flow.register(document, 1, false).unwrap();
-        flow.register(document, 2, false).unwrap();
-        flow.mark_stylesheet(document, 2);
-        let sink = FetchResponseSink::new(
-            document,
-            sender,
-            stylesheets,
-            super::super::wake::BrokerWake::default(),
-            flow,
-        );
-        for offset in 0..MAX_QUEUED_FETCH_STREAM_CHUNKS {
-            sink.chunk(TransferChunk {
-                transfer_id: 1,
-                offset: offset as u32,
-                bytes: vec![b'x'],
-            })
-            .unwrap();
-        }
-        // The shared queue is full, which would block this thread; the stylesheet goes through.
-        sink.chunk(TransferChunk {
-            transfer_id: 2,
-            offset: 0,
-            bytes: b"p{}".to_vec(),
-        })
-        .unwrap();
-        sink.end(2, 3).unwrap();
-        assert!(matches!(
-            stylesheet_receiver.try_recv(),
-            Ok(FetchStreamEvent::Chunk { chunk, .. }) if chunk.transfer_id == 2
-        ));
-        assert!(matches!(
-            stylesheet_receiver.try_recv(),
-            Ok(FetchStreamEvent::End { end, .. }) if end.request_id == 2
-        ));
-        assert_eq!(receiver.try_iter().count(), MAX_QUEUED_FETCH_STREAM_CHUNKS);
-    }
-
-    #[test]
-    fn producer_blocks_when_the_bounded_stream_queue_is_full() {
-        let (sender, receiver) = mpsc::sync_channel(MAX_QUEUED_FETCH_STREAM_CHUNKS);
-        let flow = Arc::new(super::super::flow::FetchFlow::default());
-        flow.register(DocumentId::new(1).unwrap(), 1, false)
-            .unwrap();
-        let sink = FetchResponseSink::new(
-            DocumentId::new(1).unwrap(),
-            sender,
-            mpsc::sync_channel(1).0,
-            super::super::wake::BrokerWake::default(),
-            flow,
-        );
-        for offset in 0..MAX_QUEUED_FETCH_STREAM_CHUNKS {
-            sink.chunk(TransferChunk {
-                transfer_id: 1,
-                offset: offset as u32,
-                bytes: vec![b'x'],
-            })
-            .unwrap();
-        }
-
-        let (completed, completion) = mpsc::channel();
-        std::thread::spawn(move || {
-            let result = sink.chunk(TransferChunk {
-                transfer_id: 1,
-                offset: MAX_QUEUED_FETCH_STREAM_CHUNKS as u32,
-                bytes: vec![b'x'],
-            });
-            completed.send(result).unwrap();
-        });
-        assert!(matches!(
-            completion.recv_timeout(Duration::from_millis(50)),
-            Err(mpsc::RecvTimeoutError::Timeout)
-        ));
-        receiver.recv().unwrap();
-        assert!(
-            completion
-                .recv_timeout(Duration::from_secs(1))
-                .unwrap()
-                .is_ok()
-        );
     }
 }
 

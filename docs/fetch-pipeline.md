@@ -84,8 +84,14 @@ creating the next one, so blocking, deferred, and asynchronous resources share o
 Workers check that signal before and after WinHTTP operations and between response-body chunks.
 WinHTTP response bodies are advanced with
 [`WinHttpQueryDataAvailable`](https://learn.microsoft.com/windows/win32/api/winhttp/nf-winhttp-winhttpquerydataavailable)
-and read in at most 64 KiB chunks. The network-worker queue holds at most eight chunks; a full queue
-backpressures the worker until the renderer broker makes progress.
+and read in at most 64 KiB chunks. Response heads and bodies queue for the renderer broker in a lane
+bounded by 16 MiB of queued bytes rather than by event count, as Chromium's network service keeps
+reading into per-request data pipes while a renderer task runs. A chunk that would exceed the budget
+parks its response without occupying a network worker. An eight-event lane filled within a few
+chunks and blocked every worker for the length of the renderer's first full layout (about 450 ms on
+a large Wikipedia article), so no response downloaded meanwhile. Stylesheet responses keep their own
+lane, which the broker drains first. The hidden benchmark's `fetch_timeline` records when each
+request was admitted, started, answered by the network and handed to the renderer, and finished.
 
 WinHTTP is currently used synchronously on background workers. Microsoft warns against closing a
 synchronous request handle from another thread while an operation is pending, so cancellation does

@@ -38,7 +38,8 @@ receipts racing a terminal event for a retired request.
 | Script response total | 64 MiB; EOF does not remove application-retained data |
 | Buffered response total | Existing 16 MiB consumer limit remains |
 
-The existing eight-chunk IPC queue remains bounded. Only producers can wait on that queue; neither
+The broker's response lane is bounded by 16 MiB of queued bytes (see `docs/fetch-pipeline.md`); a
+producer whose chunk does not fit parks the response instead of waiting. Neither
 the UI nor the document/worker event loop waits for a body. Parked response jobs are revisited after
 5 ms, without adding a thread per response. Abort/navigation/exit release outstanding credit.
 

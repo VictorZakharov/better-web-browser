@@ -90,6 +90,7 @@ impl BenchmarkRun {
             video_cadence: Default::default(),
             script_runtime_stopped: false,
             runtime_timeline: runtime_timeline::RuntimeTimeline::default(),
+            fetch_timeline: fetch_timeline::FetchTimeline::default(),
             completion_marker,
             completion_title: None,
             completion_observed: false,

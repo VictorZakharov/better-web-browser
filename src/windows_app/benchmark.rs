@@ -1,5 +1,6 @@
 mod diagnostics;
 mod early_scroll;
+mod fetch_timeline;
 mod filmstrip;
 mod initialization;
 mod installation;
@@ -86,6 +87,7 @@ pub(super) struct BenchmarkRun {
     pub(super) video_cadence: video::VideoCadence,
     pub(super) script_runtime_stopped: bool,
     pub(super) runtime_timeline: runtime_timeline::RuntimeTimeline,
+    pub(super) fetch_timeline: fetch_timeline::FetchTimeline,
     pub(super) completion_marker: Option<String>,
     pub(super) completion_title: Option<String>,
     pub(super) completion_observed: bool,

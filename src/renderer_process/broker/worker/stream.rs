@@ -298,7 +298,11 @@ impl Broker {
             let resources = self.resources();
             let (event, stylesheet) = match resources.stylesheet_stream.try_recv() {
                 Ok(event) => (event, true),
-                Err(_) => match resources.fetch_stream.try_recv() {
+                Err(_) => match resources
+                    .fetch_responses
+                    .try_recv()
+                    .or_else(|_| resources.fetch_stream.try_recv())
+                {
                     Ok(event) => (event, false),
                     Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
                 },
