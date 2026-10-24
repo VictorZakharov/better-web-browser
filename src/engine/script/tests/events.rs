@@ -358,6 +358,29 @@ fn init_event_resets_cancelation_and_legacy_return_value() {
 }
 
 #[test]
+fn legacy_ui_events_initialize_view_and_detail_and_dispatch() {
+    // Acid3 subtest 30 creates its event this way.
+    let status = status_after_script(
+        r#"<p id="target">x</p><script>
+            const target = document.getElementById('target');
+            let seen = '';
+            target.addEventListener('test', event => { seen += event.detail; });
+            const event = document.createEvent('UIEvents');
+            event.initUIEvent('test', true, false, null, 6);
+            const dispatched = target.dispatchEvent(event) && target.firstChild.dispatchEvent(event);
+            const kinds = ['uievent', 'MouseEvents', 'FocusEvent', 'KeyboardEvent']
+                .map(name => document.createEvent(name).constructor.name);
+            document.getElementById('status').textContent =
+                [event instanceof UIEvent, String(event.view), event.bubbles, dispatched, seen, kinds.join('/')].join(':');
+        </script>"#,
+    );
+    assert_eq!(
+        status,
+        "true:null:true:true:66:UIEvent/MouseEvent/FocusEvent/KeyboardEvent"
+    );
+}
+
+#[test]
 fn cancelation_gates_default_actions_after_listener_dispatch() {
     let status = status_after_script(
         r#"<details id="details"><summary id="target">toggle</summary></details>
