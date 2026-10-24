@@ -160,7 +160,12 @@ pub(super) fn sample() -> RendererPresentation {
             }),
             ..RuntimeReport::default()
         },
-        style: StyleReport::default(),
+        style: StyleReport {
+            invalidation_fallbacks: crate::engine::css::InvalidationFallbacks::from_fields(
+                std::array::from_fn(|index| 40 + index as u64),
+            ),
+            ..StyleReport::default()
+        },
         load: PageLoadReport {
             font_catalog_micros: 11,
             font_select_micros: 12,
@@ -168,6 +173,9 @@ pub(super) fn sample() -> RendererPresentation {
             glyph_raster_micros: 14,
             presentation_encode_micros: 15,
             presentation_decode_micros: 16,
+            layout: crate::engine::layout::LayoutStats::from_fields(std::array::from_fn(|index| {
+                17 + index as u64
+            })),
             ..PageLoadReport::default()
         },
         page_diagnostics: PageDiagnostics {

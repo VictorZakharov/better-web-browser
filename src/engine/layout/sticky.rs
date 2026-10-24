@@ -21,6 +21,32 @@ impl LayoutOutput {
         self.update_scroll_position(x, y);
     }
 
+    /// Builds the sticky layers of a finished layout from the document's sticky boxes, read from
+    /// `document` (the index entry of a document layout's root) or else from the page's index,
+    /// and positions them for the current scroll offset.
+    pub(in crate::engine::layout) fn place_sticky_boxes(
+        &mut self,
+        page: &Page,
+        styles: &StyleSet,
+        document: Option<&crate::engine::layout::engine::ComposedNodes>,
+        width: f32,
+        height: f32,
+    ) {
+        if self.sticky_layers.is_empty() {
+            let sticky = match document {
+                Some(nodes) => nodes.sticky(),
+                None => page
+                    .layout_index
+                    .borrow_mut()
+                    .composed(&page.dom.document, styles)
+                    .sticky(),
+            };
+            self.build_layers_for(&sticky, styles, width, height);
+        }
+        let (x, y) = page.dom.document.scroll_offset.get();
+        self.update_scroll_position(x, y);
+    }
+
     fn build_sticky_layers(&mut self, page: &Page, width: f32, height: f32, style_width: f32) {
         let computed;
         let styles = if let Some(styles) = page.cached_style_for_viewport(style_width, height) {
@@ -29,11 +55,32 @@ impl LayoutOutput {
             computed = page.style_for_viewport(style_width, height);
             &computed
         };
+        let sticky = Node::composed_descendants(&page.dom.document)
+            .filter(|node| styles.get(node).position == Position::Sticky)
+            .collect::<Vec<_>>();
+        self.build_layers_for(&sticky, styles, width, height);
+    }
+
+    fn build_layers_for(&mut self, sticky: &[NodeRef], styles: &StyleSet, width: f32, height: f32) {
+        // Sparse layout deliberately omits styles below hidden subtrees.
+        let sticky = sticky
+            .iter()
+            .filter(|node| self.node_bounds.contains_key(&node.id()))
+            .cloned()
+            .collect::<Vec<_>>();
+        if sticky.is_empty() {
+            return;
+        }
+        // Only sticky boxes need their item ranges; a retained document holds tens of thousands
+        // of node boundaries, and this runs on every layout pass.
+        let wanted = sticky.iter().map(|node| node.id()).collect::<HashSet<_>>();
         let mut ranges = HashMap::new();
         {
             let mut starts = HashMap::new();
             for (index, item) in self.items.iter().enumerate() {
-                if let DisplayItem::NodeBoundary { node_id, entering } = item {
+                if let DisplayItem::NodeBoundary { node_id, entering } = item
+                    && wanted.contains(node_id)
+                {
                     if *entering {
                         starts.insert(*node_id, index);
                     } else if let Some(start) = starts.remove(node_id) {
@@ -49,15 +96,8 @@ impl LayoutOutput {
             height,
         };
         let mut indices = HashMap::new();
-        for node in Node::composed_descendants(&page.dom.document) {
-            // Sparse layout deliberately omits styles below hidden subtrees.
-            if !self.node_bounds.contains_key(&node.id()) {
-                continue;
-            }
+        for node in sticky {
             let style = styles.get(&node);
-            if style.position != Position::Sticky {
-                continue;
-            }
             let Some(normal) = self.visual_rect(&node) else {
                 continue;
             };

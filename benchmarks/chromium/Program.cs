@@ -8,6 +8,8 @@ internal static class Program
     {
         try
         {
+            if (arguments is ["--analyze-filmstrip", var directory, ..])
+                return AnalyzeFilmstrip(directory, arguments[2..]);
             var options = Options.Parse(arguments);
             var result = await ChromeRun.ExecuteAsync(options);
             var output = Path.GetFullPath(options.Output);
@@ -21,6 +23,32 @@ internal static class Program
             Console.Error.WriteLine(exception.Message);
             return 1;
         }
+    }
+
+    /// <summary>
+    /// Prints the settle times of a filmstrip directory written by either browser and saves them
+    /// beside it as settle.json; see <see cref="FilmstripSettle"/>.
+    /// </summary>
+    private static int AnalyzeFilmstrip(string directory, string[] rest)
+    {
+        PixelRegion? content = null, region = null;
+        for (var index = 0; index < rest.Length; index += 2)
+        {
+            var value = index + 1 < rest.Length ? PixelRegion.Parse(rest[index + 1]) : (PixelRegion?)null;
+            switch (rest[index])
+            {
+                case "--content" when value is not null: content = value; break;
+                case "--region" when value is not null: region = value; break;
+                default:
+                    throw new ArgumentException("Usage: --analyze-filmstrip <directory> " +
+                        "[--content x,y,width,height] [--region x,y,width,height]");
+            }
+        }
+        var settle = FilmstripSettleAnalysis.Analyze(directory, content, region);
+        var json = JsonSerializer.Serialize(settle, JsonDefaults.Options);
+        File.WriteAllText(Path.Combine(directory, "settle.json"), json);
+        Console.WriteLine(json);
+        return 0;
     }
 }
 

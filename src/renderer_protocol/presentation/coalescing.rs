@@ -141,6 +141,9 @@ impl StyleReport {
             removed_styles: self.removed_styles.saturating_add(next.removed_styles),
             layout_changed: self.layout_changed || next.layout_changed,
             full_rebuild: self.full_rebuild || next.full_rebuild,
+            invalidation_fallbacks: self
+                .invalidation_fallbacks
+                .saturating_add(next.invalidation_fallbacks),
         }
     }
 }
@@ -192,6 +195,7 @@ impl PageLoadReport {
             presentation_decode_micros: self
                 .presentation_decode_micros
                 .saturating_add(next.presentation_decode_micros),
+            layout: self.layout.saturating_add(next.layout),
         }
     }
 }

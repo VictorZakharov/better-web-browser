@@ -30,7 +30,7 @@ impl StyleSet {
                 .filter_map(|id| dom.find_node(*id))
                 .collect::<Vec<_>>();
             let mut elements = Vec::new();
-            self.resolve_attribute_changes(
+            let fallbacks = self.resolve_attribute_changes(
                 dom,
                 &invalidation.attribute_changes,
                 &mut roots,
@@ -55,6 +55,7 @@ impl StyleSet {
             stats.removed_styles += removed_styles;
             stats.layout_changed |= removed_styles != 0 || removed_generated;
             stats.non_deferable_paint_changes |= removed_styles != 0 || removed_generated;
+            stats.invalidation_fallbacks = fallbacks;
             return stats;
         }
         // A changed rule set whose difference is whole, keyed rules restyles only the subjects
@@ -72,19 +73,20 @@ impl StyleSet {
                 .filter_map(|id| dom.find_node(*id))
                 .collect::<Vec<_>>();
             let mut elements = Vec::new();
-            self.resolve_attribute_changes(
+            let outgoing = self.resolve_attribute_changes(
                 dom,
                 &invalidation.attribute_changes,
                 &mut roots,
                 &mut elements,
             );
             self.compiled = compiled;
-            self.resolve_attribute_changes(
+            let mut fallbacks = outgoing.saturating_add(self.resolve_attribute_changes(
                 dom,
                 &invalidation.attribute_changes,
                 &mut roots,
                 &mut elements,
-            );
+            ));
+            fallbacks.rule_diff_subtrees += diff.subtrees.len() as u64;
             // Unchanged rules are all in the new set, so the new rules bound what an inserted
             // or removed child can restyle; elements a changed rule may match are subjects.
             self.resolve_child_list_changes(
@@ -115,6 +117,7 @@ impl StyleSet {
             stats.removed_styles += removed_styles;
             stats.layout_changed |= removed_styles != 0 || removed_generated;
             stats.non_deferable_paint_changes |= removed_styles != 0 || removed_generated;
+            stats.invalidation_fallbacks = fallbacks;
             return stats;
         }
         self.rebuild_rules_for_media_environment(

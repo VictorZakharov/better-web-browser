@@ -14,6 +14,7 @@ internal static class Program
         ProcessTreeTests.Run();
         ProcessMemoryTests.Run();
         BenchmarkTitleTests.Run();
+        FilmstripSettleTests.Run();
         await ChromeCleanupTests.RunAsync();
         ChromiumProfileTests.Run();
         if (arguments.SequenceEqual(new[] { "--process-tree-only" })) return 0;

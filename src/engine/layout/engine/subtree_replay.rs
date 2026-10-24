@@ -19,13 +19,13 @@
 // finishes and before any ancestor moves it, so a nested subtree can still be replayed after an
 // enclosing one changes.
 // Entries are bounded by size so that very large containers recompute while their children
-// replay. A subtree is retained only when its root was laid out from the same DOM and styles in
-// the previous pass too, so a document's first layout, new content, and the ancestors of content
-// that keeps changing (as scripts fill a page in) do not pay for copying what they emit on every
-// pass; once a subtree is unchanged for a pass, the next one retains it. That holds
-// across a change of arguments or environment: after a scrollbar narrows the viewport, which
-// invalidates every result, the next pass at the new width replays instead of laying out the
-// whole document a second time.
+// replay. A subtree is retained as soon as it is laid out, so new content and a document's first
+// layout are laid out once and replay from the next pass, unless its root was also laid out in
+// the previous pass from a different DOM or styles: the ancestors of content that keeps changing
+// (as scripts fill a page in) would otherwise copy what they emit on every pass. Once such a
+// subtree holds for a pass, that pass retains it. That holds across a change of arguments or
+// environment: after a scrollbar narrows the viewport, which invalidates every result, the next
+// pass at the new width replays instead of laying out the whole document a second time.
 //
 // Measuring layouts (block-size probes, which neither paint nor keep fragments) discard their
 // output, emit no items and so retain nothing of their own. Geometry does not depend on whether a
@@ -90,13 +90,14 @@ pub(super) struct SubtreeEntry {
     shared_floats: Option<(f32, Vec<(Float, RectF)>)>,
 }
 
-/// The last pass that laid a node out as a subtree root, and the inputs it used.
+/// The last pass that laid a node out as a subtree root, and the inputs it used. Sightings
+/// last only until the next pass that does not lay the node out.
 #[derive(Debug)]
 pub(super) struct Sighting {
     /// Zero before the first sighting; passes count from one.
     pub(super) last: u64,
     inputs: Inputs,
-    /// The inputs equal those of the sighting in an earlier pass.
+    /// Not laid out in the previous pass, or laid out from the same inputs.
     settled: bool,
 }
 
@@ -121,7 +122,7 @@ impl LayoutReuse {
         styles: &StyleSet,
     ) -> Option<&SubtreeEntry> {
         let entry = self.subtrees.get(key)?;
-        if entry.inputs != inputs || !entry.reads.hold(page, styles) {
+        if entry.inputs != inputs || !entry.reads.hold(page, styles, &mut self.held) {
             self.subtrees.remove(key);
             return None;
         }
@@ -129,8 +130,8 @@ impl LayoutReuse {
         self.subtrees.get(key)
     }
 
-    /// Whether a layout of `key` should be retained: its root was laid out from the same inputs
-    /// in the previous pass, or its retained result is being replaced.
+    /// Whether a layout of `key` should be retained: its root was not laid out in the previous
+    /// pass or was laid out from the same inputs, or its retained result is being replaced.
     fn settled(&mut self, key: SubtreeKey, inputs: Inputs) -> bool {
         let pass = self.pass;
         let sighting = self.sighted.entry(key.node).or_insert(Sighting {
@@ -139,7 +140,7 @@ impl LayoutReuse {
             settled: false,
         });
         if sighting.last != pass {
-            sighting.settled = sighting.last != 0 && sighting.inputs == inputs;
+            sighting.settled = sighting.last == 0 || sighting.inputs == inputs;
             sighting.last = pass;
             sighting.inputs = inputs;
         }
@@ -215,6 +216,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             };
             self.floats.add(*side, rect);
         }
+        let items = if measuring {
+            0
+        } else {
+            entry.items.len() as u64
+        };
+        self.page.count_layout(|stats| {
+            stats.subtrees_replayed += 1;
+            stats.items_replayed += items;
+        });
         if measuring {
             let bottom = entry.bottom + dy;
             let reads = entry.reads.clone();

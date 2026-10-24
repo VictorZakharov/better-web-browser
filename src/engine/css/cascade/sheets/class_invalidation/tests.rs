@@ -6,6 +6,7 @@ use crate::engine::invalidation::{
 use crate::engine::page::Page;
 
 mod attributes;
+mod fallbacks;
 
 /// Changes `#target`'s class, refreshes only the class-change roots, and asserts every element
 /// matches a from-scratch cascade of the final document.

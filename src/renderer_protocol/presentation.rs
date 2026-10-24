@@ -120,6 +120,7 @@ pub struct StyleReport {
     pub removed_styles: u64,
     pub layout_changed: bool,
     pub full_rebuild: bool,
+    pub invalidation_fallbacks: crate::engine::css::InvalidationFallbacks,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -142,6 +143,7 @@ pub struct PageLoadReport {
     pub glyph_raster_micros: u64,
     pub presentation_encode_micros: u64,
     pub presentation_decode_micros: u64,
+    pub layout: crate::engine::layout::LayoutStats,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -313,19 +313,16 @@ impl DocumentRuntime {
             runtime.page.dom.document.id(),
         );
         let layout_time = layout_started.elapsed();
-        let report = runtime
-            .text
-            .borrow_mut()
-            .finish_load_report(PageLoadReport {
-                parse_micros: micros(parse_started.elapsed()),
-                html_parse_micros: micros(html_parse_time),
-                resource_processing_micros: micros(resource_processing_time),
-                script_micros: micros(script_time),
-                script_fetch_micros: micros(script_fetch_time),
-                style_micros: micros(style_time),
-                layout_micros: micros(layout_time),
-                ..PageLoadReport::default()
-            });
+        let report = runtime.finish_load_report(PageLoadReport {
+            parse_micros: micros(parse_started.elapsed()),
+            html_parse_micros: micros(html_parse_time),
+            resource_processing_micros: micros(resource_processing_time),
+            script_micros: micros(script_time),
+            script_fetch_micros: micros(script_fetch_time),
+            style_micros: micros(style_time),
+            layout_micros: micros(layout_time),
+            ..PageLoadReport::default()
+        });
         let presentation = runtime.presentation(outcome, style, report, connection, None)?;
         Ok(LoadResult::Ready(Box::new(runtime), presentation))
     }

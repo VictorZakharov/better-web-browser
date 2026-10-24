@@ -60,6 +60,8 @@ impl Page {
             style_images_pending: false,
             layout_reuse: Default::default(),
             layout_box_tree: Default::default(),
+            layout_stats: Default::default(),
+            layout_index: Default::default(),
         }
     }
 

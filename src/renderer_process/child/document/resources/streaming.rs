@@ -346,7 +346,7 @@ impl DocumentRuntime {
         {
             self.rebuild_layout();
         }
-        let current_load = self.text.borrow_mut().finish_load_report(PageLoadReport {
+        let current_load = self.finish_load_report(PageLoadReport {
             script_micros: micros(script_time),
             style_micros: micros(style_time),
             layout_micros: micros(layout_started.elapsed()),

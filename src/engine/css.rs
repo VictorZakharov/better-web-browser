@@ -28,7 +28,7 @@ mod value_parser;
 mod values;
 mod variables;
 use super::dom::{self, Dom, Node, NodeData, NodeId, NodeRef};
-pub use cascade::{StyleRefreshStats, StyleSet, StylesheetSource};
+pub use cascade::{InvalidationFallbacks, StyleRefreshStats, StyleSet, StylesheetSource};
 pub(crate) use color_parser::parse_color;
 pub use content::GeneratedContent;
 pub(crate) use cssom::{diagnostic_custom_properties, resolved_property_value};

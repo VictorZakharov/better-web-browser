@@ -117,6 +117,10 @@ pub struct Page {
     /// The box tree retained across passes; see `layout::engine::box_tree::retained`.
     pub(crate) layout_box_tree:
         std::cell::RefCell<crate::engine::layout::engine::reuse::RetainedBoxes>,
+    /// Layout work not yet reported; see `layout::engine::stats`.
+    pub(crate) layout_stats: std::cell::Cell<crate::engine::layout::LayoutStats>,
+    /// The nodes post-layout passes visit; see `layout::engine::post_layout_index`.
+    pub(crate) layout_index: std::cell::RefCell<crate::engine::layout::engine::PostLayoutIndex>,
 }
 
 impl Page {
@@ -195,6 +199,8 @@ impl Page {
             style_images_pending: false,
             layout_reuse: Default::default(),
             layout_box_tree: Default::default(),
+            layout_stats: Default::default(),
+            layout_index: Default::default(),
         };
         page.refresh_media_sources();
         page.install_embedded_images();

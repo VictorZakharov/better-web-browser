@@ -309,7 +309,7 @@ impl Page {
             {
                 let stats = if invalidation.impact.affects_style() {
                     let mut element_roots = Vec::new();
-                    styles.resolve_attribute_changes(
+                    let fallbacks = styles.resolve_attribute_changes(
                         &self.dom,
                         &invalidation.attribute_changes,
                         &mut invalidation_roots,
@@ -327,13 +327,15 @@ impl Page {
                         &mut invalidation_roots,
                         &mut element_roots,
                     );
-                    styles.refresh_subtrees_after_invalidation(
+                    let mut stats = styles.refresh_subtrees_after_invalidation(
                         &self.dom.document,
                         &invalidation_roots,
                         &element_roots,
                         &invalidation.removed_nodes,
                         invalidation.impact,
-                    )
+                    );
+                    stats.invalidation_fallbacks = fallbacks;
+                    stats
                 } else {
                     StyleRefreshStats {
                         invalidated_nodes,
