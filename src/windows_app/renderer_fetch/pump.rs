@@ -14,6 +14,8 @@ pub(super) struct BodyJob {
     response: winhttp::StreamingFetchResponse,
     total: u32,
     pending: Option<TransferChunk>,
+    /// When the network delivered the response head, before it was handed to the renderer.
+    received: std::time::Instant,
     _keepalive_permit: Option<keepalive::Permit>,
 }
 
@@ -28,6 +30,13 @@ impl Job {
 
     pub(super) fn started(&self) -> bool {
         matches!(self, Self::Body(_))
+    }
+
+    pub(super) fn received(&self) -> Option<std::time::Instant> {
+        match self {
+            Self::Body(body) => Some(body.received),
+            _ => None,
+        }
     }
 
     pub(super) fn step(
@@ -170,6 +179,7 @@ fn begin_body(
     sink: &FetchResponseSink,
     permit: Option<keepalive::Permit>,
 ) -> Step<Job> {
+    let received = std::time::Instant::now();
     let head = FetchResponseHead {
         request_id: id,
         result: FetchResponseResult::Success {
@@ -195,6 +205,7 @@ fn begin_body(
         response,
         total: 0,
         pending: None,
+        received,
         _keepalive_permit: permit,
     })))
 }

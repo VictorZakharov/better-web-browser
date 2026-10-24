@@ -8,6 +8,7 @@ mod keepalive;
 mod pump;
 mod registry;
 mod scheduler;
+pub(super) mod timing;
 mod websocket;
 mod worker;
 
@@ -30,6 +31,7 @@ pub(super) struct RendererFetchCompletion {
     pub(super) document: DocumentId,
     pub(super) bytes: u64,
     pub(super) network_time: Duration,
+    pub(super) timings: Vec<timing::FetchTiming>,
 }
 
 pub(super) struct RendererFetchBatch {
@@ -315,6 +317,9 @@ impl BrowserState {
         }
         let bytes = completion.bytes;
         let network_time = completion.network_time;
+        if let Some(benchmark) = self.benchmark.as_mut() {
+            benchmark.fetch_timeline.record(completion.timings);
+        }
         if let Some(metrics) = self.renderer_load_metrics.as_mut() {
             metrics.bytes = metrics.bytes.saturating_add(bytes);
             metrics.network_time += network_time;

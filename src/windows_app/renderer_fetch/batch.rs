@@ -22,6 +22,8 @@ pub(in crate::windows_app) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Re
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .activate(document);
     let mut jobs = Vec::new();
+    let timings = timing::BatchTimings::default();
+    let admitted = Instant::now();
     for request in requests {
         if request.head.initiator == FetchInitiator::Beacon {
             // Beacon is one-way and best-effort. A rejected intent or a failed
@@ -44,6 +46,7 @@ pub(in crate::windows_app) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Re
         } else {
             let request_id = request.head.request_id;
             let request_signal = registry.register(document, request_id);
+            timings.admit(&request, admitted);
             jobs.push(pump::Job::Request(
                 Box::new(request),
                 signal.any(&request_signal),
@@ -62,6 +65,7 @@ pub(in crate::windows_app) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Re
             let bytes = scheduler::execute_bounded(jobs, MAX_PARALLEL_RENDERER_FETCHES, |job| {
                 let request_id = job.id();
                 let started = job.started();
+                let before = Instant::now();
                 let step = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     job.step(&client, &sink, document, &document_url, &registry)
                 }))
@@ -75,15 +79,22 @@ pub(in crate::windows_app) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Re
                     }
                     scheduler::Step::Done(0)
                 });
-                if matches!(step, scheduler::Step::Done(_)) {
+                let done = matches!(step, scheduler::Step::Done(_));
+                if done {
                     registry.complete(document, request_id);
                 }
+                let received = match &step {
+                    scheduler::Step::Ready(job) | scheduler::Step::Parked(job) => job.received(),
+                    scheduler::Step::Done(_) => None,
+                };
+                timings.step(request_id, !started, before, received, done);
                 step
             });
             let completion = Box::new(RendererFetchCompletion {
                 document,
                 bytes,
                 network_time: started.elapsed(),
+                timings: timings.into_sorted(),
             });
             let pointer = Box::into_raw(completion);
             let posted = tab_router.destination(tab_id).is_some_and(|window| unsafe {

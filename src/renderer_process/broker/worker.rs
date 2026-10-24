@@ -83,6 +83,7 @@ pub(super) struct BrokerResources {
     pub(super) state_updates: super::state_updates::Receiver,
     pub(super) lifecycle: mpsc::Receiver<LifecycleCommand>,
     pub(super) fetch_stream: mpsc::Receiver<FetchStreamEvent>,
+    pub(super) fetch_responses: super::stream::responses::ResponseReceiver,
     pub(super) stylesheet_stream: mpsc::Receiver<FetchStreamEvent>,
     pub(super) database_events: mpsc::Receiver<crate::renderer_protocol::DatabaseEvent>,
     pub(super) database_queued_bytes: Arc<std::sync::atomic::AtomicUsize>,
