@@ -13,6 +13,7 @@ mod parts;
 mod presentational;
 mod pseudo;
 mod refresh;
+mod revert_origin;
 mod root_units;
 mod scope;
 mod sheets;
@@ -65,6 +66,9 @@ pub struct StyleSet {
     ancestor_filters: std::cell::RefCell<super::selector_match::AncestorFilterCache>,
     // A shared inherited variable map is inspected by every descendant with var() rules.
     revert_layer_variables: std::cell::RefCell<InheritedLayerRevertCache>,
+    revert_variables: std::cell::RefCell<InheritedLayerRevertCache>,
+    /// Stands in for the revert origin of elements whose cascade cannot read it.
+    revert_placeholder: revert_origin::Placeholder,
     // `:has()` results each anchor's current dependents were styled with.
     has_results: sheets::HasResults,
     defer_nonrendered_descendants: bool,
@@ -227,6 +231,8 @@ impl StyleSet {
             compiled,
             ancestor_filters: std::cell::RefCell::default(),
             revert_layer_variables: std::cell::RefCell::default(),
+            revert_variables: std::cell::RefCell::default(),
+            revert_placeholder: Default::default(),
             has_results: HashMap::new(),
             defer_nonrendered_descendants: false,
             deferred_fullscreen_roots: HashSet::new(),

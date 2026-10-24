@@ -86,6 +86,9 @@ pub(super) struct Declaration {
     pub(super) value: String,
     pub(super) important: bool,
     pub(super) possible_revert_layer: bool,
+    /// The value may resolve to `revert` or `revert-layer`, directly, escaped, or through a
+    /// `var()` fallback. Elements none of whose declarations can revert skip the revert origin.
+    pub(super) possible_revert: bool,
     pub(super) may_use_var: bool,
     // Parsed declarations are immutable; shared rule payloads reuse this token preparation.
     pub(super) literal_value: std::cell::OnceCell<Option<String>>,

@@ -23,6 +23,8 @@ pub(in crate::engine::css) fn parse_declarations(body: &str) -> Vec<Declaration>
                 value: value.to_string(),
                 important,
                 possible_revert_layer: possible_revert_layer(value),
+                possible_revert: contains_ascii_case_insensitive(value, b"revert")
+                    || value.contains('\\'),
                 may_use_var: contains_ascii_case_insensitive(value, b"var(")
                     || value.contains('\\'),
                 literal_value: std::cell::OnceCell::new(),

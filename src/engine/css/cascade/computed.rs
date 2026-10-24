@@ -35,10 +35,6 @@ impl StyleSet {
         }
         style.root_font_size = root_font_size_for(&self.styles, node, parent);
         user_agent::apply_user_agent_defaults(node, &mut style, parent);
-        let lower_origin = style.clone();
-        // HTML hints precede author rules, including an explicit width/height:auto.
-        apply_presentational_hints(node, &mut style);
-
         let matching = self.matching_rules(node, None);
         let inline_declarations = node
             .attr("style")
@@ -49,22 +45,38 @@ impl StyleSet {
             .filter(|_| effects)
             .map(|style| parse_declarations(&style))
             .unwrap_or_default();
+        let transition_declarations = node
+            .transition_style()
+            .filter(|_| effects)
+            .map(|text| parse_declarations(&text))
+            .unwrap_or_default();
+        // The revert origin precedes presentational hints; see `revert_origin`.
+        let lower_origin = self
+            .may_read_revert_origin(
+                node,
+                &style,
+                &matching,
+                [
+                    &inline_declarations,
+                    &animation_declarations,
+                    &transition_declarations,
+                ],
+            )
+            .then(|| style.clone());
+        // HTML hints precede author rules, including an explicit width/height:auto.
+        apply_presentational_hints(node, &mut style);
 
         self.apply_author_cascade(
             &mut style,
             AuthorCascadeInput {
                 node,
                 parent,
-                lower_origin: &lower_origin,
+                lower_origin: lower_origin.as_ref().unwrap_or(&*self.revert_placeholder),
                 matching: &matching,
                 inline_declarations: &inline_declarations,
                 animation_declarations: &animation_declarations,
                 element_presentation: true,
-                transition_declarations: &node
-                    .transition_style()
-                    .filter(|_| effects)
-                    .map(|text| parse_declarations(&text))
-                    .unwrap_or_default(),
+                transition_declarations: &transition_declarations,
             },
         );
         style.resolve_relative_units(
