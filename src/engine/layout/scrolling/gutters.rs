@@ -24,6 +24,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return metrics;
         }
         self.page.count_layout(|stats| stats.blocks_laid_out += 1);
+        // This layout, not an earlier replay in the same pass, places the subtree.
+        self.replayed_roots.remove(&node.id());
         let measured = self.measures_alone(node);
         if measured {
             self.begin_reads();

@@ -166,6 +166,17 @@ pass's layout; it becomes proportional to the change with retained layout result
 whole-document walks after insertions, removals, moves, class, display and
 visibility changes and slotted content.
 
+The scrollable-overflow walk that sizes the document scroll range also visits
+every box. A replayed subtree is its retained layout moved as a whole, and later
+moves of its ancestors move all of its boxes too, so its overflow below its own
+border box is that of the retained layout. Each retained layout therefore keeps
+that extent once measured (`OverflowExtent`, identified by the layout's serial), and
+the walk stops at a replayed root that has one; ancestor clips still apply, since
+the largest clipped bottom is the clipped largest bottom. A horizontal move measures
+the subtree again, because boxes left of the viewport do not count. On the saved
+article this takes the walk from about 6.5 ms to 0.03 ms on passes that replay
+most of the page (`src/engine/layout/scrollable_overflow.rs`).
+
 ## Planned stages
 
 These follow the RenderingNG/LayoutNG and Stylo designs where they fit Breeze's
@@ -178,8 +189,8 @@ single renderer thread and process isolation.
   chain where a box's size, baseline and float exclusions are unchanged; unchanged
   siblings move by offset. This replaces `subtree_replay`, which copies every
   retained subtree's items into each pass. The result also carries the box's
-  scrollable overflow, so the document overflow walk (about 7 ms per pass on the
-  article) becomes a read, as LayoutNG's layout overflow does. Inline formatting
+  scrollable overflow, as LayoutNG's layout overflow does, generalizing the
+  extents replayed subtrees keep today to every box. Inline formatting
   contexts reuse line boxes before the first damaged inline item; flex and grid
   reuse item layouts whose constraints are unchanged; tables reuse rows whose
   content and column widths are unchanged.

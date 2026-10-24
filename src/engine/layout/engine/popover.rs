@@ -44,6 +44,7 @@ pub(super) fn append_top_layer<M: TextMeasurer>(
             positioned_flow_scopes: Vec::new(),
             floats: Default::default(),
             reads: Default::default(),
+            replayed_roots: HashMap::new(),
             viewport: RectF {
                 x: 0.0,
                 y: 0.0,

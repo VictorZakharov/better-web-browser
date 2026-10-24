@@ -186,6 +186,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         positioned_flow_scopes: Vec::new(),
         floats: Default::default(),
         reads: Default::default(),
+        replayed_roots: HashMap::new(),
         viewport: RectF {
             x: 0.0,
             y: 0.0,
@@ -323,6 +324,8 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) positioned_flow_scopes: Vec<Vec<InFlowPaintRange>>,
     pub(super) floats: block::floats::FloatContext,
     pub(super) reads: std::cell::RefCell<layout_reads::ReadFrames>,
+    /// Subtree roots whose final placement in this output replays a retained entry, by serial.
+    pub(super) replayed_roots: HashMap<NodeId, u64>,
 }
 
 pub(super) struct InFlowPaintRange {

@@ -32,6 +32,15 @@ pub(super) struct ReuseEnvironment {
     pub(super) measurer_epoch: u64,
 }
 
+/// How far below its border box a replayed subtree's scrollable overflow reaches, for the
+/// retained layout `serial` placed at horizontal position `x`.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::engine::layout) struct OverflowExtent {
+    pub(in crate::engine::layout) serial: u64,
+    pub(in crate::engine::layout) x: f32,
+    pub(in crate::engine::layout) below_top: f32,
+}
+
 /// The DOM and style state of one box's subtree that a retained result was computed from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::engine::layout) struct Inputs {
@@ -49,6 +58,10 @@ pub(crate) struct LayoutReuse {
     pub(super) probes: HashMap<MeasureKey, probe_cache::ProbeEntry>,
     pub(super) widths: HashMap<width_cache::WidthKey, width_cache::WidthEntry>,
     pub(super) subtrees: HashMap<subtree_replay::SubtreeKey, subtree_replay::SubtreeEntry>,
+    /// Identifies each retained subtree layout; see `SubtreeEntry::serial`.
+    pub(super) next_serial: u64,
+    /// Scrollable-overflow extents of replayed subtrees; see `scrollable_overflow`.
+    pub(in crate::engine::layout) overflow: HashMap<NodeId, OverflowExtent>,
     /// Measuring layouts of this pass; see `measured`.
     pub(super) measured: HashMap<subtree_replay::SubtreeKey, measured::Measured>,
     pub(super) used: HashSet<NodeId>,
@@ -67,6 +80,7 @@ impl LayoutReuse {
             self.probes.clear();
             self.widths.clear();
             self.subtrees.clear();
+            self.overflow.clear();
             self.environment = environment;
         }
         self.used.clear();
@@ -81,6 +95,7 @@ impl LayoutReuse {
         self.probes.retain(|key, _| used.contains(&key.node()));
         self.widths.retain(|key, _| used.contains(&key.0));
         self.subtrees.retain(|key, _| used.contains(&key.node));
+        self.overflow.retain(|node, _| used.contains(node));
         let pass = self.pass;
         self.sighted.retain(|_, sighting| sighting.last == pass);
     }

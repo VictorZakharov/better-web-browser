@@ -1,14 +1,29 @@
 //! Vertical viewport overflow is distinct from the root's normal-flow block height.
+//
+// The walk visits every box, so on a pass that replays most of the page it would cost as much as
+// the replay saved. A replayed subtree is its retained layout moved as a whole, and every later
+// move of an ancestor moves all of its boxes too, so its extent below its own border box is that
+// of the retained layout. The walk keeps that extent per retained layout (`OverflowExtent`) and
+// stops at a replayed root that has one. Clipping composes with it: an ancestor clip `c` limits
+// each counted bottom `b` to `min(b, c)`, and the largest of those is `min(max b, c)`. Boxes
+// left of the viewport do not count, so a horizontal move measures the subtree again.
 use super::*;
 use crate::engine::css::Overflow;
+use engine::reuse::OverflowExtent;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn scrollable_overflow_bottom(&self, root: &NodeRef) -> f32 {
+        self.overflow_bottom_below(root).max(0.0)
+    }
+
+    /// The lowest scrollable-overflow bottom in `root`'s subtree, unclipped by its ancestors;
+    /// negative infinity when nothing counts.
+    fn overflow_bottom_below(&self, root: &NodeRef) -> f32 {
         // CSS Overflow: include descendant border boxes and visible overflow, including
         // absolute/relative positioning. Do not use paint bounds: shadows and other ink
         // overflow must not create document scrollbars.
         // https://www.w3.org/TR/css-overflow-3/#scrollable
-        let mut bottom = 0.0_f32;
+        let mut bottom = f32::NEG_INFINITY;
         let mut pending = vec![(root.clone(), f32::INFINITY)];
         while let Some((node, clip_bottom)) = pending.pop() {
             let style = self.styles.get(&node);
@@ -17,6 +32,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 continue;
             }
             let bounds = self.output.node_bounds.get(&node.id());
+            if node.id() != root.id()
+                && let Some(extent) = self.replayed_overflow(&node, bounds)
+            {
+                bottom = bottom.max(extent.min(clip_bottom));
+                continue;
+            }
             // Negative-side overflow is not reachable by downward viewport scrolling.
             let counted = bounds.filter(|rect| rect.right() > 0.0 && rect.bottom().is_finite());
             if let Some(rect) = counted {
@@ -51,6 +72,36 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
         }
         bottom
+    }
+
+    /// The overflow bottom of a subtree this output placed by replaying a retained layout,
+    /// measured once per retained layout.
+    fn replayed_overflow(&self, node: &NodeRef, bounds: Option<&RectF>) -> Option<f32> {
+        let serial = *self.replayed_roots.get(&node.id())?;
+        let rect = bounds?;
+        let retained = self
+            .page
+            .layout_reuse
+            .borrow()
+            .overflow
+            .get(&node.id())
+            .copied();
+        if let Some(extent) = retained
+            && extent.serial == serial
+            && extent.x == rect.x
+        {
+            return Some(rect.y + extent.below_top);
+        }
+        let bottom = self.overflow_bottom_below(node);
+        self.page.layout_reuse.borrow_mut().overflow.insert(
+            node.id(),
+            OverflowExtent {
+                serial,
+                x: rect.x,
+                below_top: bottom - rect.y,
+            },
+        );
+        Some(bottom)
     }
 }
 

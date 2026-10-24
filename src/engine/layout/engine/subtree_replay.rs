@@ -67,6 +67,9 @@ impl SubtreeKey {
 
 #[derive(Debug)]
 pub(super) struct SubtreeEntry {
+    /// Unique among the page's retained layouts, so results derived from this one (such as its
+    /// scrollable overflow) can tell it from a later layout of the same node.
+    serial: u64,
     inputs: Inputs,
     reads: LayoutReads,
     origin: (f32, f32),
@@ -232,6 +235,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             self.replay_reads(&reads);
             return Some(BlockMetrics { bottom });
         }
+        self.replayed_roots.insert(node.id(), entry.serial);
         let item_start = self.output.items.len();
         let node_start = self.output.node_paint_order.len();
         self.output.items.extend(entry.items.iter().cloned());
@@ -351,7 +355,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let flow_level = (self.positioned_flow_scopes.last().map_or(0, Vec::len)
             > capture.flow_ranges)
             .then(|| self.styles.get(node).z_index.unwrap_or(0));
+        let mut reuse = self.page.layout_reuse.borrow_mut();
+        let serial = reuse.next_serial;
+        reuse.next_serial += 1;
+        drop(reuse);
         let entry = SubtreeEntry {
+            serial,
             inputs: capture.inputs,
             reads: self.frame_reads(&frame),
             origin: capture.origin,
