@@ -6,7 +6,8 @@ macro_rules! webgl_bootstrap {
     include_str!("bootstrap/webgl_attributes.js"),
     include_str!("bootstrap/webgl_private_brands.js"),
     "const webGlPacketOperations = ",
-    include_str!("../webgl/numeric_packet/operations.json"),
+    // The packet table is owned by the native WebGL crate.
+    include_str!("../../../crates/webgl/src/numeric_packet/operations.json"),
     ";\n",
     include_str!("bootstrap/webgl_numeric_packet.js"),
     include_str!("bootstrap/webgl_context.js"),

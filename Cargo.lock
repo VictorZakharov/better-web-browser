@@ -143,6 +143,8 @@ dependencies = [
  "accesskit_windows",
  "avif-parse",
  "base64 0.22.1",
+ "breeze-platform",
+ "breeze-webgl",
  "cc",
  "claxon",
  "crc32fast",
@@ -165,7 +167,6 @@ dependencies = [
  "kurbo",
  "lewton",
  "moxcms",
- "mozangle",
  "ogg",
  "opus",
  "png",
@@ -239,6 +240,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 dependencies = [
  "generic-array",
+]
+
+[[package]]
+name = "breeze-platform"
+version = "0.1.0"
+dependencies = [
+ "windows",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "breeze-webgl"
+version = "0.1.0"
+dependencies = [
+ "breeze-platform",
+ "cc",
+ "mozangle",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "windows",
 ]
 
 [[package]]

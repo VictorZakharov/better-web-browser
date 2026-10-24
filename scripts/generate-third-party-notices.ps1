@@ -27,8 +27,11 @@ while ($queue.Count -gt 0) {
     foreach ($dependency in $nodes[$id].deps) { $queue.Enqueue([string] $dependency.pkg) }
 }
 
+# Workspace crates (the browser and its split-out engine crates) are first-party.
+$firstParty = @{}
+foreach ($member in $metadata.workspace_members) { $firstParty[[string] $member] = $true }
 $packages = @($metadata.packages | Where-Object {
-    $reachable.ContainsKey([string] $_.id) -and [string] $_.id -ne [string] $metadata.resolve.root
+    $reachable.ContainsKey([string] $_.id) -and -not $firstParty.ContainsKey([string] $_.id)
 } | Sort-Object `
     @{ Expression = { [BitConverter]::ToString([Text.Encoding]::UTF8.GetBytes([string] $_.name)) } }, `
     @{ Expression = { [BitConverter]::ToString([Text.Encoding]::UTF8.GetBytes([string] $_.version)) } })

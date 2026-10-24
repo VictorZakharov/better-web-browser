@@ -11,10 +11,10 @@ function Expect-Plan([string[]]$Paths,[string[]]$Groups,[bool]$Full=$false) {
 $images=@('image-regions','image-rows','image-bindings','video-sources','owned-uploads','queued-uploads','float-images','image-api')
 $canvas=@('canvas-lib')+$images+@('canvas-renderer','webgl-renderer')
 $uploads=$images+@('webgl-renderer')
-$webgl=@('webgl-lib','webgl-renderer')
+$webgl=@('webgl-crate','webgl-lib','webgl-renderer')
 $script=@('script-lib','renderer','live-runtime')
 $full=@('full','selector')
-$native=Expect-Plan @('build/angle_api.rs') $full $true
+$native=Expect-Plan @('crates/webgl/build.rs') $full $true
 if ($native.Unknown.Count -ne 0) { throw 'Native ANGLE ownership is missing.' }
 foreach ($path in @('src/media_process/child/audio/output/device.rs',
     'src/engine/script/audio_render.rs','src/engine/script/audio_render/worker.rs',
@@ -37,7 +37,7 @@ foreach ($path in @('src/engine/rendering.rs','src/engine/rendering/tests.rs',
     $plan=Expect-Plan @($path) $full $true
     if ($plan.Unknown.Count -ne 0) {throw "Shared rendering-cadence ownership is missing: $path"}
 }
-foreach ($path in @('src/engine/webgl/gpu_frames/copy.rs','src/gpu_composition/frames.rs',
+foreach ($path in @('crates/webgl/src/gpu_frames/copy.rs','crates/platform/src/gpu_composition/frames.rs',
     'src/windows_app/gpu_composition/groups.rs','src/renderer_protocol/gpu/tests.rs',
     'benchmarks/ui/fixtures/canvas-gpu-composition.html','benchmarks/ui/fixtures/canvas-gpu-memory.html',
     'src/windows_app/gpu_composition/coverage/tests/benchmark.rs')) {
@@ -49,7 +49,11 @@ $null=Expect-Plan @('src\engine\script\bootstrap\canvas_text_shadow.js') $canvas
 $null=Expect-Plan @('tests/canvas/text-shadow-regions.js') $canvas
 $null=Expect-Plan @('benchmarks/ui/fixtures/canvas-frame-publication.html') $canvas
 $null=Expect-Plan @('src/engine/script/bootstrap/webgl2_image_rows.js') $uploads
-$null=Expect-Plan @('src/engine/webgl/command_batch/uploads.rs') $webgl
+$null=Expect-Plan @('crates/webgl/src/command_batch/uploads.rs') $webgl
+foreach ($path in @('crates/platform/src/limits.rs','crates/platform/Cargo.toml')) {
+    $plan=Expect-Plan @($path) $full $true
+    if ($plan.Unknown.Count -ne 0) {throw "Foundation crate ownership is missing: $path"}
+}
 $null=Expect-Plan @('src/engine/script/engine/bridge.rs') $script
 $null=Expect-Plan @('src/engine/script/bootstrap.rs','src/engine/script/bootstrap/canvas_text.js') $script
 $null=Expect-Plan @('docs/new notes.md','AGENTS.md') @()
@@ -95,9 +99,10 @@ $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 try {
     $env:CARGO_TARGET_DIR=Join-Path $root 'target'
     Remove-Item -LiteralPath Env:CARGO_PROFILE_DEV_DEBUG,Env:CARGO_PROFILE_TEST_DEBUG,Env:CARGO_INCREMENTAL -ErrorAction SilentlyContinue
-    & (Join-Path $PSScriptRoot 'run-impacted-tests.ps1') -ChangedPath src/engine/webgl/command_batch/uploads.rs -Run
-    if ($calls.Count -ne 4 -or $calls[0] -notcontains '--lib' -or
-        $calls[2] -notcontains 'renderer_process' -or $calls[1] -contains '--all-targets') {
+    & (Join-Path $PSScriptRoot 'run-impacted-tests.ps1') -ChangedPath crates/webgl/src/command_batch/uploads.rs -Run
+    if ($calls.Count -ne 5 -or $calls[0] -notcontains '--lib' -or $calls[0] -notcontains 'breeze-webgl' -or
+        $calls[1] -notcontains 'better-web-browser' -or
+        $calls[3] -notcontains 'renderer_process' -or $calls[2] -contains '--all-targets') {
         throw 'A narrow WebGL edit ran unrelated targets or omitted its downstream contract.'
     }
     if (@($debugSettings | Where-Object { $_[0] -ne '0' -or $_[1] -ne '0' -or $_[2] -ne '1' }).Count) {
@@ -112,15 +117,15 @@ try {
         [string]$env:TEMP -ne [string]$priorTemp -or [string]$env:TMP -ne [string]$priorTmp) { throw 'Runner leaked environment changes.' }
     $emptyListing=$true; $rejected=$false; $calls.Clear()
     try {
-        & (Join-Path $PSScriptRoot 'run-impacted-tests.ps1') -ChangedPath src/engine/webgl/command_batch/uploads.rs -Run
+        & (Join-Path $PSScriptRoot 'run-impacted-tests.ps1') -ChangedPath crates/webgl/src/command_batch/uploads.rs -Run
     } catch { $rejected=$_.Exception.Message -like '*selected zero tests*' }
-    if (-not $rejected -or $calls.Count -ne 1 -or $env:TEMP -ne $priorTemp) {
+    if (-not $rejected -or $calls.Count -ne 2 -or $env:TEMP -ne $priorTemp) {
         throw 'An empty filter silently passed or failed to restore its environment.'
     }
     $emptyListing=$false; $calls.Clear(); $debugSettings.Clear()
     $env:CARGO_PROFILE_DEV_DEBUG='1'; $env:CARGO_PROFILE_TEST_DEBUG='2'
     $env:CARGO_INCREMENTAL='0'
-    & (Join-Path $PSScriptRoot 'run-impacted-tests.ps1') -ChangedPath src/engine/webgl/command_batch/uploads.rs -Run
+    & (Join-Path $PSScriptRoot 'run-impacted-tests.ps1') -ChangedPath crates/webgl/src/command_batch/uploads.rs -Run
     if (@($debugSettings | Where-Object { $_[0] -ne '1' -or $_[1] -ne '2' -or $_[2] -ne '0' }).Count -or
         $env:CARGO_PROFILE_DEV_DEBUG -ne '1' -or $env:CARGO_PROFILE_TEST_DEBUG -ne '2') {
         throw 'Explicit debugger settings were overridden or leaked.'

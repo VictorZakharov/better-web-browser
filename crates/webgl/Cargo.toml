@@ -1,0 +1,19 @@
+[package]
+name = "breeze-webgl"
+version = "0.1.0"
+edition = "2024"
+description = "Renderer-owned WebGL contexts over ANGLE for Breeze"
+license = "MIT"
+publish = false
+
+[target.'cfg(windows)'.dependencies]
+breeze-platform = { version = "0.1.0", path = "../platform" }
+mozangle.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+smallvec.workspace = true
+windows.workspace = true
+
+[target.'cfg(windows)'.build-dependencies]
+# Build-only, MIT OR Apache-2.0; compiles the small ANGLE worker-delegate adapter.
+cc = "1.2"

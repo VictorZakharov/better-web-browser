@@ -1,0 +1,11 @@
+[package]
+name = "breeze-platform"
+version = "0.1.0"
+edition = "2024"
+description = "Browser-owned limits, budgets and native presentation primitives shared by Breeze crates"
+license = "MIT"
+publish = false
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true
+windows-sys.workspace = true
