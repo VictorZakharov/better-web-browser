@@ -9,9 +9,11 @@
 //!   parent ("share group"), so inherited values and every ancestor's matching inputs agree;
 //! - have the same local name and attribute list, compared by value except for attributes that
 //!   only selectors read (`href`, `title`, `data-*`, ...), and the same rule-index candidates;
-//! - produce the same result for every candidate rule whose selector reads more than type,
-//!   class and id through descendant and child combinators (Gecko's "revalidation selectors":
-//!   attributes, structural and state pseudo-classes, `:has()`, sibling combinators, ...).
+//! - produce the same result for every candidate rule whose selector reads inputs that
+//!   comparison leaves open (Gecko's "revalidation selectors": selector-only attribute values,
+//!   structural and state pseudo-classes, `:has()`, sibling combinators, ...). Rules that read
+//!   only names, classes, ids, compared attributes and `:lang()` through descendant and child
+//!   combinators need no check.
 //!
 //! Elements whose style depends on inputs this comparison does not capture are never shared;
 //! see [`StyleSet::sharing_eligible`]. Debug builds recompute every hit and assert equality.
@@ -36,12 +38,18 @@ struct Candidate {
     revalidation: Option<Vec<bool>>,
 }
 
-#[derive(Default)]
-pub(super) struct SharingCache {
-    candidates: HashMap<ShareGroup, std::collections::VecDeque<Candidate>>,
+/// Per-rule-set tables, built on first use and kept with the compiled rules: a load runs many
+/// small restyles, and building these for each traversal's cache cost more than sharing saved.
+#[derive(Debug, Default)]
+pub(super) struct SharingTables {
     rules: OnceCell<Vec<RuleSharing>>,
     /// Ids any selector names, ASCII-lowercased so quirks-mode matching is covered too.
     referenced_ids: OnceCell<HashSet<String>>,
+}
+
+#[derive(Default)]
+pub(super) struct SharingCache {
+    candidates: HashMap<ShareGroup, std::collections::VecDeque<Candidate>>,
     next_group: ShareGroup,
     #[cfg(test)]
     pub(super) stats: SharingStats,
@@ -90,7 +98,7 @@ impl StyleSet {
         parent: Option<&ComputedStyle>,
         parent_group: ShareGroup,
     ) -> (ComputedStyle, ShareGroup) {
-        let eligible = self.sharing_eligible(node, cache);
+        let eligible = self.sharing_eligible(node);
         if eligible && let Some((style, group)) = self.shared_style(cache, node, parent_group) {
             #[cfg(debug_assertions)]
             assert_eq!(
@@ -132,10 +140,13 @@ impl StyleSet {
             cache.stats.no_candidate += usize::from(candidate.is_none());
         }
         let candidate = candidate?;
-        let rules = cache
+        let rules = self
+            .compiled
+            .sharing
             .rules
             .get_or_init(|| classify_rules(&self.compiled.rules));
         let revalidation = self.revalidation_results(node, rules)?;
+
         if candidate.revalidation.is_none() {
             candidate.revalidation = Some(self.revalidation_results(&candidate.node, rules)?);
         }
@@ -156,7 +167,7 @@ impl StyleSet {
     }
 
     /// Whether `node`'s style depends only on inputs the cache compares.
-    fn sharing_eligible(&self, node: &NodeRef, cache: &SharingCache) -> bool {
+    fn sharing_eligible(&self, node: &NodeRef) -> bool {
         let Some(element) = node.element() else {
             return false;
         };
@@ -181,7 +192,9 @@ impl StyleSet {
                 // matters only when some selector names it.
                 matches!(name, "style" | "popover")
                     || (name == "id"
-                        && cache
+                        && self
+                            .compiled
+                            .sharing
                             .referenced_ids
                             .get_or_init(|| referenced_ids(&self.compiled.rules))
                             .contains(&attribute.value.to_ascii_lowercase()))
