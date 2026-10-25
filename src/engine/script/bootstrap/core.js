@@ -88,29 +88,23 @@
         if (!records) childCollectionCache.set(node, records = {});
         const key = elements ? 'elements' : 'nodes';
         let record = records[key];
-        if (elements) {
-            if (!record) {
-                const value = liveHtmlCollection(() =>
-                    list(host('elementChildren', nodeId(node))));
-                records[key] = record = { value };
-            }
-            return record.value;
-        }
         if (!record) {
-            // DOM childNodes is a SameObject live NodeList. Resolve lazily on
+            // DOM childNodes and children are SameObject live collections. Resolve lazily on
             // collection access, including references retained across mutations;
             // merely obtaining the collection must not serialize the whole tree.
+            // Both re-read the host only after this node's child list changed.
             // https://dom.spec.whatwg.org/#dom-node-childnodes
             record = { version: -1, parserEpoch: -1, items: [] };
-            record.value = liveNodeList(() => {
+            const resolve = () => {
                 const version = childCollectionVersions.get(node) || 0;
                 if (record.version !== version || record.parserEpoch !== parserCollectionEpoch) {
-                    record.items = list(host('children', nodeId(node)));
+                    record.items = list(host(elements ? 'elementChildren' : 'children', nodeId(node)));
                     record.version = version;
                     record.parserEpoch = parserCollectionEpoch;
                 }
                 return record.items;
-            });
+            };
+            record.value = elements ? liveHtmlCollection(resolve) : liveNodeList(resolve);
             records[key] = record;
         }
         return record.value;

@@ -116,25 +116,32 @@ impl StyleSet {
             return false;
         }
         // A cheap filter prevents computing every element's style on static pages.
-        if node.attr("style").is_some_and(|style| {
-            let style = style.to_ascii_lowercase();
-            style.contains("animation") || style.contains("all")
-        }) {
+        // Scanned in place: the snapshot visits every element after each DOM change.
+        let mentions = |style: &str, word: &str| {
+            style
+                .as_bytes()
+                .windows(word.len())
+                .any(|window| window.eq_ignore_ascii_case(word.as_bytes()))
+        };
+        if node
+            .attr_ref("style")
+            .is_some_and(|style| mentions(&style, "animation") || mentions(&style, "all"))
+        {
             return true;
         }
         // A descendant universal such as `.dialog *` is not a document-wide candidate.
         // Reuse cascade matching, including @scope, :has(), shadow hosts and slot/part
         // exposure. No match cache survives a DOM version change; pending style changes
         // must be reflected before getAnimations() (CSS Animations 2 §6.2).
-        let tree_root = Node::tree_root(node);
+        let tree_root = std::cell::OnceCell::new();
         let ancestors = std::cell::OnceCell::new();
+        // The snapshot asks this of every element, so candidates are tested without collecting.
         self.compiled
             .animation_index
-            .candidates(node, None)
-            .into_iter()
-            .any(|index| {
+            .any_candidate(node, None, |index| {
                 let rule = &self.compiled.rules[index];
-                self.rule_matches(rule, node, None, &tree_root, &ancestors)
+                let tree_root = tree_root.get_or_init(|| Node::tree_root(node));
+                self.rule_matches(rule, node, None, tree_root, &ancestors)
             })
     }
 }
