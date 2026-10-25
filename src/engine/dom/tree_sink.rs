@@ -82,6 +82,7 @@ impl TreeSink for Dom {
                     .mathml_annotation_xml_integration_point,
                 fullscreen: std::cell::Cell::new(false),
                 popover_order: std::cell::Cell::new(0),
+                class_tokens: Default::default(),
                 hovered: std::cell::Cell::new(false),
                 focused: std::cell::Cell::new(false),
                 focus_within: std::cell::Cell::new(false),
@@ -246,7 +247,7 @@ impl TreeSink for Dom {
         let NodeData::Element(element) = &target.data else {
             panic!("add_attrs_if_missing called for a non-element node");
         };
-        let mut existing = element.attrs.borrow_mut();
+        let mut existing = element.attrs_mut();
         let existing_names = existing
             .iter()
             .map(|attribute| attribute.name.clone())

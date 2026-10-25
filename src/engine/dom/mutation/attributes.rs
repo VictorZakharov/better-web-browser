@@ -47,7 +47,7 @@ impl Node {
         let Some(element) = self.element() else {
             return false;
         };
-        let mut attributes = element.attrs.borrow_mut();
+        let mut attributes = element.attrs_mut();
         if let Some(attribute) = attributes
             .iter_mut()
             .find(|attribute| attribute_qualified_name(attribute) == qualified_name)
@@ -81,7 +81,7 @@ impl Node {
         let Some(element) = self.element() else {
             return false;
         };
-        let mut attributes = element.attrs.borrow_mut();
+        let mut attributes = element.attrs_mut();
         if let Some(attribute) = attributes
             .iter_mut()
             .find(|attribute| attribute_matches(attribute, namespace, local_name))
@@ -112,7 +112,7 @@ impl Node {
         let Some(element) = self.element() else {
             return false;
         };
-        let mut attributes = element.attrs.borrow_mut();
+        let mut attributes = element.attrs_mut();
         let replacement = new_attribute(namespace, prefix, local_name, value);
         if let Some(index) = attributes
             .iter()
@@ -148,7 +148,7 @@ impl Node {
         let Some(element) = self.element() else {
             return false;
         };
-        let mut attributes = element.attrs.borrow_mut();
+        let mut attributes = element.attrs_mut();
         let Some(index) = attributes.iter().position(matches) else {
             return false;
         };

@@ -16,6 +16,7 @@ mod refresh;
 mod revert_origin;
 mod root_units;
 mod scope;
+mod sharing;
 mod sheets;
 mod sources;
 mod svg_presentation;
@@ -24,6 +25,8 @@ pub(crate) use sheets::AppendedChildDependencies;
 pub use sources::StylesheetSource;
 #[cfg(test)]
 mod anonymous_text_tests;
+#[cfg(test)]
+mod sharing_tests;
 #[cfg(test)]
 mod tests;
 
@@ -208,6 +211,8 @@ impl StyleSet {
             external_stylesheets,
             environment,
         );
+        // Growing the map moves every ~3 KB style it already holds; size it for the document.
+        set.styles.reserve(Node::descendants(document).count());
         set.compute_subtree(document, None);
         set.compute_independent_fullscreen_roots(document);
         set

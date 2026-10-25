@@ -65,11 +65,48 @@ impl AncestorFilterCache {
 
 impl AncestorFilter {
     pub(in crate::engine::css) fn needed(selector: &Selector) -> bool {
-        selector.compounds.len() > 1
-            && selector
-                .combinators
+        selector.ancestor_keys.is_some()
+    }
+
+    /// The keys every ancestor-side compound of a descendant/child-only selector requires,
+    /// hashed once at parse time so matching tests whole bit masks. `None` when the filter
+    /// cannot reject: a single compound, a sibling combinator, or no positive ancestor key.
+    pub(in crate::engine::css) fn required_keys(
+        compounds: &[CompoundSelector],
+        combinators: &[Combinator],
+    ) -> Option<std::rc::Rc<Self>> {
+        // Sibling chains can leave the ancestor path. Alternatives and negations supply no
+        // necessary key. Ignore those conditions and leave them to the complete matcher.
+        if compounds.len() < 2
+            || !combinators
                 .iter()
                 .all(|combinator| matches!(combinator, Combinator::Child | Combinator::Descendant))
+        {
+            return None;
+        }
+        let mut keys = Self::default();
+        for compound in &compounds[..compounds.len() - 1] {
+            if let Some(tag) = &compound.tag {
+                keys.tags.insert(tag, false);
+            }
+            if let Some(id) = &compound.id {
+                keys.ids.insert(id, false);
+            }
+            for class in &compound.classes {
+                keys.classes.insert(class, false);
+            }
+            for attribute in &compound.attributes {
+                keys.attributes.insert(&attribute.name, true);
+            }
+            if compound.requires_link {
+                keys.tags.insert("a", false);
+            }
+        }
+        let empty = keys.tags.is_empty()
+            && keys.ids.is_empty()
+            && keys.classes.is_empty()
+            && keys.attributes.is_empty();
+        (!empty).then(|| std::rc::Rc::new(keys))
     }
 
     #[cfg(test)]
@@ -91,45 +128,18 @@ impl AncestorFilter {
         if let Some(id) = node.attr_ref("id") {
             self.ids.insert(&id, false);
         }
-        if let Some(classes) = node.attr_ref("class") {
-            for class in classes.split_ascii_whitespace() {
-                self.classes.insert(class, false);
-            }
-        }
+        node.for_each_class(|class| self.classes.insert(class, false));
         for attribute in element.attrs.borrow().iter() {
             self.attributes.insert(attribute.name.local.as_ref(), true);
         }
     }
 
     pub(in crate::engine::css) fn may_match(&self, selector: &Selector) -> bool {
-        // Sibling chains can leave the ancestor path. Alternatives and negations supply no
-        // necessary key. Ignore those conditions and leave them to the complete matcher.
-        if selector.combinators.iter().any(|combinator| {
-            matches!(
-                combinator,
-                Combinator::AdjacentSibling | Combinator::GeneralSibling
-            )
-        }) {
-            return true;
-        }
-        selector.compounds.iter().rev().skip(1).all(|compound| {
-            compound
-                .tag
-                .as_ref()
-                .is_none_or(|tag| self.tags.contains(tag, false))
-                && compound
-                    .id
-                    .as_ref()
-                    .is_none_or(|id| self.ids.contains(id, false))
-                && compound
-                    .classes
-                    .iter()
-                    .all(|class| self.classes.contains(class, false))
-                && compound
-                    .attributes
-                    .iter()
-                    .all(|attribute| self.attributes.contains(&attribute.name, true))
-                && (!compound.requires_link || self.tags.contains("a", false))
+        selector.ancestor_keys.as_deref().is_none_or(|required| {
+            self.tags.contains_all(&required.tags)
+                && self.ids.contains_all(&required.ids)
+                && self.classes.contains_all(&required.classes)
+                && self.attributes.contains_all(&required.attributes)
         })
     }
 }

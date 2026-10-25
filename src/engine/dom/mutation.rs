@@ -21,7 +21,7 @@ impl Node {
         let Some(element) = self.element() else {
             return false;
         };
-        let mut attrs = element.attrs.borrow_mut();
+        let mut attrs = element.attrs_mut();
         if let Some(attribute) = attrs
             .iter_mut()
             .find(|attribute| attribute.name.local.as_ref().eq_ignore_ascii_case(name))
@@ -59,7 +59,7 @@ impl Node {
         let Some(element) = self.element() else {
             return false;
         };
-        let mut attrs = element.attrs.borrow_mut();
+        let mut attrs = element.attrs_mut();
         let original_len = attrs.len();
         attrs.retain(|attribute| !attribute.name.local.as_ref().eq_ignore_ascii_case(name));
         let changed = attrs.len() != original_len;

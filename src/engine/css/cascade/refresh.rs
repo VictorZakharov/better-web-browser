@@ -131,10 +131,11 @@ impl StyleSet {
 
     pub(super) fn compute_subtree(&mut self, node: &NodeRef, parent: Option<&ComputedStyle>) {
         let root = node_id(node);
-        let mut pending = vec![node.clone()];
-        while let Some(node) = pending.pop() {
-            let style = if node_id(&node) == root {
-                self.compute_style(&node, parent)
+        let mut cache = sharing::SharingCache::default();
+        let mut pending = vec![(node.clone(), cache.new_group())];
+        while let Some((node, parent_group)) = pending.pop() {
+            let (style, group) = if node_id(&node) == root {
+                self.compute_style_shared(&mut cache, &node, parent, parent_group)
             } else {
                 let parent = Node::composed_parent(&node)
                     .expect("connected composed-tree child has a parent");
@@ -142,7 +143,7 @@ impl StyleSet {
                     .styles
                     .get(&node_id(&parent))
                     .expect("parent style is computed before its children");
-                self.compute_style(&node, Some(parent_style))
+                self.compute_style_shared(&mut cache, &node, Some(parent_style), parent_group)
             };
             self.remember_has_results(&node, node_id(&node) == root);
             let displayed = style.display != Display::None;
@@ -151,9 +152,12 @@ impl StyleSet {
             self.layout_generations.mark(&node);
             self.sync_generated_pseudos(&node);
             if !self.defer_nonrendered_descendants || displayed {
-                pending.extend(Node::composed_children(&node).into_iter().rev());
+                let children = Node::composed_children(&node).into_iter().rev();
+                pending.extend(children.map(|child| (child, group)));
             }
         }
+        #[cfg(test)]
+        sharing::LAST_STATS.with(|stats| stats.set(cache.stats));
     }
 
     pub(super) fn recompute_subtree(

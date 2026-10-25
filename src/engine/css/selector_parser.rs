@@ -161,6 +161,10 @@ fn parse_selector_with_depth(
         return None;
     }
     Some(Selector {
+        ancestor_keys: super::selector_match::AncestorFilter::required_keys(
+            &compounds,
+            &combinators,
+        ),
         compounds: std::rc::Rc::new(compounds),
         combinators: std::rc::Rc::new(combinators),
         specificity,

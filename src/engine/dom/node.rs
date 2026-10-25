@@ -191,7 +191,9 @@ pub enum NodeData {
 #[derive(Debug)]
 pub struct ElementData {
     pub name: QualName,
+    /// Mutate through `ElementData::attrs_mut`, which keeps `class_tokens` current.
     pub attrs: RefCell<Vec<Attribute>>,
+    pub(crate) class_tokens: attributes::ClassTokens,
     /// Web Animations declarations have their own cascade origin, not a style attribute.
     pub(crate) animation_style: RefCell<Option<Box<str>>>,
     pub(crate) transition_style: RefCell<Option<Box<str>>>,

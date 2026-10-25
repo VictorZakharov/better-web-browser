@@ -9,6 +9,8 @@ pub(super) struct Selector {
     pub(super) compounds: Rc<Vec<CompoundSelector>>,
     pub(super) combinators: Rc<Vec<Combinator>>,
     pub(super) specificity: Specificity,
+    /// Ancestor keys the selector requires; see `AncestorFilter::required_keys`.
+    pub(super) ancestor_keys: Option<Rc<super::selector_match::AncestorFilter>>,
 }
 
 #[derive(Debug, Clone, Default)]

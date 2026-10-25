@@ -36,7 +36,7 @@ impl Dom {
         {
             return;
         }
-        let attributes = std::mem::take(&mut *node.element().unwrap().attrs.borrow_mut());
+        let attributes = std::mem::take(&mut *node.element().unwrap().attrs_mut());
         *self.parser_elements.pending.borrow_mut() = Some(PendingElement {
             node: node.clone(),
             attributes,
@@ -66,7 +66,7 @@ impl Dom {
         let root = Node::tree_root(parent);
         if matches!(root.data, NodeData::Document) && root.id() != self.document.id() {
             // Template contents have an inert owner document and no registry.
-            *child.element().unwrap().attrs.borrow_mut() = std::mem::take(&mut element.attributes);
+            *child.element().unwrap().attrs_mut() = std::mem::take(&mut element.attributes);
             *pending = None;
             return false;
         }
