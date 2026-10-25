@@ -9,10 +9,16 @@ impl Keys {
         }
     }
 
-    pub(super) fn contains(&self, value: &str, ascii_insensitive: bool) -> bool {
-        positions(value, ascii_insensitive)
-            .into_iter()
-            .all(|bit| self.0[bit / 64] & (1 << (bit % 64)) != 0)
+    /// Whether every bit of `required` is set, i.e. each key inserted there may be here.
+    pub(super) fn contains_all(&self, required: &Self) -> bool {
+        self.0
+            .iter()
+            .zip(&required.0)
+            .all(|(present, required)| present & required == *required)
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.0 == [0; 4]
     }
 }
 
@@ -34,6 +40,14 @@ fn positions(value: &str, ascii_insensitive: bool) -> [usize; 2] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    impl Keys {
+        fn contains(&self, value: &str, ascii_insensitive: bool) -> bool {
+            let mut required = Self::default();
+            required.insert(value, ascii_insensitive);
+            self.contains_all(&required)
+        }
+    }
 
     #[test]
     fn saturated_keys_never_reject_an_inserted_name() {

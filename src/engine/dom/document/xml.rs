@@ -134,7 +134,7 @@ pub(crate) fn parse_into(document: &NodeRef, input: &str) -> Result<(), String> 
                     });
                 }
                 let element = node.element().unwrap();
-                *element.attrs.borrow_mut() = attrs;
+                *element.attrs_mut() = attrs;
                 // XML-parser-created script elements are parser-inserted.
                 // https://html.spec.whatwg.org/multipage/xhtml.html#parsing-xhtml-documents
                 element.script_parser_inserted.set(true);

@@ -168,20 +168,16 @@ impl CandidateIndex {
         {
             return true;
         }
-        if !self.by_class.is_empty()
-            && let Some(classes) = attributes
-                .iter()
-                .find(|a| a.name.local.as_ref().eq_ignore_ascii_case("class"))
-        {
-            for class in classes.value.split_ascii_whitespace() {
-                if let Some(rules) = self.by_class.get(class)
-                    && visit(rules)
-                {
-                    return true;
+        drop(attributes);
+        let mut found = false;
+        if !self.by_class.is_empty() {
+            node.for_each_class(|class| {
+                if !found && let Some(rules) = self.by_class.get(class) {
+                    found = visit(rules);
                 }
-            }
+            });
         }
-        false
+        found
     }
 }
 
