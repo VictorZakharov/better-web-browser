@@ -65,10 +65,17 @@ pub(super) fn apply(
                 style.font_numeric = value;
             }
         }
+        "font-variant-caps" => {
+            if let Some(small_caps) = shorthands::font::font_caps(value) {
+                style.font_small_caps = small_caps;
+            }
+        }
         "font-variant" => {
+            // The shorthand resets every font-variant-* longhand, including caps.
             if let Some((ligatures, numeric)) = FontVariants::parse_shorthand(value) {
                 style.font_ligatures = ligatures;
                 style.font_numeric = numeric;
+                style.font_small_caps = false;
             }
         }
         "letter-spacing" | "word-spacing" => {

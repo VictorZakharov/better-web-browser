@@ -5,7 +5,6 @@
 //! identities separate until the renderer builds a presentation.
 
 use super::*;
-use crate::engine::css::Color;
 use crate::engine::dom::{NodeId, NodeRef};
 use crate::engine::layout::translate_display_items;
 use crate::engine::script::runtime::FramePaintSnapshot;
@@ -124,6 +123,11 @@ fn compose_items(
         );
         page.images.extend(snapshot.images);
         page.set_layout_viewport(rect.width, rect.height);
+        let document = page.dom.document.clone();
+        let opaque_canvas = canvas_color_specified(
+            page.cache_styles_for_viewport(rect.width, rect.height),
+            &document,
+        );
         let mut layout =
             layout_page_with_style_viewport(&page, rect.width, rect.height, rect.width, text);
         page.prepare_css_images(&mut layout);
@@ -141,16 +145,13 @@ fn compose_items(
         let mut paint = layout.items.clone();
         translate_display_items(&mut paint, rect.x, rect.y);
         composed.push(DisplayItem::BeginClip { bounds: rect });
-        if layout.background.alpha > 0 {
+        // An embedded document without a root/body background has a transparent canvas
+        // when its color scheme matches the embedder's (always, without dark schemes).
+        // https://drafts.csswg.org/css-color-adjust-1/#color-scheme-effect
+        if opaque_canvas && layout.background.alpha > 0 {
             composed.push(DisplayItem::SolidRect {
                 rect,
                 color: layout.background,
-                radius: 0.0,
-            });
-        } else {
-            composed.push(DisplayItem::SolidRect {
-                rect,
-                color: Color::rgb(255, 255, 255),
                 radius: 0.0,
             });
         }
@@ -167,6 +168,35 @@ fn compose_items(
     }
     boundaries.push(composed.len());
     composed
+}
+
+/// Whether the canvas background, propagated from the root element or else the html
+/// element's body (CSS Backgrounds 3 §2.11.2), has a color. Image layers alone leave the
+/// canvas color transparent; the layout paints the images themselves.
+fn canvas_color_specified(styles: &crate::engine::css::StyleSet, document: &NodeRef) -> bool {
+    let has_background = |node: &NodeRef| {
+        let style = styles.get(node);
+        style.background_color.alpha > 0 || !style.background_image.is_none()
+    };
+    let Some(root) = document
+        .children
+        .borrow()
+        .iter()
+        .find(|node| node.element().is_some())
+        .cloned()
+    else {
+        return false;
+    };
+    let source = if has_background(&root) || root.tag_name() != Some("html") {
+        Some(root.clone())
+    } else {
+        root.children
+            .borrow()
+            .iter()
+            .find(|child| child.tag_name() == Some("body"))
+            .cloned()
+    };
+    source.is_some_and(|source| styles.get(&source).background_color.alpha > 0)
 }
 
 fn remap_sticky_layers(layout: &mut LayoutOutput, boundaries: &[usize]) {
@@ -295,10 +325,36 @@ mod tests {
             matches!(item, DisplayItem::Text { text, rect, .. }
                 if text.contains("child") && rect.x >= 20.0 && rect.y >= 30.0)
         }));
+        // Without a root or body background the embedded document's canvas is transparent.
+        assert!(!items.iter().any(|item| {
+            matches!(item, DisplayItem::SolidRect { rect: painted, .. } if *painted == rect)
+        }));
         let (frame, target, x, y) = hit_frame(&frames, 50.0, 45.0).unwrap();
         assert_eq!(frame.document, document);
         assert_eq!((x, y), (30.0, 15.0));
         assert!(target.is_some());
+    }
+
+    #[test]
+    fn embedded_canvas_is_opaque_only_for_a_propagated_background_color() {
+        for (markup, opaque) in [
+            ("<body>", false),
+            ("<body style='background:red'>", true),
+            ("<body style='background-image:url(a.png)'>", false),
+            // The root's image-only background wins the propagation over the body's color.
+            (
+                "<html style='background-image:url(a.png)'><body style='background:red'>",
+                false,
+            ),
+        ] {
+            let page = Page::parse(markup, "https://example.com/");
+            let styles = page.style_for_viewport(300.0, 150.0);
+            assert_eq!(
+                canvas_color_specified(&styles, &page.dom.document),
+                opaque,
+                "{markup}"
+            );
+        }
     }
 
     #[test]

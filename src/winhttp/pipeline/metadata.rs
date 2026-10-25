@@ -48,6 +48,7 @@ fn destination(request: &FetchRequest) -> &'static str {
     match request.destination {
         RequestDestination::Document if request.resulting_client.id != 0 => "iframe",
         RequestDestination::Document => "document",
+        RequestDestination::Object => "object",
         RequestDestination::Style => "style",
         RequestDestination::Image => "image",
         RequestDestination::Script => "script",
@@ -183,6 +184,20 @@ mod tests {
             )
             .as_deref(),
             Some("no-cors")
+        );
+    }
+
+    #[test]
+    fn object_navigation_sends_object_fetch_destination() {
+        let mut request = FetchRequest::navigation("https://example.com/doc.html").unwrap();
+        request.destination = RequestDestination::Object;
+        request.resulting_client = RequestClient {
+            id: 1,
+            opaque: false,
+        };
+        assert_eq!(
+            header(&request, &[request.url.as_str()], "sec-fetch-dest").as_deref(),
+            Some("object")
         );
     }
 

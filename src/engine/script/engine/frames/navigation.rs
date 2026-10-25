@@ -9,6 +9,8 @@ pub(in crate::engine::script) struct FrameNavigation {
     pub url: String,
     pub source: Option<String>,
     pub scripts: bool,
+    /// An `object` falls back to its children when the response status is not ok.
+    pub object: bool,
     pub initiator_url: String,
     pub initiator_origin: crate::fetch::Origin,
     pub initiator_client: crate::fetch::RequestClient,
@@ -16,6 +18,17 @@ pub(in crate::engine::script) struct FrameNavigation {
     pub response_policy: Option<std::sync::Arc<crate::fetch::csp::PolicyContainer>>,
     pub embedding_client: crate::fetch::RequestClient,
     pub embedding_policy: std::sync::Arc<crate::fetch::csp::PolicyContainer>,
+}
+
+impl FrameNavigation {
+    /// The Fetch destination: "object" for an object element, otherwise a document.
+    pub fn destination(&self) -> crate::fetch::RequestDestination {
+        if self.object {
+            crate::fetch::RequestDestination::Object
+        } else {
+            crate::fetch::RequestDestination::Document
+        }
+    }
 }
 
 pub(in crate::engine::script) struct Replacement<'s> {
@@ -48,6 +61,7 @@ impl FrameTree {
             url,
             source: None,
             scripts: !host.sandbox.scripts_blocked,
+            object: child.element.tag_name() == Some("object"),
             initiator_url: host
                 .inherited_url
                 .as_ref()
@@ -65,7 +79,12 @@ impl FrameTree {
     pub(in crate::engine::script::engine) fn navigations(&self) -> Vec<FrameNavigation> {
         let mut requests = Vec::new();
         for child in self.children.borrow_mut().values_mut() {
-            let attributes = (child.element.attr("srcdoc"), child.element.attr("src"));
+            // An object's resource is its `data` attribute; it has no srcdoc.
+            let attributes = if child.element.tag_name() == Some("object") {
+                (None, child.element.attr("data"))
+            } else {
+                (child.element.attr("srcdoc"), child.element.attr("src"))
+            };
             let initial = child.attributes.is_none();
             if child.attributes.as_ref() == Some(&attributes) {
                 continue;
@@ -108,6 +127,7 @@ impl FrameTree {
                     .sandbox
                     .child(child.element.attr("sandbox").as_deref())
                     .scripts_blocked,
+                object: child.element.tag_name() == Some("object"),
                 initiator_url: parent
                     .inherited_url
                     .as_ref()
@@ -120,6 +140,10 @@ impl FrameTree {
                 embedding_client: parent.fetch_client,
                 embedding_policy: parent.policy.clone(),
             });
+            // An object renders its fallback until a document response is committed.
+            drop(parent);
+            drop(state);
+            child.set_object_navigable_size(None);
         }
         requests
     }
@@ -177,6 +201,10 @@ impl FrameTree {
         )?;
         child.attributes = attributes;
         child.navigation_epoch = epoch;
+        // discard() reset the flag; the committed document is what the object represents.
+        child.set_object_navigable_size(Some(
+            crate::engine::dom::node::content_navigable::DEFAULT_NAVIGABLE_SIZE,
+        ));
         self.children.borrow_mut().insert(element, child);
         Some(document_id)
     }

@@ -9,8 +9,8 @@ pub(crate) use super::values::zoom;
 
 pub use super::values::{
     AccentColor, AlignItems, Appearance, AspectRatio, BackgroundSize, BoxSizing, Clear, Color,
-    ComputedStyle, ContentAlignment, Direction, Display, Edges, FlexDirection, Float, FontFeatures,
-    FontKerning, FontLigatures, FontNumeric, FontVariants, JustifyContent, Length, ListStyleType,
-    ObjectFit, ObjectPosition, Overflow, Position, ResolvedEdges, TextAlign, TextTransform,
-    VerticalAlign, WhiteSpace,
+    ComputedStyle, ContentAlignment, Cursor, Direction, Display, Edges, FlexDirection, Float,
+    FontFeatures, FontKerning, FontLigatures, FontNumeric, FontVariants, JustifyContent, Length,
+    ListStyleType, ObjectFit, ObjectPosition, Overflow, Position, ResolvedEdges, TextAlign,
+    TextTransform, VerticalAlign, WhiteSpace,
 };

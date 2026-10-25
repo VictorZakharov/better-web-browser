@@ -32,7 +32,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         self.image_layer_item(style, image, layer, rect, rect, 0.0, true)
     }
     #[allow(clippy::too_many_arguments)]
-    fn image_layer_item(
+    pub(super) fn image_layer_item(
         &self,
         style: &ComputedStyle,
         image: &ImageSource,

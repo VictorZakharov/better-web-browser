@@ -73,6 +73,7 @@ fn is_inherited_property(property: &str) -> bool {
             | "font-variant"
             | "font-variant-ligatures"
             | "font-variant-numeric"
+            | "font-variant-caps"
             | "font-size"
             | "font-style"
             | "font-weight"
@@ -82,11 +83,13 @@ fn is_inherited_property(property: &str) -> bool {
             | "list-style-type"
             | "text-align"
             | "text-transform"
+            | "text-shadow"
             | "visibility"
             | "pointer-events"
             | "white-space"
             | "word-spacing"
             | "accent-color"
+            | "cursor"
     )
 }
 
@@ -116,8 +119,10 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
     }
     match property {
         "appearance" | "-webkit-appearance" => style.appearance = source.appearance,
+        "cursor" => style.cursor = source.cursor,
         "accent-color" => style.accent_color = source.accent_color.inherited(source.color),
         "box-shadow" => style.box_shadows.clone_from(&source.box_shadows),
+        "text-shadow" => style.text_shadows.clone_from(&source.text_shadows),
         "scrollbar-color" => style.scrollbar_color = source.scrollbar_color,
         "scrollbar-width" => style.scrollbar_width = source.scrollbar_width,
         "zoom" => style.zoom = source.zoom,
@@ -156,6 +161,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.font_kerning = source.font_kerning;
             style.font_ligatures = source.font_ligatures;
             style.font_numeric = source.font_numeric;
+            style.font_small_caps = source.font_small_caps;
             style.line_height = source.line_height;
             style.line_height_value = source.line_height_value.clone();
         }
@@ -165,9 +171,11 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "font-kerning" => style.font_kerning = source.font_kerning,
         "font-variant-ligatures" => style.font_ligatures = source.font_ligatures,
         "font-variant-numeric" => style.font_numeric = source.font_numeric,
+        "font-variant-caps" => style.font_small_caps = source.font_small_caps,
         "font-variant" => {
             style.font_ligatures = source.font_ligatures;
             style.font_numeric = source.font_numeric;
+            style.font_small_caps = source.font_small_caps;
         }
         "font-style" => style.italic = source.italic,
         "font-family" => style.font_family.clone_from(&source.font_family),

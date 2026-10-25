@@ -169,7 +169,10 @@ pub(crate) fn prepare_script(node: NodeRef, base_url: &str, ordinal: usize) -> O
     let external = node.attr("src");
     let is_external = external.is_some();
     let (source_url, code) = if let Some(source) = external {
-        (resolve_url(base_url, &source).unwrap_or_default(), None)
+        (
+            resolve_resource_url(base_url, &source).unwrap_or_default(),
+            None,
+        )
     } else {
         let code = node.text_content();
         // An empty parser-inserted script is not prepared. Later child-text mutation

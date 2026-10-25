@@ -167,12 +167,12 @@ impl HostState {
 
 /// Whether the parser hook must wrap `element` as soon as it is parsed: wrapping activates
 /// event handler content attributes, and the hook upgrades custom elements (whose names
-/// contain a hyphen), exposes iframe windows and registers shadow roots for traversal.
+/// contain a hyphen), exposes iframe and object windows and registers shadow roots for traversal.
 fn needs_parser_wrapper(element: &NodeRef) -> bool {
     element.shadow_root().is_some()
         || element
             .tag_name()
-            .is_some_and(|name| name == "iframe" || name.contains('-'))
+            .is_some_and(|name| matches!(name, "iframe" | "object") || name.contains('-'))
         || element.element().is_some_and(|data| {
             data.attrs.borrow().iter().any(|attribute| {
                 attribute.name.ns.as_ref().is_empty()

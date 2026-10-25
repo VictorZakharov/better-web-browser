@@ -298,6 +298,9 @@ impl PolicyContainer {
     ) -> Result<(), FetchError> {
         let directive = match destination {
             RequestDestination::Document => "frame-src",
+            // CSP3 maps the "object" destination to object-src, never frame-src.
+            // https://w3c.github.io/webappsec-csp/#directive-fallback-list
+            RequestDestination::Object => "object-src",
             RequestDestination::Script => "script-src-elem",
             RequestDestination::Worker => "worker-src",
             RequestDestination::Fetch => "connect-src",

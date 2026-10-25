@@ -12,10 +12,19 @@ pub(in crate::engine::css) fn parse(value: &str) -> Option<Vec<BoxShadow>> {
     if value.trim().eq_ignore_ascii_case("none") {
         return Some(Vec::new());
     }
-    super::super::shorthands::background::list(value, shadow)
+    super::super::shorthands::background::list(value, |value| shadow(value, false))
 }
 
-fn shadow(value: &str) -> Option<BoxShadow> {
+/// CSS Text Decoration 3 §4: `text-shadow` takes the box-shadow grammar without
+/// `inset` or a spread radius, and is inherited.
+pub(in crate::engine::css) fn parse_text(value: &str) -> Option<Vec<BoxShadow>> {
+    if value.trim().eq_ignore_ascii_case("none") {
+        return Some(Vec::new());
+    }
+    super::super::shorthands::background::list(value, |value| shadow(value, true))
+}
+
+fn shadow(value: &str, text: bool) -> Option<BoxShadow> {
     let parts = borrowed_components(value)?;
     let (mut lengths, mut color, mut inset) = (Vec::new(), None, false);
     let mut ended_lengths = false;
@@ -24,13 +33,13 @@ fn shadow(value: &str) -> Option<BoxShadow> {
             parse_length(part).filter(|length| *length != Length::Auto && !length.has_percentage())
         {
             // The 2–4 lengths are one contiguous grammar component.
-            if ended_lengths || lengths.len() == 4 {
+            if ended_lengths || lengths.len() == if text { 3 } else { 4 } {
                 return None;
             }
             lengths.push(length);
         } else {
             ended_lengths |= !lengths.is_empty();
-            if ident(part).as_deref() == Some("inset") {
+            if !text && ident(part).as_deref() == Some("inset") {
                 if inset {
                     return None;
                 }
@@ -114,5 +123,14 @@ mod tests {
         ] {
             assert!(parse(value).is_none(), "{value}");
         }
+    }
+
+    #[test]
+    fn text_shadows_take_no_spread_or_inset() {
+        // CSS Text Decoration 3 §4: <color>? && <length>{2,3}.
+        assert!(parse_text("rgba(192, 192, 192, 1.0) 3px 3px").is_some());
+        assert!(parse_text("0 0 2px red, blue 1px 1px").is_some());
+        assert!(parse_text("0 0 0 1px").is_none());
+        assert!(parse_text("inset 1px 1px").is_none());
     }
 }

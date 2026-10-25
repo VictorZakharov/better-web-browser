@@ -8,6 +8,7 @@ use super::*;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use unicode_segmentation::UnicodeSegmentation;
+mod small_caps;
 
 pub(in crate::engine::layout) fn apply(atoms: &[InlineAtom]) -> Cow<'_, [InlineAtom]> {
     if !contains_transformation(atoms) {
@@ -25,12 +26,17 @@ pub(in crate::engine::layout) fn apply(atoms: &[InlineAtom]) -> Cow<'_, [InlineA
         .collect::<HashSet<_>>();
     let mut transformed = atoms.to_vec();
     transform_atoms(&mut transformed, &word_starts, &mut 0);
+    small_caps::synthesize(&mut transformed);
     Cow::Owned(transformed)
 }
 
 fn contains_transformation(atoms: &[InlineAtom]) -> bool {
     atoms.iter().any(|atom| match atom {
-        InlineAtom::Text { text_transform, .. } => *text_transform != TextTransform::None,
+        InlineAtom::Text {
+            text_transform,
+            small_caps,
+            ..
+        } => *text_transform != TextTransform::None || *small_caps,
         InlineAtom::InlineBox { children, .. } => contains_transformation(children),
         _ => false,
     })
@@ -99,7 +105,7 @@ mod tests {
     use super::*;
     use fragments::SourceUnit;
 
-    fn text_atom(text: &str, style: &ComputedStyle) -> InlineAtom {
+    pub(super) fn text_atom(text: &str, style: &ComputedStyle) -> InlineAtom {
         InlineAtom::Text {
             text: text.into(),
             font: FontSpec::from_style(style),
@@ -110,6 +116,7 @@ mod tests {
             color_owner: None,
             source_units: Vec::new(),
             text_transform: style.text_transform,
+            small_caps: style.font_small_caps,
             visible: true,
             preserve_space: false,
             line_height: style.line_height,

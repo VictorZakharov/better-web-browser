@@ -26,8 +26,9 @@ pub(crate) fn user_agent_display(tag: &str) -> Display {
         "img" | "video" | "audio" | "input" | "button" | "select" | "textarea" | "svg" => {
             Display::InlineBlock
         }
-        "head" | "base" | "datalist" | "link" | "meta" | "title" | "style" | "script"
-        | "template" | "rp" => Display::None,
+        // https://html.spec.whatwg.org/multipage/rendering.html#hidden-elements
+        "area" | "base" | "basefont" | "datalist" | "head" | "link" | "meta" | "noembed"
+        | "noframes" | "param" | "rp" | "script" | "style" | "template" | "title" => Display::None,
         _ => Display::Inline,
     }
 }
@@ -129,7 +130,11 @@ pub(super) fn apply_user_agent_defaults(
         // HTML's suggested UA style targets :link/:visited, not placeholder anchors.
         // https://html.spec.whatwg.org/multipage/rendering.html#phrasing-content-3
         "a" if node.attr("href").is_some() => {
-            style.color = Color::rgb(0, 0, 238);
+            style.color = if super::selector_match::visited::matches_as_visited(node) {
+                Color::rgb(85, 26, 139)
+            } else {
+                Color::rgb(0, 0, 238)
+            };
             style.text_decoration_underline = true;
         }
         "input" | "button" | "select" | "textarea" => {

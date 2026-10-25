@@ -204,9 +204,10 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
         }
         "width" | "height" | "min-width" | "min-height" | "max-width" | "max-height" | "top"
         | "right" | "bottom" | "left" | "inset" | "margin-top" | "margin-right"
-        | "margin-bottom" | "margin-left" | "padding-top" | "padding-right" | "padding-bottom"
-        | "padding-left" | "column-gap" | "grid-column-gap" | "row-gap" | "grid-row-gap" => {
-            supported_length(&value)
+        | "margin-bottom" | "margin-left" | "column-gap" | "grid-column-gap" | "row-gap"
+        | "grid-row-gap" => supported_length(&value),
+        "padding-top" | "padding-right" | "padding-bottom" | "padding-left" => {
+            supported_length(&value) && shorthands::padding_length(&value).is_some()
         }
         "flex-basis" | "-webkit-flex-basis" | "-moz-flex-basis" => {
             super::shorthands::flex::basis(&value).is_some()
@@ -274,6 +275,7 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
         "font-kerning" => FontKerning::parse(&value).is_some(),
         "font-variant-ligatures" => FontLigatures::parse(&value).is_some(),
         "font-variant-numeric" => FontNumeric::parse(&value).is_some(),
+        "font-variant-caps" => shorthands::font::font_caps(&value).is_some(),
         "font-variant" => FontVariants::parse_shorthand(&value).is_some(),
         "letter-spacing" | "word-spacing" => {
             single_component_or_calc(&value) && parse_text_spacing(&value, 16.0).is_some()
@@ -292,7 +294,8 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
             matches!(value.as_str(), "none" | "underline")
         }
         "list-style" | "list-style-type" => matches!(value.as_str(), "none" | "disc"),
-        "margin" | "padding" => edge_lengths_supported(&value),
+        "margin" => edge_lengths_supported(&value, parse_length),
+        "padding" => edge_lengths_supported(&value, shorthands::padding_length),
         "border-width" => values::border_widths::edges(&value).is_some(),
         "border-top-width" | "border-right-width" | "border-bottom-width" | "border-left-width" => {
             values::border_widths::parse(&value).is_some()
@@ -392,9 +395,9 @@ fn single_component_or_calc(value: &str) -> bool {
     parser.next().is_ok() && parser.is_exhausted()
 }
 
-fn edge_lengths_supported(value: &str) -> bool {
+fn edge_lengths_supported(value: &str, edge: fn(&str) -> Option<Length>) -> bool {
     let Some(lengths) = super::scroll_spacing::split_components(value) else {
         return false;
     };
-    (1..=4).contains(&lengths.len()) && lengths.iter().all(|length| parse_length(length).is_some())
+    (1..=4).contains(&lengths.len()) && lengths.iter().all(|length| edge(length).is_some())
 }

@@ -1,9 +1,12 @@
 //! Block position resolution for normal, floating, relative, absolute, and fixed boxes.
 
 use super::super::*;
+#[cfg(test)]
+#[path = "positioned_tests.rs"]
+mod tests;
 
 pub(super) fn containing_box(style: &ComputedStyle, padding_box: RectF, inherited: RectF) -> RectF {
-    if style.position != Position::Static || style.has_transform() {
+    if establishes_containing_block(style) {
         padding_box
     } else {
         // Static boxes without a transform do not establish a containing block.
@@ -11,7 +14,33 @@ pub(super) fn containing_box(style: &ComputedStyle, padding_box: RectF, inherite
     }
 }
 
+fn establishes_containing_block(style: &ComputedStyle) -> bool {
+    style.position != Position::Static || style.has_transform()
+}
+
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    /// CSS 2.1 §10.1: absolute descendants of static boxes use the nearest positioned
+    /// ancestor's padding box, or the initial containing block. Descendants are laid out
+    /// before an auto-height ancestor's height is known, so the caller supplies the best
+    /// available padding box (specified height, else the ancestor's own containing height).
+    pub(super) fn enter_absolute_scope(
+        &mut self,
+        style: &ComputedStyle,
+        padding_box: RectF,
+    ) -> Option<RectF> {
+        let previous = self.absolute_containing_block;
+        if establishes_containing_block(style) {
+            self.absolute_containing_block = Some(padding_box);
+        }
+        previous
+    }
+
+    /// Restores the enclosing scope and returns its containing block.
+    pub(super) fn exit_absolute_scope(&mut self, previous: Option<RectF>) -> RectF {
+        self.absolute_containing_block = previous;
+        previous.unwrap_or(self.viewport)
+    }
+
     pub(super) fn finish_positioned_flow_scope(
         &mut self,
         node: NodeId,
@@ -43,7 +72,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         in_flow_paint_start: usize,
         in_flow_node_start: usize,
     ) {
-        let children = self.box_children(node);
+        let children = self.positioned_candidates(node);
         let mut groups = Vec::new();
         // In-flow geometry is already complete (including flex/grid alignment). Extract
         // positioned paint ranges only now so deferring paint cannot change sizing.
@@ -142,6 +171,49 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             self.output.items.extend(group.items);
             self.output.node_paint_order.extend(group.nodes);
         }
+    }
+
+    /// Box children plus the absolutely positioned boxes nested in static inline children
+    /// that have an inset on both axes, in tree order. A non-positioned inline box establishes no containing block, so those
+    /// descendants belong to this block's positioning scope (CSS 2.1 §10.1).
+    fn positioned_candidates(&self, node: &NodeRef) -> Vec<NodeRef> {
+        fn nested<M: TextMeasurer>(
+            engine: &LayoutEngine<'_, M>,
+            inline: &NodeRef,
+            output: &mut Vec<NodeRef>,
+        ) {
+            let style = engine.styles.get(inline);
+            if style.display != Display::Inline
+                || style.position != Position::Static
+                || style.has_transform()
+                || inline.represents_content_navigable()
+            {
+                return;
+            }
+            for child in engine.box_children(inline) {
+                let child_style = engine.styles.get(&child);
+                if matches!(child_style.position, Position::Absolute | Position::Fixed) {
+                    // The static position inside a line box is not recorded, so only boxes
+                    // that never use it (an inset on each axis) are laid out from here.
+                    let placed = |start: &Length, end: &Length| {
+                        *start != Length::Auto || *end != Length::Auto
+                    };
+                    if placed(&child_style.left, &child_style.right)
+                        && placed(&child_style.top, &child_style.bottom)
+                    {
+                        output.push(child);
+                    }
+                } else {
+                    nested(engine, &child, output);
+                }
+            }
+        }
+        let mut candidates = Vec::new();
+        for child in self.box_children(node) {
+            candidates.push(child.clone());
+            nested(self, &child, &mut candidates);
+        }
+        candidates
     }
 
     #[allow(clippy::too_many_arguments)]

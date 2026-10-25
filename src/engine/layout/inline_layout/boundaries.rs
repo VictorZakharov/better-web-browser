@@ -55,7 +55,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
 
     fn atom_node(&self, atom: &InlineAtom) -> Option<NodeRef> {
         let id = match atom {
-            InlineAtom::BlockBox { node, .. } => return Some(node.clone()),
+            InlineAtom::BlockBox { node, .. } | InlineAtom::Float { node } => {
+                return Some(node.clone());
+            }
             InlineAtom::Text {
                 source_node,
                 node_id,

@@ -23,6 +23,9 @@ pub(super) struct CompoundSelector {
     pub(super) languages: Vec<Vec<String>>,
     pub(super) directions: Vec<TextDirection>,
     pub(super) requires_link: bool,
+    /// `:link` and `:visited` further split `:any-link` by the visited-style pass.
+    pub(super) requires_unvisited: bool,
+    pub(super) requires_visited: bool,
     pub(super) requires_first_child: bool,
     pub(super) requires_first_of_type: bool,
     pub(super) requires_last_child: bool,

@@ -19,6 +19,8 @@ pub enum RequestContext {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestDestination {
     Document,
+    /// An `object` element's resource; fetched as a navigation, governed by `object-src`.
+    Object,
     Style,
     Image,
     Script,

@@ -254,7 +254,7 @@ fn host_call_callback(
     }
     if matches!(
         operation.as_str(),
-        "frameWindow" | "frameDocument" | "discardFrame" | "frameActive"
+        "frameWindow" | "frameDocument" | "discardFrame" | "frameActive" | "objectResourceChanged"
     ) {
         super::frames::dispatch(scope, &operation, arguments, return_value);
         return;

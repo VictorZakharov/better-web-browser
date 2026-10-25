@@ -18,6 +18,7 @@
         if (localName === 'html') return HTMLHtmlElement;
         if (localName === 'p') return HTMLParagraphElement;
         if (localName === 'title') return HTMLTitleElement;
+        if (localName === 'meta') return HTMLMetaElement;
         if (localName === 'style') return HTMLStyleElement;
         if (localName === 'link') return HTMLLinkElement;
         if (localName === 'time') return HTMLTimeElement;
@@ -50,20 +51,12 @@
         if (localName === 'template') return HTMLTemplateElement;
         if (localName === 'slot') return HTMLSlotElement;
         if (localName === 'form') return HTMLFormElement;
+        const table = tableElementConstructor(localName);
+        if (table) return table;
         return knownHtmlElements.has(localName) || localName.includes('-')
             ? HTMLElement
             : HTMLUnknownElement;
     };
-    class DOMImplementation {
-        createDocument(namespace, qualifiedName, doctype = null) {
-            if (doctype !== null) throw new DOMException('DocumentType insertion is not implemented', 'NotSupportedError');
-            const result = wrap(host('createDocument', namespace == null ? '' : String(namespace), String(qualifiedName)));
-            Object.setPrototypeOf(result, XMLDocument.prototype);
-            return result;
-        }
-        createHTMLDocument(title = '') { return wrap(host('createHtmlDocument', String(title))); }
-    }
-
     let throwOnDynamicMarkupInsertion = 0;
     const documentDefaultViews = new WeakMap();
     const documentReadiness = new WeakMap();
@@ -112,15 +105,20 @@
         get activeElement() { return activeElementForRoot(this); }
         get customElementRegistry() { return documentRegistryFor(this); }
         createElement(name, options) {
+            name = String(name);
+            if (!validElementLocalName(name))
+                throw new DOMException('The element name is invalid', 'InvalidCharacterError');
             const registry = registryForCreationOptions(this, options);
-            const element = wrap(host('createElement', nodeId(this), String(name)));
+            const element = wrap(host('createElement', nodeId(this), name));
             rememberElementRegistry(element, registry);
             return maybeUpgradeCustomElement(element, true);
         }
         createElementNS(namespace, name, options) {
+            namespace = namespace == null ? '' : String(namespace);
+            name = String(name);
+            validateElementQualifiedName(namespace, name);
             const registry = registryForCreationOptions(this, options);
-            const element = wrap(host('createElementNS', nodeId(this),
-                namespace == null ? '' : String(namespace), String(name)));
+            const element = wrap(host('createElementNS', nodeId(this), namespace, name));
             rememberElementRegistry(element, registry);
             return maybeUpgradeCustomElement(element, true);
         }
@@ -225,7 +223,7 @@
             return documentDefaultViews.get(this) ||
                 (host('isPrimaryDocument', nodeId(this)) ? windowObject : null);
         }
-        get implementation() { return this.__implementation ||= new DOMImplementation(); }
+        get implementation() { return implementationFor(this); }
         write(...parts) {
             const text = parts.map(value => {
                 if (typeof value === 'symbol') throw new TypeError('Cannot convert a Symbol to a string');
@@ -318,7 +316,7 @@
             const node = wrap(id);
             if (type === 1)
                 registerShadowRootForTraversal(node, host('shadowRootForTraversal', id), true);
-            if (localName === 'iframe') host('frameWindow', id, node);
+            if (navigableContainer(node)) host('frameWindow', id, node);
             if (type === 1) maybeUpgradeCustomElement(node, false, true);
         }
         refreshParserEventHandlerAttributes();
@@ -349,7 +347,7 @@
                 ? htmlElementConstructor(metadata[2])
                 : namespace === svgNamespace
                     ? metadata[2] === 'svg' ? SVGSVGElement :
-                        svgFilterElementInterfaces[metadata[2]] || SVGElement
+                        svgElementInterfaces[metadata[2]] || SVGElement
                     : Element;
             node = Constructor === HTMLTitleElement
                 ? new HTMLTitleElement(id, type, metadata[1], metadata[2], namespace, htmlTitleConstructionToken)

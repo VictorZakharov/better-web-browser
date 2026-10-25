@@ -22,6 +22,7 @@ fn expansion_retains_authorship_and_resets_each_supported_component() {
             "normal",
             "auto",
             "normal",
+            "normal",
             "normal"
         ]
     );
@@ -30,6 +31,10 @@ fn expansion_retains_authorship_and_resets_each_supported_component() {
         "italic 600 2em / 150% 'Family, One' , Arial"
     );
     assert_eq!(serialize(&values("16px Arial")), "16px Arial");
+    assert_eq!(
+        serialize(&values("900 small-caps 10px Arial")),
+        "small-caps 900 10px Arial"
+    );
 }
 
 #[test]

@@ -10,7 +10,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         output: &mut Vec<InlineAtom>,
         containing_block: InlineContainingBlock,
     ) {
-        let is_frame = node.tag_name() == Some("iframe");
+        let frame = node.content_navigable_size();
+        let is_frame = frame.is_some();
         let url = if is_frame {
             Some(String::new())
         } else {
@@ -28,7 +29,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let intrinsic_width = style.effective_zoom
             * if let Some((width, _)) = canvas {
                 width as f32
-            } else if is_frame || placeholder {
+            } else if let Some((width, _)) = frame {
+                width
+            } else if placeholder {
                 300.0
             } else {
                 intrinsic.map(|image| image.width as f32).unwrap_or(16.0)
@@ -36,7 +39,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let intrinsic_height = style.effective_zoom
             * if let Some((_, height)) = canvas {
                 height as f32
-            } else if is_frame || placeholder {
+            } else if let Some((_, height)) = frame {
+                height
+            } else if placeholder {
                 150.0
             } else {
                 intrinsic.map(|image| image.height as f32).unwrap_or(16.0)

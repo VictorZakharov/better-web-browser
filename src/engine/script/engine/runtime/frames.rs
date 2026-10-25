@@ -16,8 +16,12 @@ impl Context {
     pub(in crate::engine::script) fn fail_frame_navigation(
         &self,
         navigation: &super::super::frames::FrameNavigation,
-    ) {
-        self._frames.navigation_failed(navigation);
+    ) -> bool {
+        self._frames.navigation_failed(navigation)
+    }
+    /// Sizes the object embedding `document` from the natural size its document defines.
+    pub(in crate::engine::script) fn size_frame_object(&self, document: NodeId, size: (f32, f32)) {
+        self._frames.size_object(document, size);
     }
     pub(in crate::engine::script) fn frame_ancestor_origins(
         &self,

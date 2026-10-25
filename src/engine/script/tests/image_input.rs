@@ -57,3 +57,42 @@ fn image_submitter_records_click_coordinates_but_direct_formdata_defaults_to_zer
         "true"
     );
 }
+
+#[test]
+fn rendered_image_dimensions_report_the_used_content_box() {
+    // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-width
+    let dom = dom::parse_with_scripting(
+        r#"<!doctype html><html><body>
+          <img id=shown width=1 height=1 style="padding: 2px; border: 3px solid">
+          <script>
+            const shown = document.getElementById('shown');
+            const detached = document.createElement('img');
+            detached.height = 7;
+            document.body.setAttribute('data-result',
+                [shown.width, shown.height, detached.height].join(','));
+          </script></body></html>"#,
+        true,
+    );
+    let image = dom.elements_named("img").next().unwrap();
+    let body = dom.elements_named("body").next().unwrap();
+    let script = dom.elements_named("script").next().unwrap();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    runtime.set_layout_geometry(&HashMap::from([(
+        image.id(),
+        RectF {
+            width: 30.0,
+            height: 20.0,
+            ..RectF::default()
+        },
+    )]));
+    let outcome = runtime.execute_initial(&[ScriptInput {
+        source_url: "https://example.com/#image".into(),
+        code: script.text_content(),
+        node: script,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    }]);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(body.attr("data-result").as_deref(), Some("20,10,7"));
+}

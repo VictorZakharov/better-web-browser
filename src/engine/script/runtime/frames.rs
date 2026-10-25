@@ -10,6 +10,7 @@ mod resources;
 mod script_fetches;
 mod streaming;
 mod styles;
+mod xml_documents;
 use crate::engine::script::engine::frames::FrameNavigation;
 use documents::FrameDocument;
 use images::FrameImages;
@@ -255,6 +256,11 @@ impl ScriptRuntime {
         } else {
             child.advance_time(Duration::ZERO, 1)
         };
+        let size =
+            (frames.documents.get_mut(&id)).and_then(|document| document.natural_size.take());
+        if let (Some(size), Some(context)) = (size, self.context.as_ref()) {
+            context.size_frame_object(id, size);
+        }
         if let Err(error) = self.restart_frame_encoding(id) {
             self.host.borrow_mut().diagnose(error);
         }

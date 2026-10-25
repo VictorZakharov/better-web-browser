@@ -1,6 +1,7 @@
 use super::*;
 mod block_measure;
 pub(super) mod box_tree;
+mod canvas;
 pub(crate) mod fixed_layers;
 mod height_basis;
 mod intrinsic_widths;
@@ -187,6 +188,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         floats: Default::default(),
         reads: Default::default(),
         replayed_roots: HashMap::new(),
+        absolute_containing_block: None,
         viewport: RectF {
             x: 0.0,
             y: 0.0,
@@ -225,25 +227,10 @@ fn layout_page_for_output<M: TextMeasurer>(
         // A fullscreen element is painted in the top layer over the default black backdrop.
         // Selecting it as the layout root also excludes page siblings from display and hit testing.
         engine.output.background = Color::BLACK;
-    } else {
-        let backdrop = engine
-            .styles
-            .styles
-            .get(&node_id(&root))
-            .filter(|style| style.background_color.alpha > 0)
-            .or_else(|| {
-                page.dom.elements_named("body").next().and_then(|body| {
-                    engine
-                        .styles
-                        .styles
-                        .get(&node_id(&body))
-                        .filter(|style| style.background_color.alpha > 0)
-                })
-            });
-        if let Some(style) = backdrop {
-            engine.output.background = style.background_color.composite_over(Color::WHITE);
-        }
     }
+    let canvas = (!root.is_fullscreen())
+        .then(|| engine.begin_canvas_background(&root))
+        .flatten();
     clock.restart();
     let metrics = engine.layout_block(
         &root,
@@ -263,6 +250,9 @@ fn layout_page_for_output<M: TextMeasurer>(
         .bottom
         .max(engine.scrollable_overflow_bottom(&root))
         .max(viewport_height);
+    if let Some(canvas) = canvas {
+        engine.finish_canvas_background(canvas, &root);
+    }
     pass.overflow_micros = clock.lap();
     block::paint_order::finalize(&mut engine.output);
     pass.paint_order_micros = clock.lap();
@@ -326,6 +316,8 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) reads: std::cell::RefCell<layout_reads::ReadFrames>,
     /// Subtree roots whose final placement in this output replays a retained entry, by serial.
     pub(super) replayed_roots: HashMap<NodeId, u64>,
+    /// Padding box of the nearest box that contains absolute descendants; `None` is the ICB.
+    pub(super) absolute_containing_block: Option<RectF>,
 }
 
 pub(super) struct InFlowPaintRange {

@@ -1,3 +1,4 @@
+use super::inline_layout::LineFormat;
 use super::*;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
@@ -8,7 +9,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         x: f32,
         y: f32,
         width: f32,
-        align: TextAlign,
+        format: LineFormat,
         line_width: f32,
         line_height: f32,
         forced_end: bool,
@@ -26,16 +27,31 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             hanging
         };
         let line_width = (line_width - hanging).max(0.0);
-        let mut cursor_x = match align {
+        // CSS 2.1 §9.4.2: a line holding only empty, undecorated inline boxes is
+        // treated as zero-height; its boxes still get positions.
+        // A line ended by `<br>` keeps its height, as in browsers' empty editor paragraphs.
+        let phantom = !format.broken
+            && !line.is_empty()
+            && line.iter().all(|measured| is_phantom(measured.atom));
+        let mut cursor_x = match format.align {
             TextAlign::Start | TextAlign::Left => x,
             TextAlign::Center => x + ((width - line_width) / 2.0).max(0.0),
             TextAlign::End | TextAlign::Right => x + (width - line_width).max(0.0),
         };
+        if let Some(placed) = self.baseline_line(line, format.strut) {
+            for measured in line {
+                let top = self.baseline_top(measured, format.strut, placed);
+                let height = measured.height;
+                self.paint_atom(measured, cursor_x, y + top, height, width, line_id);
+                cursor_x += measured.width;
+            }
+            return if phantom { y } else { y + placed.height };
+        }
         for measured in line {
             self.paint_atom(measured, cursor_x, y, line_height, width, line_id);
             cursor_x += measured.width;
         }
-        y + line_height
+        if phantom { y } else { y + line_height }
     }
 
     pub(super) fn paint_atom(
@@ -95,7 +111,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     if self
                         .styles
                         .node(*node_id)
-                        .is_some_and(|node| node.tag_name() == Some("iframe"))
+                        .is_some_and(|node| node.represents_content_navigable())
                     {
                         self.output.items.push(DisplayItem::EmbeddedFrame {
                             rect,
@@ -272,7 +288,33 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     );
                 }
             }
-            InlineAtom::Break => {}
+            InlineAtom::Float { .. } | InlineAtom::Break => {}
         }
+    }
+}
+
+/// Collapsible white space, or an inline box with no content and no margins, padding or
+/// borders. A line of only these is empty (CSS 2.1 §9.4.2; CSS Text 3 §4.1.2 removes
+/// collapsible spaces at the start and end of a line).
+fn is_phantom(atom: &InlineAtom) -> bool {
+    match atom {
+        InlineAtom::Text {
+            text,
+            preserve_space: false,
+            ..
+        } => text
+            .chars()
+            .all(|c| matches!(c, ' ' | '\t' | '\n' | '\r' | '\u{c}')),
+        InlineAtom::InlineBox {
+            children, style, ..
+        } => {
+            style.padding == Edges::ZERO
+                && style.border_width == Edges::ZERO
+                && [&style.margin.left, &style.margin.right]
+                    .iter()
+                    .all(|margin| matches!(margin, Length::Auto | Length::Px(0.0)))
+                && children.iter().all(is_phantom)
+        }
+        _ => false,
     }
 }

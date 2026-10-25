@@ -27,6 +27,7 @@ impl DocumentRuntime {
         mut text: RendererTextSystem,
         parse_started: Instant,
     ) -> Result<LoadResult, String> {
+        crate::engine::css::selector_match::visited::record_top_level_navigation(&start.url);
         // The HTML Standard permits speculative parsing to start eligible fetches while the
         // authoritative parser continues. Bytes are cached, but execution is admitted only when
         // that parser reaches the actual element. A speculative response cannot prepare a script:
@@ -210,6 +211,7 @@ impl DocumentRuntime {
                     runtime.script_layout_flush_callback(),
                 )
                 .map_err(|error| error.to_string())?;
+            script_runtime.set_frame_layout_service(runtime.script_frame_layout_service());
             script_runtime.enable_audio_render_thread();
             if let Some(state) = runtime
                 .navigation

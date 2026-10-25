@@ -77,7 +77,12 @@ fn reconstruct(
             ));
         }
         FetchInitiator::ChildNavigation => {
-            if head.resulting_client.id == 0 || head.destination != ResourceDestination::Document {
+            if head.resulting_client.id == 0
+                || !matches!(
+                    head.destination,
+                    ResourceDestination::Document | ResourceDestination::Object
+                )
+            {
                 return Err(FetchError::new(
                     FetchErrorKind::InvalidRequest,
                     "invalid child navigation intent",
@@ -87,6 +92,8 @@ fn reconstruct(
             request.origin = Some(FetchUrl::parse(authoritative_document_url)?.origin());
             request.referrer = trusted_referrer(authoritative_document_url, head.referrer.clone())?;
             request.response_body_limit = better_web_browser::limits::MAX_HTML_INPUT_BYTES;
+            // An object's navigation keeps its own destination for CSP and Sec-Fetch-Dest.
+            request.destination = destination(head.destination);
             request
         }
         FetchInitiator::Subresource
@@ -226,6 +233,7 @@ fn wire_error(error: &FetchError) -> BrowserFetchError {
 fn destination(value: ResourceDestination) -> RequestDestination {
     match value {
         ResourceDestination::Document => RequestDestination::Document,
+        ResourceDestination::Object => RequestDestination::Object,
         ResourceDestination::Style => RequestDestination::Style,
         ResourceDestination::Image => RequestDestination::Image,
         ResourceDestination::Script => RequestDestination::Script,

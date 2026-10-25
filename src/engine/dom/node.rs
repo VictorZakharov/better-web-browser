@@ -2,6 +2,7 @@
 mod animation;
 mod attributes;
 pub(super) mod checkable;
+pub(crate) mod content_navigable;
 mod control_decimal;
 mod control_input_lifecycle;
 pub(crate) mod control_numeric;
@@ -212,6 +213,9 @@ pub struct ElementData {
     pub(crate) script_started: Cell<bool>,
     /// HTML's parser-inserted flag, used by CSP3 strict-dynamic script checks.
     pub(crate) script_parser_inserted: Cell<bool>,
+    /// An `object` representing its content navigable (rather than its fallback content)
+    /// holds the navigable's natural size here.
+    pub(crate) object_navigable: Cell<Option<(f32, f32)>>,
 }
 
 #[derive(Debug)]

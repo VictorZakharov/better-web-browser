@@ -143,3 +143,18 @@ fn directionality_pseudo_accepts_only_ltr_or_rtl() {
         assert!(parse_selector(source).is_none(), "{source}");
     }
 }
+
+#[test]
+fn an_escaped_trailing_space_is_part_of_the_selector() {
+    // CSS Syntax 3 §4.3.7: `\ ` escapes the space, so `#\ ` names the id " ", and a
+    // following unescaped space is still a descendant combinator.
+    let page = crate::engine::page::Page::parse(
+        r#"<style>#\  { position: fixed } #\  p { color: red }</style><div id=" "><p>x</p></div>"#,
+        "https://example.test/",
+    );
+    let styles = page.style_for_viewport(400.0, 300.0);
+    let div = page.dom.elements_named("div").next().unwrap();
+    let p = page.dom.elements_named("p").next().unwrap();
+    assert_eq!(styles.get(&div).position, Position::Fixed);
+    assert_eq!(styles.get(&p).color, Color::rgb(255, 0, 0));
+}

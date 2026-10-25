@@ -18,6 +18,7 @@ impl ComputedStyle {
             svg_stroke: svg_paint::SvgPaint::None,
             appearance: Appearance::Auto,
             accent_color: AccentColor::Auto,
+            cursor: Cursor::default(),
             background_color: Color::TRANSPARENT,
             background_image: super::super::images::BackgroundImages::default(),
             mask_image: BackgroundImages::default(),
@@ -29,6 +30,7 @@ impl ComputedStyle {
             background_size: BackgroundSize::Auto,
             background_layers: BackgroundLayers::default(),
             box_shadows: Vec::new(),
+            text_shadows: Vec::new(),
             scrollbar_width: scrollbars::ScrollbarWidth::Auto,
             scrollbar_color: None,
             object_fit: ObjectFit::Fill,
@@ -43,6 +45,7 @@ impl ComputedStyle {
             font_kerning: FontKerning::Auto,
             font_ligatures: FontLigatures::default(),
             font_numeric: FontNumeric::default(),
+            font_small_caps: false,
             letter_spacing: 0.0,
             letter_spacing_normal: true,
             pending_spacing: text_spacing::PendingSpacing::default(),
@@ -150,6 +153,7 @@ impl ComputedStyle {
             style.font_kerning = parent.font_kerning;
             style.font_ligatures = parent.font_ligatures;
             style.font_numeric = parent.font_numeric;
+            style.font_small_caps = parent.font_small_caps;
             style.letter_spacing = parent.letter_spacing;
             style.letter_spacing_normal = parent.letter_spacing_normal;
             style.word_spacing = parent.word_spacing;
@@ -158,6 +162,7 @@ impl ComputedStyle {
             style.text_align = parent.text_align;
             style.direction = parent.direction;
             style.text_transform = parent.text_transform;
+            style.text_shadows.clone_from(&parent.text_shadows);
             style.white_space = parent.white_space;
             style.border_collapse = parent.border_collapse;
             style.border_spacing = parent.border_spacing.clone();
@@ -167,6 +172,7 @@ impl ComputedStyle {
             style.pointer_events = parent.pointer_events;
             style.scrollbar_color = parent.scrollbar_color;
             style.accent_color = parent.accent_color.inherited(parent.color);
+            style.cursor = parent.cursor;
             style.custom_properties = Arc::clone(&parent.custom_properties);
         }
         style

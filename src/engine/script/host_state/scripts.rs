@@ -73,7 +73,7 @@ impl HostState {
         let base = self.script_base_url();
         let url = external.as_ref().map_or_else(
             || format!("breeze-inline-module:{:?}", node.id()),
-            |url| crate::navigation::resolve_url(&base, url.trim()).unwrap_or_default(),
+            |url| crate::navigation::resolve_resource_url(&base, url.trim()).unwrap_or_default(),
         );
         let options = ScriptFetchOptions::for_element(
             ScriptKind::Module,

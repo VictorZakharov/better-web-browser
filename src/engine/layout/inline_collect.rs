@@ -94,6 +94,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     "img" | "image" | "video" | "iframe" => {
                         self.collect_image(node, style, link, output, containing_block)
                     }
+                    "object" if node.represents_content_navigable() => {
+                        self.collect_image(node, style, link, output, containing_block)
+                    }
                     "canvas" if self.page.canvas_is_replaced() => {
                         self.collect_image(node, style, link, output, containing_block)
                     }

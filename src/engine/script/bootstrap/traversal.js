@@ -140,8 +140,9 @@
                     sibling = traversalSibling(node, false);
                 }
                 if (node === this.root || !traversalParent(node)) return null;
+                // DOM §6.2 previousNode() filters the parent even when it is the root, so the
+                // root can be returned and a throwing filter propagates from that call.
                 node = traversalParent(node);
-                if (node === this.root) return null;
                 if (this.__accept(node) === FILTER_ACCEPT) return this.__current = node;
             }
             return null;

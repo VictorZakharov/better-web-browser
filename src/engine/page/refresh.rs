@@ -43,6 +43,14 @@ impl Page {
         )
     }
 
+    /// Computes and caches styles, for a caller that inspects them before laying out the
+    /// same viewport (which then reuses them).
+    pub(crate) fn cache_styles_for_viewport(&mut self, width: f32, height: f32) -> &StyleSet {
+        let styles = self.style_for_viewport(width, height);
+        self.store_styles(width, height, styles);
+        &self.cached_styles.as_ref().unwrap().2
+    }
+
     pub fn cached_style(&self, viewport_width: f32) -> Option<&StyleSet> {
         self.cached_style_for_viewport(viewport_width, viewport_width)
     }

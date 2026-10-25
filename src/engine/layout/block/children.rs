@@ -35,6 +35,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 color_owner: Some(node.id()),
                 source_units: Vec::new(),
                 text_transform: TextTransform::None,
+                small_caps: false,
                 visible: style.visibility,
                 preserve_space: false,
                 line_height: style.line_height,
@@ -50,18 +51,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 continue;
             }
             if child_style.float != Float::None {
-                // A float after inline content cannot rise above the preceding line.
-                if !atoms.is_empty() {
-                    let previous_y = y;
-                    y = self.layout_inline_atoms(&atoms, x, y, width, style, &mut clamp, true);
-                    if y != previous_y {
-                        adjoining = Default::default();
-                        absorb_start = false;
-                    }
-                    atoms.clear();
-                    pending_space = None;
+                if atoms.is_empty() {
+                    self.layout_float(child, x, y, width, containing_height);
+                } else {
+                    // Line breaking places a float among inline content (CSS 2.1 §9.5.1).
+                    atoms.push(InlineAtom::Float {
+                        node: child.clone(),
+                    });
                 }
-                self.layout_float(child, x, y, width, containing_height);
             } else if is_block_level(child_style.display) {
                 if !atoms.is_empty() {
                     let previous_y = y;

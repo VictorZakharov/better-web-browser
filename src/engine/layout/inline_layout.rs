@@ -1,5 +1,10 @@
 use super::*;
+mod baseline;
+pub(super) use baseline::LineFormat;
+#[cfg(test)]
+mod baseline_tests;
 mod boundaries;
+mod floats;
 mod fragment_collection;
 pub(super) mod geometry;
 pub(super) mod text_transform;
@@ -28,7 +33,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let atoms = transformed.as_ref();
         self.begin_inline_measurement_context();
         let policy = TruncationPolicy::for_style(style);
-        let align = style.text_align.physical(style.direction);
+        let format = self.line_format(style);
         let default_line_height = self.used_line_height(style);
         let mut ephemeral = ClampState::fresh(&policy);
         let slot: &mut Option<ClampState> = if clamp.is_some() {
@@ -40,11 +45,24 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let mut line = Vec::new();
         let mut line_width = 0.0_f32;
         let mut line_height = 0.0_f32;
+        let mut deferred_floats = Vec::new();
         let (mut line_x, mut available) = self.floats.band(x, y, width, default_line_height);
 
         for (index, atom) in atoms.iter().enumerate() {
-            if slot.as_ref().is_some_and(|state| state.finished) {
-                break;
+            let clamped = slot.as_ref().is_some_and(|state| state.finished);
+            if let InlineAtom::Float { node } = atom {
+                // Floats past a line clamp still get boxes, below the last line.
+                let line = (line_width, available, line.is_empty() && !clamped);
+                if clamped {
+                    deferred_floats.push(node.clone());
+                } else if self.reach_inline_float(node, (x, y, width), line, &mut deferred_floats) {
+                    let height = line_height.max(default_line_height);
+                    (line_x, available) = self.floats.band(x, y, width, height);
+                }
+                continue;
+            }
+            if clamped {
+                continue;
             }
             if matches!(atom, InlineAtom::Break) {
                 let more = more_follows
@@ -56,7 +74,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     line_x,
                     y,
                     available,
-                    align,
+                    LineFormat {
+                        broken: true,
+                        ..format
+                    },
                     line_width,
                     line_height.max(default_line_height),
                     true,
@@ -64,6 +85,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     &mut *slot,
                     more,
                 );
+                self.place_deferred_floats(&mut deferred_floats, x, y, width);
                 line_width = 0.0;
                 line_height = 0.0;
                 (line_x, available) = self.floats.band(x, y, width, default_line_height);
@@ -91,7 +113,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     line_x,
                     y,
                     available,
-                    align,
+                    format,
                     line_width,
                     line_height.max(default_line_height),
                     false,
@@ -99,6 +121,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     &mut *slot,
                     true,
                 );
+                self.place_deferred_floats(&mut deferred_floats, x, y, width);
                 line_width = 0.0;
                 line_height = 0.0;
                 (line_x, y, available) = self.floats.fit(
@@ -124,7 +147,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 line_x,
                 y,
                 available,
-                align,
+                format,
                 line_width,
                 line_height.max(default_line_height),
                 true,
@@ -133,6 +156,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 more_follows,
             );
         }
+        self.place_deferred_floats(&mut deferred_floats, x, y, width);
         y
     }
     pub(super) fn begin_inline_measurement_context(&mut self) {
@@ -248,6 +272,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     break_before: false,
                 }
             }
+            // Floats take no inline space; layout_inline_atoms places them.
+            InlineAtom::Float { .. } => MeasuredAtom {
+                atom,
+                text: None,
+                width: 0.0,
+                height: 0.0,
+                content_height: 0.0,
+                no_wrap: false,
+                break_before: false,
+            },
             InlineAtom::Break => unreachable!(),
         };
         self.measurement_cache

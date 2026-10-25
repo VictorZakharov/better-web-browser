@@ -74,6 +74,8 @@ pub struct StyleSet {
     defer_nonrendered_descendants: bool,
     deferred_fullscreen_roots: HashSet<NodeId>,
     document_base_url: String,
+    /// Rendering styles paint visited links; CSSOM styles treat every link as unvisited.
+    visited_link_colors: bool,
     viewport_width: f32,
     viewport_height: f32,
     resolution_dppx: f32,
@@ -237,6 +239,7 @@ impl StyleSet {
             defer_nonrendered_descendants: false,
             deferred_fullscreen_roots: HashSet::new(),
             document_base_url: document_base_url.to_string(),
+            visited_link_colors: true,
             viewport_width: environment.viewport_width,
             viewport_height: environment.viewport_height,
             resolution_dppx: environment.resolution_dppx,
@@ -250,6 +253,12 @@ impl StyleSet {
     pub(crate) fn take_style_log(&mut self) -> Option<Vec<NodeId>> {
         let log = std::mem::take(&mut self.style_log);
         (!log.overflowed && !self.defer_nonrendered_descendants).then_some(log.nodes)
+    }
+
+    /// Script-visible computed styles must not reveal history.
+    pub(crate) fn without_visited_link_colors(mut self) -> Self {
+        self.visited_link_colors = false;
+        self
     }
 
     pub(crate) fn clear_computed_styles(&mut self) {

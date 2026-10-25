@@ -200,6 +200,7 @@ pub(super) enum InlineAtom {
         color_owner: Option<NodeId>,
         source_units: Vec<fragments::SourceUnit>,
         text_transform: TextTransform,
+        small_caps: bool,
         visible: bool,
         preserve_space: bool,
         line_height: f32,
@@ -243,6 +244,10 @@ pub(super) enum InlineAtom {
         width: f32,
         height: f32,
         node_id: Option<NodeId>,
+    },
+    /// A float between inline siblings, placed when line breaking reaches it.
+    Float {
+        node: NodeRef,
     },
     Break,
 }

@@ -91,7 +91,7 @@ pub(super) fn find_attribute_end(input: &str, open: usize) -> Option<usize> {
 }
 
 fn append_compound(tokens: &mut Vec<SelectorToken>, input: &str) {
-    let text = input.trim();
+    let text = super::trim_selector(input);
     if !text.is_empty() {
         tokens.push(SelectorToken::Compound(text.to_string()));
     }

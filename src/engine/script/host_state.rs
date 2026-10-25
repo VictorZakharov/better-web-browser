@@ -15,6 +15,7 @@ mod csp;
 mod fetches;
 mod focus;
 mod font_environment;
+pub(super) mod frame_viewport;
 pub(crate) mod geometry;
 mod mutations;
 mod ownership;
@@ -181,6 +182,8 @@ pub(super) struct HostState {
     pub(super) layout_content_height: f32,
     /// The iframe content box in its parent document's layout coordinates.
     pub(super) embedding_rect: Option<RectF>,
+    pub(super) frame_embedding: Option<frame_viewport::FrameEmbedding>,
+    pub(super) frame_layout: Option<frame_viewport::FrameLayoutService>,
     /// A child document changed since its layout was composed into the parent.
     pub(super) frame_layout_pending: bool,
     pub(super) frame_viewport_dispatched: Option<(f32, f32)>,
@@ -340,6 +343,8 @@ impl HostState {
             layout_viewport_height: 720.0,
             layout_content_height: 720.0,
             embedding_rect: None,
+            frame_embedding: None,
+            frame_layout: None,
             frame_layout_pending: true,
             frame_viewport_dispatched: None,
             quirks_mode: false,

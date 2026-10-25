@@ -226,6 +226,19 @@ pub(super) fn dom_host_call(
                     .unwrap_or_default(),
             )
         }
+        "createDocumentType" => {
+            let owner = state.node(argument_id(args, 1));
+            let name = argument_string(args, 2)?;
+            let public_id = argument_string(args, 3)?;
+            let system_id = argument_string(args, 4)?;
+            state.ensure_node_capacity(1)?;
+            JsValue::from(
+                owner
+                    .map(|owner| Node::create_doctype_for(&owner, &name, &public_id, &system_id))
+                    .map(|node| state.id_for(&node))
+                    .unwrap_or_default(),
+            )
+        }
         "cloneNode" => {
             let source = state
                 .node(argument_id(args, 1))

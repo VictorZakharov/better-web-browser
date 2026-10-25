@@ -70,6 +70,7 @@ fn clone_in(identity: Rc<NodeIdAllocator>, source: &NodeRef, deep: bool) -> Node
             script_force_async: std::cell::Cell::new(source.attr("async").is_none()),
             script_started: std::cell::Cell::new(element.script_started.get()),
             script_parser_inserted: std::cell::Cell::new(false),
+            object_navigable: std::cell::Cell::new(None),
         }),
     };
     let clone = Node::new_in(identity, data);

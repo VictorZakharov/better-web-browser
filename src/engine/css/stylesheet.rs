@@ -243,7 +243,7 @@ fn parse_rule_list(
         let Some(open) = find_css_delimiter(css, cursor, '{') else {
             break;
         };
-        let prelude = css[cursor..open].trim();
+        let prelude = crate::engine::css::selector_parser::trim_selector(&css[cursor..open]);
         let Some(close) = find_matching_brace(css, open) else {
             break;
         };

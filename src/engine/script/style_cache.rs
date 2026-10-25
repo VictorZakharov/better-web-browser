@@ -108,6 +108,7 @@ impl HostState {
             &self.stylesheet_sources,
             self.media_environment,
         )
+        .without_visited_link_colors()
     }
     pub(super) fn offset_parent(&mut self, node: &NodeRef) -> Option<NodeRef> {
         if !self.is_connected(node) || node.element().is_none() || node.tag_name() == Some("body") {
@@ -224,6 +225,7 @@ impl HostState {
     }
 
     fn take_computed_styles(&mut self) -> (u64, StyleSet) {
+        self.sync_embedded_viewport();
         let version = self.document.document_mutation_version();
         let previous_rules = self.previous_rules.take();
         let styles = match self.computed_styles.take() {
@@ -239,6 +241,7 @@ impl HostState {
     }
 
     pub(super) fn take_offset_parent_styles(&mut self) -> (u64, StyleSet) {
+        self.sync_embedded_viewport();
         let version = self.document.document_mutation_version();
         let styles = match self.offset_parent_styles.take() {
             Some((cached_version, styles)) if cached_version == version => styles,

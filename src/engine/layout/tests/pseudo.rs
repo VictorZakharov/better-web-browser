@@ -90,3 +90,19 @@ fn generated_boxes_become_flex_items_without_entering_the_dom() {
         before_parse_count
     );
 }
+
+#[test]
+fn absolute_generated_box_inside_a_static_inline_uses_the_enclosing_containing_block() {
+    // CSS 2.1 §10.1: non-positioned inline and block ancestors establish no containing
+    // block, so the absolute ::after of an empty <map> is placed against the initial one.
+    let page = Page::parse(
+        r#"<style>body{margin:20px;padding:10px}map::after{position:absolute;top:18px;left:638px;
+           content:"X";background:fuchsia;width:20px;height:20px}</style>
+           <p>a</p><map name=""></map>"#,
+        "https://example.test/",
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    assert!(output.items.iter().any(|item| matches!(item,
+        DisplayItem::SolidRect { rect, color, .. }
+            if *color == Color::rgb(255, 0, 255) && rect.x == 638.0 && rect.y == 18.0)));
+}

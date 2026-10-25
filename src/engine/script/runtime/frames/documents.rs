@@ -7,6 +7,9 @@ use crate::engine::script::runtime::parser_queue::ParserScripts;
 pub(super) struct FrameDocument {
     pub scripts: bool,
     pub(super) parser: Option<HtmlParser>,
+    pub(super) xml: Option<super::xml_documents::XmlParser>,
+    /// A natural size the parsed document defines for its embedding object (SVG).
+    pub(super) natural_size: Option<(f32, f32)>,
     pub(super) input: Option<super::streaming::Input>,
     pub queue: ParserScripts,
     pub requested: HashSet<PageResource>,
@@ -19,11 +22,26 @@ pub(super) struct FrameDocument {
 impl FrameDocument {
     pub fn new(parser: HtmlParser, scripts: bool) -> Self {
         let last_layout_version = parser.dom().document.subtree_mutation_version();
+        Self::with_parser(Some(parser), None, scripts, last_layout_version)
+    }
+
+    pub(super) fn xml(parser: super::xml_documents::XmlParser, scripts: bool) -> Self {
+        Self::with_parser(None, Some(parser), scripts, 0)
+    }
+
+    fn with_parser(
+        parser: Option<HtmlParser>,
+        xml: Option<super::xml_documents::XmlParser>,
+        scripts: bool,
+        last_layout_version: u64,
+    ) -> Self {
         let mut queue = ParserScripts::default();
         queue.set_parsing(true);
         Self {
             scripts,
-            parser: Some(parser),
+            parser,
+            xml,
+            natural_size: None,
             input: None,
             queue,
             requested: HashSet::new(),
@@ -37,6 +55,10 @@ impl FrameDocument {
     pub fn runnable(&self) -> bool {
         self.queue.has_ready_with_styles(!self.styles_pending)
             || (self.parser.as_ref().is_some_and(HtmlParser::runnable) && !self.queue.blocked())
+            || self
+                .xml
+                .as_ref()
+                .is_some_and(|xml| xml.runnable(self.queue.blocked()))
     }
 
     pub fn advance(&mut self, runtime: &mut ScriptRuntime) -> ScriptOutcome {
@@ -48,6 +70,9 @@ impl FrameDocument {
         };
         if let Some(script) = script {
             return self.execute(runtime, script);
+        }
+        if self.xml.is_some() {
+            return self.advance_xml(runtime);
         }
         let Some(parser) = &mut self.parser else {
             return ScriptOutcome::default();
@@ -76,21 +101,8 @@ impl FrameDocument {
                     input.restart = input.decoder.change_encoding(&label);
                 }
             }
-            ParserStep::Script(node) if self.scripts => {
-                if let Some(import_map) = runtime.process_parser_import_map(&node) {
-                    append(&mut outcome, import_map);
-                } else {
-                    self.ordinal += 1;
-                    if self.ordinal <= crate::limits::MAX_PAGE_SCRIPTS {
-                        let base = runtime.host.borrow().script_base_url();
-                        if let Some(script) =
-                            crate::engine::page::prepare_written_script(node, &base, self.ordinal)
-                        {
-                            runtime.mark_parser_script_prepared(&script.node);
-                            self.queue.enqueue(script);
-                        }
-                    }
-                }
+            ParserStep::Script(node) => {
+                append(&mut outcome, self.prepare_parser_script(runtime, node));
             }
             ParserStep::CustomElement(node) => {
                 let parser = self.parser.take().unwrap();
@@ -110,14 +122,43 @@ impl FrameDocument {
             }
             ParserStep::End => {
                 self.parser = None;
-                self.queue.set_parsing(false);
-                runtime.set_deferred_scripts_pending(self.queue.deferred_pending());
-                append(&mut outcome, runtime.finish_document_lifecycle());
+                append(&mut outcome, self.finish_parsing(runtime));
             }
             _ => (),
         }
         self.update_pending(runtime);
         outcome
+    }
+
+    /// Prepares a script element whose end tag the parser has just processed.
+    pub(super) fn prepare_parser_script(
+        &mut self,
+        runtime: &mut ScriptRuntime,
+        node: NodeRef,
+    ) -> ScriptOutcome {
+        if !self.scripts {
+            return ScriptOutcome::default();
+        }
+        if let Some(import_map) = runtime.process_parser_import_map(&node) {
+            return import_map;
+        }
+        self.ordinal += 1;
+        if self.ordinal <= crate::limits::MAX_PAGE_SCRIPTS {
+            let base = runtime.host.borrow().script_base_url();
+            if let Some(script) =
+                crate::engine::page::prepare_written_script(node, &base, self.ordinal)
+            {
+                runtime.mark_parser_script_prepared(&script.node);
+                self.queue.enqueue(script);
+            }
+        }
+        ScriptOutcome::default()
+    }
+
+    pub(super) fn finish_parsing(&mut self, runtime: &mut ScriptRuntime) -> ScriptOutcome {
+        self.queue.set_parsing(false);
+        runtime.set_deferred_scripts_pending(self.queue.deferred_pending());
+        runtime.finish_document_lifecycle()
     }
 
     fn execute(&mut self, runtime: &mut ScriptRuntime, script: PageScript) -> ScriptOutcome {
@@ -181,7 +222,10 @@ impl FrameDocument {
         self.queue.prepare_modules(runtime);
         runtime.set_deferred_scripts_pending(self.queue.deferred_pending());
         runtime.set_document_load_pending(
-            self.parser.is_some() || self.queue.is_pending() || self.styles_load_pending,
+            self.parser.is_some()
+                || self.xml.is_some()
+                || self.queue.is_pending()
+                || self.styles_load_pending,
         );
     }
 }

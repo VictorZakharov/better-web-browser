@@ -284,6 +284,7 @@ fn destination(value: RequestDestination) -> ResourceDestination {
         RequestDestination::Worker => ResourceDestination::Worker,
         RequestDestination::Font => ResourceDestination::Font,
         RequestDestination::Document => ResourceDestination::Document,
+        RequestDestination::Object => ResourceDestination::Object,
         RequestDestination::Fetch => ResourceDestination::Fetch,
         RequestDestination::Video => ResourceDestination::Video,
         RequestDestination::Audio => ResourceDestination::Audio,

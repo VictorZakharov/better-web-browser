@@ -101,3 +101,43 @@ fn positioned_empty_pseudo_retains_all_corner_background_layers_under_zoom() {
         assert!((tile.height - 17.966).abs() < 0.01 || (tile.height - 1.382).abs() < 0.01);
     }
 }
+
+#[test]
+fn propagated_body_background_images_paint_the_whole_canvas_not_the_body() {
+    // CSS Backgrounds 3 §2.11.2: with a transparent root, the body background (color and
+    // images) becomes the canvas background, positioned against the root element's box.
+    let page = Page::parse(
+        "<style>html{margin:0;padding:0}body{margin:0;height:30px;\
+         background:green linear-gradient(red,blue) 5px 5px/10px 10px no-repeat}</style>",
+        "https://example.test/",
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    assert_eq!(output.background, Color::rgb(0, 128, 0));
+    let layers: Vec<_> = output
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            DisplayItem::CssGradient {
+                clip_rect,
+                tile_rect,
+                ..
+            } => Some((*clip_rect, *tile_rect)),
+            _ => None,
+        })
+        .collect();
+    let canvas = RectF {
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+    };
+    let tile = RectF {
+        x: 5.0,
+        y: 5.0,
+        width: 10.0,
+        height: 10.0,
+    };
+    assert_eq!(layers, [(canvas, tile)]);
+    assert!(!output.items.iter().any(|item| matches!(item,
+        DisplayItem::SolidRect { color, .. } if *color == Color::rgb(0, 128, 0))));
+}

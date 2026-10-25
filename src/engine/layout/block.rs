@@ -180,6 +180,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let in_flow_paint_start = self.output.items.len();
         let in_flow_node_start = self.output.node_paint_order.len();
 
+        // Until this box's height is known, nested absolute boxes see its specified height.
+        let padding_box = RectF {
+            x: x + borders.left,
+            y: border_y + borders.top,
+            width: (border_box_width - borders.horizontal()).max(0.0),
+            height: specified_height.map_or_else(
+                || containing_height.unwrap_or(self.viewport.height),
+                |height| height + padding.top + padding.bottom,
+            ),
+        };
+        let absolute_scope = self.enter_absolute_scope(&style, padding_box);
         let collapsed =
             style.content_visibility_hidden || style_collapses_overflow(&style, self.viewport);
         let content_bottom = if collapsed {
@@ -322,23 +333,18 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             width: (border_box_width - borders.horizontal() - gutter_right).max(0.0),
             height: padding.top + content_height + padding.bottom,
         };
-        let positioning_box = positioned::containing_box(
-            &style,
-            padding_rect,
-            RectF {
-                x: containing_x,
-                y,
-                width: containing_width,
-                height: containing_height.unwrap_or(self.viewport.height),
-            },
-        );
-        self.layout_positioned_children(
-            node,
-            positioning_box,
-            (content_x, content_y),
-            in_flow_paint_start,
-            in_flow_node_start,
-        );
+        let ancestor_box = self.exit_absolute_scope(absolute_scope);
+        let positioning_box = positioned::containing_box(&style, padding_rect, ancestor_box);
+        // A replaced element's children (an object's hidden fallback) generate no boxes.
+        if block_image.is_none() {
+            self.layout_positioned_children(
+                node,
+                positioning_box,
+                (content_x, content_y),
+                in_flow_paint_start,
+                in_flow_node_start,
+            );
+        }
         self.finish_scroll_container(node, &style, padding_rect, in_flow_paint_start);
         self.finish_overflow_clip(overflow_clip, padding_rect);
         if style.visibility {

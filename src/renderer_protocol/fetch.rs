@@ -8,6 +8,7 @@ use crate::limits::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResourceDestination {
     Document,
+    Object,
     Style,
     Image,
     Script,
