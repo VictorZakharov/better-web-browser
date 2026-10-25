@@ -118,3 +118,33 @@ fn form_controls_and_custom_elements_are_not_shared() {
         styled("<div><input><input><x-a></x-a><x-a></x-a><button></button><button></button></div>");
     assert_eq!(stats.hits, 0, "{stats:?}");
 }
+
+#[test]
+fn incremental_restyles_share_between_restyled_siblings() {
+    let (dom, mut styles, _) = styled(
+        "<style>.on li {color:green; padding:2px}</style><ul><li>1</li><li>2</li><li>3</li></ul>",
+    );
+    assert_eq!(colors(&dom, &styles, "li"), [false, false, false]);
+    let list = dom.elements_named("ul").next().unwrap();
+    list.set_attr("class", "on");
+    let stats = styles.refresh_subtrees(&dom.document, std::slice::from_ref(&list), &[]);
+    assert_eq!(colors(&dom, &styles, "li"), [true, true, true]);
+    assert!(stats.changed_styles >= 4, "{stats:?}");
+    let sharing = sharing::LAST_STATS.with(|stats| stats.get());
+    assert!(sharing.hits >= 2, "{sharing:?}");
+}
+
+#[test]
+fn compared_attributes_and_simple_negations_need_no_revalidation() {
+    // `:not(.skip)` and `[title]` follow from the compared class list and attribute names,
+    // and `[rel~=a]` from a compared value; `[data-x=1]` still revalidates per element.
+    let (dom, styles, stats) = styled(
+        "<style>li:not(.skip)[title] {color:green} a[rel~=a] {color:green} li[data-x='1'][title] {color:red}</style><ul><li title=a>1</li><li title=b>2</li><li class=skip title=c>3</li><li data-x=1 title=d>4</li><li data-x=2 title=e>5</li></ul><p><a rel=a>x</a><a rel=b>y</a></p>",
+    );
+    assert_eq!(
+        colors(&dom, &styles, "li"),
+        [true, true, false, false, true]
+    );
+    assert_eq!(colors(&dom, &styles, "a"), [true, false]);
+    assert!(stats.hits >= 1, "{stats:?}");
+}

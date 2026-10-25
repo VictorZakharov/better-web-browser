@@ -179,11 +179,14 @@ impl StyleSet {
         mut descend: impl FnMut(&NodeRef, bool) -> bool,
     ) {
         let root = node_id(node);
-        let mut pending = vec![node.clone()];
-        while let Some(node) = pending.pop() {
+        // Every node is restyled after its parent in this traversal, so share groups hold as
+        // in `compute_subtree`: equal siblings and cousins reuse one computed style.
+        let mut cache = sharing::SharingCache::default();
+        let mut pending = vec![(node.clone(), cache.new_group())];
+        while let Some((node, parent_group)) = pending.pop() {
             let style_started = std::time::Instant::now();
-            let style = if node_id(&node) == root {
-                self.compute_style(&node, parent)
+            let (style, group) = if node_id(&node) == root {
+                self.compute_style_shared(&mut cache, &node, parent, parent_group)
             } else {
                 let parent = Node::composed_parent(&node)
                     .expect("connected composed-tree child has a parent");
@@ -191,7 +194,7 @@ impl StyleSet {
                     .styles
                     .get(&node_id(&parent))
                     .expect("parent style is recomputed before its children");
-                self.compute_style(&node, Some(parent_style))
+                self.compute_style_shared(&mut cache, &node, Some(parent_style), parent_group)
             };
             stats.element_style_time += style_started.elapsed();
             stats.invalidated_nodes += 1;
@@ -239,12 +242,15 @@ impl StyleSet {
             stats.pseudo_style_time += pseudo_started.elapsed();
             if !self.defer_nonrendered_descendants || displayed {
                 if descend(&node, changed) {
-                    pending.extend(Node::composed_children(&node).into_iter().rev());
+                    let children = Node::composed_children(&node).into_iter().rev();
+                    pending.extend(children.map(|child| (child, group)));
                 }
             } else {
                 stats.removed_styles += self.forget_deferred_styles(&node, false);
             }
         }
+        #[cfg(test)]
+        sharing::LAST_STATS.with(|stats| stats.set(cache.stats));
     }
 }
 

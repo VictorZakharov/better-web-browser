@@ -1,9 +1,10 @@
 //! Which rules let elements share styles, and which ids any selector names.
 use super::super::*;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RuleSharing {
-    /// The result follows from the element's and ancestors' names, classes and ids.
+    /// The result follows from inputs the cache compares: the element's and its ancestors'
+    /// names, classes, ids and compared attribute values.
     KeyDetermined,
     /// Evaluate on both elements; equal results keep the matched rule lists equal.
     Revalidate,
@@ -86,7 +87,7 @@ fn key_determined(compound: &CompoundSelector) -> bool {
         functional,
         has,
         nth,
-        languages,
+        languages: _,
         directions,
         requires_link,
         requires_unvisited,
@@ -99,7 +100,7 @@ fn key_determined(compound: &CompoundSelector) -> bool {
         requires_only_of_type,
         requires_empty,
         requires_has_slotted,
-        requires_root,
+        requires_root: _,
         requires_scope,
         requires_enabled,
         requires_disabled,
@@ -131,7 +132,6 @@ fn key_determined(compound: &CompoundSelector) -> bool {
         requires_only_of_type,
         requires_empty,
         requires_has_slotted,
-        requires_root,
         requires_scope,
         requires_enabled,
         requires_disabled,
@@ -151,11 +151,21 @@ fn key_determined(compound: &CompoundSelector) -> bool {
         requires_in_range,
         requires_out_of_range,
     ];
-    attributes.is_empty()
-        && functional.is_empty()
-        && has.is_empty()
+    // Paired elements and ancestors have equal names, attribute lists and values except
+    // for selector-only attributes, so presence tests and tests of compared values agree.
+    // `:lang()` reads compared `lang` values up the paired ancestor chains, and `:root`
+    // matches neither paired element (the root element never shares).
+    attributes.iter().all(|attribute| {
+        matches!(attribute.operator, AttributeOperator::Exists)
+            || !super::selector_only_attribute(&attribute.name.to_ascii_lowercase())
+    }) && functional.iter().all(|functional| {
+        // A selector list on the same element, without combinators, is decided by the
+        // same inputs; `:not()` only negates that result.
+        functional.selectors.iter().all(|selector| {
+            selector.combinators.is_empty() && selector.compounds.iter().all(key_determined)
+        })
+    }) && has.is_empty()
         && nth.is_empty()
-        && languages.is_empty()
         && directions.is_empty()
         && flags.iter().all(|flag| !**flag)
 }
