@@ -173,3 +173,33 @@ fn svg_filter_lengths_and_units_reflect_and_keep_animated_values_read_only() {
         "yes"
     );
 }
+
+#[test]
+fn svg_rect_lengths_and_text_content_character_count_follow_svg2_interfaces() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output></output><script>
+          const ns = 'http://www.w3.org/2000/svg';
+          const rect = document.createElementNS(ns, 'rect');
+          rect.setAttribute('width', '100');
+          const text = document.createElementNS(ns, 'text');
+          text.append('ab', document.createElementNS(ns, 'tspan'), '\u{1F600}');
+          text.lastChild.previousSibling.textContent = 'c';
+          const checks = [
+            rect instanceof SVGRectElement && rect instanceof SVGGeometryElement,
+            rect.width instanceof SVGAnimatedLength && rect.width === rect.width,
+            rect.width.baseVal.value === 100 && rect.height.baseVal.value === 0,
+            text instanceof SVGTextElement && text instanceof SVGTextContentElement,
+            text.firstElementChild instanceof SVGTSpanElement,
+            // A non-BMP character is two UTF-16 code units, hence two addressable characters.
+            text.getNumberOfChars() === 5
+          ];
+          if (checks.every(Boolean)) document.querySelector('output').textContent = 'yes';
+          else throw Error(checks);
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "yes"
+    );
+}

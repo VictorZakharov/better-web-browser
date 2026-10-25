@@ -197,11 +197,11 @@ pub(super) fn apply_declaration(
         "margin-right" => assign_length(&mut style.margin.right, value),
         "margin-bottom" => assign_length(&mut style.margin.bottom, value),
         "margin-left" => assign_length(&mut style.margin.left, value),
-        "padding" => assign_edges(&mut style.padding, value),
-        "padding-top" => assign_length(&mut style.padding.top, value),
-        "padding-right" => assign_length(&mut style.padding.right, value),
-        "padding-bottom" => assign_length(&mut style.padding.bottom, value),
-        "padding-left" => assign_length(&mut style.padding.left, value),
+        "padding" => assign_padding_edges(&mut style.padding, value),
+        "padding-top" => assign_padding(&mut style.padding.top, value),
+        "padding-right" => assign_padding(&mut style.padding.right, value),
+        "padding-bottom" => assign_padding(&mut style.padding.bottom, value),
+        "padding-left" => assign_padding(&mut style.padding.left, value),
         "scroll-margin"
         | "scroll-margin-top"
         | "scroll-margin-right"
@@ -318,7 +318,7 @@ pub(super) fn apply_declaration(
         }
         "caption-side" => style.caption_side_bottom = value == "bottom",
         "vertical-align" => {
-            if let Some(align) = VerticalAlign::parse(value) {
+            if let Some(align) = VerticalAlign::parse_property(value) {
                 style.vertical_align = align;
             }
         }

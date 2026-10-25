@@ -26,7 +26,7 @@ pub(super) fn parse_style_rule_selector_with_parent(
     parent: Option<&[Selector]>,
     parent_specificity: Option<Specificity>,
 ) -> Option<(Selector, Option<PseudoElement>)> {
-    let input = input.trim();
+    let input = trim_selector(input);
     let lower = input.to_ascii_lowercase();
     let (origin, pseudo) = [
         ("::before", PseudoElement::Before),
@@ -45,7 +45,7 @@ pub(super) fn parse_style_rule_selector_with_parent(
     let origin = if origin.trim().is_empty() {
         "*"
     } else {
-        origin.trim()
+        trim_selector(origin)
     };
     let mut selector = if let Some(parent) = parent {
         let source = if contains_nesting_selector(origin) {
@@ -61,6 +61,22 @@ pub(super) fn parse_style_rule_selector_with_parent(
         selector.specificity.tags = selector.specificity.tags.saturating_add(1);
     }
     Some((selector, pseudo))
+}
+
+/// Trims surrounding whitespace except an escaped trailing one: `#\ ` names the id " "
+/// (CSS Syntax 3 §4.3.7, an escape consumes the code point after the backslash).
+pub(super) fn trim_selector(input: &str) -> &str {
+    let start = input.trim_start();
+    let trimmed = start.trim_end();
+    let backslashes = trimmed
+        .bytes()
+        .rev()
+        .take_while(|byte| *byte == b'\\')
+        .count();
+    match start[trimmed.len()..].chars().next() {
+        Some(escaped) if backslashes % 2 == 1 => &start[..trimmed.len() + escaped.len_utf8()],
+        _ => trimmed,
+    }
 }
 
 pub(super) fn parse_selector(input: &str) -> Option<Selector> {
@@ -239,7 +255,15 @@ fn parse_compound_selector_with_depth(
                 } else {
                     specificity.classes += 1;
                     match name.as_str() {
-                        "link" | "any-link" => compound.requires_link = true,
+                        "any-link" => compound.requires_link = true,
+                        "link" => {
+                            compound.requires_link = true;
+                            compound.requires_unvisited = true;
+                        }
+                        "visited" => {
+                            compound.requires_link = true;
+                            compound.requires_visited = true;
+                        }
                         "first-child" => compound.requires_first_child = true,
                         "first-of-type" => compound.requires_first_of_type = true,
                         "last-child" => compound.requires_last_child = true,
@@ -267,7 +291,7 @@ fn parse_compound_selector_with_depth(
                         "optional" => compound.requires_optional = true,
                         "in-range" => compound.requires_in_range = true,
                         "out-of-range" => compound.requires_out_of_range = true,
-                        "active" | "visited" | "focus-visible" => compound.never_matches = true,
+                        "active" | "focus-visible" => compound.never_matches = true,
                         // An unknown pseudo-class invalidates an unforgiving selector list.
                         // Known but unimplemented pseudos above stay syntactically valid.
                         _ => return None,

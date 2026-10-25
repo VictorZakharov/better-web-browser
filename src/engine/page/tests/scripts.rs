@@ -53,6 +53,21 @@ fn discovers_external_scripts_and_executes_dom_mutations() {
     );
 }
 
+// A script's src is fetched like any subresource, so data: URLs load; only navigations refuse them.
+// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+#[test]
+fn discovers_data_url_scripts_as_external_resources() {
+    let source = "data:text/javascript,d1%20%3D%20'one'%3B";
+    let page = Page::parse_scripted(
+        &format!(r#"<body><script src="{source}"></script>"#),
+        "https://example.com/start",
+    );
+    assert!(page.resources.iter().any(|resource| matches!(
+        resource,
+        PageResource::Script { url, .. } if url == source
+    )));
+}
+
 #[test]
 fn discovers_module_script_fetch_policy() {
     let page = Page::parse_scripted(

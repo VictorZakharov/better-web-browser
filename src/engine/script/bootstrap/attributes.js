@@ -149,6 +149,8 @@
         customElementAttributeChanged(element, record.localName, oldValue, newValue, record.namespace);
         if (record.namespace === null && record.localName === 'src' && newValue !== null
             && element instanceof HTMLMediaElement) mediaSourceAttributeChanged(element);
+        if (record.namespace === null && (record.localName === 'data' || record.localName === 'type')
+            && element.localName === 'object') objectResourceAttributeChanged(element);
     };
     // DOM's "set an attribute value" is an internal algorithm. CSSOM uses it
     // to update inline style without invoking an author-overridden setAttribute.

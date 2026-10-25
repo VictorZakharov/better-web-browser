@@ -50,6 +50,7 @@ impl Node {
                 script_force_async: std::cell::Cell::new(true),
                 script_started: std::cell::Cell::new(false),
                 script_parser_inserted: std::cell::Cell::new(false),
+                object_navigable: std::cell::Cell::new(None),
             }),
         )
     }
@@ -86,6 +87,7 @@ impl Node {
                 script_force_async: std::cell::Cell::new(true),
                 script_started: std::cell::Cell::new(false),
                 script_parser_inserted: std::cell::Cell::new(false),
+                object_navigable: std::cell::Cell::new(None),
             }),
         )
     }

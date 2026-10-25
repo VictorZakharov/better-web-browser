@@ -17,6 +17,11 @@ pub(super) fn apply(style: &mut ComputedStyle, name: &str, value: &str) -> bool 
                 style.appearance = appearance;
             }
         }
+        "cursor" => {
+            if let Some(cursor) = Cursor::parse(value) {
+                style.cursor = cursor;
+            }
+        }
         "accent-color" => {
             if let Some(accent) = AccentColor::parse(value) {
                 style.accent_color = accent;
@@ -33,6 +38,11 @@ pub(super) fn apply(style: &mut ComputedStyle, name: &str, value: &str) -> bool 
         "box-shadow" => {
             if let Some(shadows) = values::box_shadow::parse(value) {
                 style.box_shadows = shadows;
+            }
+        }
+        "text-shadow" => {
+            if let Some(shadows) = values::box_shadow::parse_text(value) {
+                style.text_shadows = shadows;
             }
         }
         "scrollbar-width" => {

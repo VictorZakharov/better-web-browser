@@ -52,7 +52,7 @@ fn table_ua_alignment_inheritance_and_author_css_wide_values_are_not_global_inhe
         assert_eq!(style.vertical_align, expected, "{id}");
         assert_eq!(
             crate::engine::css::resolved_property_value(style, "vertical-align").as_deref(),
-            Some(expected.css_keyword())
+            Some(expected.css_text(style.font_size).as_str())
         );
         let mut changed = style.clone();
         changed.vertical_align = VerticalAlign::Middle;

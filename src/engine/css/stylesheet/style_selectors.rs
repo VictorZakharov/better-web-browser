@@ -37,7 +37,7 @@ pub(super) fn parse_style_selectors(
     });
     let mut selectors = Vec::new();
     for member in split_css_top_level(prelude, ',') {
-        let member = member.trim();
+        let member = crate::engine::css::selector_parser::trim_selector(member);
         if member.is_empty() {
             return None;
         }

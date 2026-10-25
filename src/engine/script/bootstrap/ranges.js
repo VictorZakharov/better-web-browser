@@ -211,12 +211,7 @@
         }
         getClientRects() { return makeRectList(rangeClientRects(this)); }
         getBoundingClientRect() { return boundingRect(rangeClientRects(this)); }
-        toString() {
-            if (this.collapsed) return '';
-            if (this.startContainer === this.endContainer && this.startContainer instanceof CharacterData)
-                return this.startContainer.data.slice(this.startOffset, this.endOffset);
-            return this.cloneContents().textContent || '';
-        }
+        toString() { return rangeText(this); }
     }
     for (const [name, value] of Object.entries({
         START_TO_START: 0, START_TO_END: 1, END_TO_END: 2, END_TO_START: 3
@@ -327,7 +322,12 @@
         toString() { return this.rangeCount ? this._ranges[0].toString() : ''; }
     }
     const documentSelection = new Selection();
-    Document.prototype.createRange = function createRange() { return new Range(); };
+    // createRange() starts both boundaries at (this document, 0). https://dom.spec.whatwg.org/#dom-document-createrange
+    Document.prototype.createRange = function createRange() {
+        const range = new Range();
+        range.__start = range.__end = { node: this, offset: 0 };
+        return range;
+    };
     Document.prototype.getSelection = function getSelection() { return documentSelection; };
     windowObject.getSelection = () => documentSelection;
     windowObject.AbstractRange = AbstractRange;

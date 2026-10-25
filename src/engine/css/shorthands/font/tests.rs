@@ -17,7 +17,7 @@ fn rejects_duplicate_style_weight_missing_components_and_unimplemented_synthesis
         "bold 700 20px Arial",
         "400 500 20px Arial",
         "normal normal normal normal normal 20px Arial",
-        "small-caps 20px Arial",
+        "small-caps small-caps 20px Arial",
         "condensed 20px Arial",
         "caption",
         "20px",
@@ -61,4 +61,14 @@ fn cascade_rejects_invalid_shorthand_atomically_without_resetting_existing_featu
     assert!(style.italic);
     assert_eq!(style.font_weight, 600);
     assert_eq!(style.font_features.css_text(), "normal");
+}
+
+#[test]
+fn small_caps_fills_the_variant_slot_and_the_shorthand_resets_line_height() {
+    // https://drafts.csswg.org/css-fonts-4/#font-prop
+    let parsed = parse("900 small-caps 10px sans-serif").unwrap();
+    assert!(parsed.small_caps);
+    assert_eq!(parsed.weight, 900);
+    assert_eq!(parsed.line_height, "normal");
+    assert!(!parse("10px sans-serif").unwrap().small_caps);
 }

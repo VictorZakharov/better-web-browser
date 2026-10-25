@@ -55,8 +55,10 @@
         fragment.appendChild(clone);
         clone.appendChild(rangeCopyFragment(start, end, extract));
     };
+    // The fragment belongs to the range start's node document, not the global document.
+    const rangeFragmentFor = node => (node.ownerDocument || node).createDocumentFragment();
     const rangeCopyFragment = (start, end, extract) => {
-        const fragment = document.createDocumentFragment();
+        const fragment = rangeFragmentFor(start.node);
         if (start.node === end.node && start.offset === end.offset) return fragment;
         if (start.node === end.node && start.node instanceof CharacterData) {
             rangeCopyPart(fragment, start.node, start, end, extract);
@@ -79,7 +81,7 @@
     const rangeCopyContents = (range, extract) => {
         const start = { ...range.__start }, end = { ...range.__end };
         if (!extract) return rangeCopyFragment(start, end, false);
-        if (range.collapsed) return document.createDocumentFragment();
+        if (range.collapsed) return rangeFragmentFor(start.node);
         const collapse = rangeCollapseAfterDelete(start, end);
         // The standard collapses the live range before the selected nodes move.
         range.__start = range.__end = collapse;
@@ -109,4 +111,21 @@
         for (const node of contained) node.remove();
         if (end.node instanceof CharacterData)
             end.node.replaceData(0, end.offset, '');
+    };
+    // The Range stringifier concatenates Text data only; it never clones, so a range that
+    // contains a doctype still stringifies. https://dom.spec.whatwg.org/#dom-range-stringifier
+    const rangeText = range => {
+        const start = range.__start, end = range.__end;
+        if (start.node === end.node && start.node instanceof Text)
+            return start.node.data.slice(start.offset, end.offset);
+        let text = start.node instanceof Text ? start.node.data.slice(start.offset) : '';
+        const visit = node => {
+            for (const child of Array.from(node.childNodes)) {
+                if (child instanceof Text && rangeContained(child, start, end)) text += child.data;
+                visit(child);
+            }
+        };
+        visit(range.commonAncestorContainer);
+        if (end.node instanceof Text) text += end.node.data.slice(0, end.offset);
+        return text;
     };

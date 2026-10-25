@@ -206,6 +206,25 @@ impl DocumentRuntime {
         })
     }
 
+    /// Nested documents lay out on demand with the same text system as composed frame paint.
+    pub(super) fn script_frame_layout_service(&self) -> crate::engine::script::FrameLayoutService {
+        let text = Rc::clone(&self.text);
+        Rc::new(move |page, width, height, hit_test| {
+            // Paint composition holds the text system while it lays frames out; a geometry
+            // read that reaches this during that window keeps the published geometry.
+            let mut text = text.try_borrow_mut().ok()?;
+            Some(if hit_test {
+                crate::engine::layout_page_with_style_viewport(
+                    page, width, height, width, &mut *text,
+                )
+            } else {
+                crate::engine::layout_geometry_with_style_viewport(
+                    page, width, height, width, &mut *text,
+                )
+            })
+        })
+    }
+
     pub(super) fn rebuild_layout(&mut self) {
         self.rebuild_layout_for_invalidation(None);
     }

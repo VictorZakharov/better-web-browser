@@ -34,6 +34,7 @@ impl HostState {
     }
 
     fn flush_layout(&mut self, hit_test_requested: bool) {
+        self.sync_embedded_viewport();
         let version = self.document.subtree_mutation_version();
         let scroll_changed = !self.sticky_offsets.is_empty()
             && (self.geometry_scroll_dirty
@@ -46,6 +47,7 @@ impl HostState {
             return;
         }
         let Some(flush) = self.layout_flush.as_mut() else {
+            self.flush_frame_layout(hit_test_requested);
             return;
         };
         let invalidation = self.pending_layout_invalidation.take(self.mutation_count);

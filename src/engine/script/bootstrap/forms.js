@@ -3,6 +3,9 @@
         // 153): present for the constraint-validation API shape, never a
         // candidate.
         get willValidate() { return false; }
+        // `data` reflects its content attribute as a URL resolved against the document base.
+        get data() { const value = this.getAttribute('data'); return value == null ? '' : host('resolveUrl', value); }
+        set data(value) { this.setAttribute('data', value); }
     }
     class HTMLOrderedListElement extends HTMLElement {
         get reversed() { return this.hasAttribute('reversed'); }

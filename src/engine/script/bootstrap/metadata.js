@@ -17,6 +17,17 @@
         }
         return text;
     };
+    // https://html.spec.whatwg.org/multipage/semantics.html#the-meta-element
+    class HTMLMetaElement extends HTMLElement {
+        get name() { return this.getAttribute('name') ?? ''; }
+        set name(value) { this.setAttribute('name', value); }
+        get httpEquiv() { return this.getAttribute('http-equiv') ?? ''; }
+        set httpEquiv(value) { this.setAttribute('http-equiv', value); }
+        get content() { return this.getAttribute('content') ?? ''; }
+        set content(value) { this.setAttribute('content', value); }
+        get media() { return this.getAttribute('media') ?? ''; }
+        set media(value) { this.setAttribute('media', value); }
+    }
     class HTMLTitleElement extends HTMLElement {
         constructor(id, type, name, localName, namespace, token) {
             if (token !== htmlTitleConstructionToken) throw new TypeError('Illegal constructor');

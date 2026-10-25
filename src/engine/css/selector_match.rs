@@ -6,6 +6,7 @@ mod linguistic;
 mod selector_editing;
 mod shadow_pseudo;
 mod structural;
+pub(crate) mod visited;
 pub(super) use ancestor_filter::{AncestorFilter, AncestorFilterCache};
 
 use super::selector_validity::{
@@ -179,7 +180,7 @@ pub(super) fn compound_matches(
     {
         return false;
     }
-    if selector.requires_link && node.tag_name() != Some("a") {
+    if selector.requires_link && !visited::link_matches(selector, node) {
         return false;
     }
     if selector.requires_root

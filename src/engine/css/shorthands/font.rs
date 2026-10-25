@@ -8,6 +8,18 @@ pub(in crate::engine::css) struct FontShorthand {
     pub family: String,
     pub weight: u16,
     pub style: String,
+    pub small_caps: bool,
+}
+
+/// The `font-variant-caps` values with synthesis: `small-caps` lowercase letters render as
+/// reduced-size capitals. Other caps values are declined until they are rendered.
+/// https://drafts.csswg.org/css-fonts-4/#font-variant-caps-prop
+pub(in crate::engine::css) fn font_caps(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "normal" => Some(false),
+        "small-caps" => Some(true),
+        _ => None,
+    }
 }
 
 pub(in crate::engine::css) fn parse(value: &str) -> Option<FontShorthand> {
@@ -31,12 +43,15 @@ pub(in crate::engine::css) fn parse(value: &str) -> Option<FontShorthand> {
     let family = font_family::specified(&parts[family_start..].join(" "))?;
     let mut weight = None;
     let mut style = None;
+    let mut small_caps = false;
     let mut normals = 0;
     for part in &parts[..index] {
         match part.to_ascii_lowercase().as_str() {
             "bold" if weight.is_none() => weight = Some(700),
             "italic" | "oblique" if style.is_none() => style = Some(part.to_ascii_lowercase()),
             "normal" => normals += 1,
+            // The shorthand's variant slot accepts only `normal` or `small-caps`.
+            "small-caps" if !small_caps => small_caps = true,
             value if weight.is_none() => {
                 let number = value.parse::<u16>().ok()?;
                 if !(1..=1000).contains(&number) {
@@ -48,8 +63,13 @@ pub(in crate::engine::css) fn parse(value: &str) -> Option<FontShorthand> {
         }
     }
     // Supported style/weight plus normal variant/width slots are unordered.
-    // Non-normal caps/width and system fonts are declined until selection works.
-    if normals + usize::from(weight.is_some()) + usize::from(style.is_some()) > 4 {
+    // Non-normal width and system fonts are declined until selection works.
+    if normals
+        + usize::from(weight.is_some())
+        + usize::from(style.is_some())
+        + usize::from(small_caps)
+        > 4
+    {
         return None;
     }
     Some(FontShorthand {
@@ -58,6 +78,7 @@ pub(in crate::engine::css) fn parse(value: &str) -> Option<FontShorthand> {
         family,
         weight: weight.unwrap_or(400),
         style: style.unwrap_or_else(|| "normal".into()),
+        small_caps,
     })
 }
 
@@ -89,6 +110,7 @@ pub(in crate::engine::css) fn apply_font_shorthand(
     style.font_kerning = FontKerning::Auto;
     style.font_ligatures = FontLigatures::default();
     style.font_numeric = FontNumeric::default();
+    style.font_small_caps = parts.small_caps;
 }
 
 #[cfg(test)]

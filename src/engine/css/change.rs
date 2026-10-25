@@ -36,6 +36,10 @@ impl ComputedStyle {
             .zip(self.border_colors)
             .any(|(width, color)| color.is_none() && !matches!(width, Length::Px(0.0)))
             || self.box_shadows.iter().any(|shadow| shadow.color.is_none())
+            || self
+                .text_shadows
+                .iter()
+                .any(|shadow| shadow.color.is_none())
             || !self.background_image.is_none()
             || !self.mask_image.is_none()
     }
@@ -74,6 +78,7 @@ impl ComputedStyle {
             && self.font_kerning == other.font_kerning
             && self.font_ligatures == other.font_ligatures
             && self.font_numeric == other.font_numeric
+            && self.font_small_caps == other.font_small_caps
             && self.letter_spacing == other.letter_spacing
             && self.word_spacing == other.word_spacing
             && self.line_height == other.line_height

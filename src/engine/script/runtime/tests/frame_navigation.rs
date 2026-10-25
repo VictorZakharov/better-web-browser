@@ -8,13 +8,16 @@ mod file_reader;
 mod history;
 mod images;
 mod names;
+mod objects;
 mod observers;
 mod policy;
 mod ports;
 mod scripts;
 mod streaming;
 mod styles;
+mod viewport_media;
 mod workers;
+mod xml_documents;
 
 fn start(source: &str) -> (dom::Dom, ScriptRuntime) {
     let dom = dom::parse_with_scripting(source, true);

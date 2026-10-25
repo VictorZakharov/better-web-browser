@@ -107,7 +107,19 @@ pub(in crate::engine::layout) fn establishes_context(style: &ComputedStyle) -> b
 }
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
-    pub(super) fn layout_float(
+    /// The float's margin-box width. CSS 2.2 §10.3.5: auto floats shrink to fit; specified
+    /// widths keep their containing block percentage basis and do not shrink to the space
+    /// left by earlier floats.
+    pub(in crate::engine::layout) fn float_outer_width(
+        &mut self,
+        child: &NodeRef,
+        width: f32,
+    ) -> f32 {
+        let (minimum, preferred) = self.float_intrinsic_widths(child, width);
+        width.max(minimum).min(preferred).max(0.0)
+    }
+
+    pub(in crate::engine::layout) fn layout_float(
         &mut self,
         child: &NodeRef,
         x: f32,
@@ -116,10 +128,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         height: Option<f32>,
     ) {
         let style = self.styles.get(child).clone();
-        // CSS 2.2 §10.3.5: auto floats shrink to fit; specified widths keep their containing
-        // block percentage basis and do not shrink to the space left by earlier floats.
-        let (minimum, preferred) = self.float_intrinsic_widths(child, width);
-        let float_width = width.max(minimum).min(preferred).max(0.0);
+        let float_width = self.float_outer_width(child, width);
         let y = self.floats.clearance(style.clear, self.floats.last_top(y));
         let (left, top, available) = self.floats.fit(x, y, width, float_width, 0.01);
         let float_x = if style.float == Float::Right {

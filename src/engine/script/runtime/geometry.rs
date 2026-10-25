@@ -93,6 +93,18 @@ impl ScriptRuntime {
         self.host.borrow_mut().layout_flush = Some(callback);
     }
 
+    /// Lays out nested documents for their own synchronous geometry reads. Child realms
+    /// created after this call inherit it from their parent.
+    pub(crate) fn set_frame_layout_service(
+        &mut self,
+        service: crate::engine::script::FrameLayoutService,
+    ) {
+        self.host.borrow_mut().frame_layout = Some(Rc::clone(&service));
+        if let Some(frames) = &mut self.frames {
+            frames.set_layout_service(&service);
+        }
+    }
+
     /// Runs the dedicated rendering-observer task against the latest layout snapshot.
     #[cfg(test)]
     pub(crate) fn notify_layout_changed(&mut self) -> ScriptOutcome {

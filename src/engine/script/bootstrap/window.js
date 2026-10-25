@@ -94,6 +94,13 @@
     windowObject.HTMLOrderedListElement = HTMLOrderedListElement;
     windowObject.HTMLSelectElement = HTMLSelectElement;
     windowObject.HTMLOptionElement = HTMLOptionElement;
+    windowObject.HTMLObjectElement = HTMLObjectElement;
+    windowObject.HTMLMetaElement = HTMLMetaElement;
+    windowObject.HTMLTableElement = HTMLTableElement;
+    windowObject.HTMLTableSectionElement = HTMLTableSectionElement;
+    windowObject.HTMLTableRowElement = HTMLTableRowElement;
+    windowObject.HTMLTableCellElement = HTMLTableCellElement;
+    windowObject.HTMLTableCaptionElement = HTMLTableCaptionElement;
     windowObject.HTMLButtonElement = HTMLButtonElement;
     windowObject.HTMLLabelElement = HTMLLabelElement;
     windowObject.HTMLFieldSetElement = HTMLFieldSetElement;

@@ -28,20 +28,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 .is_some_and(|kind| kind.eq_ignore_ascii_case("image"))
             && node.attr("src").is_some_and(|src| !src.trim().is_empty());
         let canvas = node.tag_name() == Some("canvas") && self.page.canvas_is_replaced();
+        let frame = node.content_navigable_size();
         if !(image_input
             || canvas
-            || matches!(
-                node.tag_name(),
-                Some("img" | "image" | "video" | "svg" | "iframe")
-            ))
+            || frame.is_some()
+            || matches!(node.tag_name(), Some("img" | "image" | "video" | "svg")))
         {
             return None;
         }
-        if node.tag_name() == Some("iframe") {
+        if let Some((intrinsic_width, intrinsic_height)) = frame {
             return Some(BlockImage {
                 url: String::new(),
-                intrinsic_width: 300.0,
-                intrinsic_height: 150.0,
+                intrinsic_width,
+                intrinsic_height,
                 tint: None,
                 alt: String::new(),
                 available: true,

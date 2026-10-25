@@ -58,6 +58,14 @@ impl FrameTree {
             .map(|child| (child.element.id(), child.host.borrow().document.id()))
             .collect()
     }
+    pub(super) fn size_object(&self, document: NodeId, size: (f32, f32)) {
+        if let Some(child) = self.children.borrow().values().find(|child| {
+            child.host.borrow().document.id() == document
+                && child.element.represents_content_navigable()
+        }) {
+            child.set_object_navigable_size(Some(size));
+        }
+    }
     pub(super) fn pending_parents(&self) -> std::collections::HashSet<NodeId> {
         self.children
             .borrow()
@@ -90,7 +98,8 @@ impl FrameTree {
         })
     }
 
-    pub(super) fn navigation_failed(&self, navigation: &FrameNavigation) {
+    /// Returns whether the failure made an `object` fall back to its children.
+    pub(super) fn navigation_failed(&self, navigation: &FrameNavigation) -> bool {
         let mut children = self.children.borrow_mut();
         if let Some(child) = children.get_mut(&navigation.element)
             && child.host.borrow().document.id() == navigation.document
@@ -99,7 +108,9 @@ impl FrameTree {
             // Failed child navigations still release the embedding document's load delay.
             // HTML deliberately does not expose a network-error event on iframe elements.
             child.navigation_pending = false;
+            return child.set_object_navigable_size(None);
         }
+        false
     }
 
     pub(super) fn snapshot(&self) -> Vec<RealmSnapshot> {
@@ -116,6 +127,26 @@ impl FrameTree {
                 )
             })
             .collect()
+    }
+}
+
+impl ChildRealm {
+    /// Switches an `object` between its document (`Some` natural size) and its fallback
+    /// children, invalidating the object's layout in the embedding document. Returns
+    /// whether it changed.
+    fn set_object_navigable_size(&self, size: Option<(f32, f32)>) -> bool {
+        if !self.element.set_object_navigable_size(size) {
+            return false;
+        }
+        if let Some(parent) = self.parent_host.upgrade()
+            && let Ok(mut parent) = parent.try_borrow_mut()
+        {
+            parent.record_mutation(
+                Some(&self.element),
+                crate::engine::invalidation::MutationKind::ChildList,
+            );
+        }
+        true
     }
 }
 
@@ -208,11 +239,19 @@ pub(super) fn dispatch(
         let document = node.as_ref().and_then(|node| state.document_for(node));
         (node, document.map(|document| document.id()))
     };
-    let Some(node) = node.filter(|node| node.tag_name() == Some("iframe")) else {
+    let Some(node) = node.filter(|node| matches!(node.tag_name(), Some("iframe" | "object")))
+    else {
         return;
     };
     if operation == "discardFrame" {
         discard(&tree, node.id());
+        return;
+    }
+    if !hosts_navigable(&node) {
+        // A `type` change can make a connected object stop representing a document.
+        if operation == "objectResourceChanged" {
+            discard(&tree, node.id());
+        }
         return;
     }
     let Some(document) = document else { return };
@@ -274,6 +313,34 @@ pub(super) fn dispatch(
     }
 }
 
+/// An `object` has a content navigable only for a `data` resource that may be a document.
+/// A `type` naming anything else (an image, a plugin type) never navigates: this engine has
+/// no plugins and keeps rendering those objects' fallback. SVG is excluded too, since
+/// browsers size an SVG object from its document rather than as a default 300x150 frame.
+/// Without `type`, the response decides; the object renders its fallback until then.
+/// https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-object-element
+fn hosts_navigable(node: &NodeRef) -> bool {
+    if node.tag_name() == Some("iframe") {
+        return true;
+    }
+    let declared = node.attr("type").map(|kind| {
+        kind.split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase()
+    });
+    node.attr("data")
+        .is_some_and(|data| !data.trim().is_empty())
+        && declared.as_deref().is_none_or(|kind| {
+            kind.is_empty()
+                || matches!(
+                    kind,
+                    "text/html" | "text/xml" | "application/xml" | "application/xhtml+xml"
+                )
+        })
+}
+
 fn connected_to(node: &NodeRef, document: NodeId) -> bool {
     let mut current = Some(node.clone());
     while let Some(node) = current {
@@ -290,6 +357,7 @@ fn discard(tree: &FrameTree, id: NodeId) {
         return;
     };
     let document = child.host.borrow().document.id();
+    child.element.set_object_represents_navigable(false);
     child.active.set(false);
     tree.messages.remove(document);
     tree.ports.remove(document);

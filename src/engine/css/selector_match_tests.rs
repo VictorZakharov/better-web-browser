@@ -145,9 +145,9 @@ fn structural_pseudos_count_element_siblings_and_filtered_nth_positions() {
 }
 
 #[test]
-fn empty_and_only_child_ignore_comments_and_whitespace_not_elements() {
+fn empty_and_only_child_ignore_comments_but_not_whitespace_or_elements() {
     let dom = dom::parse(
-        "<main><p id=blank> \n<!-- comment -->\t</p><p id=text>content</p>
+        "<main><p id=blank><!-- comment --></p><p id=text> \n</p>
          <section><b id=only></b></section><section><b></b><i></i></section></main>",
     );
     let blank = dom.elements_named("p").next().unwrap();

@@ -5,11 +5,15 @@ use std::mem::size_of;
 mod border;
 mod opaque;
 mod sparse;
+mod tiles;
 pub(super) use border::{border_ring, border_side_region};
 pub(super) use border::{paint_border, paint_border_colors};
 #[cfg(test)]
 pub(super) use sparse::paint as paint_sparse_bitmap;
 pub(super) use sparse::paint_from_dc as paint_sparse_bitmap_from_dc;
+pub(super) use tiles::{
+    MAX_TILES as MAX_BACKGROUND_TILES, background_tile_count, background_tiles,
+};
 
 pub(super) fn screen_rect(rect: RectF, scroll_y: i32, content_top: i32, scale: f32) -> Rect {
     Rect {
@@ -102,55 +106,18 @@ pub(super) unsafe fn paint_background_image(
         return;
     }
 
-    let start_x = if repeat_x {
-        tile_rect.x + ((clip_rect.x - tile_rect.x) / tile_rect.width).floor() * tile_rect.width
-    } else {
-        tile_rect.x
-    };
-    let start_y = if repeat_y {
-        tile_rect.y + ((clip_rect.y - tile_rect.y) / tile_rect.height).floor() * tile_rect.height
-    } else {
-        tile_rect.y
-    };
-    let mut painted = 0_usize;
-    let mut y = start_y;
-    loop {
-        let mut x = start_x;
-        loop {
-            let tile = RectF {
-                x,
-                y,
-                width: tile_rect.width,
-                height: tile_rect.height,
-            };
-            let destination_rect = screen_rect(tile, scroll_y, content_top, scale);
-            if !opaque
-                || !opaque::paint_from_dc(destination, source, bitmap, image, &destination_rect)
-            {
-                paint_alpha_bitmap_from_dc(
-                    destination,
-                    source,
-                    bitmap,
-                    image.width,
-                    image.height,
-                    &destination_rect,
-                );
-            }
-            painted += 1;
-            if !repeat_x || painted >= 4_096 {
-                break;
-            }
-            x += tile_rect.width;
-            if x >= clip_rect.right() {
-                break;
-            }
-        }
-        if !repeat_y || painted >= 4_096 {
-            break;
-        }
-        y += tile_rect.height;
-        if y >= clip_rect.bottom() {
-            break;
+    for tile in tiles::background_tiles(clip_rect, tile_rect, repeat_x, repeat_y) {
+        let destination_rect = screen_rect(tile, scroll_y, content_top, scale);
+        if !opaque || !opaque::paint_from_dc(destination, source, bitmap, image, &destination_rect)
+        {
+            paint_alpha_bitmap_from_dc(
+                destination,
+                source,
+                bitmap,
+                image.width,
+                image.height,
+                &destination_rect,
+            );
         }
     }
 

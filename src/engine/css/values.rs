@@ -19,6 +19,8 @@ mod overflow;
 pub use overflow::Overflow;
 mod widget;
 pub use widget::{AccentColor, Appearance};
+mod cursor;
+pub use cursor::Cursor;
 mod object;
 pub use object::{ObjectFit, ObjectPosition};
 pub(crate) mod font_features;
@@ -166,6 +168,15 @@ impl WhiteSpace {
     pub(crate) fn wraps(self) -> bool {
         matches!(self, Self::Normal | Self::PreWrap)
     }
+
+    pub(crate) fn css_keyword(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::NoWrap => "nowrap",
+            Self::Pre => "pre",
+            Self::PreWrap => "pre-wrap",
+        }
+    }
 }
 
 mod floats;
@@ -207,6 +218,7 @@ pub struct ComputedStyle {
     pub color: Color,
     pub appearance: Appearance,
     pub accent_color: AccentColor,
+    pub cursor: Cursor,
     pub background_color: Color,
     pub background_image: super::images::BackgroundImages,
     pub mask_image: BackgroundImages,
@@ -218,6 +230,8 @@ pub struct ComputedStyle {
     pub background_size: BackgroundSize,
     pub background_layers: BackgroundLayers,
     pub box_shadows: Vec<box_shadow::BoxShadow>,
+    /// Inherited `text-shadow` layers, front to back; spread is always zero.
+    pub text_shadows: Vec<box_shadow::BoxShadow>,
     pub scrollbar_width: scrollbars::ScrollbarWidth,
     pub scrollbar_color: Option<(Color, Color)>,
     pub object_fit: ObjectFit,
@@ -232,6 +246,8 @@ pub struct ComputedStyle {
     pub font_kerning: FontKerning,
     pub font_ligatures: FontLigatures,
     pub font_numeric: FontNumeric,
+    /// `font-variant-caps: small-caps`, synthesized from scaled capitals by inline layout.
+    pub font_small_caps: bool,
     pub letter_spacing: f32,
     pub(crate) letter_spacing_normal: bool,
     pub(crate) pending_spacing: text_spacing::PendingSpacing,

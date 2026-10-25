@@ -6,21 +6,39 @@ use ::xml::reader::{ParserConfig, XmlEvent};
 use html5ever::{Attribute, QualName};
 use std::cell::RefCell;
 use std::rc::Rc;
+pub(crate) mod encoding;
 mod namespaces;
 
 pub(crate) fn error_document(error: &str) -> NodeRef {
     let document = Node::create_document();
-    let root = Node::create_element_ns_for(
-        &document,
-        "http://www.mozilla.org/newlayout/xml/parsererror.xml",
-        "parsererror",
-    );
-    Node::append_child(&root, Node::create_text_for(&document, error));
-    Node::append_child(&document, root);
+    replace_with_error(&document, error);
     document
 }
 
+/// Replaces a document's partial tree with the parser-error tree browsers expose
+/// for a well-formedness violation (the Gecko parsererror namespace, as DOMParser uses).
+pub(crate) fn replace_with_error(document: &NodeRef, error: &str) {
+    let children: Vec<_> = document.children.borrow().iter().cloned().collect();
+    for child in children {
+        Node::remove_child(document, &child);
+    }
+    let root = Node::create_element_ns_for(
+        document,
+        "http://www.mozilla.org/newlayout/xml/parsererror.xml",
+        "parsererror",
+    );
+    Node::append_child(&root, Node::create_text_for(document, error));
+    Node::append_child(document, root);
+}
+
 pub(crate) fn parse(input: &str) -> Result<NodeRef, String> {
+    let document = Node::create_document();
+    parse_into(&document, input)?;
+    Ok(document)
+}
+
+/// Builds `input` into the empty `document`. On error the partial tree is left in place.
+pub(crate) fn parse_into(document: &NodeRef, input: &str) -> Result<(), String> {
     // DOMParser receives an already-decoded string. Force UTF-8, but consume its
     // optional leading BOM before the reader's encoding override disables sniffing.
     let input = input.strip_prefix('\u{feff}').unwrap_or(input);
@@ -34,7 +52,7 @@ pub(crate) fn parse(input: &str) -> Result<NodeRef, String> {
         .max_entity_expansion_depth(16)
         .max_data_length(MAX_HTML_INPUT_BYTES)
         .create_reader(input.as_bytes());
-    let document = Node::create_document();
+    let document = document.clone();
     let mut declarations = namespaces::Declarations::new(input);
     let mut stack = vec![document.clone()];
     let mut namespaces = vec![::xml::namespace::Namespace::empty()];
@@ -115,7 +133,11 @@ pub(crate) fn parse(input: &str) -> Result<NodeRef, String> {
                         value: uri.into(),
                     });
                 }
-                *node.element().unwrap().attrs.borrow_mut() = attrs;
+                let element = node.element().unwrap();
+                *element.attrs.borrow_mut() = attrs;
+                // XML-parser-created script elements are parser-inserted.
+                // https://html.spec.whatwg.org/multipage/xhtml.html#parsing-xhtml-documents
+                element.script_parser_inserted.set(true);
                 Node::append_child(parent, node.clone());
                 stack.push(node);
                 namespaces.push(namespace);
@@ -161,5 +183,5 @@ pub(crate) fn parse(input: &str) -> Result<NodeRef, String> {
         }
         Node::append_child(parent, child);
     }
-    Ok(document)
+    Ok(())
 }

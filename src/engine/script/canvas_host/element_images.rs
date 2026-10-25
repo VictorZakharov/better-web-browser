@@ -33,6 +33,13 @@ impl ElementImages {
         }
     }
 
+    /// Decoded images by URL, for laying out the owning document.
+    pub(in crate::engine::script) fn decoded(
+        &self,
+    ) -> impl Iterator<Item = (&String, &DecodedImage)> {
+        self.images.iter().map(|(url, (image, _))| (url, image))
+    }
+
     fn snapshot(&self, url: &str) -> JsValue {
         let Some((image, clean)) = self.images.get(url) else {
             return JsValue::Null;

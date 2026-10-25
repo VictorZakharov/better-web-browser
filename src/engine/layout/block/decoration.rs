@@ -26,25 +26,27 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         let (x, border_y, border_box_width) = (rect.x, rect.y, rect.width);
         let mut shadow_indexes = self.reserve_shadows(style, rect, false);
-        let background_index =
-            if self.emit_paint && style.visibility && style.background_color.alpha > 0 {
-                let index = self.output.items.len();
-                self.output.items.push(DisplayItem::SolidRect {
-                    rect: RectF {
-                        x,
-                        y: border_y,
-                        width: border_box_width,
-                        height: 0.0,
-                    },
-                    color: style.background_color,
-                    radius: 0.0,
-                });
-                Some(index)
-            } else {
-                None
-            };
+        // The canvas already paints a propagated root or body background.
+        let own_background =
+            self.emit_paint && style.visibility && !self.paints_canvas_background(node);
+        let background_index = if own_background && style.background_color.alpha > 0 {
+            let index = self.output.items.len();
+            self.output.items.push(DisplayItem::SolidRect {
+                rect: RectF {
+                    x,
+                    y: border_y,
+                    width: border_box_width,
+                    height: 0.0,
+                },
+                color: style.background_color,
+                radius: 0.0,
+            });
+            Some(index)
+        } else {
+            None
+        };
         let mut background_image_indexes = Vec::new();
-        if self.emit_paint && style.visibility {
+        if own_background {
             // First specified image is nearest the user; color is below every layer.
             for image in style.background_image.0.iter().rev() {
                 if matches!(image, ImageSource::None) {

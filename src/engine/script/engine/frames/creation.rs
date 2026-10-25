@@ -23,6 +23,8 @@ pub(super) fn create<'s>(
     let url = replacement
         .as_ref()
         .map_or("about:blank", |input| input.url.as_str());
+    // A committed subframe navigation joins this renderer's visited set for `:visited`.
+    crate::engine::css::selector_match::visited::record_visited_url(url);
     let host = Rc::new(RefCell::new(HostState::new(
         document,
         url,
@@ -45,6 +47,7 @@ pub(super) fn create<'s>(
         host.borrow_mut().fetch_identifiers = Rc::clone(&parent_host.borrow().fetch_identifiers);
         host.borrow_mut().worker_identifiers = Rc::clone(&parent_host.borrow().worker_identifiers);
         host.borrow_mut().script_bytes = Rc::clone(&parent_host.borrow().script_bytes);
+        host.borrow_mut().frame_layout = parent_host.borrow().frame_layout.clone();
     }
     let global_template = super::super::v8_api::window_template(scope);
     let context = v8::Context::new(
@@ -63,6 +66,12 @@ pub(super) fn create<'s>(
         .child(node.attr("sandbox").as_deref());
     host.borrow_mut().sandbox = sandbox;
     host.borrow_mut().embedded = true;
+    host.borrow_mut().frame_embedding = Some(
+        crate::engine::script::host_state::frame_viewport::FrameEmbedding::new(
+            Rc::downgrade(&parent_host),
+            node.clone(),
+        ),
+    );
     let parent_origin = parent_host.borrow().document_origin.clone();
     let origin = if sandbox.opaque_origin {
         crate::fetch::Origin::opaque()

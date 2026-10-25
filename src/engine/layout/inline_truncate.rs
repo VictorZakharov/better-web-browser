@@ -1,6 +1,7 @@
 //! Clamp-aware line flushing and ordinary inline-box placement.
 //! Elision affects child paint, never the original box geometry.
 
+use super::inline_layout::LineFormat;
 use super::*;
 
 // Separate intrinsic and final line computations may round the same advance to
@@ -19,7 +20,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         line_x: f32,
         y: f32,
         available: f32,
-        align: TextAlign,
+        format: LineFormat,
         line_width: f32,
         line_height: f32,
         forced_end: bool,
@@ -40,7 +41,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     line_x,
                     y,
                     available,
-                    align,
+                    format,
                     line_width,
                     line_height,
                     forced_end,
@@ -53,7 +54,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 line_x,
                 y,
                 available,
-                align,
+                format,
                 line_width,
                 line_height,
                 forced_end,
@@ -75,7 +76,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         line_x,
                         y,
                         available,
-                        align,
+                        format.align,
                         line_height,
                     );
                     state.lines_used += 1;
@@ -90,7 +91,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     line_x,
                     y,
                     available,
-                    align,
+                    format,
                     line_width,
                     line_height,
                     forced_end,
@@ -110,7 +111,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         line_x,
                         y,
                         available,
-                        align,
+                        format.align,
                         line_height,
                     ),
                     None => self.paint_line(
@@ -118,7 +119,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         line_x,
                         y,
                         available,
-                        align,
+                        format,
                         line_width,
                         line_height,
                         forced_end,
@@ -130,7 +131,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     line_x,
                     y,
                     available,
-                    align,
+                    format,
                     line_width,
                     line_height,
                     forced_end,
@@ -143,15 +144,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if policy.single_line_ellipsis && line_width > available + TEXT_OVERFLOW_ROUNDING_TOLERANCE
         {
             let y = match self.plan_truncated_row(line, available, available, policy) {
-                Some(plan) => {
-                    self.paint_truncated_row(line, &plan, line_x, y, available, align, line_height)
-                }
+                Some(plan) => self.paint_truncated_row(
+                    line,
+                    &plan,
+                    line_x,
+                    y,
+                    available,
+                    format.align,
+                    line_height,
+                ),
                 None => self.paint_line(
                     line,
                     line_x,
                     y,
                     available,
-                    align,
+                    format,
                     line_width,
                     line_height,
                     forced_end,
@@ -165,7 +172,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             line_x,
             y,
             available,
-            align,
+            format,
             line_width,
             line_height,
             forced_end,

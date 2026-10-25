@@ -78,17 +78,7 @@ impl ScriptRuntime {
                                 host.layout_viewport_height = viewport.height;
                                 host.embedding_rect = Some(viewport);
                                 host.frame_layout_pending = false;
-                                host.layout_geometry.clone_from(&layout.node_bounds);
-                                host.layout_fragments = layout.fragments.clone();
-                                host.scroll_boxes.clone_from(&layout.scroll_boxes);
-                                host.resize_boxes.clone_from(&layout.resize_boxes);
-                                host.sticky_offsets.clone_from(&layout.sticky_offsets);
-                                host.layout_content_height = layout.content_height;
-                                host.layout_geometry_version =
-                                    host.document.subtree_mutation_version();
-                                host.layout_geometry_initialized = true;
-                                host.pending_layout_invalidation
-                                    .acknowledge_published_geometry();
+                                host.adopt_frame_layout(layout);
                             })
                         },
                     }

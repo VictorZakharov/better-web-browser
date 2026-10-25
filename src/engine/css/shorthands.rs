@@ -165,6 +165,38 @@ pub(super) fn assign_length(target: &mut Length, value: &str) {
     }
 }
 
+/// Padding accepts only non-negative lengths and percentages; a negative literal or `auto`
+/// invalidates the declaration. A calculation is clamped when used instead.
+/// https://www.w3.org/TR/css-box-3/#padding-physical
+pub(super) fn padding_length(value: &str) -> Option<Length> {
+    parse_length(value).filter(|length| match length {
+        Length::Auto => false,
+        Length::Calc { .. } | Length::Math(_) => true,
+        Length::Px(value)
+        | Length::Percent(value)
+        | Length::Em(value)
+        | Length::Rem(value)
+        | Length::Vw(value)
+        | Length::Vh(value)
+        | Length::Vmin(value)
+        | Length::Vmax(value) => *value >= 0.0,
+    })
+}
+
+pub(super) fn assign_padding(target: &mut Length, value: &str) {
+    if let Some(length) = padding_length(value) {
+        *target = length;
+    }
+}
+
+pub(super) fn assign_padding_edges(target: &mut Edges, value: &str) {
+    let all_valid = super::scroll_spacing::split_components(value)
+        .is_some_and(|parts| parts.iter().all(|part| padding_length(part).is_some()));
+    if all_valid {
+        assign_edges(target, value);
+    }
+}
+
 pub(super) fn assign_edges(target: &mut Edges, value: &str) {
     let Some(lengths) = parse_shorthand_lengths(value, 4) else {
         return;

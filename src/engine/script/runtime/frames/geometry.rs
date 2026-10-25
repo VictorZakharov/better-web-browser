@@ -129,3 +129,14 @@ impl ScriptRuntime {
         outcome
     }
 }
+
+impl ChildRuntimes {
+    pub(in crate::engine::script::runtime) fn set_layout_service(
+        &mut self,
+        service: &crate::engine::script::FrameLayoutService,
+    ) {
+        for child in self.children.values_mut() {
+            child.set_frame_layout_service(Rc::clone(service));
+        }
+    }
+}

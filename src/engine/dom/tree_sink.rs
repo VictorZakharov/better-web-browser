@@ -89,6 +89,7 @@ impl TreeSink for Dom {
                 script_force_async: std::cell::Cell::new(false),
                 script_started: std::cell::Cell::new(false),
                 script_parser_inserted: std::cell::Cell::new(true),
+                object_navigable: std::cell::Cell::new(None),
             }),
         );
         self.parser_element_created(&node);

@@ -101,10 +101,11 @@ fn font_css_wide_keywords_invalid_atomic_updates_and_supports_follow_native_gram
     assert_fonts(
         r#"
         const style=target.style;
-        for (const value of ['italic 600 20px Arial','20px/1.5 Arial','2em "Family, One", serif'])
+        for (const value of ['italic 600 20px Arial','20px/1.5 Arial','2em "Family, One", serif',
+            'italic small-caps 900 10px Arial'])
             assert(CSS.supports('font',value),'supported '+value);
         for (const value of ['bold bold 20px Arial','italic italic 20px Arial',
-            'small-caps 20px Arial','condensed 20px Arial','20px / -1 Arial','20px',
+            'small-caps small-caps 20px Arial','condensed 20px Arial','20px / -1 Arial','20px',
             'caption','1001 20px Arial']) {
             assert(!CSS.supports('font',value),'unsupported '+value);
             style.font='20px Arial';

@@ -1,5 +1,6 @@
 //! Native computed and underlying styles share one cascade; effects are a separate origin.
 use super::*;
+use crate::engine::css::selector_match::visited;
 
 impl StyleSet {
     pub(super) fn compute_style(
@@ -7,7 +8,15 @@ impl StyleSet {
         node: &NodeRef,
         parent: Option<&ComputedStyle>,
     ) -> ComputedStyle {
-        self.compute_style_with_effects(node, parent, true)
+        let mut style = self.compute_style_with_effects(node, parent, true);
+        // The rendering cascade styles a visited link twice; see `selector_match::visited`.
+        if self.visited_link_colors && visited::is_visited_link(node, &self.document_base_url) {
+            let visited = visited::with_visited_link(node, || {
+                self.compute_style_with_effects(node, parent, true)
+            });
+            visited::adopt_visited_colors(&mut style, &visited);
+        }
+        style
     }
 
     pub(crate) fn underlying_style_for_node(&mut self, node: &NodeRef) -> ComputedStyle {

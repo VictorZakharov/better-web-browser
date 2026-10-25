@@ -22,22 +22,27 @@ impl ScriptRuntime {
         let mut outcome = ScriptOutcome::default();
         if request.source.is_some() || request.url == "about:blank" {
             let source = request.source.clone().unwrap_or_default();
+            if request.object {
+                outcome.request_full_render();
+            }
             if let Err(error) = self.commit_frame(request, source, "UTF-8") {
                 outcome.errors.push(error);
             }
         } else {
             match FetchRequest::navigation(&request.url) {
                 Ok(mut fetch) => {
-                    if let Err(error) = request.embedding_policy.check_request(
-                        crate::fetch::RequestDestination::Document,
-                        &request.url,
-                        0,
-                    ) {
+                    fetch.destination = request.destination();
+                    if let Err(error) =
+                        request
+                            .embedding_policy
+                            .check_request(fetch.destination, &request.url, 0)
+                    {
                         self.context
                             .as_ref()
                             .unwrap()
                             .fail_frame_navigation(&request);
                         outcome.diagnostics.push(error.to_string());
+                        outcome.request_full_render();
                         return outcome;
                     }
                     let host =
@@ -78,6 +83,7 @@ impl ScriptRuntime {
                                 .unwrap()
                                 .fail_frame_navigation(&request);
                             outcome.diagnostics.push(error.to_string());
+                            outcome.request_full_render();
                         }
                     }
                 }
@@ -86,6 +92,7 @@ impl ScriptRuntime {
                         .as_ref()
                         .unwrap()
                         .fail_frame_navigation(&request);
+                    outcome.request_full_render();
                     outcome
                         .diagnostics
                         .push(format!("iframe navigation: {error}"));
@@ -112,6 +119,19 @@ impl ScriptRuntime {
         encoding: &str,
         fetch: Option<u32>,
     ) -> Result<Option<NodeId>, String> {
+        let document = parser.dom().document.clone();
+        let frame = FrameDocument::new(parser, request.scripts);
+        self.commit_frame_document(request, document, frame, encoding, fetch)
+    }
+
+    pub(super) fn commit_frame_document(
+        &mut self,
+        request: &mut FrameNavigation,
+        document: NodeRef,
+        frame: FrameDocument,
+        encoding: &str,
+        fetch: Option<u32>,
+    ) -> Result<Option<NodeId>, String> {
         if !self
             .context
             .as_ref()
@@ -119,7 +139,6 @@ impl ScriptRuntime {
         {
             return Ok(None);
         }
-        let document = parser.dom().document.clone();
         if let Some(fetch) = fetch {
             self.host
                 .borrow()
@@ -152,9 +171,7 @@ impl ScriptRuntime {
             .as_mut()
             .ok_or("inactive child context")?
             .refresh_code_generation_policy();
-        frames
-            .documents
-            .insert(id, FrameDocument::new(parser, request.scripts));
+        frames.documents.insert(id, frame);
         request.document = id;
         Ok(Some(id))
     }

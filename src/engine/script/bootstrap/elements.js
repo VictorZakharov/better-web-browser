@@ -38,10 +38,24 @@
             naturalHeight: 0,
         };
     };
-    // Image/button dimension attributes contribute even before resource completion.
-    // A loaded image supplies the unsized fallback; full CSS used dimensions remain
-    // the layout engine's responsibility.
+    // A rendered image reports its used content-box size in CSS pixels. Otherwise
+    // the dimension attribute contributes even before resource completion, and a
+    // loaded image supplies the unsized fallback.
+    // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-width
+    const renderedImageDimension = (element, name) => {
+        const rect = host('layoutBoxRect', nodeId(element));
+        if (!Array.isArray(rect)) return null;
+        const style = getComputedStyle(element);
+        const [start, end] = name === 'width' ? ['Left', 'Right'] : ['Top', 'Bottom'];
+        const edge = side => (Number.parseFloat(style[`border${side}Width`]) || 0) +
+            (Number.parseFloat(style[`padding${side}`]) || 0);
+        const zoom = host('effectiveZoom', nodeId(element)) || 1;
+        const size = rect[name === 'width' ? 2 : 3] / zoom - edge(start) - edge(end);
+        return Math.max(0, Math.round(size));
+    };
     const imageDimension = (element, name) => {
+        const rendered = element.isConnected ? renderedImageDimension(element, name) : null;
+        if (rendered !== null) return rendered;
         const raw = element.getAttribute(name);
         if (raw !== null && /^\s*\d+\s*$/.test(raw)) return Number(raw.trim()) >>> 0;
         return imageElementState(element)[name === 'width' ? 'naturalWidth' : 'naturalHeight'];
@@ -248,10 +262,10 @@
             });
         }
         get contentWindow() {
-            return this.localName === 'iframe' ? host('frameWindow', nodeId(this), this) : null;
+            return navigableContainer(this) ? host('frameWindow', nodeId(this), this) : null;
         }
         get contentDocument() {
-            return this.localName === 'iframe' ? host('frameDocument', nodeId(this), this) : null;
+            return navigableContainer(this) ? host('frameDocument', nodeId(this), this) : null;
         }
         click() {
             if (this.__clicking || this.matches(':disabled')) return;

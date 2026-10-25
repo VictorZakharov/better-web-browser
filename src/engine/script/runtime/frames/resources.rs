@@ -122,6 +122,10 @@ impl ScriptRuntime {
                 ScriptFetchEvent::Head(Ok(head)) => {
                     if let Purpose::Navigation(navigation) = &mut fetch.purpose {
                         self.start_frame_stream(navigation, id, &head)?;
+                        // The object now renders its document instead of its fallback.
+                        if navigation.object {
+                            outcome.request_full_render();
+                        }
                     }
                     fetch.head = Some(head);
                     Ok(false)
@@ -209,10 +213,15 @@ impl ScriptRuntime {
             }
             Purpose::Navigation(navigation) => {
                 if !success {
-                    self.context
+                    // An object that falls back now renders its children instead.
+                    if self
+                        .context
                         .as_ref()
                         .unwrap()
-                        .fail_frame_navigation(&navigation);
+                        .fail_frame_navigation(&navigation)
+                    {
+                        outcome.request_full_render();
+                    }
                     // An interrupted committed response must still release the parser/load
                     // delay. It cannot kill the embedding document's renderer.
                     if fetch.head.is_some()

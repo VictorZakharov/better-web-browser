@@ -2,7 +2,7 @@
 //! Reset-only components must also have initial values for shorthand emission.
 use super::*;
 
-pub(crate) const LONGHANDS: [&str; 9] = [
+pub(crate) const LONGHANDS: [&str; 10] = [
     "font-style",
     "font-weight",
     "font-size",
@@ -12,6 +12,7 @@ pub(crate) const LONGHANDS: [&str; 9] = [
     "font-kerning",
     "font-variant-ligatures",
     "font-variant-numeric",
+    "font-variant-caps",
 ];
 
 pub(super) fn expand(value: &str) -> Option<Vec<(String, String)>> {
@@ -32,6 +33,12 @@ pub(super) fn expand(value: &str) -> Option<Vec<(String, String)>> {
             "auto".into(),
             "normal".into(),
             "normal".into(),
+            if parsed.small_caps {
+                "small-caps"
+            } else {
+                "normal"
+            }
+            .into(),
         ]
     };
     Some(
@@ -59,12 +66,16 @@ pub(crate) fn serialize(values: &[String]) -> String {
         || values[6] != "auto"
         || values[7] != "normal"
         || values[8] != "normal"
+        || !matches!(values[9].as_str(), "normal" | "small-caps")
     {
         return String::new();
     }
     let mut parts = Vec::new();
     if values[0] != "normal" {
         parts.push(values[0].clone());
+    }
+    if values[9] == "small-caps" {
+        parts.push(values[9].clone());
     }
     if !matches!(values[1].as_str(), "normal" | "400") {
         parts.push(values[1].clone());

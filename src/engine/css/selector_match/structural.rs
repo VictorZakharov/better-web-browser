@@ -78,16 +78,18 @@ pub(super) fn compound_structural_matches(
     })
 }
 
+/// Any element or non-empty text child, even white space only, defeats `:empty`. The
+/// Selectors 4 draft's white-space allowance is implemented by no shipping engine, so this
+/// follows the interoperable Selectors 3 definition.
+/// https://www.w3.org/TR/selectors-3/#empty-pseudo
+/// https://drafts.csswg.org/selectors-4/#the-empty-pseudo
 fn matches_empty(node: &NodeRef) -> bool {
     node.children
         .borrow()
         .iter()
         .all(|child| match &child.data {
             dom::NodeData::Element(_) => false,
-            dom::NodeData::Text(text) | dom::NodeData::Cdata(text) => text
-                .borrow()
-                .chars()
-                .all(|character| matches!(character, '\t' | '\n' | '\x0c' | '\r' | ' ')),
+            dom::NodeData::Text(text) | dom::NodeData::Cdata(text) => text.borrow().is_empty(),
             _ => true,
         })
 }

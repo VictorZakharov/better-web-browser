@@ -42,6 +42,7 @@ impl StyleSet {
             defer_nonrendered_descendants: self.defer_nonrendered_descendants,
             deferred_fullscreen_roots: self.deferred_fullscreen_roots.clone(),
             document_base_url: self.document_base_url.clone(),
+            visited_link_colors: self.visited_link_colors,
             viewport_width: self.viewport_width,
             viewport_height: self.viewport_height,
             resolution_dppx: self.resolution_dppx,

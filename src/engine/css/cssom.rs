@@ -42,6 +42,9 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
     if matches!(property, "appearance" | "-webkit-appearance") {
         return Some(style.appearance.as_css().into());
     }
+    if property == "cursor" {
+        return Some(style.cursor.css_text().into());
+    }
     if property == "accent-color" {
         return Some(
             style
@@ -62,12 +65,16 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         return super::variables::substitute_variables(value, &style.custom_properties);
     }
     let value = match property {
-        "box-shadow" => {
-            if style.box_shadows.is_empty() {
+        "box-shadow" | "text-shadow" => {
+            let shadows = if property == "box-shadow" {
+                &style.box_shadows
+            } else {
+                &style.text_shadows
+            };
+            if shadows.is_empty() {
                 "none".into()
             } else {
-                style
-                    .box_shadows
+                shadows
                     .iter()
                     .map(|shadow| shadow.css_text(style))
                     .collect::<Vec<_>>()
@@ -102,7 +109,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "transition-delay" => values::transitions::serialize_times(&style.transition.delays),
         "transition-timing-function" => style.transition.easings.join(", "),
         "align-content" => style.align_content.css_text(),
-        "vertical-align" => style.vertical_align.css_keyword().to_string(),
+        "vertical-align" => style.vertical_align.css_text(style.font_size),
         "background-color" => serialize_color(style.background_color),
         "background-image" => style.background_image.css_text(),
         "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
@@ -176,6 +183,12 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "font-kerning" => style.font_kerning.css_text().into(),
         "font-variant-ligatures" => style.font_ligatures.css_text(),
         "font-variant-numeric" => style.font_numeric.css_text(),
+        "font-variant-caps" => if style.font_small_caps {
+            "small-caps"
+        } else {
+            "normal"
+        }
+        .into(),
         "font-variant" => FontVariants::css_text(style.font_ligatures, style.font_numeric),
         "top" => serialize_length(style.top.clone()),
         "right" => serialize_length(style.right.clone()),
@@ -185,6 +198,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "letter-spacing" if style.letter_spacing == 0.0 => "normal".into(),
         "letter-spacing" => serialize_px(style.letter_spacing),
         "text-transform" => style.text_transform.css_text().to_string(),
+        "white-space" => style.white_space.css_keyword().into(),
         "word-spacing" => serialize_px(style.word_spacing),
         "line-height" => {
             if style.line_height_value == LineHeight::Normal {

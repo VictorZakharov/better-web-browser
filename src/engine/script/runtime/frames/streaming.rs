@@ -17,6 +17,10 @@ impl FrameDocument {
         bytes: &[u8],
         eof: bool,
     ) -> Result<Option<&'static str>, String> {
+        if let Some(xml) = &mut self.xml {
+            xml.push(bytes, eof)?;
+            return Ok(None);
+        }
         let input = self.input.as_mut().ok_or("missing iframe stream")?;
         if let Some(decoded) = input.decoder.push(bytes, eof)? {
             if let Some(parser) = &mut self.parser {
@@ -36,6 +40,12 @@ impl ScriptRuntime {
         head: &FetchResponse,
     ) -> Result<(), String> {
         self.check_frame_response(navigation, head)?;
+        let content_type = head.content_type().unwrap_or("");
+        if let Some(mime) = super::xml_documents::xml_mime_type(content_type) {
+            return self
+                .commit_xml_frame(navigation, content_type, mime, id)
+                .map(|_| ());
+        }
         let decoder = DocumentDecoder::new(head.content_type().unwrap_or(""));
         if let Some(document) =
             self.commit_frame_parser(navigation, HtmlParser::streaming(), "UTF-8", Some(id))?
@@ -120,11 +130,7 @@ impl ScriptRuntime {
         for (redirects, url) in head.url_list.iter().enumerate() {
             navigation
                 .embedding_policy
-                .check_request(
-                    crate::fetch::RequestDestination::Document,
-                    url.as_str(),
-                    redirects,
-                )
+                .check_request(navigation.destination(), url.as_str(), redirects)
                 .map_err(|error| error.to_string())?;
         }
         let policy = crate::fetch::csp::PolicyContainer::from_headers(
@@ -158,6 +164,12 @@ impl ScriptRuntime {
         {
             return Err("iframe response refused by X-Frame-Options".into());
         }
+        // An object whose response status is not ok represents its fallback content;
+        // an iframe still renders the error document.
+        // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-object-element
+        if navigation.object && !head.is_success() {
+            return Err("object response status is not ok".into());
+        }
         if head.content_type().is_some_and(|mime| {
             !mime
                 .split(';')
@@ -165,8 +177,9 @@ impl ScriptRuntime {
                 .unwrap_or("")
                 .trim()
                 .eq_ignore_ascii_case("text/html")
+                && super::xml_documents::xml_mime_type(mime).is_none()
         }) {
-            return Err("iframe response is not an HTML document".into());
+            return Err("iframe response is not an HTML or XML document".into());
         }
         navigation.response_policy = Some(std::sync::Arc::new(policy));
         navigation.url = head.final_url().as_str().to_string();

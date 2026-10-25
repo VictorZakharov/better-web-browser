@@ -71,7 +71,7 @@ use engine::{Context, HostBridge, JsError, JsNativeError, JsResult, JsString, Js
 use engine::{ModuleEvaluation, Source};
 pub use execution::{execute, execute_with_loader};
 use host_state::HostState;
-pub(crate) use host_state::geometry::LayoutFlushCallback;
+pub(crate) use host_state::{frame_viewport::FrameLayoutService, geometry::LayoutFlushCallback};
 pub use network::{ScriptFetchAction, ScriptFetchEvent};
 pub use public_types::*;
 pub use runtime::{ScriptCancellation, ScriptRuntime};

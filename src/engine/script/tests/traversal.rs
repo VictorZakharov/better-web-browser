@@ -24,7 +24,7 @@ fn tree_walker_honors_masks_filters_order_and_root_boundaries() {
             const accepted =
                 walker instanceof TreeWalker && walker.root === root && walker.filter === filter &&
                 walker.whatToShow === NodeFilter.SHOW_ELEMENT &&
-                forward.join(',') === 'nested,last' && backward.join(',') === 'nested' &&
+                forward.join(',') === 'nested,last' && backward.join(',') === 'nested,root' &&
                 first.id === 'nested' && next.id === 'last' && parent === root && invalidRoot &&
                 NodeFilter.SHOW_ALL === 0xFFFFFFFF && NodeFilter.prototype.FILTER_ACCEPT === 1;
             if (accepted) document.querySelector('output').textContent = 'yes';
@@ -351,5 +351,31 @@ fn node_iterator_constructor_and_web_idl_argument_rules() {
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
         "yes"
+    );
+}
+
+#[test]
+fn tree_walker_previous_node_filters_the_root_and_propagates_filter_exceptions() {
+    // DOM §6.2: previousNode() runs the filter on each parent, including the root.
+    let (dom, outcome) = execute_html(
+        r#"<main id="root"><p id="child"></p></main><output>no</output><script>
+            const root = document.getElementById('root');
+            const plain = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null);
+            plain.lastChild();
+            const reachedRoot = plain.previousNode() === root && plain.currentNode === root;
+            const thrown = {};
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT,
+                node => { if (node === root) throw thrown; return NodeFilter.FILTER_ACCEPT; });
+            walker.currentNode = root.firstChild;
+            let forwarded = false;
+            try { walker.previousNode(); } catch (error) { forwarded = error === thrown; }
+            document.querySelector('output').textContent = [reachedRoot, forwarded,
+                walker.currentNode.id, String(plain.previousNode())].join(':');
+        </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "true:true:child:null"
     );
 }

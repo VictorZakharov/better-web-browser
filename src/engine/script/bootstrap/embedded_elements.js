@@ -18,5 +18,11 @@
         set referrerPolicy(value) { this.setAttribute('referrerpolicy', value); }
         get loading() { return this.getAttribute('loading') || ''; }
         set loading(value) { this.setAttribute('loading', value); }
-        getSVGDocument() { return null; }
+        getSVGDocument() { return contentSVGDocument(this); }
     }
+    // The content document only when it was loaded from an image/svg+xml resource.
+    // https://html.spec.whatwg.org/multipage/embedded-content-other.html#dom-media-getsvgdocument
+    const contentSVGDocument = element => {
+        const document = element.contentDocument;
+        return document && document.contentType === 'image/svg+xml' ? document : null;
+    };

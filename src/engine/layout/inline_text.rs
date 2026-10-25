@@ -2,6 +2,7 @@
 use super::*;
 
 mod recolor;
+mod shadows;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn used_line_height(&mut self, style: &ComputedStyle) -> f32 {
@@ -56,13 +57,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         });
         if self.emit_paint && *visible && !text.is_empty() {
             let shaped = self.measurer.shape(text, font);
+            let rect = RectF {
+                x,
+                y: text_y,
+                width,
+                height: measured.content_height,
+            };
+            self.paint_text_shadows(measured.atom, text, rect, &shaped);
             self.output.items.push(DisplayItem::Text {
-                rect: RectF {
-                    x,
-                    y: text_y,
-                    width,
-                    height: measured.content_height,
-                },
+                rect,
                 text: text.into(),
                 font: font.clone(),
                 color: *color,

@@ -138,3 +138,54 @@ fn independent_blocks_keep_percentage_basis_and_min_max_constraints_beside_float
     assert_eq!(rect(&page, &layout, "min").y, 60.0);
     assert_eq!(rect(&page, &layout, "min").width, 600.0);
 }
+
+#[test]
+fn a_float_between_words_joins_the_current_line_and_negative_margins_shrink_its_footprint() {
+    // CSS 2.1 §9.5.1: a float that fits goes on the current line instead of breaking it, and
+    // its margin box (here 20px - 20px = 0 wide) is what excludes inline content, so the
+    // border box hangs into the paragraph's padding.
+    let (page, layout) = boxes(
+        "<style>#p{width:300px;padding-right:20px;line-height:20px}\
+         #f{float:right;width:20px;height:20px;margin-right:-20px}</style>\
+         <p id=p>One,<span id=f></span> two</p>",
+    );
+    let float = rect(&page, &layout, "f");
+    assert_eq!((float.x, float.y, float.width), (300.0, 0.0, 20.0));
+    let lines: Vec<f32> = layout
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            DisplayItem::Text { rect, .. } => Some(rect.y),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        !lines.is_empty() && lines.iter().all(|y| *y == lines[0]),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_float_at_the_start_of_a_line_moves_below_earlier_floats_instead_of_after_the_text() {
+    // CSS 2.1 §9.5.1 rules 3 and 8: before any content on its line, a float that does not
+    // fit beside an earlier float goes below it, not below the following line.
+    let (page, layout) = boxes(
+        "<style>#p{width:100px;line-height:20px}span{float:left;width:90px;height:20px}\
+         </style><p id=p>a<br><span id=f1></span><span id=f2></span>bb bb</p>",
+    );
+    assert_eq!(rect(&page, &layout, "f1").y, 20.0);
+    assert_eq!(rect(&page, &layout, "f2").y, 40.0);
+}
+
+#[test]
+fn floats_after_a_line_clamp_still_get_boxes() {
+    let (page, layout) = boxes(
+        "<style>#p{width:40px;line-height:20px;overflow:hidden;display:-webkit-box;\
+         -webkit-box-orient:vertical;-webkit-line-clamp:1}#f{float:left;width:5px;height:5px}\
+         </style><p id=p>aaaa bbbb cccc<span id=f></span> dddd</p>",
+    );
+    let float = Node::descendants(&page.dom.document)
+        .find(|n| n.attr("id").as_deref() == Some("f"))
+        .unwrap();
+    assert!(layout.node_bounds.contains_key(&float.id()));
+}

@@ -158,6 +158,7 @@ pub(super) fn text_atom(
         color_owner,
         source_units: Vec::new(),
         text_transform: style.text_transform,
+        small_caps: style.font_small_caps,
         visible: style.visibility,
         preserve_space: style.white_space.preserves_spaces(),
         line_height: style.line_height,
