@@ -43,7 +43,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         self.styles
             .styles
             .get(&body.id())
-            .is_some_and(has_background)
+            .is_some_and(|style| has_background(style))
             .then_some(body)
     }
 

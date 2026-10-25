@@ -143,7 +143,14 @@ impl StyleSet {
                     .styles
                     .get(&node_id(&parent))
                     .expect("parent style is computed before its children");
-                self.compute_style_shared(&mut cache, &node, Some(parent_style), parent_group)
+                if node.element().is_none() {
+                    (
+                        self.shared_text_style(&mut cache, &node, parent_style),
+                        parent_group,
+                    )
+                } else {
+                    self.compute_style_shared(&mut cache, &node, Some(parent_style), parent_group)
+                }
             };
             self.remember_has_results(&node, node_id(&node) == root);
             let displayed = style.display != Display::None;
@@ -194,7 +201,14 @@ impl StyleSet {
                     .styles
                     .get(&node_id(&parent))
                     .expect("parent style is recomputed before its children");
-                self.compute_style_shared(&mut cache, &node, Some(parent_style), parent_group)
+                if node.element().is_none() {
+                    (
+                        self.shared_text_style(&mut cache, &node, parent_style),
+                        parent_group,
+                    )
+                } else {
+                    self.compute_style_shared(&mut cache, &node, Some(parent_style), parent_group)
+                }
             };
             stats.element_style_time += style_started.elapsed();
             stats.invalidated_nodes += 1;

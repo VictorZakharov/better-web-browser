@@ -148,3 +148,24 @@ fn compared_attributes_and_simple_negations_need_no_revalidation() {
     assert_eq!(colors(&dom, &styles, "a"), [true, false]);
     assert!(stats.hits >= 1, "{stats:?}");
 }
+
+#[test]
+fn shared_styles_and_text_under_them_reference_one_allocation() {
+    let (dom, styles, _) = styled(
+        "<style>p.a {color:green}</style><div><p class=a>one</p><p class=a>two</p></div><details><summary>s</summary>hidden</details>",
+    );
+    let paragraphs = dom.elements_named("p").collect::<Vec<_>>();
+    let style = |node: &NodeRef| &styles.styles[&node.id()];
+    assert!(Arc::ptr_eq(style(&paragraphs[0]), style(&paragraphs[1])));
+    let text = |node: &NodeRef| node.children.borrow()[0].clone();
+    // Text inherits from its parent alone, so text under one shared style shares it too.
+    assert!(Arc::ptr_eq(
+        style(&text(&paragraphs[0])),
+        style(&text(&paragraphs[1]))
+    ));
+    assert_eq!(style(&text(&paragraphs[1])).color, GREEN);
+    // A closed `details` element hides its non-summary text; that text is styled on its own.
+    let details = dom.elements_named("details").next().unwrap();
+    let hidden = details.children.borrow().last().cloned().unwrap();
+    assert_eq!(style(&hidden).display, Display::None);
+}

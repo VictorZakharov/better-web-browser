@@ -77,7 +77,7 @@ impl StyleSet {
             } else {
                 let parent_style = Node::composed_parent(node)
                     .and_then(|parent| self.styles.get(&node_id(&parent)).cloned());
-                self.recompute_subtree(node, parent_style.as_ref(), stats);
+                self.recompute_subtree(node, parent_style.as_deref(), stats);
                 covered.insert(node_id(node));
             }
         }
@@ -95,16 +95,16 @@ impl StyleSet {
         let parent_style = Node::composed_parent(node)
             .and_then(|parent| self.styles.get(&node_id(&parent)).cloned());
         let started = std::time::Instant::now();
-        let style = self.compute_style(node, parent_style.as_ref());
+        let style = self.compute_style(node, parent_style.as_deref());
         stats.element_style_time += started.elapsed();
-        if self.styles.get(&id) != Some(&style) {
+        if self.styles.get(&id).map(Arc::as_ref) != Some(&style) {
             let CutoffWalk {
                 subtree_roots,
                 covered,
                 reached,
             } = walk;
             let mut whole = HashSet::new();
-            self.recompute_tree(node, parent_style.as_ref(), stats, |node, changed| {
+            self.recompute_tree(node, parent_style.as_deref(), stats, |node, changed| {
                 let id = node_id(node);
                 reached.insert(id);
                 let inside_whole = !whole.is_empty()
