@@ -107,3 +107,40 @@ fn collection_indexed_properties_do_not_use_item_null_or_integer_conversion() {
         "yes"
     );
 }
+
+#[test]
+fn retained_element_children_refresh_after_every_child_list_change() {
+    // `children` reuses its resolved list until the parent's child list changes,
+    // so each script mutation path must invalidate it.
+    let (dom, outcome) = execute_html(
+        r#"<body><main id="parent"><b></b>text</main><script>
+            const parent = document.getElementById('parent');
+            const children = parent.children;
+            const lengths = [children.length];
+            parent.appendChild(document.createElement('i'));
+            lengths.push(children.length);
+            parent.firstChild.remove();
+            lengths.push(children.length);
+            parent.innerHTML = '<p></p><p></p><p></p>';
+            lengths.push(children.length, children[2].localName);
+            parent.replaceChildren(document.createElement('u'));
+            lengths.push(children.length, children[0].localName);
+            parent.insertAdjacentHTML('beforeend', '<s></s>');
+            lengths.push(children.length);
+            parent.textContent = 'only text';
+            lengths.push(children.length);
+            const nested = document.createElement('div');
+            parent.append(nested);
+            const nestedChildren = nested.children;
+            nestedChildren.length;
+            nested.insertAdjacentHTML('afterbegin', '<q></q>');
+            lengths.push(children.length, nestedChildren.length);
+            document.querySelector('output').textContent = lengths.join(':');
+        </script><output></output></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "1:2:1:3:p:1:u:2:0:1:1"
+    );
+}

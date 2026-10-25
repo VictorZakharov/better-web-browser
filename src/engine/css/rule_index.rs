@@ -92,6 +92,16 @@ impl RuleIndex {
     pub(super) fn candidates(&self, node: &NodeRef, pseudo: Option<PseudoElement>) -> Vec<usize> {
         self.targets[target_index(pseudo)].candidates(node)
     }
+
+    /// Whether any candidate rule for `node` satisfies `test`, without collecting a set.
+    pub(super) fn any_candidate(
+        &self,
+        node: &NodeRef,
+        pseudo: Option<PseudoElement>,
+        mut test: impl FnMut(usize) -> bool,
+    ) -> bool {
+        self.targets[target_index(pseudo)].visit(node, |rules| rules.iter().any(|&rule| test(rule)))
+    }
 }
 
 fn target_index(pseudo: Option<PseudoElement>) -> usize {
@@ -105,49 +115,73 @@ fn target_index(pseudo: Option<PseudoElement>) -> usize {
 
 impl CandidateIndex {
     fn candidates(&self, node: &NodeRef) -> Vec<usize> {
-        let Some(element) = node.element() else {
-            return Vec::new();
-        };
-        let mut candidates = self.universal.clone();
-        if let Some(rules) = self.by_tag.get(element.name.local.as_ref()) {
+        let mut candidates = Vec::new();
+        self.visit(node, |rules| {
             candidates.extend(rules);
-        }
-        let attributes = element.attrs.borrow();
-        for attribute in attributes.iter() {
-            // Match the existing DOM attribute lookup's ASCII-insensitive local-name contract.
-            let name = attribute.name.local.as_ref();
-            let normalized;
-            let name = if name.bytes().any(|byte| byte.is_ascii_uppercase()) {
-                normalized = name.to_ascii_lowercase();
-                normalized.as_str()
-            } else {
-                name
-            };
-            if let Some(rules) = self.by_attribute.get(name) {
-                candidates.extend(rules);
-            }
-        }
-        // DOM attribute lookup uses the first matching local name, including namespace aliases.
-        if let Some(id) = attributes
-            .iter()
-            .find(|a| a.name.local.as_ref().eq_ignore_ascii_case("id"))
-            && let Some(rules) = self.by_id.get(id.value.as_ref())
-        {
-            candidates.extend(rules);
-        }
-        if let Some(classes) = attributes
-            .iter()
-            .find(|a| a.name.local.as_ref().eq_ignore_ascii_case("class"))
-        {
-            for class in classes.value.split_ascii_whitespace() {
-                if let Some(rules) = self.by_class.get(class) {
-                    candidates.extend(rules);
-                }
-            }
-        }
+            false
+        });
         candidates.sort_unstable();
         candidates.dedup();
         candidates
+    }
+
+    /// Calls `visit` with each bucket that can hold rules for `node`, until it returns true.
+    /// Buckets may repeat a rule; callers that need a set sort and deduplicate.
+    fn visit(&self, node: &NodeRef, mut visit: impl FnMut(&[usize]) -> bool) -> bool {
+        let Some(element) = node.element() else {
+            return false;
+        };
+        if visit(&self.universal) {
+            return true;
+        }
+        if let Some(rules) = self.by_tag.get(element.name.local.as_ref())
+            && visit(rules)
+        {
+            return true;
+        }
+        let attributes = element.attrs.borrow();
+        if !self.by_attribute.is_empty() {
+            for attribute in attributes.iter() {
+                // Match the existing DOM attribute lookup's ASCII-insensitive local-name contract.
+                let name = attribute.name.local.as_ref();
+                let normalized;
+                let name = if name.bytes().any(|byte| byte.is_ascii_uppercase()) {
+                    normalized = name.to_ascii_lowercase();
+                    normalized.as_str()
+                } else {
+                    name
+                };
+                if let Some(rules) = self.by_attribute.get(name)
+                    && visit(rules)
+                {
+                    return true;
+                }
+            }
+        }
+        // DOM attribute lookup uses the first matching local name, including namespace aliases.
+        if !self.by_id.is_empty()
+            && let Some(id) = attributes
+                .iter()
+                .find(|a| a.name.local.as_ref().eq_ignore_ascii_case("id"))
+            && let Some(rules) = self.by_id.get(id.value.as_ref())
+            && visit(rules)
+        {
+            return true;
+        }
+        if !self.by_class.is_empty()
+            && let Some(classes) = attributes
+                .iter()
+                .find(|a| a.name.local.as_ref().eq_ignore_ascii_case("class"))
+        {
+            for class in classes.value.split_ascii_whitespace() {
+                if let Some(rules) = self.by_class.get(class)
+                    && visit(rules)
+                {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 
@@ -209,6 +243,16 @@ mod tests {
                         .filter(|i| selector_match::selector_matches(&rules[*i].selector, &node))
                         .collect::<Vec<_>>();
                     assert_eq!(actual, expected, "step {step}, node {:?}", node.id());
+                    // The short-circuit visitor finds a match exactly when the collected set has one.
+                    let any = index.any_candidate(&node, pseudo, |i| {
+                        selector_match::selector_matches(&rules[i].selector, &node)
+                    });
+                    assert_eq!(
+                        any,
+                        !expected.is_empty(),
+                        "step {step}, node {:?}",
+                        node.id()
+                    );
                 }
             }
         }

@@ -117,20 +117,27 @@ impl StyleSet {
     /// changing, such as a descendant of the mutated element. Its candidate rules come from
     /// the transition rule index instead of a scan of every transition rule.
     pub(crate) fn may_transition_unchanged(&self, node: &NodeRef) -> bool {
-        self.may_match_transition_rules(
-            node,
-            "",
-            "",
-            self.compiled.transition_index.candidates(node, None),
-        )
+        // Called for every descendant of a mutated element: test candidates in place and
+        // read the element's id and class only when the index offers one.
+        let attributes = std::cell::OnceCell::new();
+        self.compiled
+            .transition_index
+            .any_candidate(node, None, |index| {
+                let (id, class) = attributes.get_or_init(|| {
+                    (
+                        node.attr("id").unwrap_or_default(),
+                        node.attr("class").unwrap_or_default(),
+                    )
+                });
+                let current = (id.as_str(), class.as_str());
+                self.transition_rule_may_match(index, node, current, current)
+            })
     }
 
     pub(crate) fn may_have_transition_time_rule(&self, node: &NodeRef) -> bool {
         self.compiled
             .potential_transition_index
-            .candidates(node, None)
-            .into_iter()
-            .any(|index| {
+            .any_candidate(node, None, |index| {
                 let rule = &self.compiled.rules[index];
                 // Shadow, part, slot and scope matching have additional roots.
                 // Keep them conservative; the ordinary selector matcher is a
@@ -160,31 +167,47 @@ impl StyleSet {
             &old_class
         };
         indices.into_iter().any(|index| {
-            let rule = &self.compiled.rules[index];
-            if rule.pseudo.is_some() {
-                return false;
-            }
-            let Some(compound) = rule.selector.compounds.last() else {
-                return true;
-            };
-            if compound
-                .tag
-                .as_deref()
-                .is_some_and(|tag| node.tag_name() != Some(tag))
-            {
-                return false;
-            }
-            if compound
-                .id
-                .as_deref()
-                .is_some_and(|id| id != old_id && id != next_id)
-            {
-                return false;
-            }
-            compound.classes.iter().all(|class| {
-                old_class.split_ascii_whitespace().any(|old| old == class)
-                    || next_class.split_ascii_whitespace().any(|new| new == class)
-            })
+            self.transition_rule_may_match(
+                index,
+                node,
+                (&old_id, &old_class),
+                (next_id, next_class),
+            )
+        })
+    }
+
+    /// Whether rule `index` may match `node` with either its old or its next id and class.
+    fn transition_rule_may_match(
+        &self,
+        index: usize,
+        node: &NodeRef,
+        (old_id, old_class): (&str, &str),
+        (next_id, next_class): (&str, &str),
+    ) -> bool {
+        let rule = &self.compiled.rules[index];
+        if rule.pseudo.is_some() {
+            return false;
+        }
+        let Some(compound) = rule.selector.compounds.last() else {
+            return true;
+        };
+        if compound
+            .tag
+            .as_deref()
+            .is_some_and(|tag| node.tag_name() != Some(tag))
+        {
+            return false;
+        }
+        if compound
+            .id
+            .as_deref()
+            .is_some_and(|id| id != old_id && id != next_id)
+        {
+            return false;
+        }
+        compound.classes.iter().all(|class| {
+            old_class.split_ascii_whitespace().any(|old| old == class)
+                || next_class.split_ascii_whitespace().any(|new| new == class)
         })
     }
 }
