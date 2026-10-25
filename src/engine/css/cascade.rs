@@ -61,7 +61,9 @@ pub struct StyleRefreshStats {
 
 #[derive(Debug, Default)]
 pub struct StyleSet {
-    pub styles: HashMap<NodeId, ComputedStyle>,
+    /// Shared so that elements with equal styles (see `sharing`) and parent lookups during a
+    /// pass reference one allocation instead of copying the whole style.
+    pub styles: HashMap<NodeId, Arc<ComputedStyle>>,
     pseudo_styles: HashMap<(NodeId, PseudoElement), ComputedStyle>,
     generated_nodes: HashMap<(NodeId, PseudoElement), NodeRef>,
     generated_styles: HashMap<NodeId, ComputedStyle>,
@@ -285,25 +287,30 @@ impl StyleSet {
                 if known.is_none() {
                     self.layout_generations.mark(&ancestor);
                 }
-                let style =
-                    known.unwrap_or_else(|| self.compute_style(&ancestor, parent_style.as_ref()));
-                self.styles.insert(node_id(&ancestor), style.clone());
+                let style = known.unwrap_or_else(|| {
+                    Arc::new(self.compute_style(&ancestor, parent_style.as_deref()))
+                });
+                self.styles.insert(node_id(&ancestor), Arc::clone(&style));
                 self.style_log.record(node_id(&ancestor));
                 self.sync_generated_pseudos(&ancestor);
                 parent_style = Some(style);
             }
         }
-        self.styles.get(&node_id(node))
+        self.styles.get(&node_id(node)).map(Arc::as_ref)
     }
 
     /// Every computed style, including generated pseudo-elements', in no particular order.
     pub(crate) fn all_styles(&self) -> impl Iterator<Item = &ComputedStyle> {
-        self.styles.values().chain(self.generated_styles.values())
+        self.styles
+            .values()
+            .map(Arc::as_ref)
+            .chain(self.generated_styles.values())
     }
 
     pub fn get(&self, node: &NodeRef) -> &ComputedStyle {
         self.styles
             .get(&node_id(node))
+            .map(Arc::as_ref)
             .or_else(|| self.generated_styles.get(&node_id(node)))
             .expect("style should exist for every DOM node")
     }

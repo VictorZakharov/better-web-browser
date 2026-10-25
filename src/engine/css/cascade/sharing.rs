@@ -50,6 +50,9 @@ pub(super) struct SharingTables {
 #[derive(Default)]
 pub(super) struct SharingCache {
     candidates: HashMap<ShareGroup, std::collections::VecDeque<Candidate>>,
+    /// Text styles by parent style allocation. The parent is kept alive so its address
+    /// cannot be reused by another style during the traversal.
+    text: HashMap<*const ComputedStyle, (Arc<ComputedStyle>, Arc<ComputedStyle>)>,
     next_group: ShareGroup,
     #[cfg(test)]
     pub(super) stats: SharingStats,
@@ -97,19 +100,19 @@ impl StyleSet {
         node: &NodeRef,
         parent: Option<&ComputedStyle>,
         parent_group: ShareGroup,
-    ) -> (ComputedStyle, ShareGroup) {
+    ) -> (Arc<ComputedStyle>, ShareGroup) {
         let eligible = self.sharing_eligible(node);
         if eligible && let Some((style, group)) = self.shared_style(cache, node, parent_group) {
             #[cfg(debug_assertions)]
             assert_eq!(
-                style,
+                *style,
                 self.compute_style(node, parent),
                 "shared style differs from a full cascade for {:?}",
                 node.tag_name()
             );
             return (style, group);
         }
-        let style = self.compute_style(node, parent);
+        let style = Arc::new(self.compute_style(node, parent));
         let group = cache.new_group();
         if eligible {
             cache.insert(node, parent_group, group);
@@ -117,12 +120,43 @@ impl StyleSet {
         (style, group)
     }
 
+    /// A text node's style when another text node with the same parent style was already
+    /// styled in this traversal. Text has no attributes or matching rules of its own: its style
+    /// inherits from its parent, except for a closed `details` element's hidden content and for
+    /// slotted text, which never share.
+    pub(super) fn shared_text_style(
+        &self,
+        cache: &mut SharingCache,
+        node: &NodeRef,
+        parent: &Arc<ComputedStyle>,
+    ) -> Arc<ComputedStyle> {
+        let shareable = matches!(node.data, NodeData::Text(_))
+            && node.parent().is_some_and(|parent| {
+                parent.element().is_some() && parent.tag_name() != Some("details")
+            })
+            && Node::assigned_slot(node).is_none();
+        if !shareable {
+            return Arc::new(self.compute_style(node, Some(parent)));
+        }
+        if let Some((_, style)) = cache.text.get(&Arc::as_ptr(parent)) {
+            #[cfg(debug_assertions)]
+            assert_eq!(**style, self.compute_style(node, Some(parent)));
+            return Arc::clone(style);
+        }
+        let style = Arc::new(self.compute_style(node, Some(parent)));
+        cache.text.insert(
+            Arc::as_ptr(parent),
+            (Arc::clone(parent), Arc::clone(&style)),
+        );
+        style
+    }
+
     fn shared_style(
         &self,
         cache: &mut SharingCache,
         node: &NodeRef,
         parent_group: ShareGroup,
-    ) -> Option<(ComputedStyle, ShareGroup)> {
+    ) -> Option<(Arc<ComputedStyle>, ShareGroup)> {
         #[cfg(test)]
         {
             cache.stats.lookups += 1;
@@ -157,7 +191,7 @@ impl StyleSet {
             }
             return None;
         }
-        let style = self.styles.get(&node_id(&candidate.node))?.clone();
+        let style = Arc::clone(self.styles.get(&node_id(&candidate.node))?);
         let group = candidate.group;
         #[cfg(test)]
         {

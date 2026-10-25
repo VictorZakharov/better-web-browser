@@ -51,7 +51,7 @@ impl StyleSet {
             stats.non_deferable_paint_changes = true;
             let parent = Node::composed_parent(root)
                 .and_then(|parent| self.styles.get(&parent.id()).cloned());
-            self.recompute_subtree(root, parent.as_ref(), stats);
+            self.recompute_subtree(root, parent.as_deref(), stats);
             current.insert(root.id());
         }
         // Leaving an independently rendered top layer also changes geometry even if its

@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) fn root_font_size_for(
-    styles: &HashMap<NodeId, ComputedStyle>,
+    styles: &HashMap<NodeId, Arc<ComputedStyle>>,
     node: &NodeRef,
     parent_style: Option<&ComputedStyle>,
 ) -> f32 {
@@ -17,7 +17,7 @@ pub(super) fn root_font_size_for(
             .is_some_and(|grandparent| matches!(grandparent.data, NodeData::Document));
     if parent_is_root {
         return parent_style
-            .or_else(|| styles.get(&parent.id()))
+            .or_else(|| styles.get(&parent.id()).map(Arc::as_ref))
             .map_or_else(initial, |style| style.font_size);
     }
     // Below the root's children every element sees the root through its parent, whose style is
