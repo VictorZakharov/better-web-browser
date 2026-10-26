@@ -61,14 +61,14 @@ pub(super) struct SharingTables {
 
 #[derive(Default)]
 pub(super) struct SharingCache {
-    candidates: HashMap<ShareGroup, std::collections::VecDeque<Candidate>>,
+    candidates: NodeMap<ShareGroup, std::collections::VecDeque<Candidate>>,
     /// Text styles by parent style allocation. The parent is kept alive so its address
     /// cannot be reused by another style during the traversal.
-    text: HashMap<*const ComputedStyle, (Arc<ComputedStyle>, Arc<ComputedStyle>)>,
+    text: NodeMap<*const ComputedStyle, (Arc<ComputedStyle>, Arc<ComputedStyle>)>,
     /// Ancestor filters by parent: siblings share one, and the DOM is not mutated mid-pass.
-    ancestor_filters: HashMap<NodeId, AncestorFilter>,
+    ancestor_filters: NodeMap<NodeId, AncestorFilter>,
     /// Share sources' generated pseudo-elements; `None` when another element cannot reuse one.
-    pseudos: HashMap<(NodeId, PseudoElement), Option<generated::SourcePseudo>>,
+    pseudos: NodeMap<(NodeId, PseudoElement), Option<generated::SourcePseudo>>,
     next_group: ShareGroup,
     #[cfg(test)]
     pub(super) stats: SharingStats,
@@ -261,7 +261,7 @@ impl StyleSet {
         node: &NodeRef,
         tree_root: &NodeRef,
         rule: usize,
-        filters: &mut HashMap<NodeId, AncestorFilter>,
+        filters: &mut NodeMap<NodeId, AncestorFilter>,
     ) -> bool {
         let rule = &self.compiled.rules[rule];
         let ancestors = OnceCell::new();

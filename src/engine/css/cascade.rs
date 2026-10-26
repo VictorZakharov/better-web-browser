@@ -33,6 +33,7 @@ mod tests;
 use super::media::MediaEnvironment;
 use super::selector_match::selector_matches;
 use super::*;
+use crate::engine::dom::node::NodeMap;
 use author::AuthorCascadeInput;
 use presentational::apply_presentational_hints;
 use root_units::root_font_size_for;
@@ -63,11 +64,11 @@ pub struct StyleRefreshStats {
 pub struct StyleSet {
     /// Shared so that elements with equal styles (see `sharing`) and parent lookups during a
     /// pass reference one allocation instead of copying the whole style.
-    pub styles: HashMap<NodeId, Arc<ComputedStyle>>,
+    pub styles: NodeMap<NodeId, Arc<ComputedStyle>>,
     // A generated box shares its pseudo-element's style allocation (see `install_pseudo`).
-    pseudo_styles: HashMap<(NodeId, PseudoElement), Arc<ComputedStyle>>,
-    generated_nodes: HashMap<(NodeId, PseudoElement), NodeRef>,
-    generated_styles: HashMap<NodeId, Arc<ComputedStyle>>,
+    pseudo_styles: NodeMap<(NodeId, PseudoElement), Arc<ComputedStyle>>,
+    generated_nodes: NodeMap<(NodeId, PseudoElement), NodeRef>,
+    generated_styles: NodeMap<NodeId, Arc<ComputedStyle>>,
     compiled: std::rc::Rc<sheets::CompiledRules>,
     ancestor_filters: std::cell::RefCell<super::selector_match::AncestorFilterCache>,
     // A shared inherited variable map is inspected by every descendant with var() rules.
@@ -234,10 +235,10 @@ impl StyleSet {
             environment,
         );
         Self {
-            styles: HashMap::new(),
-            pseudo_styles: HashMap::new(),
-            generated_nodes: HashMap::new(),
-            generated_styles: HashMap::new(),
+            styles: NodeMap::default(),
+            pseudo_styles: NodeMap::default(),
+            generated_nodes: NodeMap::default(),
+            generated_styles: NodeMap::default(),
             compiled,
             ancestor_filters: std::cell::RefCell::default(),
             revert_layer_variables: std::cell::RefCell::default(),

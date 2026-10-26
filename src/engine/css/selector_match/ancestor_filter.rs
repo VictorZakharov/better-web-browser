@@ -15,7 +15,7 @@ pub(in crate::engine::css) struct AncestorFilter {
 #[derive(Debug, Default)]
 pub(in crate::engine::css) struct AncestorFilterCache {
     version: Option<(NodeId, u64)>,
-    filters: HashMap<NodeId, AncestorFilter>,
+    filters: crate::engine::dom::node::NodeMap<NodeId, AncestorFilter>,
 }
 
 impl std::fmt::Debug for AncestorFilter {

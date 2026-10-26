@@ -10,8 +10,10 @@ impl StyleSet {
     /// its own. Layout generations are renumbered: a value recorded against this set must never
     /// match the copy. Caches derived from matching start empty.
     pub(crate) fn fork(&self) -> Self {
-        let mut generated_nodes = HashMap::with_capacity(self.generated_nodes.len());
-        let mut generated_styles = HashMap::with_capacity(self.generated_styles.len());
+        let mut generated_nodes =
+            NodeMap::with_capacity_and_hasher(self.generated_nodes.len(), Default::default());
+        let mut generated_styles =
+            NodeMap::with_capacity_and_hasher(self.generated_styles.len(), Default::default());
         for (&(origin_id, pseudo), node) in &self.generated_nodes {
             let Some(origin) = node.parent() else {
                 continue;

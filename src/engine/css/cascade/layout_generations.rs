@@ -17,8 +17,8 @@ static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Default)]
 pub(super) struct LayoutGenerations {
-    own: HashMap<NodeId, u64>,
-    subtree: HashMap<NodeId, u64>,
+    own: NodeMap<NodeId, u64>,
+    subtree: NodeMap<NodeId, u64>,
     current: Cell<u64>,
     observed: Cell<bool>,
 }
@@ -82,7 +82,7 @@ impl LayoutGenerations {
         self.subtree.retain(|node, _| keep(node));
     }
 
-    fn observe(&self, generations: &HashMap<NodeId, u64>, node: NodeId) -> Option<u64> {
+    fn observe(&self, generations: &NodeMap<NodeId, u64>, node: NodeId) -> Option<u64> {
         self.observed.set(true);
         generations.get(&node).copied()
     }
