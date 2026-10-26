@@ -51,6 +51,20 @@ fn collect_ids(selector: &Selector, ids: &mut HashSet<String>) {
     }
 }
 
+/// Whether `rule`'s subject compound names a tag or class `node` lacks. Elements whose local
+/// inputs are equal have the same tag and classes, so such a rule matches neither of them and
+/// needs no revalidation, whatever else its selector reads.
+pub(super) fn subject_excludes(rule: &Rule, node: &NodeRef) -> bool {
+    rule.selector.compounds.last().is_some_and(|subject| {
+        subject.never_matches
+            || subject
+                .tag
+                .as_deref()
+                .is_some_and(|tag| node.tag_name() != Some(tag))
+            || subject.classes.iter().any(|class| !node.has_class(class))
+    })
+}
+
 pub(super) fn classify_rules(rules: &[Rule]) -> Vec<RuleSharing> {
     rules.iter().map(classify_rule).collect()
 }
@@ -157,7 +171,7 @@ fn key_determined(compound: &CompoundSelector) -> bool {
     // matches neither paired element (the root element never shares).
     attributes.iter().all(|attribute| {
         matches!(attribute.operator, AttributeOperator::Exists)
-            || !super::selector_only_attribute(&attribute.name.to_ascii_lowercase())
+            || !super::inputs::selector_only_attribute(&attribute.name.to_ascii_lowercase())
     }) && functional.iter().all(|functional| {
         // A selector list on the same element, without combinators, is decided by the
         // same inputs; `:not()` only negates that result.

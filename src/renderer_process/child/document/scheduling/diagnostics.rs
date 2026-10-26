@@ -44,7 +44,7 @@ impl DocumentRuntime {
                 });
         }
         outcome.diagnostics.push(format!(
-            "render checkpoint: style/resources {:.3} ms (elements {:.3}, pseudos {:.3}), layout {:.3} ms; styles {}/{} changed, full rebuild {}, dirty roots {} {:?}, class changes {}, removed styles {}, local removals {}, geometry changed {}, opacity only {}, first changed {:?}",
+            "render checkpoint: style/resources {:.3} ms (elements {:.3}, pseudos {:.3}), layout {:.3} ms; styles {}/{} changed, full rebuild {}, dirty roots {} {:?}, class changes {}, removed styles {}, local removals {}, geometry changed {}, opacity only {}, first changed {:?}, fallbacks {:?}",
             style_time.as_secs_f64() * 1000.0,
             style.element_style_time.as_secs_f64() * 1000.0,
             style.pseudo_style_time.as_secs_f64() * 1000.0,
@@ -56,6 +56,7 @@ impl DocumentRuntime {
             style.removed_styles, outcome.invalidation.removals_are_local,
             style.layout_changed, style.opacity_only,
             style.first_changed_node.and_then(|id| style_owner(&self.page, id)),
+            style.invalidation_fallbacks,
         ));
     }
 }

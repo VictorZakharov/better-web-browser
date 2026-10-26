@@ -20,10 +20,11 @@
 // invalidation sets of Blink's style invalidation.
 // https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/renderer/core/css/style-invalidation.md
 // https://drafts.csswg.org/selectors-4/#combinators
-use super::subject_keys::{KeyIndex, SubjectKey};
+use super::subject_keys::{KeyIndex, SubjectKey, ascii_lowercase};
 use super::*;
 use crate::engine::css::cascade::InvalidationFallbacks;
 use crate::engine::css::selector_model::{Combinator, CompoundSelector};
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
@@ -90,7 +91,7 @@ impl ClassInvalidation {
                     Combinator::AdjacentSibling | Combinator::GeneralSibling
                 )
             });
-            let mut tokens = compound.classes.clone();
+            let mut tokens = Feature::Class.of(compound);
             let mut nested_complex = Vec::new();
             nested_simple_features(compound, Feature::Class, &mut tokens, &mut nested_complex);
             let mut names = Feature::Attribute.of(compound);
@@ -119,13 +120,13 @@ impl ClassInvalidation {
                 }
             };
             for token in tokens {
-                record(self.uses.entry(token.to_ascii_lowercase()).or_default());
+                record(use_of(&mut self.uses, &ascii_lowercase(&token)));
             }
             for name in names {
-                record(self.attribute_uses.entry(name).or_default());
+                record(use_of(&mut self.attribute_uses, &name));
             }
             for name in nested_complex_names {
-                let class_use = self.attribute_uses.entry(name).or_default();
+                let class_use = use_of(&mut self.attribute_uses, &name);
                 class_use.parent_scope.get_or_insert(Fallback::Nested);
             }
             if simple_class_attribute(compound) {
@@ -133,7 +134,7 @@ impl ClassInvalidation {
             }
             self.unbounded |= nested_complex_class_attribute(compound);
             for token in nested_complex {
-                let class_use = self.uses.entry(token.to_ascii_lowercase()).or_default();
+                let class_use = use_of(&mut self.uses, &ascii_lowercase(&token));
                 class_use.parent_scope.get_or_insert(Fallback::Nested);
             }
         }
@@ -153,7 +154,7 @@ impl ClassInvalidation {
         let mut depths = HashSet::new();
         let token_uses = tokens
             .iter()
-            .filter_map(|token| self.uses.get(&token.to_ascii_lowercase()));
+            .filter_map(|token| self.uses.get(&*ascii_lowercase(token)));
         let class_attribute = (!tokens.is_empty()).then_some(&self.any_token);
         let attribute_uses = attributes
             .iter()
@@ -212,27 +213,36 @@ enum Feature {
 }
 
 impl Feature {
-    fn of(self, compound: &CompoundSelector) -> Vec<String> {
+    /// Borrowed from the selector where possible: most rules repeat names already indexed.
+    fn of(self, compound: &CompoundSelector) -> Vec<Cow<'_, str>> {
         match self {
-            Self::Class => compound.classes.clone(),
+            Self::Class => compound.classes.iter().map(|class| class.into()).collect(),
             Self::Attribute => compound
                 .attributes
                 .iter()
-                .map(|attribute| attribute.name.to_ascii_lowercase())
+                .map(|attribute| ascii_lowercase(&attribute.name))
                 .filter(|name| name != "class")
                 .collect(),
         }
     }
 }
 
+/// The uses recorded for `name`, copying the name only when it is new.
+fn use_of<'a>(uses: &'a mut HashMap<String, ClassUse>, name: &str) -> &'a mut ClassUse {
+    if !uses.contains_key(name) {
+        uses.insert(name.to_owned(), ClassUse::default());
+    }
+    uses.get_mut(name).expect("inserted above")
+}
+
 /// Features inside `:is()`, `:where()` and `:not()` arguments that are single compounds describe
 /// the same element as `compound`. Any other nesting (complex arguments, `:has()`, `of S`) is
 /// collected as unbounded.
-fn nested_simple_features(
-    compound: &CompoundSelector,
+fn nested_simple_features<'a>(
+    compound: &'a CompoundSelector,
     feature: Feature,
-    simple: &mut Vec<String>,
-    complex: &mut Vec<String>,
+    simple: &mut Vec<Cow<'a, str>>,
+    complex: &mut Vec<Cow<'a, str>>,
 ) {
     for functional in &compound.functional {
         for selector in &functional.selectors {
@@ -300,7 +310,11 @@ fn nested_complex_class_attribute(compound: &CompoundSelector) -> bool {
             .any(anywhere)
 }
 
-fn collect_all_features(selector: &Selector, feature: Feature, found: &mut Vec<String>) {
+fn collect_all_features<'a>(
+    selector: &'a Selector,
+    feature: Feature,
+    found: &mut Vec<Cow<'a, str>>,
+) {
     for compound in selector.compounds.iter() {
         found.extend(feature.of(compound));
         for functional in &compound.functional {

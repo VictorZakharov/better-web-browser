@@ -11,9 +11,11 @@
 // the document for every inserted or removed sheet.
 // https://drafts.csswg.org/cssom/#add-a-css-style-sheet
 use super::*;
+use crate::engine::css::cascade::sheets::subject_keys::ascii_lowercase;
 use crate::engine::css::rule_index::RuleIndex;
+use crate::engine::dom::node::NodeMap;
 use std::cell::OnceCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 #[cfg(test)]
 mod tests;
@@ -28,25 +30,37 @@ struct KeySet {
 }
 
 impl KeySet {
+    fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+            && self.classes.is_empty()
+            && self.tags.is_empty()
+            && self.attributes.is_empty()
+    }
+
+    /// Called for every element of the document, so names that are already lowercase, as
+    /// parsed HTML names and most ids and classes are, are looked up without a copy.
     fn may_match(&self, node: &NodeRef) -> bool {
         let Some(element) = node.element() else {
             return false;
         };
-        if self
-            .tags
-            .contains(&element.name.local.as_ref().to_ascii_lowercase())
-        {
+        if !self.tags.is_empty() && self.tags.contains(&*ascii_lowercase(&element.name.local)) {
             return true;
         }
+        if self.attributes.is_empty() && self.ids.is_empty() && self.classes.is_empty() {
+            return false;
+        }
         element.attrs.borrow().iter().any(|attribute| {
-            let name = attribute.name.local.as_ref().to_ascii_lowercase();
+            let name = ascii_lowercase(&attribute.name.local);
             let value = attribute.value.as_ref();
-            self.attributes.contains(&name)
-                || (name == "id" && self.ids.contains(&value.to_ascii_lowercase()))
-                || (name == "class"
+            self.attributes.contains(&*name)
+                || (&*name == "id"
+                    && !self.ids.is_empty()
+                    && self.ids.contains(&*ascii_lowercase(value)))
+                || (&*name == "class"
+                    && !self.classes.is_empty()
                     && value
                         .split_ascii_whitespace()
-                        .any(|class| self.classes.contains(&class.to_ascii_lowercase())))
+                        .any(|class| self.classes.contains(&*ascii_lowercase(class))))
         })
     }
 }
@@ -177,11 +191,13 @@ pub(super) fn changed_rule_subjects(
         changed.push(rule.clone());
     }
     let (mut subjects, mut subtrees) = (Vec::new(), Vec::new());
-    for node in Node::composed_descendants(document) {
-        if keys.ancestors.may_match(&node) {
-            subtrees.push(node);
-        } else if keys.subjects.may_match(&node) {
-            subjects.push(node);
+    if !keys.ancestors.is_empty() || !keys.subjects.is_empty() {
+        for node in Node::composed_descendants(document) {
+            if keys.ancestors.may_match(&node) {
+                subtrees.push(node);
+            } else if keys.subjects.may_match(&node) {
+                subjects.push(node);
+            }
         }
     }
     Some(RuleDiff {
@@ -234,8 +250,8 @@ fn identity(rule: &Rule) -> *const crate::engine::css::stylesheet::RuleData {
 /// Maps each parsed rule payload to its position; a payload used twice is ambiguous.
 fn positions(
     rules: &[Rule],
-) -> Option<HashMap<*const crate::engine::css::stylesheet::RuleData, usize>> {
-    let mut positions = HashMap::with_capacity(rules.len());
+) -> Option<NodeMap<*const crate::engine::css::stylesheet::RuleData, usize>> {
+    let mut positions = NodeMap::with_capacity_and_hasher(rules.len(), Default::default());
     for (index, rule) in rules.iter().enumerate() {
         if positions.insert(identity(rule), index).is_some() {
             return None;

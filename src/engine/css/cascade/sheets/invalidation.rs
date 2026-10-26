@@ -1,5 +1,6 @@
 //! Rule invalidation is a request to check inputs, not proof that every rule changed.
 use super::*;
+use crate::engine::dom::node::NodeSet;
 use crate::engine::invalidation::RenderInvalidation;
 mod rule_diff;
 #[cfg(test)]
@@ -135,7 +136,7 @@ impl StyleSet {
         // without an explicit removal log, so later CSSOM queries hydrate them afresh.
         let composed = Node::composed_descendants(&dom.document)
             .map(|node| node.id())
-            .collect::<HashSet<_>>();
+            .collect::<NodeSet<_>>();
         let previous_count = self.styles.len();
         let previous_generated_count = self.generated_nodes.len();
         self.styles.retain(|node, _| composed.contains(node));
@@ -150,7 +151,7 @@ impl StyleSet {
             .values()
             .flat_map(Node::descendants)
             .map(|node| node.id())
-            .collect::<HashSet<_>>();
+            .collect::<NodeSet<_>>();
         self.generated_styles
             .retain(|node, _| generated.contains(node));
         (

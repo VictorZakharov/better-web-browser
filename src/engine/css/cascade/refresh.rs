@@ -10,6 +10,7 @@ mod effect_roots_tests;
 mod element_roots;
 #[cfg(test)]
 mod element_roots_tests;
+mod unchanged;
 
 impl StyleSet {
     pub(crate) fn refresh_subtrees(
@@ -134,7 +135,7 @@ impl StyleSet {
         let mut cache = sharing::SharingCache::default();
         let mut pending = vec![(node.clone(), cache.new_group())];
         while let Some((node, parent_group)) = pending.pop() {
-            let (style, group) = if node_id(&node) == root {
+            let (style, group, source) = if node_id(&node) == root {
                 self.compute_style_shared(&mut cache, &node, parent, parent_group)
             } else {
                 let parent = Node::composed_parent(&node)
@@ -147,6 +148,7 @@ impl StyleSet {
                     (
                         self.shared_text_style(&mut cache, &node, parent_style),
                         parent_group,
+                        None,
                     )
                 } else {
                     self.compute_style_shared(&mut cache, &node, Some(parent_style), parent_group)
@@ -157,7 +159,7 @@ impl StyleSet {
             self.styles.insert(node_id(&node), style);
             self.style_log.record(node_id(&node));
             self.layout_generations.mark(&node);
-            self.sync_generated_pseudos(&node);
+            self.sync_generated_pseudos_shared(&node, source.as_ref().map(|s| (&mut cache, s)));
             if !self.defer_nonrendered_descendants || displayed {
                 let children = Node::composed_children(&node).into_iter().rev();
                 pending.extend(children.map(|child| (child, group)));
@@ -189,10 +191,11 @@ impl StyleSet {
         // Every node is restyled after its parent in this traversal, so share groups hold as
         // in `compute_subtree`: equal siblings and cousins reuse one computed style.
         let mut cache = sharing::SharingCache::default();
+        let mut unchanged = unchanged::UnchangedStyles::default();
         let mut pending = vec![(node.clone(), cache.new_group())];
         while let Some((node, parent_group)) = pending.pop() {
             let style_started = std::time::Instant::now();
-            let (style, group) = if node_id(&node) == root {
+            let (style, group, source) = if node_id(&node) == root {
                 self.compute_style_shared(&mut cache, &node, parent, parent_group)
             } else {
                 let parent = Node::composed_parent(&node)
@@ -205,6 +208,7 @@ impl StyleSet {
                     (
                         self.shared_text_style(&mut cache, &node, parent_style),
                         parent_group,
+                        None,
                     )
                 } else {
                     self.compute_style_shared(&mut cache, &node, Some(parent_style), parent_group)
@@ -215,15 +219,25 @@ impl StyleSet {
             stats.recomputed_styles += 1;
             let mut changed = true;
             match self.styles.get(&node_id(&node)) {
-                Some(previous) if previous != &style => {
+                Some(previous) if !unchanged.equal(previous, &style) => {
                     stats.first_changed_node.get_or_insert(node.id());
                     stats.changed_styles += 1;
-                    stats.layout_changed |= !previous.layout_equivalent(&style);
-                    stats.non_deferable_paint_changes |=
-                        !previous.deferred_paint_equivalent(&style);
-                    stats.opacity_only &= previous.retained_opacity_equivalent(&style);
-                    stats.text_color_only &=
-                        previous.text_color_equivalent(&style) && !paints_color_outside_text(&node);
+                    // Each comparison walks much of a ~3 KB style. A restyle after a stylesheet
+                    // arrives changes most styles, so skip the ones whose flag is already settled.
+                    if !stats.layout_changed {
+                        stats.layout_changed = !previous.layout_equivalent(&style);
+                    }
+                    if !stats.non_deferable_paint_changes {
+                        stats.non_deferable_paint_changes =
+                            !previous.deferred_paint_equivalent(&style);
+                    }
+                    if stats.opacity_only {
+                        stats.opacity_only = previous.retained_opacity_equivalent(&style);
+                    }
+                    if stats.text_color_only {
+                        stats.text_color_only = previous.text_color_equivalent(&style)
+                            && !paints_color_outside_text(&node);
+                    }
                 }
                 None => {
                     stats.first_changed_node.get_or_insert(node.id());
@@ -242,7 +256,8 @@ impl StyleSet {
             // Attribute-backed generated content and pseudo-only declarations can change box
             // geometry without changing the originating element's computed style.
             let pseudo_started = std::time::Instant::now();
-            let pseudo_changes = self.sync_generated_pseudos(&node);
+            let pseudo_changes =
+                self.sync_generated_pseudos_shared(&node, source.as_ref().map(|s| (&mut cache, s)));
             if changed || pseudo_changes.layout_changed || pseudo_changes.paint_changed {
                 self.layout_generations.mark(&node);
             }

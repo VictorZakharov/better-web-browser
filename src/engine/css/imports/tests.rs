@@ -12,6 +12,36 @@ fn import_conditions_ignore_comments_without_joining_tokens_or_rewriting_strings
     assert!(!imports[1].matches(environment));
 }
 
+#[test]
+fn imports_end_at_the_first_rule_that_is_not_an_import_or_layer_statement() {
+    // CSS Cascade 5 §6.1: @import must precede all other rules except @charset and @layer
+    // statements; the scan stops there instead of tokenizing the rest of the sheet.
+    let hrefs = |source: &str| -> Vec<String> {
+        parse(source)
+            .into_iter()
+            .map(|import| import.href)
+            .collect()
+    };
+    assert_eq!(
+        hrefs("@layer a; @import 'one'; @import 'two';"),
+        ["one", "two"]
+    );
+    for closing in [
+        "p { color: red }",
+        "@media screen { p {} }",
+        "@layer a { p {} }",
+        "@font-face {}",
+    ] {
+        assert_eq!(
+            hrefs(&format!(
+                "@import 'one'; {closing} @import 'late'; @layer b; @import 'later';"
+            )),
+            ["one"],
+            "{closing}"
+        );
+    }
+}
+
 fn sheet(name: &str, source: &str) -> StylesheetSource {
     StylesheetSource::linked(&format!("https://example.test/{name}"), source.into())
 }

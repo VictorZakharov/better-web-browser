@@ -14,11 +14,13 @@ pub(crate) mod control_validity;
 pub(crate) mod control_values;
 mod control_version;
 mod focus;
+mod node_map;
 mod popover;
 pub(crate) mod stylesheets;
 
 use crate::engine::AdoptedStyleSheet;
 use html5ever::{Attribute, QualName};
+pub use node_map::{NodeMap, NodeSet};
 use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::rc::{Rc, Weak};

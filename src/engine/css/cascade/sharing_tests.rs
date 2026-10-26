@@ -137,9 +137,9 @@ fn incremental_restyles_share_between_restyled_siblings() {
 #[test]
 fn compared_attributes_and_simple_negations_need_no_revalidation() {
     // `:not(.skip)` and `[title]` follow from the compared class list and attribute names,
-    // and `[rel~=a]` from a compared value; `[data-x=1]` still revalidates per element.
+    // and `[lang|=en]` from a compared value; `[data-x=1]` still revalidates per element.
     let (dom, styles, stats) = styled(
-        "<style>li:not(.skip)[title] {color:green} a[rel~=a] {color:green} li[data-x='1'][title] {color:red}</style><ul><li title=a>1</li><li title=b>2</li><li class=skip title=c>3</li><li data-x=1 title=d>4</li><li data-x=2 title=e>5</li></ul><p><a rel=a>x</a><a rel=b>y</a></p>",
+        "<style>li:not(.skip)[title] {color:green} a[lang|=en] {color:green} li[data-x='1'][title] {color:red}</style><ul><li title=a>1</li><li title=b>2</li><li class=skip title=c>3</li><li data-x=1 title=d>4</li><li data-x=2 title=e>5</li></ul><p><a lang=en>x</a><a lang=fr>y</a></p>",
     );
     assert_eq!(
         colors(&dom, &styles, "li"),
@@ -168,4 +168,44 @@ fn shared_styles_and_text_under_them_reference_one_allocation() {
     let details = dom.elements_named("details").next().unwrap();
     let hidden = details.children.borrow().last().cloned().unwrap();
     assert_eq!(style(&hidden).display, Display::None);
+}
+
+#[test]
+fn attribute_order_and_annotation_attributes_do_not_prevent_sharing() {
+    // Order never affects style, and RDFa/microdata annotations are read only by selectors,
+    // which still tell the elements apart when a rule names them.
+    let (dom, styles, stats) = styled(
+        "<style>span.r {color:green} span.r[about='#b'] {color:red}</style><p><span class=r id=x1 about='#a' typeof=T>1</span><span id=x2 class=r about='#c' typeof=U>2</span><span class=r about='#b' id=x3 typeof=T>3</span></p>",
+    );
+    assert_eq!(colors(&dom, &styles, "span"), [true, true, false]);
+    assert!(stats.hits >= 1, "{stats:?}");
+}
+
+#[test]
+fn sharing_elements_reuse_generated_styles_only_when_the_same_rules_apply() {
+    let (dom, styles, stats) = styled(
+        "<style>li::before {content:'*'; color:green} li:nth-child(2)::before {color:red}          li[data-n]::after {content:attr(data-n)}</style>         <ul><li>a</li><li>b</li><li>c</li><li data-n=1>d</li><li data-n=2>e</li></ul>",
+    );
+    let items = dom.elements_named("li").collect::<Vec<_>>();
+    let before = |item: &NodeRef| styles.pseudo_styles[&(item.id(), PseudoElement::Before)].color;
+    // The `:nth-child(2)` rule is revalidated: the second item computes its own style, and
+    // the third reuses the first item's.
+    let colors = items.iter().map(before).collect::<Vec<_>>();
+    let red = Color::rgb(255, 0, 0);
+    assert_eq!(colors, [GREEN, red, GREEN, GREEN, GREEN]);
+    assert!(Arc::ptr_eq(
+        &styles.pseudo_styles[&(items[2].id(), PseudoElement::Before)],
+        &styles.pseudo_styles[&(items[0].id(), PseudoElement::Before)],
+    ));
+    // A shared `::after` style still resolves `attr()` content for its own element.
+    let after = |item: &NodeRef| {
+        styles
+            .generated_nodes
+            .get(&(item.id(), PseudoElement::After))
+            .map(|node| node.text_content())
+    };
+    assert_eq!(after(&items[2]), None);
+    assert_eq!(after(&items[3]).as_deref(), Some("1"));
+    assert_eq!(after(&items[4]).as_deref(), Some("2"));
+    assert!(stats.pseudo_hits >= 4, "{stats:?}");
 }

@@ -5,7 +5,7 @@ use crate::engine::invalidation::{InvalidationImpact, MutationKind};
 fn dependencies(selector: &str) -> NonlocalDependencies {
     let selector = parse_selector(selector).expect("valid dependency test selector");
     let mut dependencies = NonlocalDependencies::default();
-    dependencies.include(&selector);
+    dependencies.include(&mut vec![(&selector, false)], &mut HashSet::new());
     dependencies
 }
 

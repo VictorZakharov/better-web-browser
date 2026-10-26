@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) fn root_font_size_for(
-    styles: &HashMap<NodeId, Arc<ComputedStyle>>,
+    styles: &crate::engine::dom::node::NodeMap<NodeId, Arc<ComputedStyle>>,
     node: &NodeRef,
     parent_style: Option<&ComputedStyle>,
 ) -> f32 {

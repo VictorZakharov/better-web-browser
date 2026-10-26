@@ -35,14 +35,26 @@ impl StyleSet {
         if !self.pseudo_styles.contains_key(&(origin.id(), pseudo)) {
             let origin_style = self.styles.get(&origin.id())?.clone();
             let style = self.compute_pseudo_style(origin, pseudo, &origin_style).0;
-            self.install_pseudo(origin, pseudo, style);
+            self.install_pseudo(origin, pseudo, Arc::new(style));
         }
-        self.pseudo_styles.get(&(origin.id(), pseudo))
+        self.pseudo_styles
+            .get(&(origin.id(), pseudo))
+            .map(Arc::as_ref)
     }
 
     /// Brings `origin`'s generated pseudo-elements up to date with its style, which the caller
     /// has already stored. Reading it from the store lets the caller move a new style in.
     pub(super) fn sync_generated_pseudos(&mut self, origin: &NodeRef) -> PseudoChanges {
+        self.sync_generated_pseudos_shared(origin, None)
+    }
+
+    /// Like [`Self::sync_generated_pseudos`], reusing the generated styles of the element
+    /// `origin` shared its style with in this traversal where the same rules apply.
+    pub(super) fn sync_generated_pseudos_shared(
+        &mut self,
+        origin: &NodeRef,
+        mut source: Option<(&mut sharing::SharingCache, &NodeRef)>,
+    ) -> PseudoChanges {
         if origin.element().is_none() {
             return PseudoChanges::default();
         }
@@ -57,10 +69,10 @@ impl StyleSet {
                 )
                 .0;
             // A retained control owns the placeholder paint, not a generated child box.
-            let changed = self.pseudo_styles.get(&key) != Some(&style);
+            let changed = self.pseudo_styles.get(&key).map(Arc::as_ref) != Some(&style);
             changes.layout_changed |= changed;
             changes.paint_changed |= changed;
-            self.pseudo_styles.insert(key, style);
+            self.pseudo_styles.insert(key, Arc::new(style));
         }
         for pseudo in [PseudoElement::Before, PseudoElement::After] {
             let key = (origin.id(), pseudo);
@@ -69,17 +81,21 @@ impl StyleSet {
                     .get(&node.id())
                     .map(|style| (style.clone(), node.text_content()))
             });
-            // Most elements have no generated-content rule. Resolve inheritance and values only
-            // for matching rules; explicit CSSOM queries still compute initial/inherited values.
-            let matching = self.matching_rules(origin, Some(pseudo));
-            let style = (!matching.is_empty()).then(|| {
-                self.compute_pseudo_style_from_rules(
-                    origin,
-                    pseudo,
-                    &self.styles[&origin.id()],
-                    &matching,
-                )
+            let shared = source.as_mut().and_then(|(cache, source)| {
+                self.shared_pseudo_style(cache, origin, source, pseudo)
             });
+            let style = match shared {
+                Some(style) => {
+                    #[cfg(debug_assertions)]
+                    assert_eq!(
+                        style.as_deref(),
+                        self.generated_pseudo_style(origin, pseudo).as_ref(),
+                        "shared {pseudo:?} style differs from a full cascade"
+                    );
+                    style
+                }
+                None => self.generated_pseudo_style(origin, pseudo).map(Arc::new),
+            };
             match style {
                 Some(style) => self.install_pseudo(origin, pseudo, style),
                 None => self.remove_pseudo(origin.id(), pseudo),
@@ -102,6 +118,25 @@ impl StyleSet {
             }
         }
         changes
+    }
+
+    /// `origin`'s `pseudo` style, or `None` when no rule generates it. Most elements have no
+    /// generated-content rule: resolve inheritance and values only for matching rules, while
+    /// explicit CSSOM queries still compute initial and inherited values.
+    fn generated_pseudo_style(
+        &self,
+        origin: &NodeRef,
+        pseudo: PseudoElement,
+    ) -> Option<ComputedStyle> {
+        let matching = self.matching_rules(origin, Some(pseudo));
+        (!matching.is_empty()).then(|| {
+            self.compute_pseudo_style_from_rules(
+                origin,
+                pseudo,
+                &self.styles[&origin.id()],
+                &matching,
+            )
+        })
     }
 
     pub(super) fn remove_generated_pseudos(&mut self, origins: &HashSet<NodeId>) -> bool {
@@ -195,7 +230,12 @@ impl StyleSet {
         style
     }
 
-    fn install_pseudo(&mut self, origin: &NodeRef, pseudo: PseudoElement, style: ComputedStyle) {
+    fn install_pseudo(
+        &mut self,
+        origin: &NodeRef,
+        pseudo: PseudoElement,
+        style: Arc<ComputedStyle>,
+    ) {
         let key = (origin.id(), pseudo);
         let generates = pseudo != PseudoElement::Placeholder
             && style.generated_content.generates_box()
@@ -205,7 +245,7 @@ impl StyleSet {
                 .styles
                 .get(&origin.id())
                 .is_none_or(|origin_style| origin_style.display != Display::None);
-        self.pseudo_styles.insert(key, style.clone());
+        self.pseudo_styles.insert(key, Arc::clone(&style));
         if !generates {
             if let Some(node) = self.generated_nodes.remove(&key) {
                 self.remove_generated_node_styles(&node);
@@ -222,11 +262,13 @@ impl StyleSet {
             })
             .clone();
         Node::replace_generated_pseudo_text(&node, &contents);
-        self.generated_styles.insert(node.id(), style.clone());
         if let Some(text) = node.children.borrow().first() {
-            self.generated_styles
-                .insert(text.id(), ComputedStyle::inherit_from(Some(&style)));
+            self.generated_styles.insert(
+                text.id(),
+                Arc::new(ComputedStyle::inherit_from(Some(&style))),
+            );
         }
+        self.generated_styles.insert(node.id(), style);
     }
 
     fn remove_pseudo(&mut self, origin: NodeId, pseudo: PseudoElement) {

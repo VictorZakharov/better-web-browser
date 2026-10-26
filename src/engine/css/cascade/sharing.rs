@@ -19,9 +19,12 @@
 //! see [`StyleSet::sharing_eligible`]. Debug builds recompute every hit and assert equality.
 use super::*;
 use crate::engine::css::selector_match::{AncestorFilter, visited};
-use rules::{RuleSharing, classify_rules, referenced_ids};
+use inputs::same_local_inputs;
+use rules::{RuleSharing, classify_rules, referenced_ids, subject_excludes};
 use std::cell::OnceCell;
 
+mod generated;
+mod inputs;
 mod rules;
 
 /// Candidates kept per parent share group, most recent first. Gecko keeps one small LRU for
@@ -35,7 +38,16 @@ pub(super) type ShareGroup = u32;
 struct Candidate {
     node: NodeRef,
     group: ShareGroup,
-    revalidation: Option<Vec<bool>>,
+    /// Filled on first use; `Some(None)` when a candidate rule makes sharing impossible.
+    revalidation: Option<Option<Revalidation>>,
+}
+
+/// The candidate's rules that need revalidation and their results for the candidate. An
+/// element whose local inputs equal the candidate's reaches the same rule-index buckets (tag,
+/// attribute names, classes, and an id no selector names), so it is checked against this list.
+struct Revalidation {
+    rules: Vec<usize>,
+    results: Vec<bool>,
 }
 
 /// Per-rule-set tables, built on first use and kept with the compiled rules: a load runs many
@@ -49,10 +61,14 @@ pub(super) struct SharingTables {
 
 #[derive(Default)]
 pub(super) struct SharingCache {
-    candidates: HashMap<ShareGroup, std::collections::VecDeque<Candidate>>,
+    candidates: NodeMap<ShareGroup, std::collections::VecDeque<Candidate>>,
     /// Text styles by parent style allocation. The parent is kept alive so its address
     /// cannot be reused by another style during the traversal.
-    text: HashMap<*const ComputedStyle, (Arc<ComputedStyle>, Arc<ComputedStyle>)>,
+    text: NodeMap<*const ComputedStyle, (Arc<ComputedStyle>, Arc<ComputedStyle>)>,
+    /// Ancestor filters by parent: siblings share one, and the DOM is not mutated mid-pass.
+    ancestor_filters: NodeMap<NodeId, AncestorFilter>,
+    /// Share sources' generated pseudo-elements; `None` when another element cannot reuse one.
+    pseudos: NodeMap<(NodeId, PseudoElement), Option<generated::SourcePseudo>>,
     next_group: ShareGroup,
     #[cfg(test)]
     pub(super) stats: SharingStats,
@@ -65,6 +81,7 @@ pub(super) struct SharingStats {
     pub(super) hits: usize,
     pub(super) no_candidate: usize,
     pub(super) revalidation_differs: usize,
+    pub(super) pseudo_hits: usize,
 }
 
 #[cfg(test)]
@@ -93,16 +110,19 @@ impl SharingCache {
 
 impl StyleSet {
     /// Styles `node`, reusing a candidate's style when their inputs are equal, and returns
-    /// the share group its children use as their parent group.
+    /// the share group its children use as their parent group, and the candidate it shared
+    /// with, if any.
     pub(super) fn compute_style_shared(
         &self,
         cache: &mut SharingCache,
         node: &NodeRef,
         parent: Option<&ComputedStyle>,
         parent_group: ShareGroup,
-    ) -> (Arc<ComputedStyle>, ShareGroup) {
+    ) -> (Arc<ComputedStyle>, ShareGroup, Option<NodeRef>) {
         let eligible = self.sharing_eligible(node);
-        if eligible && let Some((style, group)) = self.shared_style(cache, node, parent_group) {
+        if eligible
+            && let Some((style, group, source)) = self.shared_style(cache, node, parent_group)
+        {
             #[cfg(debug_assertions)]
             assert_eq!(
                 *style,
@@ -110,14 +130,14 @@ impl StyleSet {
                 "shared style differs from a full cascade for {:?}",
                 node.tag_name()
             );
-            return (style, group);
+            return (style, group, Some(source));
         }
         let style = Arc::new(self.compute_style(node, parent));
         let group = cache.new_group();
         if eligible {
             cache.insert(node, parent_group, group);
         }
-        (style, group)
+        (style, group, None)
     }
 
     /// A text node's style when another text node with the same parent style was already
@@ -156,11 +176,12 @@ impl StyleSet {
         cache: &mut SharingCache,
         node: &NodeRef,
         parent_group: ShareGroup,
-    ) -> Option<(Arc<ComputedStyle>, ShareGroup)> {
+    ) -> Option<(Arc<ComputedStyle>, ShareGroup, NodeRef)> {
         #[cfg(test)]
         {
             cache.stats.lookups += 1;
         }
+        let ancestor_filters = &mut cache.ancestor_filters;
         let candidate = cache
             .candidates
             .get_mut(&parent_group)
@@ -174,17 +195,35 @@ impl StyleSet {
             cache.stats.no_candidate += usize::from(candidate.is_none());
         }
         let candidate = candidate?;
-        let rules = self
+        let sharing = self
             .compiled
             .sharing
             .rules
             .get_or_init(|| classify_rules(&self.compiled.rules));
-        let revalidation = self.revalidation_results(node, rules)?;
-
-        if candidate.revalidation.is_none() {
-            candidate.revalidation = Some(self.revalidation_results(&candidate.node, rules)?);
-        }
-        if candidate.revalidation.as_ref() != Some(&revalidation) {
+        let revalidation = candidate
+            .revalidation
+            .get_or_insert_with(|| {
+                let rules = self.revalidation_rules(&candidate.node, sharing)?;
+                let mut revalidator =
+                    Revalidator::new(self, &candidate.node, None, ancestor_filters);
+                let results = rules
+                    .iter()
+                    .map(|&rule| revalidator.matches(rule))
+                    .collect();
+                Some(Revalidation { rules, results })
+            })
+            .as_ref()?;
+        debug_assert_eq!(
+            self.revalidation_rules(node, sharing).as_ref(),
+            Some(&revalidation.rules)
+        );
+        let mut revalidator = Revalidator::new(self, node, None, ancestor_filters);
+        let same = revalidation
+            .rules
+            .iter()
+            .zip(&revalidation.results)
+            .all(|(&rule, &result)| revalidator.matches(rule) == result);
+        if !same {
             #[cfg(test)]
             {
                 cache.stats.revalidation_differs += 1;
@@ -197,136 +236,89 @@ impl StyleSet {
         {
             cache.stats.hits += 1;
         }
-        Some((style, group))
+        Some((style, group, candidate.node.clone()))
     }
 
-    /// Whether `node`'s style depends only on inputs the cache compares.
-    fn sharing_eligible(&self, node: &NodeRef) -> bool {
-        let Some(element) = node.element() else {
-            return false;
-        };
-        let tag = element.name.local.as_ref();
-        if element.name.ns.as_ref() != "http://www.w3.org/1999/xhtml"
-            // Custom elements match :defined and custom states.
-            || tag.contains('-')
-            || ineligible_tag(tag)
-            || element.shadow_root.borrow().is_some()
-            || element.animation_style.borrow().is_some()
-            || element.transition_style.borrow().is_some()
-            || element.fullscreen.get()
-            || element.popover_order.get() != 0
-        {
-            return false;
-        }
-        {
-            let attributes = element.attrs.borrow();
-            if attributes.iter().any(|attribute| {
-                let name = attribute.name.local.as_ref();
-                // Inline declarations and popover/dir=auto UA rules are per element. An id
-                // matters only when some selector names it.
-                matches!(name, "style" | "popover")
-                    || (name == "id"
-                        && self
-                            .compiled
-                            .sharing
-                            .referenced_ids
-                            .get_or_init(|| referenced_ids(&self.compiled.rules))
-                            .contains(&attribute.value.to_ascii_lowercase()))
-                    || (name == "dir" && attribute.value.trim().eq_ignore_ascii_case("auto"))
-            }) {
-                return false;
-            }
-        }
-        let Some(parent) = node.parent() else {
-            return false;
-        };
-        // The root inherits nothing; children of `details` depend on their summary position.
-        if !matches!(parent.data, NodeData::Element(_)) || parent.tag_name() == Some("details") {
-            return false;
-        }
-        !matches!(Node::tree_root(node).data, NodeData::ShadowRoot(_))
-            && Node::assigned_slot(node).is_none()
-            && !(self.visited_link_colors
-                && visited::is_visited_link(node, &self.document_base_url))
-    }
-
-    /// Results of `node`'s candidate rules that need revalidation, or `None` when a candidate
-    /// rule makes the element ineligible.
-    fn revalidation_results(&self, node: &NodeRef, rules: &[RuleSharing]) -> Option<Vec<bool>> {
-        let tree_root = Node::tree_root(node);
-        let ancestors = OnceCell::<AncestorFilter>::new();
-        let mut results = Vec::new();
+    /// `node`'s candidate rules that need revalidation, or `None` when a candidate rule makes
+    /// the element ineligible.
+    fn revalidation_rules(&self, node: &NodeRef, rules: &[RuleSharing]) -> Option<Vec<usize>> {
+        let mut revalidate = Vec::new();
         for index in self.compiled.index.candidates(node, None) {
             match rules.get(index).copied()? {
                 RuleSharing::KeyDetermined => {}
                 RuleSharing::Unshareable => return None,
                 RuleSharing::Revalidate => {
-                    let rule = self.compiled.rules.get(index)?;
-                    results.push(self.rule_matches(rule, node, None, &tree_root, &ancestors));
+                    if !subject_excludes(&self.compiled.rules[index], node) {
+                        revalidate.push(index);
+                    }
                 }
             }
         }
-        Some(results)
+        Some(revalidate)
     }
 }
 
-/// Form controls carry state outside attributes; the others have per-element UA rendering.
-fn ineligible_tag(tag: &str) -> bool {
-    matches!(
-        tag,
-        "input"
-            | "select"
-            | "textarea"
-            | "button"
-            | "option"
-            | "optgroup"
-            | "fieldset"
-            | "legend"
-            | "label"
-            | "output"
-            | "progress"
-            | "meter"
-            | "details"
-            | "summary"
-            | "dialog"
-            | "slot"
-            | "template"
-            | "bdi"
-            | "html"
-            | "body"
-    )
+/// Evaluates the rules one element revalidates. Only document-scope rules without `@scope`
+/// are revalidated (others make an element ineligible), every eligible element is in the
+/// document tree, and each rule comes from the bucket of the pseudo-element being matched, so
+/// a rule matches exactly when its selector does. The element's ancestor filter is looked up
+/// once rather than per rule.
+struct Revalidator<'a> {
+    styles: &'a StyleSet,
+    node: &'a NodeRef,
+    pseudo: Option<PseudoElement>,
+    filters: &'a mut NodeMap<NodeId, AncestorFilter>,
+    filter: Option<AncestorFilter>,
 }
 
-/// Attributes no style code reads except through selectors, which revalidation compares.
-fn selector_only_attribute(name: &str) -> bool {
-    matches!(
-        name,
-        // Eligible elements' ids are named by no selector.
-        "id" | "href"
-            | "title"
-            | "src"
-            | "srcset"
-            | "sizes"
-            | "alt"
-            | "target"
-            | "loading"
-            | "decoding"
-    ) || name.starts_with("data-")
-        || name.starts_with("aria-")
-}
-
-fn same_local_inputs(candidate: &NodeRef, node: &NodeRef) -> bool {
-    let (Some(candidate), Some(element)) = (candidate.element(), node.element()) else {
-        return false;
-    };
-    if candidate.name != element.name {
-        return false;
+impl<'a> Revalidator<'a> {
+    fn new(
+        styles: &'a StyleSet,
+        node: &'a NodeRef,
+        pseudo: Option<PseudoElement>,
+        filters: &'a mut NodeMap<NodeId, AncestorFilter>,
+    ) -> Self {
+        Self {
+            styles,
+            node,
+            pseudo,
+            filters,
+            filter: None,
+        }
     }
-    let (left, right) = (candidate.attrs.borrow(), element.attrs.borrow());
-    left.len() == right.len()
-        && left.iter().zip(right.iter()).all(|(left, right)| {
-            left.name == right.name
-                && (left.value == right.value
-                    || (left.name.ns.is_empty() && selector_only_attribute(&left.name.local)))
-        })
+
+    fn matches(&mut self, rule: usize) -> bool {
+        let rule = &self.styles.compiled.rules[rule];
+        let selector = &rule.selector;
+        let result = (!AncestorFilter::needed(selector) || self.filter().may_match(selector))
+            && selector_matches(selector, self.node);
+        debug_assert_eq!(
+            result,
+            self.styles.rule_matches(
+                rule,
+                self.node,
+                self.pseudo,
+                &Node::tree_root(self.node),
+                &OnceCell::new()
+            )
+        );
+        result
+    }
+
+    fn filter(&mut self) -> AncestorFilter {
+        if let Some(filter) = self.filter {
+            return filter;
+        }
+        // Siblings share their ancestors' filter, and the DOM is not mutated mid-traversal.
+        let (styles, node) = (self.styles, self.node);
+        let filter = match node.parent() {
+            Some(parent) => *self
+                .filters
+                .entry(parent.id())
+                .or_insert_with(|| styles.ancestor_filters.borrow_mut().for_node(node)),
+            None => styles.ancestor_filters.borrow_mut().for_node(node),
+        };
+        self.filter = Some(filter);
+        filter
+    }
 }
