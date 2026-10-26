@@ -13,7 +13,17 @@ pub(super) struct Selector {
     pub(super) ancestor_keys: Option<Rc<super::selector_match::AncestorFilter>>,
 }
 
-#[derive(Debug, Clone, Default)]
+/// Structural equality: `ancestor_keys` and `specificity` are derived from the compounds and
+/// combinators.
+impl PartialEq for Selector {
+    fn eq(&self, other: &Self) -> bool {
+        (Rc::ptr_eq(&self.compounds, &other.compounds) || self.compounds == other.compounds)
+            && (Rc::ptr_eq(&self.combinators, &other.combinators)
+                || self.combinators == other.combinators)
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct CompoundSelector {
     pub(super) tag: Option<String>,
     pub(super) id: Option<String>,
@@ -58,7 +68,7 @@ pub(super) struct CompoundSelector {
     pub(super) never_matches: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct AttributeSelector {
     pub(super) name: String,
     pub(super) operator: AttributeOperator,
@@ -79,7 +89,7 @@ pub(super) enum TextDirection {
     Rtl,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AttributeOperator {
     Exists,
     Equals,
@@ -90,35 +100,38 @@ pub(super) enum AttributeOperator {
     Substring,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct FunctionalSelector {
     pub(super) kind: FunctionalSelectorKind,
     pub(super) selectors: Vec<Selector>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum FunctionalSelectorKind {
     Is,
     Where,
     Not,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct RelativeSelector {
     pub(super) selector: Selector,
     pub(super) search: RelativeSearch,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum RelativeSearch {
     Descendants,
     Children,
+    /// Later siblings and their descendants (`+ a b`, `~ a > b`).
     FollowingSiblings,
-    NextSibling,
+    /// Only the element sibling this many places after the anchor (`+ a`, `+ a + b`).
+    SiblingAt(usize),
+    /// Only later element siblings (`~ a`, `+ a ~ b`).
     LaterSiblings,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct NthSelector {
     pub(super) a: i32,
     pub(super) b: i32,
@@ -127,7 +140,7 @@ pub(super) struct NthSelector {
     pub(super) filter: Vec<Selector>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Combinator {
     Descendant,
     Child,

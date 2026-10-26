@@ -177,11 +177,23 @@ fn parse_has(
         }
         argument_specificity = argument_specificity.max(member_specificity);
         let simple = selector.compounds.len() == 2;
-        let search = match (relative.as_bytes().first(), simple) {
-            (Some(b'>'), true) => RelativeSearch::Children,
-            (Some(b'+'), true) => RelativeSearch::NextSibling,
-            (Some(b'~'), true) => RelativeSearch::LaterSiblings,
-            (Some(b'+' | b'~'), false) => RelativeSearch::FollowingSiblings,
+        // A chain of sibling combinators only reaches siblings, and a chain of `+` only the
+        // sibling at its length, so neither search needs to visit descendants.
+        let combinators = selector.combinators.iter();
+        let adjacent_only = combinators
+            .clone()
+            .all(|combinator| matches!(combinator, Combinator::AdjacentSibling));
+        let siblings_only = combinators.clone().all(|combinator| {
+            matches!(
+                combinator,
+                Combinator::AdjacentSibling | Combinator::GeneralSibling
+            )
+        });
+        let search = match relative.as_bytes().first() {
+            Some(b'>') if simple => RelativeSearch::Children,
+            Some(b'+') if adjacent_only => RelativeSearch::SiblingAt(selector.combinators.len()),
+            Some(b'+' | b'~') if siblings_only => RelativeSearch::LaterSiblings,
+            Some(b'+' | b'~') => RelativeSearch::FollowingSiblings,
             _ => RelativeSearch::Descendants,
         };
         relatives.push(RelativeSelector { selector, search });

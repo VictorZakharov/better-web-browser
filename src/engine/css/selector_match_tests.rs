@@ -112,6 +112,31 @@ fn relational_selector_matches_descendants_children_and_following_siblings() {
 }
 
 #[test]
+fn relational_sibling_chains_reach_only_siblings_at_their_position() {
+    // `+ a + b` names the element two places after the anchor; `~` chains any later one.
+    let dom = dom::parse(
+        "<main><p id=anchor></p><i></i><b></b><u></u>
+         <div><i></i><b></b></div></main><nav><p></p><span><i></i><b></b></span></nav>",
+    );
+    let paragraphs = dom.elements_named("p").collect::<Vec<_>>();
+    let matches =
+        |source: &str, node: &NodeRef| selector_matches(&parse_selector(source).unwrap(), node);
+    assert!(matches("p:has(+ i)", &paragraphs[0]));
+    assert!(matches("p:has(+ i + b)", &paragraphs[0]));
+    assert!(matches("p:has(+ i + b + u)", &paragraphs[0]));
+    assert!(!matches("p:has(+ b)", &paragraphs[0]));
+    assert!(!matches("p:has(+ i + u)", &paragraphs[0]));
+    assert!(matches("p:has(+ i ~ u)", &paragraphs[0]));
+    assert!(matches("p:has(~ b + u)", &paragraphs[0]));
+    assert!(!matches("p:has(~ u + b)", &paragraphs[0]));
+    assert!(matches("p:has(~ div i + b)", &paragraphs[0]));
+    // Elements inside a later sibling are not siblings of the anchor.
+    assert!(!matches("p:has(+ i + b)", &paragraphs[1]));
+    assert!(!matches("p:has(~ b)", &paragraphs[1]));
+    assert!(matches("p:has(+ span b)", &paragraphs[1]));
+}
+
+#[test]
 fn relational_selector_uses_max_argument_specificity_and_rejects_nesting() {
     let selector = parse_selector("section:has(.mark, #id > b)").unwrap();
     assert_eq!(selector.specificity.ids, 1);

@@ -25,7 +25,7 @@ pub(super) struct HasAnchors {
     unbounded: bool,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 struct AnchorKey {
     tag: Option<String>,
     id: Option<String>,
@@ -112,10 +112,16 @@ impl HasAnchors {
             };
             if !compound.has.is_empty() {
                 self.unbounded |= nth;
-                self.anchors.push(AnchorKey {
+                let anchor = AnchorKey {
                     has: compound.has.clone(),
                     ..key.clone()
-                });
+                };
+                // Selector lists often repeat one `:has()` under different ancestors
+                // (`.a x:has(+ y), .b x:has(+ y)`). Results are only compared with earlier
+                // results of the same anchors, so each distinct anchor is evaluated once.
+                if !self.anchors.contains(&anchor) {
+                    self.anchors.push(anchor);
+                }
             }
             for relatives in &compound.has {
                 for relative in relatives {

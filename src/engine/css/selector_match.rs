@@ -293,7 +293,7 @@ pub(super) fn relative_selector_matches(relative: &RelativeSelector, anchor: &No
         RelativeSearch::Descendants => vec![anchor.clone()],
         RelativeSearch::Children => anchor.children.borrow().iter().cloned().collect(),
         RelativeSearch::FollowingSiblings
-        | RelativeSearch::NextSibling
+        | RelativeSearch::SiblingAt(_)
         | RelativeSearch::LaterSiblings => {
             let Some(parent) = anchor.parent() else {
                 return false;
@@ -307,13 +307,16 @@ pub(super) fn relative_selector_matches(relative: &RelativeSelector, anchor: &No
             };
             let mut following = siblings[index + 1..]
                 .iter()
-                .filter(|sibling| sibling.element().is_some())
-                .cloned()
-                .collect::<Vec<_>>();
-            if matches!(relative.search, RelativeSearch::NextSibling) {
-                following.truncate(1);
+                .filter(|sibling| sibling.element().is_some());
+            if let RelativeSearch::SiblingAt(offset) = relative.search {
+                following
+                    .nth(offset.saturating_sub(1))
+                    .cloned()
+                    .into_iter()
+                    .collect()
+            } else {
+                following.cloned().collect::<Vec<_>>()
             }
-            following
         }
     };
     let descend = matches!(
