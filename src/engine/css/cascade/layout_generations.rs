@@ -17,10 +17,18 @@ static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Default)]
 pub(super) struct LayoutGenerations {
-    own: NodeMap<NodeId, u64>,
-    subtree: NodeMap<NodeId, u64>,
+    /// One entry per node, so marking a node and stopping at its parent costs two lookups.
+    generations: NodeMap<NodeId, Generations>,
     current: Cell<u64>,
     observed: Cell<bool>,
+}
+
+/// A node's own and subtree generations; 0 is unknown, since generations start at 1. An
+/// ancestor of a marked node can carry a subtree generation before its own is known.
+#[derive(Clone, Copy, Debug, Default)]
+struct Generations {
+    own: u64,
+    subtree: u64,
 }
 
 impl LayoutGenerations {
@@ -33,11 +41,18 @@ impl LayoutGenerations {
             self.observed.set(false);
         }
         let current = self.current.get();
-        self.own.insert(node.id(), current);
-        for ancestor in std::iter::successors(Some(node.clone()), Node::composed_parent) {
-            if self.subtree.insert(ancestor.id(), current) == Some(current) {
+        let entry = self.generations.entry(node.id()).or_default();
+        entry.own = current;
+        if std::mem::replace(&mut entry.subtree, current) == current {
+            return;
+        }
+        let mut ancestor = Node::composed_parent(node);
+        while let Some(node) = ancestor {
+            let entry = self.generations.entry(node.id()).or_default();
+            if std::mem::replace(&mut entry.subtree, current) == current {
                 break;
             }
+            ancestor = Node::composed_parent(&node);
         }
     }
 
@@ -45,9 +60,22 @@ impl LayoutGenerations {
     /// no value a layout recorded against this set matches the copy.
     pub(super) fn renumbered(&self) -> Self {
         let fresh = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
+        let renumber = |generation: u64| if generation == 0 { 0 } else { fresh };
         Self {
-            own: self.own.keys().map(|&node| (node, fresh)).collect(),
-            subtree: self.subtree.keys().map(|&node| (node, fresh)).collect(),
+            generations: self
+                .generations
+                .iter()
+                .map(|(&node, generations)| {
+                    let own = renumber(generations.own);
+                    (
+                        node,
+                        Generations {
+                            own,
+                            subtree: renumber(generations.subtree),
+                        },
+                    )
+                })
+                .collect(),
             current: Cell::new(fresh),
             observed: Cell::new(false),
         }
@@ -55,13 +83,11 @@ impl LayoutGenerations {
 
     /// Forgets every node; their generations stay unknown until they are computed again.
     pub(super) fn clear(&mut self) {
-        self.own.clear();
-        self.subtree.clear();
+        self.generations.clear();
     }
 
     pub(super) fn forget(&mut self, node: NodeId) {
-        self.own.remove(&node);
-        self.subtree.remove(&node);
+        self.generations.remove(&node);
     }
 
     /// Forgets `removed`, whose styles were dropped while `anchor` stays rendered, and marks
@@ -78,13 +104,15 @@ impl LayoutGenerations {
     }
 
     pub(super) fn retain(&mut self, keep: impl Fn(&NodeId) -> bool) {
-        self.own.retain(|node, _| keep(node));
-        self.subtree.retain(|node, _| keep(node));
+        self.generations.retain(|node, _| keep(node));
     }
 
-    fn observe(&self, generations: &NodeMap<NodeId, u64>, node: NodeId) -> Option<u64> {
+    fn observe(&self, node: NodeId, generation: impl Fn(&Generations) -> u64) -> Option<u64> {
         self.observed.set(true);
-        generations.get(&node).copied()
+        self.generations
+            .get(&node)
+            .map(generation)
+            .filter(|&generation| generation != 0)
     }
 }
 
@@ -92,14 +120,14 @@ impl StyleSet {
     /// The generation of `node`'s own computed style, or `None` when it is unknown.
     pub(crate) fn own_layout_generation(&self, node: NodeId) -> Option<u64> {
         self.layout_generations
-            .observe(&self.layout_generations.own, node)
+            .observe(node, |generations| generations.own)
     }
 
     /// The generation of the computed styles in `node`'s composed subtree, or `None` when
     /// unknown. It advances whenever any of them changes.
     pub(crate) fn subtree_layout_generation(&self, node: NodeId) -> Option<u64> {
         self.layout_generations
-            .observe(&self.layout_generations.subtree, node)
+            .observe(node, |generations| generations.subtree)
     }
 }
 
