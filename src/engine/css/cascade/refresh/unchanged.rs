@@ -6,9 +6,12 @@
 // remembered, so neither address can be reused by another style during the traversal.
 use super::*;
 
+/// Both compared styles, kept alive, and whether they are equal.
+type Comparison = (Arc<ComputedStyle>, Arc<ComputedStyle>, bool);
+
 #[derive(Default)]
 pub(super) struct UnchangedStyles {
-    results: NodeMap<(usize, usize), (Arc<ComputedStyle>, Arc<ComputedStyle>, bool)>,
+    results: NodeMap<(usize, usize), Comparison>,
 }
 
 impl UnchangedStyles {

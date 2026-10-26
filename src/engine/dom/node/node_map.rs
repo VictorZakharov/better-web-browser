@@ -1,4 +1,4 @@
-//! Maps keyed by [`NodeId`] with a hasher suited to it.
+//! Maps and sets keyed by [`NodeId`] with a hasher suited to it.
 //
 // Style and layout look nodes up in `NodeId`-keyed maps several times per node and pass. The
 // standard SipHash guards against keys chosen to collide, but node identifiers are allocator
@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
 
 pub type NodeMap<K, V> = HashMap<K, V, BuildHasherDefault<NodeHasher>>;
+pub type NodeSet<K> = std::collections::HashSet<K, BuildHasherDefault<NodeHasher>>;
 
 /// For [`NodeId`] keys, alone or combined with other small keys.
 #[derive(Default)]

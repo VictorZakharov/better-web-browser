@@ -20,7 +20,7 @@ pub(crate) mod stylesheets;
 
 use crate::engine::AdoptedStyleSheet;
 use html5ever::{Attribute, QualName};
-pub use node_map::NodeMap;
+pub use node_map::{NodeMap, NodeSet};
 use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::rc::{Rc, Weak};
