@@ -51,6 +51,20 @@ fn collect_ids(selector: &Selector, ids: &mut HashSet<String>) {
     }
 }
 
+/// Whether `rule`'s subject compound names a tag or class `node` lacks. Elements whose local
+/// inputs are equal have the same tag and classes, so such a rule matches neither of them and
+/// needs no revalidation, whatever else its selector reads.
+pub(super) fn subject_excludes(rule: &Rule, node: &NodeRef) -> bool {
+    rule.selector.compounds.last().is_some_and(|subject| {
+        subject.never_matches
+            || subject
+                .tag
+                .as_deref()
+                .is_some_and(|tag| node.tag_name() != Some(tag))
+            || subject.classes.iter().any(|class| !node.has_class(class))
+    })
+}
+
 pub(super) fn classify_rules(rules: &[Rule]) -> Vec<RuleSharing> {
     rules.iter().map(classify_rule).collect()
 }

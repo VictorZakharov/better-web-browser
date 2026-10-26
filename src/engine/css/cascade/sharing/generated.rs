@@ -29,12 +29,18 @@ impl StyleSet {
             .entry((source.id(), pseudo))
             .or_insert_with(|| self.source_pseudo(source, pseudo))
             .as_ref()?;
-        let tree_root = Node::tree_root(origin);
-        let ancestors = OnceCell::new();
-        let same = shared.revalidation.iter().all(|&(rule, result)| {
-            let rule = &self.compiled.rules[rule];
-            self.rule_matches(rule, origin, Some(pseudo), &tree_root, &ancestors) == result
-        });
+        let same = shared.revalidation.is_empty() || {
+            let tree_root = Node::tree_root(origin);
+            shared.revalidation.iter().all(|&(rule, result)| {
+                self.revalidate(
+                    origin,
+                    Some(pseudo),
+                    &tree_root,
+                    rule,
+                    &mut cache.ancestor_filters,
+                ) == result
+            })
+        };
         #[cfg(test)]
         {
             cache.stats.pseudo_hits += usize::from(same);
@@ -59,7 +65,11 @@ impl StyleSet {
             match sharing.get(index).copied()? {
                 RuleSharing::KeyDetermined => {}
                 RuleSharing::Unshareable => return None,
-                RuleSharing::Revalidate => revalidation.push((index, result)),
+                RuleSharing::Revalidate => {
+                    if !subject_excludes(rule, source) {
+                        revalidation.push((index, result));
+                    }
+                }
             }
         }
         // The source synchronized its generated content when it was styled. Without a matching

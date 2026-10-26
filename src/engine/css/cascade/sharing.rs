@@ -20,7 +20,7 @@
 use super::*;
 use crate::engine::css::selector_match::{AncestorFilter, visited};
 use inputs::same_local_inputs;
-use rules::{RuleSharing, classify_rules, referenced_ids};
+use rules::{RuleSharing, classify_rules, referenced_ids, subject_excludes};
 use std::cell::OnceCell;
 
 mod generated;
@@ -208,7 +208,7 @@ impl StyleSet {
                 let results = rules
                     .iter()
                     .map(|&rule| {
-                        self.revalidate(&candidate.node, &tree_root, rule, ancestor_filters)
+                        self.revalidate(&candidate.node, None, &tree_root, rule, ancestor_filters)
                     })
                     .collect();
                 Some(Revalidation { rules, results })
@@ -224,7 +224,7 @@ impl StyleSet {
             .iter()
             .zip(&revalidation.results)
             .all(|(&rule, &result)| {
-                self.revalidate(node, &tree_root, rule, ancestor_filters) == result
+                self.revalidate(node, None, &tree_root, rule, ancestor_filters) == result
             });
         if !same {
             #[cfg(test)]
@@ -250,7 +250,11 @@ impl StyleSet {
             match rules.get(index).copied()? {
                 RuleSharing::KeyDetermined => {}
                 RuleSharing::Unshareable => return None,
-                RuleSharing::Revalidate => revalidate.push(index),
+                RuleSharing::Revalidate => {
+                    if !subject_excludes(&self.compiled.rules[index], node) {
+                        revalidate.push(index);
+                    }
+                }
             }
         }
         Some(revalidate)
@@ -259,6 +263,7 @@ impl StyleSet {
     fn revalidate(
         &self,
         node: &NodeRef,
+        pseudo: Option<PseudoElement>,
         tree_root: &NodeRef,
         rule: usize,
         filters: &mut NodeMap<NodeId, AncestorFilter>,
@@ -273,6 +278,6 @@ impl StyleSet {
                 .or_insert_with(|| self.ancestor_filters.borrow_mut().for_node(node));
             let _ = ancestors.set(filter);
         }
-        self.rule_matches(rule, node, None, tree_root, &ancestors)
+        self.rule_matches(rule, node, pseudo, tree_root, &ancestors)
     }
 }
