@@ -11,6 +11,7 @@
 // the document for every inserted or removed sheet.
 // https://drafts.csswg.org/cssom/#add-a-css-style-sheet
 use super::*;
+use crate::engine::css::cascade::sheets::subject_keys::ascii_lowercase;
 use crate::engine::css::rule_index::RuleIndex;
 use crate::engine::dom::node::NodeMap;
 use std::cell::OnceCell;
@@ -42,31 +43,25 @@ impl KeySet {
         let Some(element) = node.element() else {
             return false;
         };
-        if !self.tags.is_empty() && self.tags.contains(&*lowercase(&element.name.local)) {
+        if !self.tags.is_empty() && self.tags.contains(&*ascii_lowercase(&element.name.local)) {
             return true;
         }
         if self.attributes.is_empty() && self.ids.is_empty() && self.classes.is_empty() {
             return false;
         }
         element.attrs.borrow().iter().any(|attribute| {
-            let name = lowercase(&attribute.name.local);
+            let name = ascii_lowercase(&attribute.name.local);
             let value = attribute.value.as_ref();
             self.attributes.contains(&*name)
-                || (&*name == "id" && !self.ids.is_empty() && self.ids.contains(&*lowercase(value)))
+                || (&*name == "id"
+                    && !self.ids.is_empty()
+                    && self.ids.contains(&*ascii_lowercase(value)))
                 || (&*name == "class"
                     && !self.classes.is_empty()
                     && value
                         .split_ascii_whitespace()
-                        .any(|class| self.classes.contains(&*lowercase(class))))
+                        .any(|class| self.classes.contains(&*ascii_lowercase(class))))
         })
-    }
-}
-
-fn lowercase(value: &str) -> std::borrow::Cow<'_, str> {
-    if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
-        value.to_ascii_lowercase().into()
-    } else {
-        value.into()
     }
 }
 

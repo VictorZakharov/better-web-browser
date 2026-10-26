@@ -55,16 +55,14 @@ impl<'a> KeyIndex<'a> {
         let check = |keys: Option<&Vec<&SubjectKey>>| {
             keys.is_some_and(|keys| keys.iter().any(|key| key.may_match(node)))
         };
-        check(
-            self.by_tag
-                .get(&element.name.local.as_ref().to_ascii_lowercase()),
-        ) || node
-            .attr_ref("id")
-            .is_some_and(|id| check(self.by_id.get(&id.to_ascii_lowercase())))
+        check(self.by_tag.get(&*ascii_lowercase(&element.name.local)))
+            || node
+                .attr_ref("id")
+                .is_some_and(|id| check(self.by_id.get(&*ascii_lowercase(&id))))
             || node.attr_ref("class").is_some_and(|classes| {
                 classes
                     .split_ascii_whitespace()
-                    .any(|class| check(self.by_class.get(&class.to_ascii_lowercase())))
+                    .any(|class| check(self.by_class.get(&*ascii_lowercase(class))))
             })
     }
 }
@@ -102,5 +100,15 @@ impl SubjectKey {
                             .any(|class| class.eq_ignore_ascii_case(wanted))
                     })
                 }))
+    }
+}
+
+/// `value` in ASCII lowercase, copied only when it has an uppercase letter. Parsed HTML names
+/// and most authored class names are already lowercase.
+pub(super) fn ascii_lowercase(value: &str) -> std::borrow::Cow<'_, str> {
+    if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        value.to_ascii_lowercase().into()
+    } else {
+        value.into()
     }
 }

@@ -61,23 +61,27 @@ pub(crate) fn parse(source: &str) -> Vec<Import> {
     let (source, _) = bounded_utf8_prefix(source, MAX_CSS_SOURCE_BYTES);
     let mut input = ParserInput::new(source);
     let mut input = Parser::new(&mut input);
+    let closed = std::cell::Cell::new(false);
     let mut rules = ImportParser {
-        closed: false,
+        closed: &closed,
         pending_layers: Vec::new(),
     };
+    // Once any other rule closes the import prelude, every later rule is rejected, so the
+    // rest of the sheet is not tokenized.
     StyleSheetParser::new(&mut input, &mut rules)
+        .take_while(|_| !closed.get())
         .filter_map(Result::ok)
         .flatten()
         .take(MAX_IMPORT_OCCURRENCES + 1)
         .collect()
 }
 
-struct ImportParser {
-    closed: bool,
+struct ImportParser<'a> {
+    closed: &'a std::cell::Cell<bool>,
     pending_layers: Vec<LayerPath>,
 }
 
-impl<'i> AtRuleParser<'i> for ImportParser {
+impl<'i> AtRuleParser<'i> for ImportParser<'_> {
     type Prelude = Option<Import>;
     type AtRule = Option<Import>;
     type Error = ();
@@ -87,7 +91,7 @@ impl<'i> AtRuleParser<'i> for ImportParser {
         name: CowRcStr<'i>,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self::Prelude, ParseError<'i, ()>> {
-        if self.closed {
+        if self.closed.get() {
             return Err(input.new_custom_error(()));
         }
         if name.eq_ignore_ascii_case("layer") {
@@ -100,7 +104,7 @@ impl<'i> AtRuleParser<'i> for ImportParser {
             return Ok(None);
         }
         if !name.eq_ignore_ascii_case("import") {
-            self.closed = true;
+            self.closed.set(true);
             return Err(input.new_custom_error(()));
         }
         let href = input.expect_url_or_string()?.to_string();
@@ -187,7 +191,7 @@ impl<'i> AtRuleParser<'i> for ImportParser {
         _: &ParserState,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self::AtRule, ParseError<'i, ()>> {
-        self.closed = true;
+        self.closed.set(true);
         Err(input.new_custom_error(()))
     }
 }
@@ -223,12 +227,12 @@ fn condition_text<'i, 't>(
     Ok(output.trim().to_string())
 }
 
-impl<'i> QualifiedRuleParser<'i> for ImportParser {
+impl<'i> QualifiedRuleParser<'i> for ImportParser<'_> {
     type Prelude = ();
     type QualifiedRule = Option<Import>;
     type Error = ();
     fn parse_prelude<'t>(&mut self, input: &mut Parser<'i, 't>) -> Result<(), ParseError<'i, ()>> {
-        self.closed = true;
+        self.closed.set(true);
         Err(input.new_custom_error(()))
     }
 }

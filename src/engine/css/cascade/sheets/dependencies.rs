@@ -1,5 +1,6 @@
 //! Conservative cascade invalidation for dependencies outside a dirty subtree.
 use super::*;
+use crate::engine::css::selector_model::CompoundSelector;
 
 #[derive(Debug, Default)]
 pub(in crate::engine::css::cascade) struct NonlocalDependencies {
@@ -44,8 +45,12 @@ impl AppendedChildDependencies {
 impl NonlocalDependencies {
     pub(super) fn for_rules(rules: &[Rule]) -> Self {
         let mut dependencies = Self::default();
+        // Including a graph twice adds nothing, so the visited set is shared by every rule.
+        let mut pending = Vec::new();
+        let mut visited = HashSet::new();
         for rule in rules {
-            dependencies.include(&rule.selector);
+            pending.push((&rule.selector, false));
+            dependencies.include(&mut pending, &mut visited);
             dependencies
                 .appended_child
                 .previous_subtrees
@@ -121,9 +126,11 @@ impl NonlocalDependencies {
             }
     }
 
-    fn include(&mut self, selector: &Selector) {
-        let mut pending = vec![(selector, false)];
-        let mut visited = HashSet::new();
+    fn include(
+        &mut self,
+        pending: &mut Vec<(&Selector, bool)>,
+        visited: &mut HashSet<(*const Vec<CompoundSelector>, bool)>,
+    ) {
         while let Some((selector, relative)) = pending.pop() {
             // Shared functional-selector graphs need at most two visits: inside
             // and outside a relative selector. Do not lose the attribute edge

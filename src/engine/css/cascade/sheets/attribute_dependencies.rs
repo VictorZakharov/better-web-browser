@@ -1,5 +1,6 @@
 //! Selector dependencies that can make a class or ID write change presentation.
 use super::*;
+use crate::engine::css::selector_model::CompoundSelector;
 use std::collections::HashSet;
 
 #[derive(Debug, Default)]
@@ -11,64 +12,70 @@ pub(super) struct AttributeDependencies {
     style_attribute: bool,
 }
 
+/// Selector graphs already included while building, shared by every rule: including a graph
+/// twice adds nothing, and nested arguments are often shared between rules.
+#[derive(Default)]
+struct Walk<'a> {
+    pending: Vec<&'a Selector>,
+    visited: HashSet<*const Vec<CompoundSelector>>,
+}
+
 impl AttributeDependencies {
     pub(super) fn for_rules(rules: &[Rule]) -> Self {
         let mut dependencies = Self::default();
+        let mut walk = Walk::default();
         for rule in rules {
-            dependencies.include_rule(rule);
+            dependencies.include_rule(rule, &mut walk);
         }
         dependencies
     }
 
     pub(super) fn for_indices(rules: &[Rule], indices: &[usize]) -> Self {
         let mut dependencies = Self::default();
+        let mut walk = Walk::default();
         for &index in indices {
-            dependencies.include_rule(&rules[index]);
+            dependencies.include_rule(&rules[index], &mut walk);
         }
         dependencies
     }
 
-    fn include_rule(&mut self, rule: &Rule) {
-        self.include(&rule.selector);
-        if let Some(condition) = &rule.host_condition {
-            self.include(condition);
-        }
-        if let Some(origin) = &rule.slotted_origin {
-            self.include(origin);
-        }
-        if let Some(part) = &rule.part {
-            self.include(&part.origin);
-        }
+    fn include_rule<'a>(&mut self, rule: &'a Rule, walk: &mut Walk<'a>) {
+        walk.pending.push(&rule.selector);
+        walk.pending.extend(&rule.host_condition);
+        walk.pending.extend(&rule.slotted_origin);
+        walk.pending
+            .extend(rule.part.iter().map(|part| &part.origin));
         for scope in &rule.css_scopes {
-            for selector in scope.start.iter().chain(scope.end.iter()).flatten() {
-                self.include(selector);
-            }
+            walk.pending
+                .extend(scope.start.iter().chain(scope.end.iter()).flatten());
         }
-    }
-
-    fn include(&mut self, root: &Selector) {
-        let mut pending = vec![root];
-        let mut visited = HashSet::new();
-        while let Some(selector) = pending.pop() {
-            if !visited.insert(Rc::as_ptr(&selector.compounds)) {
+        while let Some(selector) = walk.pending.pop() {
+            if !walk.visited.insert(Rc::as_ptr(&selector.compounds)) {
                 continue;
             }
             for compound in selector.compounds.iter() {
-                self.ids.extend(compound.id.iter().cloned());
-                self.classes.extend(compound.classes.iter().cloned());
+                if let Some(id) = compound.id.as_ref().filter(|id| !self.ids.contains(*id)) {
+                    self.ids.insert(id.clone());
+                }
+                for class in &compound.classes {
+                    if !self.classes.contains(class) {
+                        self.classes.insert(class.clone());
+                    }
+                }
                 for attribute in &compound.attributes {
                     self.class_attribute |= attribute.name.eq_ignore_ascii_case("class");
                     self.id_attribute |= attribute.name.eq_ignore_ascii_case("id");
                     self.style_attribute |= attribute.name.eq_ignore_ascii_case("style");
                 }
                 for functional in &compound.functional {
-                    pending.extend(&functional.selectors);
+                    walk.pending.extend(&functional.selectors);
                 }
                 for relatives in &compound.has {
-                    pending.extend(relatives.iter().map(|relative| &relative.selector));
+                    walk.pending
+                        .extend(relatives.iter().map(|relative| &relative.selector));
                 }
                 for nth in &compound.nth {
-                    pending.extend(&nth.filter);
+                    walk.pending.extend(&nth.filter);
                 }
             }
         }
