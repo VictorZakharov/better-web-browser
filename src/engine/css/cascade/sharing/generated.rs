@@ -29,18 +29,12 @@ impl StyleSet {
             .entry((source.id(), pseudo))
             .or_insert_with(|| self.source_pseudo(source, pseudo))
             .as_ref()?;
-        let same = shared.revalidation.is_empty() || {
-            let tree_root = Node::tree_root(origin);
-            shared.revalidation.iter().all(|&(rule, result)| {
-                self.revalidate(
-                    origin,
-                    Some(pseudo),
-                    &tree_root,
-                    rule,
-                    &mut cache.ancestor_filters,
-                ) == result
-            })
-        };
+        let mut revalidator =
+            Revalidator::new(self, origin, Some(pseudo), &mut cache.ancestor_filters);
+        let same = shared
+            .revalidation
+            .iter()
+            .all(|&(rule, result)| revalidator.matches(rule) == result);
         #[cfg(test)]
         {
             cache.stats.pseudo_hits += usize::from(same);

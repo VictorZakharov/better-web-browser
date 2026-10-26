@@ -204,12 +204,11 @@ impl StyleSet {
             .revalidation
             .get_or_insert_with(|| {
                 let rules = self.revalidation_rules(&candidate.node, sharing)?;
-                let tree_root = Node::tree_root(&candidate.node);
+                let mut revalidator =
+                    Revalidator::new(self, &candidate.node, None, ancestor_filters);
                 let results = rules
                     .iter()
-                    .map(|&rule| {
-                        self.revalidate(&candidate.node, None, &tree_root, rule, ancestor_filters)
-                    })
+                    .map(|&rule| revalidator.matches(rule))
                     .collect();
                 Some(Revalidation { rules, results })
             })
@@ -218,14 +217,12 @@ impl StyleSet {
             self.revalidation_rules(node, sharing).as_ref(),
             Some(&revalidation.rules)
         );
-        let tree_root = Node::tree_root(node);
+        let mut revalidator = Revalidator::new(self, node, None, ancestor_filters);
         let same = revalidation
             .rules
             .iter()
             .zip(&revalidation.results)
-            .all(|(&rule, &result)| {
-                self.revalidate(node, None, &tree_root, rule, ancestor_filters) == result
-            });
+            .all(|(&rule, &result)| revalidator.matches(rule) == result);
         if !same {
             #[cfg(test)]
             {
@@ -259,25 +256,69 @@ impl StyleSet {
         }
         Some(revalidate)
     }
+}
 
-    fn revalidate(
-        &self,
-        node: &NodeRef,
+/// Evaluates the rules one element revalidates. Only document-scope rules without `@scope`
+/// are revalidated (others make an element ineligible), every eligible element is in the
+/// document tree, and each rule comes from the bucket of the pseudo-element being matched, so
+/// a rule matches exactly when its selector does. The element's ancestor filter is looked up
+/// once rather than per rule.
+struct Revalidator<'a> {
+    styles: &'a StyleSet,
+    node: &'a NodeRef,
+    pseudo: Option<PseudoElement>,
+    filters: &'a mut NodeMap<NodeId, AncestorFilter>,
+    filter: Option<AncestorFilter>,
+}
+
+impl<'a> Revalidator<'a> {
+    fn new(
+        styles: &'a StyleSet,
+        node: &'a NodeRef,
         pseudo: Option<PseudoElement>,
-        tree_root: &NodeRef,
-        rule: usize,
-        filters: &mut NodeMap<NodeId, AncestorFilter>,
-    ) -> bool {
-        let rule = &self.compiled.rules[rule];
-        let ancestors = OnceCell::new();
-        if AncestorFilter::needed(&rule.selector)
-            && let Some(parent) = node.parent()
-        {
-            let filter = *filters
-                .entry(parent.id())
-                .or_insert_with(|| self.ancestor_filters.borrow_mut().for_node(node));
-            let _ = ancestors.set(filter);
+        filters: &'a mut NodeMap<NodeId, AncestorFilter>,
+    ) -> Self {
+        Self {
+            styles,
+            node,
+            pseudo,
+            filters,
+            filter: None,
         }
-        self.rule_matches(rule, node, pseudo, tree_root, &ancestors)
+    }
+
+    fn matches(&mut self, rule: usize) -> bool {
+        let rule = &self.styles.compiled.rules[rule];
+        let selector = &rule.selector;
+        let result = (!AncestorFilter::needed(selector) || self.filter().may_match(selector))
+            && selector_matches(selector, self.node);
+        debug_assert_eq!(
+            result,
+            self.styles.rule_matches(
+                rule,
+                self.node,
+                self.pseudo,
+                &Node::tree_root(self.node),
+                &OnceCell::new()
+            )
+        );
+        result
+    }
+
+    fn filter(&mut self) -> AncestorFilter {
+        if let Some(filter) = self.filter {
+            return filter;
+        }
+        // Siblings share their ancestors' filter, and the DOM is not mutated mid-traversal.
+        let (styles, node) = (self.styles, self.node);
+        let filter = match node.parent() {
+            Some(parent) => *self
+                .filters
+                .entry(parent.id())
+                .or_insert_with(|| styles.ancestor_filters.borrow_mut().for_node(node)),
+            None => styles.ancestor_filters.borrow_mut().for_node(node),
+        };
+        self.filter = Some(filter);
+        filter
     }
 }
