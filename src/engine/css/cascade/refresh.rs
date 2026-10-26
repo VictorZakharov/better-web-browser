@@ -10,6 +10,7 @@ mod effect_roots_tests;
 mod element_roots;
 #[cfg(test)]
 mod element_roots_tests;
+mod unchanged;
 
 impl StyleSet {
     pub(crate) fn refresh_subtrees(
@@ -190,6 +191,7 @@ impl StyleSet {
         // Every node is restyled after its parent in this traversal, so share groups hold as
         // in `compute_subtree`: equal siblings and cousins reuse one computed style.
         let mut cache = sharing::SharingCache::default();
+        let mut unchanged = unchanged::UnchangedStyles::default();
         let mut pending = vec![(node.clone(), cache.new_group())];
         while let Some((node, parent_group)) = pending.pop() {
             let style_started = std::time::Instant::now();
@@ -217,15 +219,25 @@ impl StyleSet {
             stats.recomputed_styles += 1;
             let mut changed = true;
             match self.styles.get(&node_id(&node)) {
-                Some(previous) if previous != &style => {
+                Some(previous) if !unchanged.equal(previous, &style) => {
                     stats.first_changed_node.get_or_insert(node.id());
                     stats.changed_styles += 1;
-                    stats.layout_changed |= !previous.layout_equivalent(&style);
-                    stats.non_deferable_paint_changes |=
-                        !previous.deferred_paint_equivalent(&style);
-                    stats.opacity_only &= previous.retained_opacity_equivalent(&style);
-                    stats.text_color_only &=
-                        previous.text_color_equivalent(&style) && !paints_color_outside_text(&node);
+                    // Each comparison walks much of a ~3 KB style. A restyle after a stylesheet
+                    // arrives changes most styles, so skip the ones whose flag is already settled.
+                    if !stats.layout_changed {
+                        stats.layout_changed = !previous.layout_equivalent(&style);
+                    }
+                    if !stats.non_deferable_paint_changes {
+                        stats.non_deferable_paint_changes =
+                            !previous.deferred_paint_equivalent(&style);
+                    }
+                    if stats.opacity_only {
+                        stats.opacity_only = previous.retained_opacity_equivalent(&style);
+                    }
+                    if stats.text_color_only {
+                        stats.text_color_only = previous.text_color_equivalent(&style)
+                            && !paints_color_outside_text(&node);
+                    }
                 }
                 None => {
                     stats.first_changed_node.get_or_insert(node.id());
