@@ -157,7 +157,7 @@ fn key_determined(compound: &CompoundSelector) -> bool {
     // matches neither paired element (the root element never shares).
     attributes.iter().all(|attribute| {
         matches!(attribute.operator, AttributeOperator::Exists)
-            || !super::selector_only_attribute(&attribute.name.to_ascii_lowercase())
+            || !super::inputs::selector_only_attribute(&attribute.name.to_ascii_lowercase())
     }) && functional.iter().all(|functional| {
         // A selector list on the same element, without combinators, is decided by the
         // same inputs; `:not()` only negates that result.

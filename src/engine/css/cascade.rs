@@ -64,9 +64,10 @@ pub struct StyleSet {
     /// Shared so that elements with equal styles (see `sharing`) and parent lookups during a
     /// pass reference one allocation instead of copying the whole style.
     pub styles: HashMap<NodeId, Arc<ComputedStyle>>,
-    pseudo_styles: HashMap<(NodeId, PseudoElement), ComputedStyle>,
+    // A generated box shares its pseudo-element's style allocation (see `install_pseudo`).
+    pseudo_styles: HashMap<(NodeId, PseudoElement), Arc<ComputedStyle>>,
     generated_nodes: HashMap<(NodeId, PseudoElement), NodeRef>,
-    generated_styles: HashMap<NodeId, ComputedStyle>,
+    generated_styles: HashMap<NodeId, Arc<ComputedStyle>>,
     compiled: std::rc::Rc<sheets::CompiledRules>,
     ancestor_filters: std::cell::RefCell<super::selector_match::AncestorFilterCache>,
     // A shared inherited variable map is inspected by every descendant with var() rules.
@@ -304,14 +305,14 @@ impl StyleSet {
         self.styles
             .values()
             .map(Arc::as_ref)
-            .chain(self.generated_styles.values())
+            .chain(self.generated_styles.values().map(Arc::as_ref))
     }
 
     pub fn get(&self, node: &NodeRef) -> &ComputedStyle {
         self.styles
             .get(&node_id(node))
             .map(Arc::as_ref)
-            .or_else(|| self.generated_styles.get(&node_id(node)))
+            .or_else(|| self.generated_styles.get(&node_id(node)).map(Arc::as_ref))
             .expect("style should exist for every DOM node")
     }
 

@@ -134,7 +134,7 @@ impl StyleSet {
         let mut cache = sharing::SharingCache::default();
         let mut pending = vec![(node.clone(), cache.new_group())];
         while let Some((node, parent_group)) = pending.pop() {
-            let (style, group) = if node_id(&node) == root {
+            let (style, group, source) = if node_id(&node) == root {
                 self.compute_style_shared(&mut cache, &node, parent, parent_group)
             } else {
                 let parent = Node::composed_parent(&node)
@@ -147,6 +147,7 @@ impl StyleSet {
                     (
                         self.shared_text_style(&mut cache, &node, parent_style),
                         parent_group,
+                        None,
                     )
                 } else {
                     self.compute_style_shared(&mut cache, &node, Some(parent_style), parent_group)
@@ -157,7 +158,7 @@ impl StyleSet {
             self.styles.insert(node_id(&node), style);
             self.style_log.record(node_id(&node));
             self.layout_generations.mark(&node);
-            self.sync_generated_pseudos(&node);
+            self.sync_generated_pseudos_shared(&node, source.as_ref().map(|s| (&mut cache, s)));
             if !self.defer_nonrendered_descendants || displayed {
                 let children = Node::composed_children(&node).into_iter().rev();
                 pending.extend(children.map(|child| (child, group)));
@@ -192,7 +193,7 @@ impl StyleSet {
         let mut pending = vec![(node.clone(), cache.new_group())];
         while let Some((node, parent_group)) = pending.pop() {
             let style_started = std::time::Instant::now();
-            let (style, group) = if node_id(&node) == root {
+            let (style, group, source) = if node_id(&node) == root {
                 self.compute_style_shared(&mut cache, &node, parent, parent_group)
             } else {
                 let parent = Node::composed_parent(&node)
@@ -205,6 +206,7 @@ impl StyleSet {
                     (
                         self.shared_text_style(&mut cache, &node, parent_style),
                         parent_group,
+                        None,
                     )
                 } else {
                     self.compute_style_shared(&mut cache, &node, Some(parent_style), parent_group)
@@ -242,7 +244,8 @@ impl StyleSet {
             // Attribute-backed generated content and pseudo-only declarations can change box
             // geometry without changing the originating element's computed style.
             let pseudo_started = std::time::Instant::now();
-            let pseudo_changes = self.sync_generated_pseudos(&node);
+            let pseudo_changes =
+                self.sync_generated_pseudos_shared(&node, source.as_ref().map(|s| (&mut cache, s)));
             if changed || pseudo_changes.layout_changed || pseudo_changes.paint_changed {
                 self.layout_generations.mark(&node);
             }
