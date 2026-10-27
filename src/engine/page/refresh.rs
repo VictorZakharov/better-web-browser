@@ -275,11 +275,7 @@ impl Page {
             }
             None => invalidation,
         };
-        let mut invalidation_roots = invalidation
-            .roots
-            .iter()
-            .filter_map(|root| self.dom.find_node(*root))
-            .collect::<Vec<_>>();
+        let mut invalidation_roots = self.dom.find_nodes_in_order(&invalidation.roots);
         if invalidation_roots.is_empty() && invalidation.attribute_changes.is_empty() {
             invalidation_roots.push(self.dom.document.clone());
         }
