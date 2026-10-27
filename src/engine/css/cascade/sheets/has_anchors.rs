@@ -11,7 +11,7 @@
 use super::*;
 use crate::engine::css::selector_match::relative_selector_matches;
 use crate::engine::css::selector_model::{Combinator, RelativeSearch, RelativeSelector, Selector};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 #[cfg(test)]
 mod tests;
