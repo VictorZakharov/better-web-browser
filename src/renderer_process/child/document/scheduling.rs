@@ -295,15 +295,15 @@ impl DocumentRuntime {
                 script_micros: micros(script_time),
                 ..PageLoadReport::default()
             });
-            return Ok(self.delay_background_frame(
-                outcome,
-                [
-                    resources_changed,
-                    resource_style_changed,
-                    non_style_resources_changed,
-                ],
-                load,
-            ));
+            let resources = [
+                resources_changed,
+                resource_style_changed,
+                non_style_resources_changed,
+            ];
+            if resources_changed && let Some(withheld) = self.paint_only_image_arrivals() {
+                return self.present_arrived_images(outcome, resources, load, withheld);
+            }
+            return Ok(self.delay_background_frame(outcome, resources, load));
         }
         // Script execution, console output, storage/cookie traffic, and worker progress are not
         // visual invalidations. Sending a complete display-list snapshot for those tasks made

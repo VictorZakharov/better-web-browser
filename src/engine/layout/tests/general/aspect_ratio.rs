@@ -82,3 +82,79 @@ fn replaced_images_transfer_the_selected_ratio_in_both_directions() {
     let block = image_bounds("display:block;width:100px;aspect-ratio:1/1", true);
     assert_eq!((block.width, block.height), (100.0, 100.0));
 }
+
+#[test]
+fn image_dimension_attributes_reserve_the_box_before_the_image_loads() {
+    // HTML maps `width` and `height` to `aspect-ratio: auto w / h`, so an unloaded image with
+    // `height: auto` keeps the attributes' proportions rather than its 16x16 placeholder's.
+    for display in ["inline", "block"] {
+        let html = format!(
+            "<style>body{{margin:0}}img{{display:{display};height:auto}}</style>\
+             <img src=/pending.png width=250 height=119>"
+        );
+        let rect = bounds_for(&html, "img");
+        assert_eq!((rect.width, rect.height), (250.0, 119.0), "{display}");
+    }
+    let page = Page::parse("<img width=250 height=119>", "https://example.com/");
+    let image = page.dom.elements_named("img").next().unwrap();
+    let styles = page.style_for_viewport(800.0, 600.0);
+    assert_eq!(
+        styles.get(&image).aspect_ratio,
+        AspectRatio::Ratio {
+            width: 250.0,
+            height: 119.0,
+            prefer_natural: true,
+        }
+    );
+    // Percentages and an author ratio do not map.
+    for html in [
+        "<img width=50% height=119>",
+        "<img width=250 height=119 style=aspect-ratio:1/1>",
+    ] {
+        let page = Page::parse(html, "https://example.com/");
+        let image = page.dom.elements_named("img").next().unwrap();
+        let ratio = page
+            .style_for_viewport(800.0, 600.0)
+            .get(&image)
+            .aspect_ratio;
+        assert_ne!(
+            ratio,
+            AspectRatio::Ratio {
+                width: 250.0,
+                height: 119.0,
+                prefer_natural: true
+            }
+        );
+    }
+}
+
+#[test]
+fn arrived_image_follows_a_reserved_box_only_within_one_percent_of_its_ratio() {
+    let style = |css: &str| {
+        let page = Page::parse(
+            &format!("<style>img{{{css}}}</style><img width=250 height=119>"),
+            "https://example.com/",
+        );
+        let image = page.dom.elements_named("img").next().unwrap();
+        page.style_for_viewport(800.0, 600.0).get(&image).clone()
+    };
+    let auto_height = style("height:auto");
+    assert!(crate::engine::layout::replaced_box_follows_ratio(
+        &auto_height,
+        (457, 218)
+    ));
+    assert!(!crate::engine::layout::replaced_box_follows_ratio(
+        &auto_height,
+        (400, 218)
+    ));
+    // Both dimensions fixed: layout does not need the ratio, and a percentage width depends on
+    // the containing block, so neither is a reserved box this check covers.
+    assert!(!crate::engine::layout::replaced_box_follows_ratio(
+        &style(""),
+        (457, 218)
+    ));
+    assert!(!crate::engine::layout::replaced_box_follows_ratio(
+        &style("width:50%;height:auto"),
+        (457, 218)
+    ));
+}

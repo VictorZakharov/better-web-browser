@@ -62,6 +62,7 @@ impl Page {
             layout_box_tree: Default::default(),
             layout_stats: Default::default(),
             layout_index: Default::default(),
+            layout_image_reads: Default::default(),
         }
     }
 

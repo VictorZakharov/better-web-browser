@@ -10,6 +10,8 @@ pub(super) struct BlockImage {
     alt: String,
     available: bool,
     embedded_frame: bool,
+    /// The size is a placeholder for an image that has not loaded, not its natural size.
+    unloaded: bool,
 }
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
@@ -45,6 +47,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 alt: String::new(),
                 available: true,
                 embedded_frame: true,
+                unloaded: false,
             });
         }
         if node.tag_name() == Some("svg") {
@@ -61,6 +64,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 alt: node.attr("aria-label").unwrap_or_default(),
                 available: dimensions.is_some(),
                 embedded_frame: false,
+                unloaded: false,
             });
         }
         if node.tag_name() == Some("canvas") {
@@ -74,6 +78,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 alt: String::new(),
                 available: image.is_some(),
                 embedded_frame: false,
+                unloaded: false,
             });
         }
         let url = self.image_url_for(node)?;
@@ -82,16 +87,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         } else {
             (16.0, 16.0)
         };
-        let (intrinsic_width, intrinsic_height) = if url
-            == crate::engine::page::MEDIA_VIDEO_PLACEHOLDER
+        let decoded = if url == crate::engine::page::MEDIA_VIDEO_PLACEHOLDER
             || replaced_size_ignores_natural_size(self.styles.get(node))
         {
-            default_size
+            None
         } else {
-            self.decoded_image(&url)
-                .map(|image| (image.width as f32, image.height as f32))
-                .unwrap_or(default_size)
+            Some(self.decoded_image(&url))
         };
+        let (intrinsic_width, intrinsic_height) = decoded
+            .flatten()
+            .map(|image| (image.width as f32, image.height as f32))
+            .unwrap_or(default_size);
         Some(BlockImage {
             url,
             intrinsic_width,
@@ -100,11 +106,20 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             alt: node.attr("alt").unwrap_or_default(),
             available: true,
             embedded_frame: false,
+            unloaded: decoded.is_some_and(|image| image.is_none()),
         })
     }
 }
 
 impl BlockImage {
+    /// The natural size a preferred aspect ratio transfers through; see
+    /// `aspect_ratio::natural_size`.
+    fn natural_size(&self, style: &ComputedStyle) -> Option<(f32, f32)> {
+        (!self.embedded_frame)
+            .then_some((self.intrinsic_width, self.intrinsic_height))
+            .filter(|_| aspect_ratio::uses_placeholder_ratio(style, self.unloaded))
+    }
+
     pub(super) fn outer_width(
         &self,
         node: &NodeRef,
@@ -114,8 +129,7 @@ impl BlockImage {
         horizontal_insets: f32,
         vertical_insets: f32,
     ) -> f32 {
-        let natural =
-            (!self.embedded_frame).then_some((self.intrinsic_width, self.intrinsic_height));
+        let natural = self.natural_size(style);
         let specified_width = self.resolve_length(
             node,
             "width",
@@ -176,7 +190,7 @@ impl BlockImage {
             // Auto height follows that used width and the intrinsic ratio.
             aspect_ratio::height_from_width(
                 style,
-                (!self.embedded_frame).then_some((self.intrinsic_width, self.intrinsic_height)),
+                self.natural_size(style),
                 content_width,
                 horizontal_insets,
                 vertical_insets,

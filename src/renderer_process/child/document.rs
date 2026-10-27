@@ -121,6 +121,8 @@ pub(super) struct DocumentRuntime {
     last_acknowledged_revision: u64,
     revision: u64,
     sent_images: HashSet<String>,
+    /// Arrived images a presentation leaves for the next full frame; see `image_arrivals`.
+    withheld_images: HashSet<String>,
     last_served_image_key: Option<String>,
     image_budget_warning_sent: bool,
     diagnostic_selectors: Vec<String>,
@@ -290,6 +292,7 @@ impl DocumentRuntime {
             let already_sent = self.sent_images.contains(url);
             if url.len() <= MAX_URL_BYTES
                 && (!already_sent || image_update)
+                && !self.withheld_images.contains(url)
                 && seen_candidates.insert(url.clone())
             {
                 candidates.push(image_deltas::ImageDelta {
