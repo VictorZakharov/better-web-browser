@@ -28,9 +28,18 @@ fn collect_mode(
     embedded: bool,
 ) -> Vec<WebFontFace> {
     let (source, _) = bounded_utf8_prefix(source, MAX_CSS_SOURCE_BYTES);
-    let source = strip_comments(source);
     let mut faces = Vec::new();
-    rules(&source, base_url, environment, embedded, 0, &mut faces);
+    // Most sheets have no font faces; skip tokenizing them a second time.
+    if may_contain_at_rule(source, &["font-face"]) {
+        rules(
+            &strip_comments(source),
+            base_url,
+            environment,
+            embedded,
+            0,
+            &mut faces,
+        );
+    }
     faces
 }
 

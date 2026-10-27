@@ -23,6 +23,24 @@ pub(super) fn at_rule_prelude<'a>(input: &'a str, name: &str) -> Option<&'a str>
     )
 }
 
+/// Whether `source` may hold an at-rule that [`at_rule_prelude`] recognizes under one of
+/// `names`. Removing comments never joins tokens, and at-rule names are compared without
+/// decoding escapes, so a source that lacks every literal keyword has none of these rules.
+pub(super) fn may_contain_at_rule(source: &str, names: &[&str]) -> bool {
+    let bytes = source.as_bytes();
+    bytes
+        .iter()
+        .enumerate()
+        .filter(|(_, byte)| **byte == b'@')
+        .any(|(at, _)| {
+            names.iter().any(|name| {
+                bytes
+                    .get(at + 1..at + 1 + name.len())
+                    .is_some_and(|word| word.eq_ignore_ascii_case(name.as_bytes()))
+            })
+        })
+}
+
 pub(super) fn skip_css_whitespace(input: &str, mut cursor: usize) -> usize {
     while cursor < input.len() && input.as_bytes()[cursor].is_ascii_whitespace() {
         cursor += 1;

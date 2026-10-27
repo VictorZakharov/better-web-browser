@@ -106,3 +106,20 @@ fn last_definition_wins_without_merging_separate_named_rules() {
     assert_eq!(definition.blocks.len(), 1);
     assert_eq!(definition.blocks[0].offsets, [1.0]);
 }
+
+#[test]
+fn keyword_screening_keeps_case_insensitive_keyframes_and_layer_only_sheets() {
+    let names = |css: &str| {
+        collect(css, environment(), RuleScope::Document)
+            .into_iter()
+            .map(|definition| definition.name)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(names("@KEYFRAMES a{to{opacity:1}}"), ["a"]);
+    assert_eq!(names("/* x */@-WebKit-Keyframes b{to{opacity:1}}"), ["b"]);
+    // A comment between the name's parts separates tokens; it never forms the keyword.
+    assert!(names("@key/**/frames c{to{opacity:1}} .x{color:red}").is_empty());
+    // Layer order from a sheet without keyframes still ranks other sheets' keyframes.
+    let layers = collect_with_layers("@LAYER base, theme;", environment(), RuleScope::Document);
+    assert_eq!(layers.layers.len(), 2);
+}
