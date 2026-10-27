@@ -86,7 +86,7 @@ impl DocumentRuntime {
             let image = &self.page.images[url];
             let fits = node.tag_name() == Some("img")
                 && crate::engine::layout::replaced_box_follows_ratio(
-                    &styles.get(&node),
+                    styles.get(&node),
                     (image.width, image.height),
                 );
             *follows.entry(url).or_insert(true) &= fits;
