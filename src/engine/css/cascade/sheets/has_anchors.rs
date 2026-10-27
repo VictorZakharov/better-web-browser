@@ -36,7 +36,8 @@ struct AnchorKey {
 }
 
 /// `:has()` results per anchor element, in the order of its matching anchor keys.
-pub(in crate::engine::css::cascade) type HasResults = HashMap<NodeId, Vec<bool>>;
+pub(in crate::engine::css::cascade) type HasResults =
+    crate::engine::dom::node::NodeMap<NodeId, Vec<bool>>;
 
 pub(in crate::engine::css::cascade) struct RelationalRoots {
     pub(in crate::engine::css::cascade) roots: Vec<NodeRef>,
