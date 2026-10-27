@@ -52,10 +52,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     retained.end = units.iter().map(|u| u.end).max().unwrap();
                     retained.rect.x += x;
                     retained.rect.y += text_y;
-                    let fragments = Arc::make_mut(&mut self.output.fragments)
-                        .text
-                        .entry(id)
-                        .or_default();
+                    let fragments = Arc::make_mut(
+                        Arc::make_mut(&mut self.output.fragments)
+                            .text
+                            .entry(id)
+                            .or_default(),
+                    );
                     if fragments.last().is_none_or(|f| f.line != line) {
                         fragments.push(TextFragment {
                             line,

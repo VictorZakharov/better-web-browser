@@ -269,7 +269,7 @@ mod tests {
         let mut spec = crate::engine::css::ComputedStyle::initial();
         spec.font_family = "Arial".into();
         let spec = FontSpec {
-            family: spec.font_family.into(),
+            family: spec.font_family,
             size: 16.0,
             weight: 400,
             italic: false,

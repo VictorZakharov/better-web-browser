@@ -35,7 +35,7 @@ pub(super) fn apply(
         "font-style" => style.italic = matches!(value, "italic" | "oblique"),
         "font-family" => {
             if let Some(family) = font_family::specified(value) {
-                style.font_family = family;
+                style.font_family = family.into();
             }
         }
         "font" => apply_font_shorthand(

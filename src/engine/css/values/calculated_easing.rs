@@ -174,13 +174,16 @@ impl ComputedStyle {
                 height,
             );
         }
-        resolve(
-            &mut self.transition.easings,
-            &mut self.transition.calculated_easings,
-            self.font_size,
-            root,
-            width,
-            height,
-        );
+        if !self.transition.calculated_easings.is_empty() {
+            let transition = Arc::make_mut(&mut self.transition);
+            resolve(
+                &mut transition.easings,
+                &mut transition.calculated_easings,
+                self.font_size,
+                root,
+                width,
+                height,
+            );
+        }
     }
 }

@@ -12,7 +12,6 @@ pub(in crate::engine::css) fn collect_with_layers(
     scope: RuleScope,
 ) -> Collection {
     let (css, _) = bounded_utf8_prefix(css, MAX_CSS_SOURCE_BYTES);
-    let source = strip_comments(css);
     let mut collector = Collector {
         environment,
         scope,
@@ -22,7 +21,10 @@ pub(in crate::engine::css) fn collect_with_layers(
             layers: Vec::new(),
         },
     };
-    collector.rules(&source, 0, &[], false);
+    // Most sheets declare neither; skip tokenizing them a second time.
+    if may_contain_at_rule(css, &["keyframes", "-webkit-keyframes", "layer"]) {
+        collector.rules(&strip_comments(css), 0, &[], false);
+    }
     collector.result
 }
 

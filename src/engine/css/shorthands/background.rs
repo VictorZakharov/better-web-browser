@@ -71,7 +71,7 @@ pub(in crate::engine::css) fn apply_longhand(
         "background-repeat" => {
             if let Some(values) = list(value, repeat) {
                 (style.background_repeat_x, style.background_repeat_y) = values[0];
-                style.background_layers.repeats = values;
+                style.background_layers.repeats = values.into();
             }
         }
         "background-position" => {
@@ -87,17 +87,17 @@ pub(in crate::engine::css) fn apply_longhand(
             if let Some(values) = list(value, |part| parse_background_axis(part, horizontal)) {
                 if horizontal {
                     style.background_position_x = values[0].clone();
-                    style.background_layers.x = values;
+                    style.background_layers.x = values.into();
                 } else {
                     style.background_position_y = values[0].clone();
-                    style.background_layers.y = values;
+                    style.background_layers.y = values.into();
                 }
             }
         }
         "background-size" => {
             if let Some(values) = list(value, background_size::parse) {
                 style.background_size = values[0].clone();
-                style.background_layers.sizes = values;
+                style.background_layers.sizes = values.into();
             }
         }
         _ => return false,
@@ -190,12 +190,12 @@ pub(in crate::engine::css) fn apply_mask(
         }
         "mask-size" => {
             if let Some(values) = list(value, background_size::parse) {
-                style.mask_layers.sizes = values;
+                style.mask_layers.sizes = values.into();
             }
         }
         "mask-repeat" => {
             if let Some(values) = list(value, repeat) {
-                style.mask_layers.repeats = values;
+                style.mask_layers.repeats = values.into();
             }
         }
         _ => {}

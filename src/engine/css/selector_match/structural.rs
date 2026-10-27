@@ -23,56 +23,72 @@ pub(super) fn compound_structural_matches(
         return false;
     };
     let children = parent.children.borrow();
-    let elements = children
-        .iter()
-        .filter(|child| child.element().is_some())
-        .collect::<Vec<_>>();
-    let Some(index) = elements.iter().position(|child| child.id() == node.id()) else {
-        return false;
-    };
-    let same_type = |child: &&NodeRef| {
+    let elements = || children.iter().filter(|child| child.element().is_some());
+    let same_type = |child: &NodeRef| {
         child.tag_name() == node.tag_name() && child.namespace_uri() == node.namespace_uri()
     };
-    let of_type = elements
-        .iter()
-        .copied()
-        .filter(same_type)
-        .collect::<Vec<_>>();
-    let Some(type_index) = of_type.iter().position(|child| child.id() == node.id()) else {
-        return false;
+    // The 1-based position of `node` among the siblings that pass `include`, and their count.
+    // Counting in place keeps these checks free of per-element sibling lists.
+    let position = |include: &dyn Fn(&NodeRef) -> bool| {
+        let (mut position, mut count) = (None, 0);
+        for child in elements().filter(|child| include(child)) {
+            count += 1;
+            if child.id() == node.id() {
+                position = Some(count);
+            }
+        }
+        position.map(|position| (position, count))
     };
-    if (selector.requires_first_child && index != 0)
-        || (selector.requires_last_child && index + 1 != elements.len())
-        || (selector.requires_first_of_type && type_index != 0)
-        || (selector.requires_last_of_type && type_index + 1 != of_type.len())
-        || (selector.requires_only_child && elements.len() != 1)
-        || (selector.requires_only_of_type && of_type.len() != 1)
+    // An element is first (last) when no element sibling precedes (follows) it.
+    let first = || {
+        elements()
+            .next()
+            .is_some_and(|child| child.id() == node.id())
+    };
+    let last = || {
+        elements()
+            .next_back()
+            .is_some_and(|child| child.id() == node.id())
+    };
+    if (selector.requires_first_child && !first())
+        || (selector.requires_last_child && !last())
+        || (selector.requires_only_child && !(first() && last()))
     {
         return false;
     }
+    if selector.requires_first_of_type
+        || selector.requires_last_of_type
+        || selector.requires_only_of_type
+    {
+        let Some((index, count)) = position(&same_type) else {
+            return false;
+        };
+        if (selector.requires_first_of_type && index != 1)
+            || (selector.requires_last_of_type && index != count)
+            || (selector.requires_only_of_type && count != 1)
+        {
+            return false;
+        }
+    }
     selector.nth.iter().all(|nth| {
-        let matching = if nth.of_type {
-            of_type.clone()
-        } else if nth.filter.is_empty() {
-            elements.clone()
-        } else {
-            elements
-                .iter()
-                .copied()
-                .filter(|child| {
-                    nth.filter
+        let include = |child: &NodeRef| {
+            if nth.of_type {
+                same_type(child)
+            } else {
+                nth.filter.is_empty()
+                    || nth
+                        .filter
                         .iter()
                         .any(|filter| selector_matches_with_scope(filter, child, scope))
-                })
-                .collect::<Vec<_>>()
+            }
         };
-        let Some(position) = matching.iter().position(|child| child.id() == node.id()) else {
+        let Some((position, count)) = position(&include) else {
             return false;
         };
         let one_based = if nth.from_end {
-            matching.len() - position
+            count + 1 - position
         } else {
-            position + 1
+            position
         };
         matches_an_plus_b(one_based, nth.a, nth.b)
     })

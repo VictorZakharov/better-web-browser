@@ -115,7 +115,7 @@ pub(super) fn apply_user_agent_defaults(
         "h5" => heading_defaults(style, 0.83, 1.67),
         "h6" => heading_defaults(style, 0.67, 2.33),
         "pre" => {
-            style.font_family = "Cascadia Mono".to_string();
+            style.font_family = "Cascadia Mono".into();
             style.white_space = WhiteSpace::Pre;
             style.margin.top = Length::Em(1.0);
             style.margin.bottom = Length::Em(1.0);

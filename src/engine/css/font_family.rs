@@ -7,7 +7,7 @@ pub(crate) mod spacing;
 /// distinguishes a valid declaration equal to initial values from an invalid one.
 pub(crate) fn parse_canvas_font(value: &str) -> Option<crate::engine::FontSpec> {
     let mut style = super::ComputedStyle {
-        font_family: String::new(),
+        font_family: "".into(),
         ..super::ComputedStyle::initial()
     };
     super::apply_font_shorthand(&mut style, value, 10.0, 300.0, 150.0);
@@ -15,7 +15,7 @@ pub(crate) fn parse_canvas_font(value: &str) -> Option<crate::engine::FontSpec> 
         return None;
     }
     Some(crate::engine::FontSpec {
-        family: style.font_family.into(),
+        family: style.font_family,
         size: style.font_size,
         weight: style.font_weight,
         italic: style.italic,

@@ -35,6 +35,17 @@ impl Default for TransitionSettings {
     }
 }
 
+impl TransitionSettings {
+    /// The initial transition lists, shared like [`super::animations::AnimationSettings`]:
+    /// most styles never set a transition, and each list would otherwise be allocated for
+    /// every computed style.
+    pub(crate) fn initial() -> std::sync::Arc<Self> {
+        static INITIAL: std::sync::LazyLock<std::sync::Arc<TransitionSettings>> =
+            std::sync::LazyLock::new(|| std::sync::Arc::new(TransitionSettings::default()));
+        std::sync::Arc::clone(&INITIAL)
+    }
+}
+
 pub(crate) fn supported_property(name: &str) -> bool {
     matches!(
         name,

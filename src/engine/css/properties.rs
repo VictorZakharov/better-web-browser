@@ -57,7 +57,7 @@ pub(super) fn apply_declaration(
         return;
     }
     if values::transitions::supported_property(name) {
-        values::transitions::apply(&mut style.transition, name, value);
+        values::transitions::apply(Arc::make_mut(&mut style.transition), name, value);
         return;
     }
     if scalars::apply(style, name, value)

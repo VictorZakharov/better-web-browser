@@ -69,14 +69,14 @@ pub(super) fn append_top_layer<M: TextMeasurer>(
         let line_offset = fragments.next_line;
         for (&id, value) in &layer.fragments.elements {
             let mut value = value.clone();
-            for fragment in &mut value {
+            for fragment in std::sync::Arc::make_mut(&mut value) {
                 fragment.line += line_offset;
             }
             fragments.elements.insert(id, value);
         }
         for (&id, value) in &layer.fragments.text {
             let mut value = value.clone();
-            for fragment in &mut value {
+            for fragment in std::sync::Arc::make_mut(&mut value) {
                 fragment.line += line_offset;
             }
             fragments.text.insert(id, value);

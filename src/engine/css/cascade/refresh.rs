@@ -288,6 +288,10 @@ impl StyleSet {
     /// root's later siblings are outside the traversal, so a root whose results later siblings
     /// may consult is forgotten instead, keeping the next mutation conservative.
     fn remember_has_results(&mut self, node: &NodeRef, traversal_root: bool) {
+        // Only elements are anchors; nothing is ever remembered for other nodes.
+        if node.element().is_none() {
+            return;
+        }
         let id = node_id(node);
         match self
             .compiled

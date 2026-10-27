@@ -6,8 +6,17 @@ use std::sync::Arc;
 
 pub const MAX_FONT_FEATURES: usize = 64;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FontFeatures(Arc<[([u8; 4], u32)]>);
+
+impl Default for FontFeatures {
+    /// One shared empty list: an empty `Arc` slice still allocates, once per computed style.
+    fn default() -> Self {
+        static NONE: std::sync::LazyLock<FontFeatures> =
+            std::sync::LazyLock::new(|| FontFeatures(Arc::new([])));
+        NONE.clone()
+    }
+}
 
 impl FontFeatures {
     pub(crate) fn parse(value: &str) -> Option<Self> {

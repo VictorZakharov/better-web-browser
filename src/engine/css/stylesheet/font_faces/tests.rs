@@ -75,3 +75,12 @@ fn bases_are_kept_for_active_urls_and_print_sheets_are_excluded() {
     assert_eq!(faces.len(), 1);
     assert_eq!(faces[0].url, "https://example.test/screen.woff");
 }
+
+#[test]
+fn keyword_screening_keeps_case_insensitive_faces() {
+    assert_eq!(
+        families("@media all{@FONT-FACE{font-family:A;src:url(a.woff)}}"),
+        ["A"]
+    );
+    assert!(families("@font/**/-face{font-family:B;src:url(b.woff)} p{}").is_empty());
+}

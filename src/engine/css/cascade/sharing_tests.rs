@@ -45,6 +45,21 @@ fn structural_pseudo_classes_are_revalidated() {
 }
 
 #[test]
+fn subject_position_is_compared_as_state_facts() {
+    let (dom, styles, stats) = styled(
+        "<style>.l > :first-child {color:green} .l > li:last-child {color:green} .t > i:first-of-type {color:green} .t > i:last-of-type {color:green} .o :only-child {color:green}</style><ul class=l><li>1</li><li>2</li><li>3</li><li>4</li><li>5</li></ul><p class=t><b></b><i></i><b></b><i></i><i></i></p><div class=o><span><em>x</em></span><span><em>y</em><em>z</em></span></div>",
+    );
+    assert_eq!(
+        colors(&dom, &styles, "li"),
+        [true, false, false, false, true]
+    );
+    assert_eq!(colors(&dom, &styles, "i"), [true, false, true]);
+    assert_eq!(colors(&dom, &styles, "em"), [true, false, false]);
+    // The middle items share with each other: their facts agree.
+    assert!(stats.hits >= 2, "{stats:?}");
+}
+
+#[test]
 fn ancestor_structure_is_revalidated_for_cousins() {
     let (dom, styles, _) = styled(
         "<style>tr:first-child td {color:green}</style><table><tr><td>1</td></tr><tr><td>2</td></tr></table>",

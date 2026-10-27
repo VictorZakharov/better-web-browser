@@ -244,7 +244,7 @@ impl StyleSet {
             revert_layer_variables: std::cell::RefCell::default(),
             revert_variables: std::cell::RefCell::default(),
             revert_placeholder: Default::default(),
-            has_results: HashMap::new(),
+            has_results: Default::default(),
             defer_nonrendered_descendants: false,
             deferred_fullscreen_roots: HashSet::new(),
             document_base_url: document_base_url.to_string(),
