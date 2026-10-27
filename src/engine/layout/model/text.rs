@@ -18,7 +18,7 @@ pub struct FontSpec {
 impl FontSpec {
     pub(in crate::engine::layout) fn from_style(style: &ComputedStyle) -> Self {
         Self {
-            family: style.font_family.as_str().into(),
+            family: std::sync::Arc::clone(&style.font_family),
             size: style.font_size,
             weight: style.font_weight,
             italic: style.italic,

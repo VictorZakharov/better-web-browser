@@ -207,7 +207,7 @@ pub enum BackgroundSize {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComputedStyle {
     pub(crate) scalar_calculations: scalars::ScalarCalculations,
-    pub(crate) transition: transitions::TransitionSettings,
+    pub(crate) transition: Arc<transitions::TransitionSettings>,
     pub(crate) animation: Arc<animations::AnimationSettings>,
     pub generated_content: GeneratedContent,
     pub display: Display,
@@ -241,7 +241,7 @@ pub struct ComputedStyle {
     pub(crate) root_font_size: f32,
     pub font_weight: u16,
     pub italic: bool,
-    pub font_family: String,
+    pub font_family: Arc<str>,
     pub font_features: FontFeatures,
     pub font_kerning: FontKerning,
     pub font_ligatures: FontLigatures,

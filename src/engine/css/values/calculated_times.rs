@@ -142,13 +142,16 @@ impl ComputedStyle {
                 height,
             );
         }
-        self.transition.calculated_times.resolve(
-            &mut self.transition.durations,
-            &mut self.transition.delays,
-            self.font_size,
-            root,
-            width,
-            height,
-        );
+        if self.transition.calculated_times.has_pending() {
+            let transition = Arc::make_mut(&mut self.transition);
+            transition.calculated_times.resolve(
+                &mut transition.durations,
+                &mut transition.delays,
+                self.font_size,
+                root,
+                width,
+                height,
+            );
+        }
     }
 }

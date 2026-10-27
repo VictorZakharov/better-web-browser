@@ -103,7 +103,7 @@ pub(in crate::engine::css) fn apply_font_shorthand(
     };
     style.font_size = size;
     style.line_height_value = LineHeight::parse(&parts.line_height).unwrap();
-    style.font_family = parts.family;
+    style.font_family = parts.family.into();
     style.font_weight = parts.weight;
     style.italic = parts.style != "normal";
     style.font_features = FontFeatures::default();

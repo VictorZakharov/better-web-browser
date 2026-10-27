@@ -81,7 +81,7 @@ fn css_wide_keywords_copy_and_reset_the_complete_lists() {
     assert_eq!(child.background_layers.sizes.len(), 2);
     assert_eq!(child.background_layers.x.len(), 2);
     let reset = styles.get(&dom.elements_named("b").next().unwrap());
-    assert_eq!(reset.background_layers.sizes, [BackgroundSize::Auto]);
+    assert_eq!(*reset.background_layers.sizes, [BackgroundSize::Auto]);
     assert_eq!(reset.background_layers.x.len(), 2);
 }
 

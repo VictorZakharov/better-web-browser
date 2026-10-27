@@ -103,8 +103,12 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
     if backgrounds::copy(style, source, property) {
         return true;
     }
-    if style.transition.copy_property(&source.transition, property) {
+    if property == "transition" {
+        style.transition = Arc::clone(&source.transition);
         return true;
+    }
+    if values::transitions::supported_property(property) {
+        return Arc::make_mut(&mut style.transition).copy_property(&source.transition, property);
     }
     style
         .scalar_calculations

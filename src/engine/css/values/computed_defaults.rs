@@ -5,7 +5,7 @@ impl ComputedStyle {
     pub(crate) fn initial() -> Self {
         Self {
             scalar_calculations: scalars::ScalarCalculations::default(),
-            transition: transitions::TransitionSettings::default(),
+            transition: transitions::TransitionSettings::initial(),
             animation: animations::AnimationSettings::initial(),
             generated_content: GeneratedContent::Normal,
             display: Display::Inline,
@@ -40,7 +40,7 @@ impl ComputedStyle {
             root_font_size: 16.0,
             font_weight: 400,
             italic: false,
-            font_family: "Arial".to_string(),
+            font_family: initial_font_family(),
             font_features: FontFeatures::default(),
             font_kerning: FontKerning::Auto,
             font_ligatures: FontLigatures::default(),
@@ -134,7 +134,7 @@ impl ComputedStyle {
             grid_column_end: grid_line::GridLine::Auto,
             grid_row_start: grid_line::GridLine::Auto,
             grid_row_end: grid_line::GridLine::Auto,
-            custom_properties: Arc::new(HashMap::new()),
+            custom_properties: empty_custom_properties(),
         }
     }
 
@@ -177,4 +177,17 @@ impl ComputedStyle {
         }
         style
     }
+}
+
+/// Most styles inherit their custom properties; share one empty map instead of allocating a
+/// new one for every initial style that inheritance then replaces.
+fn empty_custom_properties() -> Arc<HashMap<String, String>> {
+    static EMPTY: std::sync::LazyLock<Arc<HashMap<String, String>>> =
+        std::sync::LazyLock::new(|| Arc::new(HashMap::new()));
+    Arc::clone(&EMPTY)
+}
+
+fn initial_font_family() -> Arc<str> {
+    static ARIAL: std::sync::LazyLock<Arc<str>> = std::sync::LazyLock::new(|| Arc::from("Arial"));
+    Arc::clone(&ARIAL)
 }

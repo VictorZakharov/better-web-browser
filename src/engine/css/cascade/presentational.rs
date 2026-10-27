@@ -68,7 +68,7 @@ pub(super) fn apply_presentational_hints(node: &NodeRef, style: &mut ComputedSty
             .attr("face")
             .and_then(|face| font_family::specified(&face))
         {
-            style.font_family = face;
+            style.font_family = face.into();
         }
         if let Some(size) = node
             .attr("size")
