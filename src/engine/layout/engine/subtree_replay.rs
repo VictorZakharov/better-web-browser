@@ -362,7 +362,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let entry = SubtreeEntry {
             serial,
             inputs: capture.inputs,
-            reads: self.frame_reads(&frame),
+            reads: self.subtree_frame_reads(&frame, node),
             origin: capture.origin,
             bottom: metrics.bottom,
             items: items.to_vec(),

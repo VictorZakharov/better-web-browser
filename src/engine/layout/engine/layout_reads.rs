@@ -141,7 +141,7 @@ impl LayoutReads {
         hold
     }
 
-    fn reads(&self) -> &[LayoutRead] {
+    pub(super) fn reads(&self) -> &[LayoutRead] {
         self.0.as_deref().map_or(&[], |set| &set.reads)
     }
 }
@@ -258,16 +258,61 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
 
     /// The distinct reads a closed frame made.
     pub(in crate::engine::layout) fn frame_reads(&self, frame: &ReadFrame) -> LayoutReads {
+        self.distinct_reads(frame, |_| None)
+    }
+
+    /// The distinct reads a closed frame made while laying out `root`'s subtree, which a
+    /// retained result validates by its DOM version. The link that inline content inside it
+    /// inherits from above `root` is root's own inherited link, so those reads become one read
+    /// of root's: rechecking one per inline formatting root after every DOM change cost a
+    /// Wikipedia article ~9,000 ancestor walks per pass.
+    pub(in crate::engine::layout) fn subtree_frame_reads(
+        &self,
+        frame: &ReadFrame,
+        root: &NodeRef,
+    ) -> LayoutReads {
+        self.distinct_reads(frame, |read| {
+            let LayoutRead::InheritedLink(node, link) = read else {
+                return None;
+            };
+            let node = node.1.upgrade()?;
+            for ancestor in
+                std::iter::successors(Node::composed_parent(&node), Node::composed_parent)
+            {
+                if ancestor.tag_name() == Some("a") {
+                    return None;
+                }
+                if ancestor.id() == root.id() {
+                    return Some(LayoutRead::InheritedLink(ReadNode::new(root), link.clone()));
+                }
+            }
+            None
+        })
+    }
+
+    /// `frame`'s distinct reads, each replaced by `lift(read)` when that returns an
+    /// equivalent read.
+    fn distinct_reads(
+        &self,
+        frame: &ReadFrame,
+        lift: impl Fn(&LayoutRead) -> Option<LayoutRead>,
+    ) -> LayoutReads {
         let reads = self.reads.borrow();
         let log = &reads.log[frame.reads.clone()];
         if log.is_empty() {
             return LayoutReads::default();
         }
-        let mut seen = HashSet::new();
-        let distinct = log
+        let lifted = log
             .iter()
-            .filter(|read| seen.insert(*read))
-            .cloned()
+            .map(|read| {
+                lift(read).map_or(std::borrow::Cow::Borrowed(read), std::borrow::Cow::Owned)
+            })
+            .collect::<Vec<_>>();
+        let mut seen = HashSet::new();
+        let distinct = lifted
+            .iter()
+            .filter(|read| seen.insert(&***read))
+            .map(|read| read.as_ref().clone())
             .collect::<Vec<_>>();
         // Layout does not mutate the document, so every read made in this pass holds now.
         LayoutReads(Some(Rc::new(ReadSet {
