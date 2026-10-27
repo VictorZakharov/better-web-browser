@@ -1,5 +1,6 @@
 //! Which rules let elements share styles, and which ids any selector names.
 use super::super::*;
+use super::state::StateFacts;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RuleSharing {
@@ -8,6 +9,9 @@ pub(super) enum RuleSharing {
     KeyDetermined,
     /// Evaluate on both elements; equal results keep the matched rule lists equal.
     Revalidate,
+    /// The subject also reads its own position among its siblings or its hover and focus
+    /// state, nothing else the cache leaves open: elements with equal [`StateFacts`] agree.
+    SubjectState(StateFacts),
     /// Scoped, shadow and part rules order or apply by inputs the cache does not compare.
     Unshareable,
 }
@@ -78,20 +82,33 @@ fn classify_rule(rule: &Rule) -> RuleSharing {
     {
         return RuleSharing::Unshareable;
     }
-    let combinators_key_determined = rule
+    let ancestral = rule
         .selector
         .combinators
         .iter()
         .all(|combinator| matches!(combinator, Combinator::Descendant | Combinator::Child));
-    if combinators_key_determined && rule.selector.compounds.iter().all(key_determined) {
+    let Some((subject, ancestors)) = rule.selector.compounds.split_last() else {
+        return RuleSharing::Revalidate;
+    };
+    let mut state = StateFacts::default();
+    if !ancestral || !ancestors.iter().all(key_determined) || !reads_only(subject, Some(&mut state))
+    {
+        RuleSharing::Revalidate
+    } else if state == StateFacts::default() {
         RuleSharing::KeyDetermined
     } else {
-        RuleSharing::Revalidate
+        RuleSharing::SubjectState(state)
     }
 }
 
-/// Exhaustive so that a new selector feature is classified before it compiles.
 fn key_determined(compound: &CompoundSelector) -> bool {
+    reads_only(compound, None)
+}
+
+/// Whether `compound` reads only inputs the cache compares, plus, when `state` is given, the
+/// element's own [`StateFacts`], which are recorded there. Exhaustive so that a new selector
+/// feature is classified before it compiles.
+fn reads_only(compound: &CompoundSelector, mut state: Option<&mut StateFacts>) -> bool {
     let CompoundSelector {
         tag: _,
         id: _,
@@ -134,16 +151,34 @@ fn key_determined(compound: &CompoundSelector) -> bool {
         requires_in_range,
         requires_out_of_range,
     } = compound;
+    // Outside the visited-link pass, which styles one link without sharing, every link matches
+    // as unvisited, so link pseudo-classes read only the compared tag and `href` presence.
+    let _ = (requires_link, requires_unvisited, requires_visited);
+    let stateful = [
+        (requires_first_child, StateFacts::FIRST_CHILD),
+        (requires_last_child, StateFacts::LAST_CHILD),
+        (
+            requires_only_child,
+            StateFacts::FIRST_CHILD | StateFacts::LAST_CHILD,
+        ),
+        (requires_first_of_type, StateFacts::FIRST_OF_TYPE),
+        (requires_last_of_type, StateFacts::LAST_OF_TYPE),
+        (
+            requires_only_of_type,
+            StateFacts::FIRST_OF_TYPE | StateFacts::LAST_OF_TYPE,
+        ),
+        (requires_hover, StateFacts::HOVER),
+        (requires_focus, StateFacts::FOCUS),
+    ];
+    for (flag, facts) in stateful {
+        if *flag {
+            match state.as_deref_mut() {
+                Some(state) => state.insert(facts),
+                None => return false,
+            }
+        }
+    }
     let flags = [
-        requires_link,
-        requires_unvisited,
-        requires_visited,
-        requires_first_child,
-        requires_first_of_type,
-        requires_last_child,
-        requires_last_of_type,
-        requires_only_child,
-        requires_only_of_type,
         requires_empty,
         requires_has_slotted,
         requires_scope,
@@ -153,8 +188,6 @@ fn key_determined(compound: &CompoundSelector) -> bool {
         requires_read_only,
         requires_fullscreen,
         requires_popover_open,
-        requires_hover,
-        requires_focus,
         requires_focus_within,
         requires_checked,
         requires_indeterminate,
@@ -176,7 +209,11 @@ fn key_determined(compound: &CompoundSelector) -> bool {
         // A selector list on the same element, without combinators, is decided by the
         // same inputs; `:not()` only negates that result.
         functional.selectors.iter().all(|selector| {
-            selector.combinators.is_empty() && selector.compounds.iter().all(key_determined)
+            selector.combinators.is_empty()
+                && selector
+                    .compounds
+                    .iter()
+                    .all(|compound| reads_only(compound, state.as_deref_mut()))
         })
     }) && has.is_empty()
         && nth.is_empty()

@@ -10,6 +10,8 @@ use super::*;
 /// their results for the source, and the style the source's matching rules produced.
 pub(in crate::engine::css::cascade) struct SourcePseudo {
     revalidation: Vec<(usize, bool)>,
+    /// The state facts those rules read, and their values for the source.
+    state: (state::StateFacts, state::StateFacts),
     style: Option<Arc<ComputedStyle>>,
 }
 
@@ -29,11 +31,18 @@ impl StyleSet {
             .entry((source.id(), pseudo))
             .or_insert_with(|| self.source_pseudo(source, pseudo))
             .as_ref()?;
+        let sharing = self
+            .compiled
+            .sharing
+            .rules
+            .get_or_init(|| classify_rules(&self.compiled.rules));
+        let same_state = same_state(origin, shared.state);
         let mut revalidator =
             Revalidator::new(self, origin, Some(pseudo), &mut cache.ancestor_filters);
         let same = shared
             .revalidation
             .iter()
+            .filter(|(rule, _)| !(same_state && is_subject_state(sharing[*rule])))
             .all(|&(rule, result)| revalidator.matches(rule) == result);
         #[cfg(test)]
         {
@@ -59,7 +68,7 @@ impl StyleSet {
             match sharing.get(index).copied()? {
                 RuleSharing::KeyDetermined => {}
                 RuleSharing::Unshareable => return None,
-                RuleSharing::Revalidate => {
+                RuleSharing::Revalidate | RuleSharing::SubjectState(_) => {
                     if !subject_excludes(rule, source) {
                         revalidation.push((index, result));
                     }
@@ -73,8 +82,11 @@ impl StyleSet {
         } else {
             None
         };
+        let state =
+            state::subject_state(source, revalidation.iter().map(|&(rule, _)| sharing[rule]));
         Some(SourcePseudo {
             revalidation,
+            state,
             style,
         })
     }

@@ -26,6 +26,7 @@ use std::cell::OnceCell;
 mod generated;
 mod inputs;
 mod rules;
+mod state;
 
 /// Candidates kept per parent share group, most recent first. Gecko keeps one small LRU for
 /// the whole traversal, where a deep earlier sibling's subtree evicts its siblings; keying by
@@ -48,6 +49,8 @@ struct Candidate {
 struct Revalidation {
     rules: Vec<usize>,
     results: Vec<bool>,
+    /// The state facts these rules read, and their values for the candidate.
+    state: (state::StateFacts, state::StateFacts),
 }
 
 /// Per-rule-set tables, built on first use and kept with the compiled rules: a load runs many
@@ -210,18 +213,26 @@ impl StyleSet {
                     .iter()
                     .map(|&rule| revalidator.matches(rule))
                     .collect();
-                Some(Revalidation { rules, results })
+                let state =
+                    state::subject_state(&candidate.node, rules.iter().map(|&rule| sharing[rule]));
+                Some(Revalidation {
+                    rules,
+                    results,
+                    state,
+                })
             })
             .as_ref()?;
         debug_assert_eq!(
             self.revalidation_rules(node, sharing).as_ref(),
             Some(&revalidation.rules)
         );
+        let same_state = same_state(node, revalidation.state);
         let mut revalidator = Revalidator::new(self, node, None, ancestor_filters);
         let same = revalidation
             .rules
             .iter()
             .zip(&revalidation.results)
+            .filter(|(rule, _)| !(same_state && is_subject_state(sharing[**rule])))
             .all(|(&rule, &result)| revalidator.matches(rule) == result);
         if !same {
             #[cfg(test)]
@@ -247,7 +258,7 @@ impl StyleSet {
             match rules.get(index).copied()? {
                 RuleSharing::KeyDetermined => {}
                 RuleSharing::Unshareable => return None,
-                RuleSharing::Revalidate => {
+                RuleSharing::Revalidate | RuleSharing::SubjectState(_) => {
                     if !subject_excludes(&self.compiled.rules[index], node) {
                         revalidate.push(index);
                     }
@@ -321,4 +332,13 @@ impl<'a> Revalidator<'a> {
         self.filter = Some(filter);
         filter
     }
+}
+
+/// Whether `node`'s state facts equal a source's, recorded with the facts its rules read.
+fn same_state(node: &NodeRef, (read, source): (state::StateFacts, state::StateFacts)) -> bool {
+    !read.is_empty() && state::StateFacts::of(node, read) == source
+}
+
+fn is_subject_state(rule: RuleSharing) -> bool {
+    matches!(rule, RuleSharing::SubjectState(_))
 }
