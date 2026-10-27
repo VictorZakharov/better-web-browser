@@ -289,9 +289,15 @@ pub(super) fn compound_matches(
 }
 
 pub(super) fn relative_selector_matches(relative: &RelativeSelector, anchor: &NodeRef) -> bool {
+    let matches = |candidate: &NodeRef| {
+        candidate.element().is_some()
+            && selector_matches_with_scope(&relative.selector, candidate, Some(anchor.id()))
+    };
+    // Searches that stay among children or later siblings test those nodes in place; only
+    // searches that descend into subtrees need a work list.
     let mut candidates = match relative.search {
         RelativeSearch::Descendants => vec![anchor.clone()],
-        RelativeSearch::Children => anchor.children.borrow().iter().cloned().collect(),
+        RelativeSearch::Children => return anchor.children.borrow().iter().any(matches),
         RelativeSearch::FollowingSiblings
         | RelativeSearch::SiblingAt(_)
         | RelativeSearch::LaterSiblings => {
@@ -308,30 +314,20 @@ pub(super) fn relative_selector_matches(relative: &RelativeSelector, anchor: &No
             let mut following = siblings[index + 1..]
                 .iter()
                 .filter(|sibling| sibling.element().is_some());
-            if let RelativeSearch::SiblingAt(offset) = relative.search {
-                following
-                    .nth(offset.saturating_sub(1))
-                    .cloned()
-                    .into_iter()
-                    .collect()
-            } else {
-                following.cloned().collect::<Vec<_>>()
+            match relative.search {
+                RelativeSearch::SiblingAt(offset) => {
+                    return following.nth(offset.saturating_sub(1)).is_some_and(matches);
+                }
+                RelativeSearch::LaterSiblings => return following.any(matches),
+                _ => following.cloned().collect::<Vec<_>>(),
             }
         }
     };
-    let descend = matches!(
-        relative.search,
-        RelativeSearch::Descendants | RelativeSearch::FollowingSiblings
-    );
     while let Some(candidate) = candidates.pop() {
-        if candidate.element().is_some()
-            && selector_matches_with_scope(&relative.selector, &candidate, Some(anchor.id()))
-        {
+        if matches(&candidate) {
             return true;
         }
-        if descend {
-            candidates.extend(candidate.children.borrow().iter().cloned());
-        }
+        candidates.extend(candidate.children.borrow().iter().cloned());
     }
     false
 }
