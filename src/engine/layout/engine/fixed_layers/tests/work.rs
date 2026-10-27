@@ -66,7 +66,7 @@ fn reflowed_text_lines_do_not_alias_retained_background_lines() {
     ));
     let members = &output.fixed_layers.layers[&node(&page, "overlay").id()].members;
     for (&id, fragments) in &output.fragments.text {
-        for fragment in fragments {
+        for fragment in fragments.iter() {
             assert_eq!(fragment.line >= old_next, members.contains(&id));
         }
     }

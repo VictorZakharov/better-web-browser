@@ -43,8 +43,10 @@ pub(crate) struct TextFragment {
 pub struct FragmentGeometry {
     layout_boxes: HashMap<NodeId, RectF>,
     transforms: HashMap<NodeId, crate::engine::affine::Affine2D>,
-    pub(crate) elements: HashMap<NodeId, Vec<InlineFragment>>,
-    pub(crate) text: HashMap<NodeId, Vec<TextFragment>>,
+    /// Each node's fragments are shared with the retained subtree layouts that hold them, so
+    /// replaying a subtree copies none of its text geometry unless it moves to other lines.
+    pub(crate) elements: HashMap<NodeId, Arc<Vec<InlineFragment>>>,
+    pub(crate) text: HashMap<NodeId, Arc<Vec<TextFragment>>>,
     pub(crate) next_line: u64,
 }
 
@@ -56,23 +58,21 @@ impl FragmentGeometry {
         self.extend_transforms(other);
         self.elements
             .extend(other.elements.iter().map(|(&id, fragments)| {
-                let fragments = fragments
-                    .iter()
-                    .map(|fragment| InlineFragment {
-                        line: shift(fragment.line),
-                        rect: fragment.rect,
-                    })
-                    .collect();
+                let mut fragments = Arc::clone(fragments);
+                if line_shift != 0 {
+                    for fragment in Arc::make_mut(&mut fragments) {
+                        fragment.line = shift(fragment.line);
+                    }
+                }
                 (id, fragments)
             }));
         self.text.extend(other.text.iter().map(|(&id, fragments)| {
-            let fragments = fragments
-                .iter()
-                .map(|fragment| TextFragment {
-                    line: shift(fragment.line),
-                    clusters: fragment.clusters.clone(),
-                })
-                .collect();
+            let mut fragments = Arc::clone(fragments);
+            if line_shift != 0 {
+                for fragment in Arc::make_mut(&mut fragments) {
+                    fragment.line = shift(fragment.line);
+                }
+            }
             (id, fragments)
         }));
         self.next_line = self.next_line.max(other.next_line);
@@ -102,7 +102,7 @@ impl FragmentGeometry {
     }
 
     pub(crate) fn push_inline(&mut self, id: NodeId, line: u64, rect: RectF) {
-        let fragments = self.elements.entry(id).or_default();
+        let fragments = Arc::make_mut(self.elements.entry(id).or_default());
         if let Some(last) = fragments.last_mut().filter(|last| last.line == line) {
             last.rect = union(last.rect, rect);
         } else {
@@ -124,13 +124,13 @@ impl FragmentGeometry {
                 ));
         }
         if let Some(fragments) = self.elements.get_mut(&id) {
-            for fragment in fragments {
+            for fragment in Arc::make_mut(fragments) {
                 fragment.rect.x += dx;
                 fragment.rect.y += dy;
             }
         }
         if let Some(fragments) = self.text.get_mut(&id) {
-            for fragment in fragments {
+            for fragment in Arc::make_mut(fragments) {
                 for cluster in &mut fragment.clusters {
                     cluster.rect.x += dx;
                     cluster.rect.y += dy;
@@ -150,10 +150,10 @@ impl FragmentGeometry {
                 subset.transforms.insert(*id, *matrix);
             }
             if let Some(fragments) = self.elements.get(id) {
-                subset.elements.insert(*id, fragments.clone());
+                subset.elements.insert(*id, Arc::clone(fragments));
             }
             if let Some(fragments) = self.text.get(id) {
-                subset.text.insert(*id, fragments.clone());
+                subset.text.insert(*id, Arc::clone(fragments));
             }
         }
         subset
@@ -171,7 +171,7 @@ impl FragmentGeometry {
             return Vec::new();
         };
         let mut result: Vec<(u64, RectF)> = Vec::new();
-        for fragment in fragments {
+        for fragment in fragments.iter() {
             for cluster in &fragment.clusters {
                 let rect = if start == end {
                     if start < cluster.start || start > cluster.end {
