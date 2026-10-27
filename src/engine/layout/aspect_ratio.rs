@@ -2,6 +2,14 @@
 
 use super::*;
 
+/// Whether an unloaded image's placeholder size may stand in for its natural size. It may not
+/// when an `aspect-ratio` is specified, such as the `auto w / h` that HTML `width` and `height`
+/// attributes map to: that ratio exists to reserve the image's box before it loads.
+/// https://html.spec.whatwg.org/multipage/rendering.html#map-to-the-aspect-ratio-property-(using-dimension-rules)
+pub(super) fn uses_placeholder_ratio(style: &ComputedStyle, unloaded: bool) -> bool {
+    !unloaded || style.aspect_ratio == AspectRatio::Auto
+}
+
 pub(super) fn height_from_width(
     style: &ComputedStyle,
     natural: Option<(f32, f32)>,

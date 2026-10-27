@@ -45,4 +45,4 @@ pub use model::{
     TextGeometry, TextMeasurer,
 };
 use std::collections::{HashMap, HashSet};
-pub(crate) use translate::translate_display_items;
+pub(crate) use {sizing::replaced_box_follows_ratio, translate::translate_display_items};

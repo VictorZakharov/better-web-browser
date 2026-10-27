@@ -121,6 +121,8 @@ pub struct Page {
     pub(crate) layout_stats: std::cell::Cell<crate::engine::layout::LayoutStats>,
     /// The nodes post-layout passes visit; see `layout::engine::post_layout_index`.
     pub(crate) layout_index: std::cell::RefCell<crate::engine::layout::engine::PostLayoutIndex>,
+    /// Images whose natural size a layout of this page read; see `layout_read_image_size`.
+    pub(crate) layout_image_reads: std::cell::RefCell<HashSet<String>>,
 }
 
 impl Page {
@@ -201,6 +203,7 @@ impl Page {
             layout_box_tree: Default::default(),
             layout_stats: Default::default(),
             layout_index: Default::default(),
+            layout_image_reads: Default::default(),
         };
         page.refresh_media_sources();
         page.install_embedded_images();

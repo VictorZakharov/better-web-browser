@@ -39,6 +39,29 @@ pub(super) fn apply_presentational_hints(node: &NodeRef, style: &mut ComputedSty
     {
         style.height = height;
     }
+    // Image `width` and `height` attributes also map to `aspect-ratio: auto w / h`, which
+    // reserves the image's box before it loads.
+    // https://html.spec.whatwg.org/multipage/rendering.html#map-to-the-aspect-ratio-property-(using-dimension-rules)
+    let image_like = match node.tag_name() {
+        Some("img" | "video") => true,
+        Some("input") => node
+            .attr("type")
+            .is_some_and(|kind| kind.eq_ignore_ascii_case("image")),
+        _ => false,
+    };
+    if image_like
+        && style.aspect_ratio == AspectRatio::Auto
+        && let Some(Length::Px(width)) = node.attr("width").and_then(|v| parse_html_length(&v))
+        && let Some(Length::Px(height)) = node.attr("height").and_then(|v| parse_html_length(&v))
+        && width > 0.0
+        && height > 0.0
+    {
+        style.aspect_ratio = AspectRatio::Ratio {
+            width,
+            height,
+            prefer_natural: true,
+        };
+    }
     if let Some(color) = node.attr("color").and_then(|value| parse_color(&value)) {
         style.color = color;
     }

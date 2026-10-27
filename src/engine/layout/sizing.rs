@@ -226,6 +226,38 @@ pub(super) fn replaced_size_ignores_natural_size(style: &ComputedStyle) -> bool 
         && resolve_replaced_css_length(style.height.clone(), None, style.font_size).is_some()
 }
 
+/// Whether a replaced element's box, laid out before its image arrived, changes by at most 1%
+/// once the image's `natural` size is known: one dimension resolves without its natural size
+/// or a percentage basis, and the other is `auto` and follows `aspect-ratio: auto w / h` (HTML
+/// `width` and `height` attributes map to it so the box is reserved before the image loads)
+/// until the natural ratio, within 1% of `w / h`, replaces it.
+/// https://html.spec.whatwg.org/multipage/rendering.html#attributes-for-embedded-content-and-images
+pub(crate) fn replaced_box_follows_ratio(style: &ComputedStyle, natural: (u32, u32)) -> bool {
+    let AspectRatio::Ratio {
+        width,
+        height,
+        prefer_natural: true,
+    } = style.aspect_ratio
+    else {
+        return false;
+    };
+    let definite = |length: &Length| {
+        resolve_replaced_css_length(length.clone(), None, style.font_size).is_some()
+    };
+    let one_definite = match (definite(&style.width), definite(&style.height)) {
+        (true, false) => style.height == Length::Auto,
+        (false, true) => style.width == Length::Auto,
+        _ => false,
+    };
+    let (natural_width, natural_height) = (natural.0 as f32, natural.1 as f32);
+    one_definite
+        && natural_width > 0.0
+        && natural_height > 0.0
+        && width > 0.0
+        && height > 0.0
+        && ((natural_width * height) / (natural_height * width) - 1.0).abs() <= 0.01
+}
+
 fn resolve_replaced_css_length(
     length: Length,
     percentage_basis: Option<f32>,

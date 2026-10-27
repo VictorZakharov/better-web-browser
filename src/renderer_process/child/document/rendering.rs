@@ -5,6 +5,7 @@ use super::*;
 use crate::engine::dom::{Node, NodeId, NodeRef};
 
 mod frame_waits;
+mod image_arrivals;
 pub(super) use frame_waits::FrameArrivals;
 
 pub(super) struct RenderBlocking {
@@ -206,6 +207,15 @@ impl DocumentRuntime {
         resources: [bool; 3],
         load: PageLoadReport,
     ) -> AdvanceResult {
+        self.defer_background_frame(&outcome, resources);
+        let mut update = self.blocked_render_update(outcome, load, None);
+        if let AdvanceResult::Runtime(update) = &mut update {
+            update.clock_advanced = true;
+        }
+        update
+    }
+    /// Carries a skipped frame's style invalidation and arrived resources to the next frame.
+    fn defer_background_frame(&mut self, outcome: &ScriptOutcome, resources: [bool; 3]) {
         if outcome.render_requested || !outcome.invalidation.is_empty() {
             let (width, height) = (self.viewport.style_width, self.viewport.height);
             let invalidation = if outcome.invalidation.is_empty() {
@@ -222,11 +232,6 @@ impl DocumentRuntime {
         self.resource_style_refresh_pending |= style;
         self.resource_non_style_render_pending |= non_style;
         self.rendering.frame_delayed = true;
-        let mut update = self.blocked_render_update(outcome, load, None);
-        if let AdvanceResult::Runtime(update) = &mut update {
-            update.clock_advanced = true;
-        }
-        update
     }
     pub(super) fn blocked_render_update(
         &mut self,

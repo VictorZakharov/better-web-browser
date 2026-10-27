@@ -88,7 +88,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let mut width = specified_width.unwrap_or(intrinsic_width);
         let mut height = specified_height.unwrap_or(intrinsic_height);
         // Iframes have 300x150 fallback dimensions, not a natural aspect ratio.
-        let natural = (!is_frame).then_some((intrinsic_width, intrinsic_height));
+        let unloaded = intrinsic.is_none() && canvas.is_none() && !placeholder;
+        let natural = (!is_frame)
+            .then_some((intrinsic_width, intrinsic_height))
+            .filter(|_| aspect_ratio::uses_placeholder_ratio(style, unloaded));
         if specified_width.is_some() && specified_height.is_none() {
             height = aspect_ratio::height_from_width(
                 style,

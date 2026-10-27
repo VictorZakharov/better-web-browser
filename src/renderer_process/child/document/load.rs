@@ -152,6 +152,7 @@ impl DocumentRuntime {
             last_acknowledged_revision: 0,
             revision: 0,
             sent_images: HashSet::new(),
+            withheld_images: HashSet::new(),
             last_served_image_key: None,
             image_budget_warning_sent: false,
             diagnostic_selectors: start.diagnostic_selectors,

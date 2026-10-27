@@ -185,6 +185,24 @@ impl ReadFrames {
     }
 }
 
+impl Page {
+    /// Whether any layout of this page read the natural size of the image `url`. An image
+    /// layout never read, such as one whose size is set without it (see
+    /// `replaced_size_ignores_natural_size`), paints into the display item the last layout
+    /// already made for it, so presenting its arrival needs no new layout. The set only grows:
+    /// retained results replayed later skip the read but still depend on it.
+    pub(crate) fn layout_read_image_size(&self, url: &str) -> bool {
+        self.layout_image_reads.borrow().contains(url)
+    }
+
+    fn note_layout_image_read(&self, url: &str) {
+        let mut reads = self.layout_image_reads.borrow_mut();
+        if !reads.contains(url) {
+            reads.insert(url.to_string());
+        }
+    }
+}
+
 fn decoded_size(page: &Page, url: &str) -> Option<(u32, u32)> {
     page.images
         .get(url)
@@ -346,6 +364,7 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
         url: &str,
     ) -> Option<&'a crate::engine::DecodedImage> {
         let image = self.page.images.get(url);
+        self.page.note_layout_image_read(url);
         self.reads.borrow_mut().record(LayoutRead::DecodedSize(
             url.to_string(),
             image.map(|image| (image.width, image.height)),
@@ -386,6 +405,7 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
     /// `Page::layout_image_dimensions`, recorded as a layout input.
     pub(in crate::engine::layout) fn image_dimensions(&self, key: &str) -> Option<(u32, u32)> {
         let dimensions = self.page.layout_image_dimensions(key);
+        self.page.note_layout_image_read(key);
         self.reads
             .borrow_mut()
             .record(LayoutRead::LayoutDimensions(key.to_string(), dimensions));
