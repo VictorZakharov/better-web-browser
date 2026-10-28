@@ -2,6 +2,7 @@ use super::*;
 mod borders;
 mod native_text;
 mod navigation;
+mod sizing;
 mod sticky;
 mod wheel;
 use crate::document::Document;

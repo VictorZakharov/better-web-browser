@@ -77,9 +77,8 @@ impl DocumentRuntime {
             return Ok(());
         }
         let base_bytes = presentation
-            .encode()
-            .map_err(|error| format!("presentation metadata exceeds wire budget: {error}"))?
-            .len();
+            .encoded_len()
+            .map_err(|error| format!("presentation metadata exceeds wire budget: {error}"))?;
         let mut selection = select(
             candidates,
             MAX_RENDERER_PRESENTATION_BYTES.saturating_sub(base_bytes),
@@ -95,9 +94,8 @@ impl DocumentRuntime {
             presentation.runtime.diagnostics.push(WARNING.into());
             self.image_budget_warning_sent = true;
             let base_bytes = presentation
-                .encode()
-                .map_err(|error| format!("presentation metadata exceeds wire budget: {error}"))?
-                .len();
+                .encoded_len()
+                .map_err(|error| format!("presentation metadata exceeds wire budget: {error}"))?;
             selection = select(
                 candidates,
                 MAX_RENDERER_PRESENTATION_BYTES.saturating_sub(base_bytes),

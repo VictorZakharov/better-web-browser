@@ -156,7 +156,8 @@ pub struct PresentedLayout {
 }
 
 impl PresentedLayout {
-    pub fn from_layout(layout: LayoutOutput) -> Self {
+    /// The presented part of `layout`, sanitized; the renderer keeps the layout.
+    pub fn from_layout(layout: &LayoutOutput) -> Self {
         layout_sanitize::sanitize(layout)
     }
 
@@ -229,6 +230,11 @@ pub struct RendererPresentation {
 impl RendererPresentation {
     pub fn encode(&self) -> Result<Vec<u8>, ProtocolError> {
         codec::encode(self, None)
+    }
+
+    /// The length of `encode()`'s payload, or its error, without building it.
+    pub fn encoded_len(&self) -> Result<usize, ProtocolError> {
+        codec::encoded_len(self)
     }
 
     /// Encodes the display items as edits to `base`, the items of this document's previous
