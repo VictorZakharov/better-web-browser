@@ -68,82 +68,128 @@ pub(super) fn discover_link_and_image_resources(
     base_url: &str,
     environment: MediaEnvironment,
 ) -> Vec<PageResource> {
-    let mut resources = Vec::new();
-    let mut images = Vec::new();
-    let mut seen_stylesheets = HashSet::new();
-    let mut seen_images = HashSet::new();
-    let mut preload_count = 0;
-    let mut origin_hint_count = 0;
-    let mut prefetch_count = 0;
-    // One walk finds links and images; images still follow every link-derived resource.
-    let mut links_done = false;
+    let mut discovery = LinkAndImageDiscovery::new(document_url, base_url, environment);
     for node in Node::shadow_including_descendants(&dom.document) {
+        discovery.include(&node, || resolve_image_url(&node, base_url, environment));
+    }
+    discovery.finish()
+}
+
+/// The resources of links and images read in shadow-including tree order. One pass finds both;
+/// images still follow every link-derived resource.
+pub(super) struct LinkAndImageDiscovery<'a> {
+    document_url: &'a str,
+    base_url: &'a str,
+    environment: MediaEnvironment,
+    resources: Vec<PageResource>,
+    images: Vec<PageResource>,
+    seen_stylesheets: HashSet<String>,
+    seen_images: HashSet<String>,
+    preload_count: usize,
+    origin_hint_count: usize,
+    prefetch_count: usize,
+    links_done: bool,
+}
+
+impl<'a> LinkAndImageDiscovery<'a> {
+    pub(super) fn new(
+        document_url: &'a str,
+        base_url: &'a str,
+        environment: MediaEnvironment,
+    ) -> Self {
+        Self {
+            document_url,
+            base_url,
+            environment,
+            resources: Vec::new(),
+            images: Vec::new(),
+            seen_stylesheets: HashSet::new(),
+            seen_images: HashSet::new(),
+            preload_count: 0,
+            origin_hint_count: 0,
+            prefetch_count: 0,
+            links_done: false,
+        }
+    }
+
+    /// Reads the next element. `image_url` resolves an image element's URL; it runs only for
+    /// image elements read while fewer images than the page limit were found.
+    pub(super) fn include(&mut self, node: &NodeRef, image_url: impl FnOnce() -> Option<String>) {
         let tag = node.tag_name();
-        if tag == Some("link") && !links_done {
-            let link = node;
-            let rel = link.attr("rel").unwrap_or_default();
-            for hint in super::resource_hints::discover_link_hints(&link, document_url, base_url) {
-                // OS DNS resolution can block a background worker until the platform times out.
-                // Keep no more than two origins eligible per document.
-                if resources.contains(&hint) {
-                    continue;
-                }
-                match hint {
-                    PageResource::OriginHint { .. } if origin_hint_count < 2 => {
-                        resources.push(hint);
-                        origin_hint_count += 1;
-                    }
-                    PageResource::Prefetch { .. } if prefetch_count < 2 => {
-                        resources.push(hint);
-                        prefetch_count += 1;
-                    }
-                    _ => {}
-                }
-            }
-            if preload_count < 32
-                && rel.split_ascii_whitespace().any(|token| {
-                    token.eq_ignore_ascii_case("preload")
-                        || token.eq_ignore_ascii_case("modulepreload")
-                })
-                && let Some(preload) =
-                    super::link_preloads::discover_link_preload(&link, base_url, environment)
-                && !resources.contains(&preload)
-            {
-                resources.push(preload);
-                preload_count += 1;
-            }
-            if !rel
-                .split_ascii_whitespace()
-                .any(|token| token.eq_ignore_ascii_case("stylesheet"))
-            {
-                continue;
-            }
-            if seen_stylesheets.len() >= MAX_STYLESHEETS {
-                links_done = true;
-                continue;
-            }
-            if let Some(url) = link
-                .attr("href")
-                .filter(|href| !href.trim().is_empty())
-                .and_then(|href| crate::engine::css::imports::resolve(base_url, &href))
-                && seen_stylesheets.insert(url.clone())
-            {
-                resources.push(PageResource::Stylesheet { url });
+        if tag == Some("link") {
+            if !self.links_done {
+                self.include_link(node);
             }
         } else if (matches!(tag, Some("img" | "image"))
             || (tag == Some("input")
                 && node
                     .attr("type")
                     .is_some_and(|kind| kind.eq_ignore_ascii_case("image"))))
-            && seen_images.len() < MAX_IMAGES
-            && let Some(url) = resolve_image_url(&node, base_url, environment)
-            && seen_images.insert(url.clone())
+            && self.seen_images.len() < MAX_IMAGES
+            && let Some(url) = image_url()
+            && self.seen_images.insert(url.clone())
         {
-            images.push(PageResource::Image { url });
+            self.images.push(PageResource::Image { url });
         }
     }
-    resources.extend(images);
-    resources
+
+    fn include_link(&mut self, link: &NodeRef) {
+        let rel = link.attr("rel").unwrap_or_default();
+        for hint in
+            super::resource_hints::discover_link_hints(link, self.document_url, self.base_url)
+        {
+            // OS DNS resolution can block a background worker until the platform times out.
+            // Keep no more than two origins eligible per document.
+            if self.resources.contains(&hint) {
+                continue;
+            }
+            match hint {
+                PageResource::OriginHint { .. } if self.origin_hint_count < 2 => {
+                    self.resources.push(hint);
+                    self.origin_hint_count += 1;
+                }
+                PageResource::Prefetch { .. } if self.prefetch_count < 2 => {
+                    self.resources.push(hint);
+                    self.prefetch_count += 1;
+                }
+                _ => {}
+            }
+        }
+        if self.preload_count < 32
+            && rel.split_ascii_whitespace().any(|token| {
+                token.eq_ignore_ascii_case("preload") || token.eq_ignore_ascii_case("modulepreload")
+            })
+            && let Some(preload) =
+                super::link_preloads::discover_link_preload(link, self.base_url, self.environment)
+            && !self.resources.contains(&preload)
+        {
+            self.resources.push(preload);
+            self.preload_count += 1;
+        }
+        if !rel
+            .split_ascii_whitespace()
+            .any(|token| token.eq_ignore_ascii_case("stylesheet"))
+        {
+            return;
+        }
+        if self.seen_stylesheets.len() >= MAX_STYLESHEETS {
+            self.links_done = true;
+            return;
+        }
+        if let Some(url) = link
+            .attr("href")
+            .filter(|href| !href.trim().is_empty())
+            .and_then(|href| crate::engine::css::imports::resolve(self.base_url, &href))
+            && self.seen_stylesheets.insert(url.clone())
+        {
+            self.resources.push(PageResource::Stylesheet { url });
+        }
+    }
+
+    pub(super) fn finish(mut self) -> Vec<PageResource> {
+        self.resources.extend(self.images);
+        self.resources
+    }
 }
 
 pub(crate) fn prepare_script(node: NodeRef, base_url: &str, ordinal: usize) -> Option<PageScript> {

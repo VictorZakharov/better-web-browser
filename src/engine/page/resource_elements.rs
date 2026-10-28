@@ -1,12 +1,13 @@
 //! The elements that name resources, collected once per document state.
 //
 // Resource discovery runs after every parser step and every resource completion. Network hints,
-// document-load blockers and per-element resource events each walked the whole shadow-including
-// document for its few links, images and style elements, and the latter two resolved every image
-// URL again: on a long article, three walks of ~24k nodes per step, most of them after a
-// completion that changed nothing in the document. The elements are kept in tree order, which
-// resource events fire in, with their resource event keys, until the document changes or what
-// their URLs resolve against does.
+// document-load blockers, per-element resource events, link and image discovery and style sheet
+// discovery each walked the whole shadow-including document for its few links, images and style
+// elements, and three of them resolved every image URL again: on a long article, five walks of
+// ~24k nodes per parser step, most of them after a completion that changed nothing in the
+// document. The elements are kept in tree order, which resource events fire in and discovery
+// reads them in, with their resource event keys, until the document changes or what their URLs
+// resolve against does.
 use super::*;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -78,6 +79,27 @@ impl Page {
         });
         elements
     }
+
+    /// `resources::discover_link_and_image_resources` for this page's document, read from the
+    /// collected elements. An image element's event key is its image resource, resolved as
+    /// discovery resolves it, so discovery reuses it.
+    pub(super) fn discover_link_and_image_resources(&self) -> Vec<PageResource> {
+        let elements = self.resource_elements();
+        let mut discovery = super::resources::LinkAndImageDiscovery::new(
+            &self.source_url,
+            &self.base_url,
+            self.media_environment,
+        );
+        for element in elements.iter() {
+            if let Some(node) = element.node() {
+                discovery.include(&node, || match &element.key {
+                    Some(PageResource::Image { url }) => Some(url.clone()),
+                    _ => None,
+                });
+            }
+        }
+        discovery.finish()
+    }
 }
 
 #[cfg(test)]
@@ -131,5 +153,73 @@ mod tests {
                 ("style", None),
             ]
         );
+    }
+
+    #[test]
+    fn discovery_from_the_elements_matches_a_document_walk() {
+        let page = Page::parse(
+            "<link rel=preconnect href='https://cdn.example.test/'>             <link rel='stylesheet preload' as=style href=a.css>             <link rel=prefetch href=next.html>             <img src=one.png><img srcset='two.png 2x, one.png 1x'>             <picture><source srcset=wide.png><img src=narrow.png></picture>             <input type=image src=button.png><input src=ignored.png>             <div><template shadowrootmode=open><img src=shadow.png>             <link rel=stylesheet href=shadow.css></template></div>             <p><img data-src=lazy.png src=placeholder.png></p>",
+            "https://example.test/dir/page",
+        );
+        let walk = |page: &Page| {
+            super::super::resources::discover_link_and_image_resources(
+                &page.dom,
+                &page.source_url,
+                &page.base_url,
+                page.media_environment,
+            )
+        };
+        let kinds = |resources: &[PageResource]| {
+            resources
+                .iter()
+                .map(|resource| match resource {
+                    PageResource::OriginHint { .. } => "hint",
+                    PageResource::Prefetch { .. } => "prefetch",
+                    PageResource::Preload { .. } => "preload",
+                    PageResource::Stylesheet { .. } => "stylesheet",
+                    PageResource::Image { .. } => "image",
+                    _ => "other",
+                })
+                .collect::<Vec<_>>()
+        };
+        let found = page.discover_link_and_image_resources();
+        assert_eq!(found, walk(&page));
+        let found_kinds = kinds(&found);
+        for kind in ["hint", "prefetch", "preload", "stylesheet", "image"] {
+            assert!(found_kinds.contains(&kind), "{kind} in {found:?}");
+        }
+        assert!(found.contains(&PageResource::Image {
+            url: "https://example.test/dir/shadow.png".into()
+        }));
+        // Images follow every link-derived resource.
+        let first_image = found_kinds
+            .iter()
+            .position(|kind| *kind == "image")
+            .unwrap();
+        assert!(
+            found_kinds[first_image..]
+                .iter()
+                .all(|kind| *kind == "image")
+        );
+
+        let img = page.dom.elements_named("img").next().unwrap();
+        img.set_attr("src", "three.png");
+        let paragraph = page.dom.elements_named("p").next().unwrap();
+        let link = Node::create_element_for(&page.dom.document, "link");
+        link.set_attr("rel", "stylesheet");
+        link.set_attr("href", "late.css");
+        Node::append_child(&paragraph, link);
+        let changed = page.discover_link_and_image_resources();
+        assert_eq!(changed, walk(&page));
+        for resource in [
+            PageResource::Image {
+                url: "https://example.test/dir/three.png".into(),
+            },
+            PageResource::Stylesheet {
+                url: "https://example.test/dir/late.css".into(),
+            },
+        ] {
+            assert!(changed.contains(&resource), "{resource:?} in {changed:?}");
+        }
     }
 }

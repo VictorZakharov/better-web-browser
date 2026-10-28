@@ -182,12 +182,7 @@ impl Page {
         // Script preparation belongs to the parser/runtime, not a rendering
         // checkpoint. Do not clone inline source only to discard it below.
         // Media elements' resources come from `refresh_media_sources` below.
-        let resources = super::resources::discover_link_and_image_resources(
-            &self.dom,
-            &self.source_url,
-            &self.base_url,
-            self.media_environment,
-        );
+        let resources = self.discover_link_and_image_resources();
         let known = self.resources.iter().collect::<HashSet<_>>();
         let added = resources
             .into_iter()
