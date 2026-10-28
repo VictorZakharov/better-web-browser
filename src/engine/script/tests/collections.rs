@@ -144,3 +144,33 @@ fn retained_element_children_refresh_after_every_child_list_change() {
         "1:2:1:3:p:1:u:2:0:1:1"
     );
 }
+
+#[test]
+fn selector_collections_follow_attribute_and_tree_changes_between_reads() {
+    let (dom, outcome) = execute_html(
+        r#"<body><div id="root"><a id="first" class="item">one</a><a id="second">two</a></div><script>
+            const root = document.getElementById('root');
+            const items = root.getElementsByClassName('item');
+            const links = document.links;
+            const steps = [items.length, links.length, items[0] === items[0]];
+            document.getElementById('second').className = 'item';
+            steps.push(items.length, items[1].id);
+            document.getElementById('first').href = '#one';
+            steps.push(links.length, links[0].id);
+            const seen = [];
+            for (const item of items) {
+                seen.push(item.id);
+                if (item.id === 'first') root.append(Object.assign(document.createElement('b'), {className: 'item', id: 'third'}));
+            }
+            steps.push(seen.join('+'));
+            document.getElementById('first').removeAttribute('class');
+            steps.push(items.length, items[0].id);
+            document.querySelector('output').textContent = steps.join(':');
+        </script><output></output></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "1:0:true:2:second:1:first:first+second+third:2:second"
+    );
+}
