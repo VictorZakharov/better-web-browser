@@ -59,6 +59,7 @@ impl Page {
             layout_viewport: self.layout_viewport,
             resource_profile: Default::default(),
             document_base: Default::default(),
+            resource_elements: Default::default(),
             style_images_pending: false,
             layout_reuse: std::rc::Rc::new(std::cell::RefCell::new(
                 crate::engine::layout::engine::reuse::LayoutReuse::replaying(&self.layout_reuse),
