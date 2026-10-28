@@ -16,6 +16,8 @@ use std::sync::Arc;
 pub(super) struct AccessibilityState {
     adapter: Option<RefCell<Adapter>>,
     actions: Arc<AccessibilityActionQueue>,
+    /// An assistive technology has requested this window's tree, so renderers build theirs.
+    active: std::cell::Cell<bool>,
 }
 
 impl Default for AccessibilityState {
@@ -23,6 +25,7 @@ impl Default for AccessibilityState {
         Self {
             adapter: None,
             actions: AccessibilityActionQueue::new(null_mut()),
+            active: std::cell::Cell::new(false),
         }
     }
 }
@@ -31,6 +34,9 @@ struct InitialTree<'a>(&'a BrowserState);
 
 impl ActivationHandler for InitialTree<'_> {
     fn request_initial_tree(&mut self) -> Option<TreeUpdate> {
+        // The page's semantics follow in a later update, once its renderer builds them.
+        self.0.accessibility.active.set(true);
+        self.0.send_accessibility_policy();
         Some(unsafe { tree::full_update(self.0, true) })
     }
 }
@@ -65,6 +71,17 @@ impl BrowserState {
             let result: accesskit_windows::LRESULT = result.into();
             result.0
         })
+    }
+
+    /// Asks the renderer to build semantic trees while an assistive technology is active. Its
+    /// documents start with the policy, so it is sent on activation and again for each new
+    /// document, which also reaches a restarted renderer.
+    pub(super) fn send_accessibility_policy(&self) {
+        if self.accessibility.active.get()
+            && let Some(session) = self.renderer_session.as_ref()
+        {
+            let _ = session.set_accessibility_policy(true);
+        }
     }
 
     pub(super) fn update_accessibility_window_focus(&self, focused: bool) {

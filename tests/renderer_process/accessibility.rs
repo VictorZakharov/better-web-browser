@@ -3,10 +3,29 @@ use better_web_browser::engine::{ControlKind, DisplayItem};
 use better_web_browser::renderer_process::{RendererEvent, RendererSession};
 use better_web_browser::renderer_protocol::{
     DocumentInput, FocusInput, InputModifiers, PointerButton, PointerInput, PointerPhase,
-    PresentationAcknowledgement, SemanticRole, TextInput,
+    PresentationAcknowledgement, RendererPresentation, SemanticRole, TextInput,
 };
 use std::collections::HashSet;
 use std::time::Duration;
+
+/// Documents publish semantics only while an assistive technology reads them. Enabling the
+/// policy, as the browser does when one first asks, publishes the document's first full tree.
+fn enable_accessibility(
+    session: &RendererSession,
+    loaded: RendererPresentation,
+) -> RendererPresentation {
+    assert!(
+        loaded.accessibility.is_unchanged(),
+        "no tree before the policy"
+    );
+    acknowledge(session, &loaded);
+    session
+        .set_accessibility_policy(true)
+        .expect("enable accessibility");
+    let tree = wait_for_presentation(session, loaded.document, loaded.revision);
+    assert!(tree.accessibility.full, "enabling publishes a full tree");
+    tree
+}
 
 #[test]
 fn renderer_publishes_bounded_semantics_and_incremental_focus_and_value_updates() {
@@ -37,6 +56,7 @@ fn renderer_publishes_bounded_semantics_and_incremental_focus_and_value_updates(
           });
         </script>"#,
     );
+    let initial = enable_accessibility(&session, initial);
 
     let update = &initial.accessibility;
     assert!(update.full);
@@ -251,6 +271,7 @@ fn composed_tree_drives_accessibility_hit_testing_and_event_retargeting() {
           });
         </script>"#,
     );
+    let initial = enable_accessibility(&session, initial);
 
     assert!(
         initial

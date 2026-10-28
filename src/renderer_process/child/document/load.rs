@@ -140,7 +140,7 @@ impl DocumentRuntime {
             resource_style_refresh_pending: false,
             resource_non_style_render_pending: false,
             lifecycle: crate::renderer_protocol::DocumentLifecycle::Active,
-            accessibility: RendererAccessibility::default(),
+            accessibility: RendererAccessibility::new(connection.accessibility_enabled()),
             accessibility_selection: None,
             accessibility_values: HashMap::new(),
             focused_node: None,
