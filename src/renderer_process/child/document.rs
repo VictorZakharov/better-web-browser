@@ -339,7 +339,7 @@ impl DocumentRuntime {
             status: self.status,
             character_set: self.page.character_set.clone(),
             reader: self.reader.clone(),
-            layout: PresentedLayout::from_layout(self.layout.clone()),
+            layout: PresentedLayout::from_layout(&self.layout),
             images: Vec::new(),
             gpu_canvases: self
                 .page
