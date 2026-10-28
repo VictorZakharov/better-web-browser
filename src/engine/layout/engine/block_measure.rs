@@ -62,6 +62,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             reads: std::mem::take(&mut self.reads),
             replayed_roots: HashMap::new(),
             absolute_scope: self.absolute_scope,
+            probe_root: (self.emit_paint || self.probe_root.is_some()).then(|| node.id()),
         };
         probe.begin_reads();
         let height = probe
