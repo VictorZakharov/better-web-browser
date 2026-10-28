@@ -1,13 +1,13 @@
 //! The elements that name resources, collected once per document state.
 //
 // Resource discovery runs after every parser step and every resource completion. Network hints,
-// document-load blockers, per-element resource events, link and image discovery and style sheet
-// discovery each walked the whole shadow-including document for its few links, images and style
-// elements, and three of them resolved every image URL again: on a long article, five walks of
-// ~24k nodes per parser step, most of them after a completion that changed nothing in the
-// document. The elements are kept in tree order, which resource events fire in and discovery
-// reads them in, with their resource event keys, until the document changes or what their URLs
-// resolve against does.
+// document-load blockers, per-element resource events, link and image discovery, style sheet
+// discovery and media selection each walked the whole shadow-including document for its few
+// links, images, style and media elements, and three of them resolved every image URL again: on
+// a long article, six walks of ~24k nodes per parser step, most of them after a completion that
+// changed nothing in the document. The elements are kept in tree order, which resource events
+// fire in and the others read them in, with their resource event keys, until the document
+// changes or what their URLs resolve against does.
 use super::*;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -44,16 +44,18 @@ struct State {
     environment: MediaEnvironment,
 }
 
-/// Elements whose resources discovery reads: links, images, image inputs and style elements.
+/// Elements whose resources discovery reads: links, images, image inputs, style elements, and
+/// the audio and video elements media selection reads.
 fn names_resources(node: &NodeRef) -> bool {
     matches!(
         node.tag_name(),
-        Some("link" | "img" | "image" | "input" | "style")
+        Some("link" | "img" | "image" | "input" | "style" | "audio" | "video")
     )
 }
 
 impl Page {
-    /// The document's links, images, inputs and style elements in shadow-including tree order.
+    /// The document's links, images, inputs, style, audio and video elements in shadow-including
+    /// tree order.
     pub(crate) fn resource_elements(&self) -> Rc<[ResourceElement]> {
         let state = State {
             document: self.dom.document.id(),

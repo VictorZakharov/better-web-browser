@@ -5,7 +5,7 @@
 //! HTMLMediaElement.canPlayType, rather than a site-specific MIME exception.
 //! https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm
 
-use super::{MediaElementKind, Page, PageResource};
+use super::{MediaElementKind, Page, PageResource, ResourceElement};
 use crate::engine::css::media::{MediaEnvironment, media_matches_for_environment};
 use crate::engine::dom::{Dom, Node, NodeId, NodeRef};
 use crate::fetch::{CredentialsMode, RequestMode};
@@ -33,7 +33,8 @@ impl Page {
         let mut previous = std::mem::take(&mut self.media_selections);
         let mut selections = HashMap::new();
         let mut active = Vec::new();
-        for node in Node::shadow_including_descendants(&self.dom.document) {
+        let elements = self.resource_elements();
+        for node in elements.iter().filter_map(ResourceElement::node) {
             if active.len() >= MAX_ACTIVE_MEDIA_ELEMENTS_PER_DOCUMENT {
                 break;
             }
