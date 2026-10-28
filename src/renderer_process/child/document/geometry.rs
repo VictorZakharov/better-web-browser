@@ -11,7 +11,15 @@ struct GeometryTextMeasurer<'a, M> {
 #[cfg(test)]
 mod tests;
 
+// Script geometry must measure exactly as rendering does, and identify its results the same
+// way: without the epoch, no forced layout reused anything, even the page's own retained layouts.
 impl<M: crate::engine::TextMeasurer> crate::engine::TextMeasurer for GeometryTextMeasurer<'_, M> {
+    fn normal_line_height(&mut self, font: &crate::engine::FontSpec) -> f32 {
+        self.inner.normal_line_height(font)
+    }
+    fn layout_cache_epoch(&self) -> Option<u64> {
+        self.inner.layout_cache_epoch()
+    }
     fn text_geometry(
         &mut self,
         text: &str,

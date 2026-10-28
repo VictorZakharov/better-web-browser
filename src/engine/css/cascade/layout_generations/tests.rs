@@ -95,17 +95,37 @@ fn removed_and_cleared_styles_have_unknown_generations() {
 }
 
 #[test]
-fn a_forked_style_set_shares_no_generation_with_its_source() {
-    // The script layout snapshot forks the page's styles; a layout result recorded against
-    // the page must not be reused against the fork, or the other way around.
-    let dom = dom::parse("<main><section><p>a</p></section></main>");
-    let styles = StyleSet::from_dom(&dom, &[], 800.0);
-    let fork = styles.fork();
-    for node in Node::descendants(&dom.document).filter(|node| node.element().is_some()) {
-        let (own, subtree) = generations(&styles, &node);
-        let (fork_own, fork_subtree) = generations(&fork, &node);
-        assert!(fork_own.is_some() && fork_subtree.is_some());
-        assert_ne!(own, fork_own);
-        assert_ne!(subtree, fork_subtree);
+fn a_fork_shares_generations_except_above_generated_content_and_later_changes() {
+    // The script layout snapshot forks the page's styles and replays layouts the page retained,
+    // so equal styles keep equal generations. Each set owns its generated boxes, so everything
+    // above them is renumbered, and no change made after the fork reuses a shared value.
+    let dom = dom::parse(
+        "<style>.mark::before{content:'*'} .wide{width:200px}</style>         <main><section><p class=mark>a</p></section><aside><p>b</p><p>c</p></aside></main>",
+    );
+    let main = dom.elements_named("main").next().unwrap();
+    let section = dom.elements_named("section").next().unwrap();
+    let aside = dom.elements_named("aside").next().unwrap();
+    let marked = dom.elements_named("p").next().unwrap();
+    let plain = dom.elements_named("p").nth(1).unwrap();
+    let other = dom.elements_named("p").nth(2).unwrap();
+    let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
+    let mut fork = styles.fork();
+    for node in [&aside, &plain, &other] {
+        assert!(generations(&styles, node).0.is_some());
+        assert_eq!(generations(&fork, node), generations(&styles, node));
     }
+    for node in [&marked, &section, &main] {
+        let (own, subtree) = generations(&fork, node);
+        assert!(own.is_some() && subtree.is_some());
+        assert_ne!(subtree, generations(&styles, node).1);
+    }
+
+    // The same change in both sets after the fork yields distinct values in each.
+    for set in [&mut styles, &mut fork] {
+        plain.set_attr("class", "wide");
+        set.refresh_subtrees(&dom.document, std::slice::from_ref(&plain), &[]);
+    }
+    let (page, forked) = (generations(&styles, &plain), generations(&fork, &plain));
+    assert_ne!(page, forked);
+    assert_eq!(generations(&fork, &other), generations(&styles, &other));
 }

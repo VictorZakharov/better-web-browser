@@ -2,12 +2,18 @@
 //! grid with sticky side menus, floated figures, tables, many links and a few hundred rules. The
 //! page is generated (original text, fixed seed), so runs are reproducible without network
 //! access or third-party content. The ignored test prints each pass's `LayoutStats` for a full
-//! layout and for the small changes that dominate a settling page:
+//! layout and for the small changes that dominate a settling page, and for script geometry reads
+//! (the layout snapshot) after one, with and without the page's retained layouts to replay:
 //!
 //! `cargo test --release --lib layout_workload -- --ignored --nocapture`
 use crate::engine::dom::{Node, NodeRef};
+use crate::engine::invalidation::{
+    AttributeChange, MutationKind, RenderInvalidation, changed_class_tokens,
+};
 use crate::engine::layout::test_support::FixedMeasurer;
-use crate::engine::layout::{FontSpec, TextMeasurer, layout_page_with_style_viewport};
+use crate::engine::layout::{
+    FontSpec, TextMeasurer, layout_geometry_with_style_viewport, layout_page_with_style_viewport,
+};
 use crate::engine::page::Page;
 use std::fmt::Write;
 use std::time::Instant;
@@ -229,5 +235,44 @@ fn layout_workload() {
     for round in 1..=3 {
         Node::set_text_content(&counter, &round.to_string());
         pass(&mut page, "text");
+    }
+    for (label, replay) in [("flush cold", false), ("flush", true), ("flush", true)] {
+        let mut snapshot = page.layout_snapshot();
+        if !replay {
+            snapshot.layout_reuse.borrow_mut().source = Default::default();
+            snapshot.layout_box_tree = Default::default();
+        }
+        let class = if entry.attr("class").as_deref() == Some("active") {
+            ""
+        } else {
+            "active"
+        };
+        let tokens = changed_class_tokens(&entry.attr("class").unwrap_or_default(), class);
+        entry.set_attr("class", class);
+        let invalidation = RenderInvalidation {
+            impact: MutationKind::Attribute("class").impact(),
+            mutation_count: 1,
+            attribute_changes: vec![AttributeChange {
+                node: entry.id(),
+                tokens: tokens.unwrap(),
+                attributes: Vec::new(),
+            }],
+            ..RenderInvalidation::default()
+        };
+        let started = Instant::now();
+        snapshot.refresh_layout_styles_after_invalidation_for_viewport(
+            WIDTH,
+            HEIGHT,
+            &invalidation,
+        );
+        layout_geometry_with_style_viewport(&snapshot, WIDTH, HEIGHT, WIDTH, &mut Retaining);
+        eprintln!(
+            "{label:<10} style and layout {:>10.2?}
+    {:?}",
+            started.elapsed(),
+            snapshot.take_layout_stats()
+        );
+        // The page restyles and lays out the change as its next rendering update would.
+        pass(&mut page, "repaint");
     }
 }

@@ -74,6 +74,9 @@ pub fn layout_geometry_with_style_viewport<M: TextMeasurer>(
     // geometry caller cannot consume. TextMeasurer::shape defaults to these same measurements.
     struct MetricsOnly<'a, M>(&'a mut M);
     impl<M: TextMeasurer> TextMeasurer for MetricsOnly<'_, M> {
+        fn normal_line_height(&mut self, font: &FontSpec) -> f32 {
+            self.0.normal_line_height(font)
+        }
         fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32) {
             self.0.measure(text, font)
         }

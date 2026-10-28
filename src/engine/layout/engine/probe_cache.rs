@@ -24,7 +24,13 @@ impl LayoutReuse {
         page: &Page,
         styles: &StyleSet,
     ) -> Option<(f32, LayoutReads)> {
-        let entry = self.probes.get(&key)?;
+        let Some(entry) = self.probes.get(&key) else {
+            return self.from_source(|source, held| {
+                let entry = source.probes.get(&key)?;
+                (entry.inputs == inputs && entry.reads.hold(page, styles, held))
+                    .then(|| (entry.height, entry.reads.clone()))
+            });
+        };
         if entry.inputs != inputs || !entry.reads.hold(page, styles, &mut self.held) {
             self.probes.remove(&key);
             return None;

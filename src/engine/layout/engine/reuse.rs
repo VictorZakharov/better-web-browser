@@ -12,6 +12,9 @@
 // - every recorded input (`layout_reads`) reads the same, and the viewport, scrollbar size,
 //   canvas policy, fullscreen root and text measurer epoch match the pass that computed it.
 //
+// A script layout snapshot of the page also uses the page's results, read-only: its probes and
+// widths (`from_source`) and, in geometry passes, its painted subtrees (`subtree_replay::append`).
+//
 // Nodes inside shadow trees are not reused: their composed subtree can include slotted light
 // DOM whose mutations do not advance the shadow-tree node's version. Results for nodes a
 // complete pass neither computed nor reused are dropped at its end, which bounds the cache by
@@ -19,7 +22,9 @@
 use super::block_measure::MeasureKey;
 pub(crate) use super::box_tree::RetainedBoxes;
 use super::*;
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::rc::{Rc, Weak};
 
 /// Everything outside the DOM, styles and recorded reads that a retained result depends on.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -58,8 +63,6 @@ pub(crate) struct LayoutReuse {
     pub(super) probes: HashMap<MeasureKey, probe_cache::ProbeEntry>,
     pub(super) widths: HashMap<width_cache::WidthKey, width_cache::WidthEntry>,
     pub(super) subtrees: HashMap<subtree_replay::SubtreeKey, subtree_replay::SubtreeEntry>,
-    /// Identifies each retained subtree layout; see `SubtreeEntry::serial`.
-    pub(super) next_serial: u64,
     /// Scrollable-overflow extents of replayed subtrees; see `scrollable_overflow`.
     pub(in crate::engine::layout) overflow: HashMap<NodeId, OverflowExtent>,
     /// Measuring layouts of this pass; see `measured`.
@@ -71,9 +74,23 @@ pub(crate) struct LayoutReuse {
     pub(super) pass: u64,
     /// Reads already confirmed this pass; see `LayoutReads::hold`.
     pub(super) held: layout_reads::HeldReads,
+    /// The results of the page a script layout snapshot copies; see `from_source`.
+    pub(super) source: Weak<RefCell<LayoutReuse>>,
 }
 
 impl LayoutReuse {
+    /// Results for a script layout snapshot of the page that retains `source`.
+    pub(crate) fn replaying(source: &Rc<RefCell<LayoutReuse>>) -> Self {
+        Self {
+            source: Rc::downgrade(source),
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn replay_from(&mut self, source: &Rc<RefCell<LayoutReuse>>) {
+        self.source = Rc::downgrade(source);
+    }
+
     /// Starts a pass; a different environment invalidates every result.
     pub(super) fn begin_pass(&mut self, environment: Option<ReuseEnvironment>) {
         if self.environment != environment {
@@ -98,6 +115,25 @@ impl LayoutReuse {
         self.overflow.retain(|node, _| used.contains(node));
         let pass = self.pass;
         self.sighted.retain(|_, sighting| sighting.last == pass);
+    }
+
+    /// Whether results retained in `source` hold for this pass's environment.
+    pub(super) fn shares_environment(&self, source: &Self) -> bool {
+        self.environment.is_some() && self.environment == source.environment
+    }
+
+    /// Looks a result up among those of the page a script layout snapshot copies, when they
+    /// hold for this pass's environment. The lookup validates reads against this pass.
+    pub(in crate::engine::layout) fn from_source<T>(
+        &mut self,
+        lookup: impl FnOnce(&Self, &mut layout_reads::HeldReads) -> Option<T>,
+    ) -> Option<T> {
+        let source = self.source.upgrade()?;
+        let source = source.try_borrow().ok()?;
+        if !self.shares_environment(&source) {
+            return None;
+        }
+        lookup(&source, &mut self.held)
     }
 
     pub(super) fn keep(&mut self, node: NodeId) {

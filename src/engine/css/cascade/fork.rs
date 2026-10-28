@@ -1,5 +1,6 @@
 //! Independent copies of a style set for a second consumer of the same document.
 use super::*;
+use crate::engine::dom::node::NodeSet;
 
 impl StyleSet {
     /// Copies every computed style so a separate owner can refresh it independently. The
@@ -7,17 +8,24 @@ impl StyleSet {
     /// whole document again.
     ///
     /// Generated pseudo-element boxes are detached nodes owned by one set, so the copy creates
-    /// its own. Layout generations are renumbered: a value recorded against this set must never
-    /// match the copy. Caches derived from matching start empty.
+    /// its own. Layout generations carry over, so the snapshot's script geometry can replay the
+    /// page's retained layouts, except above generated content, whose layouts refer to one
+    /// set's boxes (see `LayoutGenerations::forked`). Caches derived from matching start empty.
     pub(crate) fn fork(&self) -> Self {
         let mut generated_nodes =
             NodeMap::with_capacity_and_hasher(self.generated_nodes.len(), Default::default());
         let mut generated_styles =
             NodeMap::with_capacity_and_hasher(self.generated_styles.len(), Default::default());
+        let mut owned = NodeSet::default();
         for (&(origin_id, pseudo), node) in &self.generated_nodes {
             let Some(origin) = node.parent() else {
                 continue;
             };
+            for ancestor in std::iter::successors(Some(origin.clone()), Node::composed_parent) {
+                if !owned.insert(ancestor.id()) {
+                    break;
+                }
+            }
             debug_assert_eq!(origin.id(), origin_id);
             let copy =
                 Node::create_generated_pseudo_for(&origin, pseudo.tag_name(), &node.text_content());
@@ -48,7 +56,7 @@ impl StyleSet {
             viewport_width: self.viewport_width,
             viewport_height: self.viewport_height,
             resolution_dppx: self.resolution_dppx,
-            layout_generations: self.layout_generations.renumbered(),
+            layout_generations: self.layout_generations.forked(&owned),
             // Nobody has taken this log from the copy; report every style as possibly new.
             style_log: StyleLog {
                 nodes: Vec::new(),
