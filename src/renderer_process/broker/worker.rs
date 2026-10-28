@@ -42,6 +42,7 @@ pub(super) enum BrokerCommand {
         document: DocumentId,
         enabled: bool,
     },
+    AccessibilityPolicy(bool),
     BroadcastDelivery(crate::renderer_protocol::BroadcastDelivery),
     FullscreenResponse(crate::renderer_protocol::FullscreenResponse),
     PointerLockResponse(crate::renderer_protocol::PointerLockResponse),

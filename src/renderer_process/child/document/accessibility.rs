@@ -16,12 +16,40 @@ use crate::renderer_protocol::{
 };
 use std::collections::HashMap;
 
+/// The semantic tree last published and whether an assistive technology reads it. Building the
+/// tree walks the whole document (15-37 ms per presentation on a large article), so, like
+/// Chromium, a renderer builds none until the browser reports an assistive technology.
 #[derive(Default)]
 pub(super) struct RendererAccessibility {
+    enabled: bool,
     previous: HashMap<DocumentNodeId, SemanticNode>,
+    focus: Option<DocumentNodeId>,
+}
+
+impl DocumentRuntime {
+    /// Applies the renderer's accessibility policy; true when this document must now publish
+    /// a presentation to send its first tree.
+    pub(in crate::renderer_process::child) fn set_accessibility_enabled(
+        &mut self,
+        enabled: bool,
+    ) -> bool {
+        let publish = enabled && !self.accessibility.enabled;
+        self.accessibility.enabled = enabled;
+        if publish {
+            self.rendering.dirty = true;
+        }
+        publish
+    }
 }
 
 impl RendererAccessibility {
+    pub(super) fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            ..Self::default()
+        }
+    }
+
     pub(super) fn update(
         &mut self,
         page: &Page,
@@ -32,6 +60,13 @@ impl RendererAccessibility {
         value_overrides: &HashMap<NodeId, String>,
     ) -> Result<AccessibilityUpdate, String> {
         let root = wire_id(page.dom.document.id())?;
+        if !self.enabled {
+            // Re-enabling continues from `previous`, which the browser's mirror still holds.
+            return Ok(AccessibilityUpdate::unchanged(
+                root,
+                self.focus.unwrap_or(root),
+            ));
+        }
         let bounds = collect_bounds(page, layout, viewport);
         let controls = layout
             .items
@@ -88,6 +123,7 @@ impl RendererAccessibility {
         };
         removed.sort_by_key(|id| id.get());
         self.previous = next;
+        self.focus = Some(focus);
         Ok(AccessibilityUpdate {
             full,
             root,

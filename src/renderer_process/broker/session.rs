@@ -276,6 +276,11 @@ impl RendererSession {
         }
     }
 
+    /// Lets this renderer's documents build semantic trees; see `BrowserMessage::AccessibilityPolicy`.
+    pub fn set_accessibility_policy(&self, enabled: bool) -> Result<(), String> {
+        self.send_command(worker::BrokerCommand::AccessibilityPolicy(enabled))
+    }
+
     pub fn set_gpu_canvas_policy(&self, document: DocumentId, enabled: bool) -> Result<(), String> {
         self.send_command(worker::BrokerCommand::GpuCanvasPolicy { document, enabled })
     }

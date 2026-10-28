@@ -54,6 +54,17 @@ impl AccessibilityDocument {
             return Err("stale accessibility revision".into());
         }
         let new_document = self.document != Some(document);
+        if update.is_unchanged() && (new_document || self.nodes.is_empty()) {
+            // The renderer builds no tree until an assistive technology is active; see
+            // `BrowserMessage::AccessibilityPolicy`. A new document still retires the old tree.
+            let had_tree = self.clear();
+            self.document = Some(document);
+            self.revision = revision;
+            return Ok(AppliedAccessibilityUpdate {
+                changed: Vec::new(),
+                full: had_tree,
+            });
+        }
         if (new_document || self.nodes.is_empty()) && !update.full {
             return Err("accessibility delta arrived before its full tree".into());
         }
@@ -208,153 +219,4 @@ fn validate_tree(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use better_web_browser::engine::RectF;
-    use better_web_browser::renderer_protocol::{SemanticActions, SemanticRole, SemanticSelection};
-
-    fn id(local: u64) -> DocumentNodeId {
-        DocumentNodeId::new((1_u128 << 64) | u128::from(local)).unwrap()
-    }
-
-    fn node(local: u64, children: &[u64]) -> SemanticNode {
-        SemanticNode {
-            id: id(local),
-            role: if local == 1 {
-                SemanticRole::RootWebArea
-            } else {
-                SemanticRole::Button
-            },
-            name: format!("node {local}"),
-            value: String::new(),
-            description: String::new(),
-            bounds: RectF::default(),
-            children: children.iter().map(|child| id(*child)).collect(),
-            level: None,
-            disabled: false,
-            read_only: false,
-            actions: SemanticActions::default(),
-            selection: None::<SemanticSelection>,
-            checked: None,
-        }
-    }
-
-    #[test]
-    fn full_tree_then_delta_updates_focus_and_removes_a_subtree() {
-        let document = DocumentId::new(7).unwrap();
-        let mut tree = AccessibilityDocument::default();
-        tree.apply(
-            document,
-            1,
-            AccessibilityUpdate {
-                full: true,
-                root: id(1),
-                focus: id(1),
-                nodes: vec![node(1, &[2]), node(2, &[])],
-                added: Vec::new(),
-                removed: Vec::new(),
-            },
-        )
-        .unwrap();
-        let platform = tree.platform_id(id(2)).unwrap();
-        let root_platform = tree.platform_id(id(1)).unwrap();
-        assert!(platform >= DOCUMENT_PLATFORM_ID_BASE);
-        assert_eq!(tree.document_id_for_platform(platform), Some(id(2)));
-
-        tree.apply(
-            document,
-            2,
-            AccessibilityUpdate {
-                full: false,
-                root: id(1),
-                focus: id(1),
-                nodes: vec![node(1, &[])],
-                added: Vec::new(),
-                removed: vec![id(2)],
-            },
-        )
-        .unwrap();
-        assert!(tree.node(id(2)).is_none());
-        assert_eq!(tree.focus(), Some(id(1)));
-        assert_eq!(tree.platform_id(id(1)), Some(root_platform));
-    }
-
-    #[test]
-    fn rejects_stale_cross_revision_and_disconnected_updates() {
-        let document = DocumentId::new(8).unwrap();
-        let mut tree = AccessibilityDocument::default();
-        tree.apply(
-            document,
-            4,
-            AccessibilityUpdate {
-                full: true,
-                root: id(1),
-                focus: id(1),
-                nodes: vec![node(1, &[])],
-                added: Vec::new(),
-                removed: Vec::new(),
-            },
-        )
-        .unwrap();
-        assert!(
-            tree.apply(
-                document,
-                5,
-                AccessibilityUpdate {
-                    full: true,
-                    root: id(1),
-                    focus: id(1),
-                    nodes: vec![node(1, &[])],
-                    added: Vec::new(),
-                    removed: Vec::new(),
-                },
-            )
-            .is_err()
-        );
-        assert!(
-            tree.apply(
-                document,
-                4,
-                AccessibilityUpdate {
-                    full: false,
-                    root: id(1),
-                    focus: id(1),
-                    nodes: Vec::new(),
-                    added: Vec::new(),
-                    removed: Vec::new(),
-                },
-            )
-            .is_err()
-        );
-        assert!(
-            tree.apply(
-                DocumentId::new(9).unwrap(),
-                5,
-                AccessibilityUpdate {
-                    full: false,
-                    root: id(1),
-                    focus: id(1),
-                    nodes: Vec::new(),
-                    added: Vec::new(),
-                    removed: Vec::new(),
-                },
-            )
-            .is_err()
-        );
-        assert!(
-            tree.apply(
-                document,
-                5,
-                AccessibilityUpdate {
-                    full: false,
-                    root: id(1),
-                    focus: id(1),
-                    nodes: vec![node(2, &[])],
-                    added: Vec::new(),
-                    removed: Vec::new(),
-                },
-            )
-            .is_err()
-        );
-    }
-}
+mod tests;

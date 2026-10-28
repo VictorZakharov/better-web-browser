@@ -186,6 +186,11 @@ pub enum BrowserMessage {
         document: DocumentId,
         enabled: bool,
     },
+    /// Whether an assistive technology reads this renderer's documents. Until it does, documents
+    /// build no semantic tree and publish `AccessibilityUpdate::unchanged`.
+    AccessibilityPolicy {
+        enabled: bool,
+    },
     Test(TestCommand),
 }
 

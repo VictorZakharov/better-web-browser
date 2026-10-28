@@ -161,6 +161,7 @@ impl BrowserState {
             // History actions emitted by parser scripts belong to the new document.
             // The shell may still hold the outgoing document's scroll offset here.
             self.scroll_y = 0;
+            self.send_accessibility_policy();
         }
         let presentation_install_started = Instant::now();
         let mut installation_timing = benchmark::InstallationTiming::start(
