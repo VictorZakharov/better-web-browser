@@ -7,6 +7,7 @@ mod links;
 mod measuring;
 mod overflow;
 mod settling;
+mod snapshot;
 
 const WIDTH: f32 = 800.0;
 const HEIGHT: f32 = 600.0;

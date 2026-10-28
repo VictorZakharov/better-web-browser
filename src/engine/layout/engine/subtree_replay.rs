@@ -35,6 +35,7 @@
 use super::layout_reads::LayoutReads;
 use super::reuse::{Inputs, LayoutReuse};
 use super::*;
+use append::Replay;
 
 /// Even a subtree emitting one item is cheaper to replay than to lay out again: the cells of a
 /// large table hold a few items each, and a change in one cell lays out every other cell twice.
@@ -42,6 +43,10 @@ const MIN_ITEMS: usize = 1;
 /// Larger containers recompute; their retained children still replay.
 const MAX_ITEMS: usize = 32_768;
 const MAX_ENTRIES: usize = 16_384;
+
+/// Serials are unique in the process, so a layout a snapshot replays from its page keeps its
+/// identity there (see `SubtreeEntry::serial`).
+static NEXT_SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(in crate::engine::layout) struct SubtreeKey {
@@ -67,8 +72,8 @@ impl SubtreeKey {
 
 #[derive(Debug)]
 pub(super) struct SubtreeEntry {
-    /// Unique among the page's retained layouts, so results derived from this one (such as its
-    /// scrollable overflow) can tell it from a later layout of the same node.
+    /// Unique in the process, so results derived from this one (such as its scrollable
+    /// overflow) can tell it from a later layout of the same node.
     serial: u64,
     inputs: Inputs,
     reads: LayoutReads,
@@ -195,95 +200,23 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return None;
         }
         let inputs = self.reuse_inputs(node)?;
-        let mut reuse = self.page.layout_reuse.borrow_mut();
+        let page = self.page;
+        let mut reuse = page.layout_reuse.borrow_mut();
         // A measuring layout discards its output, so it emits no items and retains nothing of its
         // own. It replays the geometry of the painted layout with the same arguments instead.
-        let measuring = !self.emit_paint && !self.retain_fragments;
-        let key = if measuring && !reuse.subtrees.contains_key(key) {
+        let mode = Replay::of(self.emit_paint, self.retain_fragments);
+        let key = if mode == Replay::Measure && !reuse.subtrees.contains_key(key) {
             key.painted()
         } else {
             *key
         };
-        let entry = reuse.subtree(&key, inputs, self.page, self.styles)?;
-        let (dx, dy) = (x - entry.origin.0, y - entry.origin.1);
-        if let Some((top, _)) = &entry.shared_floats
-            && !self.floats.clear_below(self.floats.len(), top + dy)
-        {
-            return None;
-        }
-        for (side, rect) in entry.shared_floats.iter().flat_map(|(_, floats)| floats) {
-            let rect = RectF {
-                x: rect.x + dx,
-                y: rect.y + dy,
-                ..*rect
-            };
-            self.floats.add(*side, rect);
-        }
-        let items = if measuring {
-            0
-        } else {
-            entry.items.len() as u64
-        };
-        self.page.count_layout(|stats| {
-            stats.subtrees_replayed += 1;
-            stats.items_replayed += items;
-        });
-        if measuring {
-            let bottom = entry.bottom + dy;
-            let reads = entry.reads.clone();
+        if reuse.subtree(&key, inputs, page, self.styles).is_none() {
             drop(reuse);
-            self.replay_reads(&reads);
-            return Some(BlockMetrics { bottom });
+            return self.replay_source(&key, node, inputs, (x, y), mode);
         }
-        self.replayed_roots.insert(node.id(), entry.serial);
-        let item_start = self.output.items.len();
-        let node_start = self.output.node_paint_order.len();
-        self.output.items.extend(entry.items.iter().cloned());
-        self.output
-            .node_paint_order
-            .extend_from_slice(&entry.paint_order);
-        self.output
-            .node_bounds
-            .extend(entry.node_bounds.iter().copied());
-        self.output
-            .resize_boxes
-            .extend(entry.resize_boxes.iter().copied());
-        self.output
-            .scroll_boxes
-            .extend(entry.scroll_boxes.iter().copied());
-        self.output
-            .clip_paths
-            .extend(entry.clip_paths.iter().copied());
-        self.output.transformed.extend(entry.transformed.clone());
-        let fragments = std::sync::Arc::make_mut(&mut self.output.fragments);
-        let first_line = fragments.next_line;
-        fragments.extend_subtree(
-            &entry.fragments,
-            first_line.wrapping_sub(entry.first_line) as i64,
-        );
-        fragments.next_line = first_line + entry.lines;
-        let bottom = entry.bottom + dy;
-        let flow_level = entry.flow_level;
-        let reads = entry.reads.clone();
-        let retained = entry.items.len();
+        let appended = self.append_retained(&reuse.subtrees[&key], (x, y), mode)?;
         drop(reuse);
-        self.replay_reads(&reads);
-        self.retained_items(retained);
-        if dx != 0.0 || dy != 0.0 {
-            let item_end = self.output.items.len();
-            self.translate_layout_subtree(Some(node), item_start, item_end, dx, dy);
-        }
-        if let Some(level) = flow_level
-            && let Some(parent) = self.positioned_flow_scopes.last_mut()
-        {
-            parent.push(InFlowPaintRange {
-                node: node.id(),
-                level,
-                items: item_start..self.output.items.len(),
-                nodes: node_start..self.output.node_paint_order.len(),
-            });
-        }
-        Some(BlockMetrics { bottom })
+        Some(self.finish_replay(node, appended, mode))
     }
 
     /// Starts recording a layout of `node` that may be retained; pair with `finish_capture`.
@@ -355,10 +288,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let flow_level = (self.positioned_flow_scopes.last().map_or(0, Vec::len)
             > capture.flow_ranges)
             .then(|| self.styles.get(node).z_index.unwrap_or(0));
-        let mut reuse = self.page.layout_reuse.borrow_mut();
-        let serial = reuse.next_serial;
-        reuse.next_serial += 1;
-        drop(reuse);
+        let serial = NEXT_SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let entry = SubtreeEntry {
             serial,
             inputs: capture.inputs,
@@ -396,5 +326,6 @@ fn pick<V: Copy>(map: &HashMap<NodeId, V>, ids: &[NodeId]) -> Vec<(NodeId, V)> {
         .collect()
 }
 
+mod append;
 #[cfg(test)]
 mod tests;

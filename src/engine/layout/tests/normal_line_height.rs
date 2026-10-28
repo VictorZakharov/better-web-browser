@@ -36,3 +36,15 @@ fn inherited_normal_is_resolved_again_for_the_child_font() {
     let layout = layout_page(&page, 800.0, 600.0, &mut FontMetricsMeasurer);
     assert_eq!(layout.node_bounds[&node.id()].height, 45.0);
 }
+
+#[test]
+fn script_geometry_uses_the_same_normal_line_height_as_rendering() {
+    let page = Page::parse(
+        "<style>body{margin:0}div{font:20px Arial}</style><div>Agjp</div>",
+        "https://example.test/",
+    );
+    let node = page.dom.elements_named("div").next().unwrap();
+    let geometry =
+        layout_geometry_with_style_viewport(&page, 800.0, 600.0, 800.0, &mut FontMetricsMeasurer);
+    assert_eq!(geometry.node_bounds[&node.id()].height, 30.0);
+}

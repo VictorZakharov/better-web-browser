@@ -112,15 +112,19 @@ pub struct Page {
     document_base: std::cell::RefCell<Option<(u64, String, String)>>,
     /// The last style-image discovery stopped at its per-pass limit.
     style_images_pending: bool,
-    /// Layout results reused across passes; see `layout::engine::reuse`.
-    pub(crate) layout_reuse: std::cell::RefCell<crate::engine::layout::engine::reuse::LayoutReuse>,
-    /// The box tree retained across passes; see `layout::engine::box_tree::retained`.
+    /// Layout results reused across passes; see `layout::engine::reuse`. Shared with the script
+    /// layout snapshot, which replays them, as is the box tree retained across passes (see
+    /// `layout::engine::box_tree::retained`).
+    pub(crate) layout_reuse:
+        std::rc::Rc<std::cell::RefCell<crate::engine::layout::engine::reuse::LayoutReuse>>,
     pub(crate) layout_box_tree:
-        std::cell::RefCell<crate::engine::layout::engine::reuse::RetainedBoxes>,
+        std::rc::Rc<std::cell::RefCell<crate::engine::layout::engine::reuse::RetainedBoxes>>,
     /// Layout work not yet reported; see `layout::engine::stats`.
     pub(crate) layout_stats: std::cell::Cell<crate::engine::layout::LayoutStats>,
-    /// The nodes post-layout passes visit; see `layout::engine::post_layout_index`.
-    pub(crate) layout_index: std::cell::RefCell<crate::engine::layout::engine::PostLayoutIndex>,
+    /// The nodes post-layout passes visit; see `layout::engine::post_layout_index`. Shared with
+    /// the script layout snapshot like the box tree.
+    pub(crate) layout_index:
+        std::rc::Rc<std::cell::RefCell<crate::engine::layout::engine::PostLayoutIndex>>,
     /// Images whose natural size a layout of this page read; see `layout_read_image_size`.
     pub(crate) layout_image_reads: std::cell::RefCell<HashSet<String>>,
 }
