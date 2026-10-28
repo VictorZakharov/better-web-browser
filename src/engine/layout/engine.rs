@@ -192,7 +192,6 @@ fn layout_page_for_output<M: TextMeasurer>(
         reads: Default::default(),
         replayed_roots: HashMap::new(),
         absolute_scope: Default::default(),
-        probe_root: None,
         viewport: RectF {
             x: 0.0,
             y: 0.0,
@@ -322,8 +321,6 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) replayed_roots: HashMap<NodeId, u64>,
     /// The containing block of absolutely positioned descendants.
     pub(super) absolute_scope: block::AbsoluteScope,
-    /// In a block-size probe of a painting pass, the box it measures; see `subtree_replay`.
-    pub(super) probe_root: Option<NodeId>,
 }
 
 pub(super) struct InFlowPaintRange {

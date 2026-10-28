@@ -161,7 +161,6 @@ mod tests {
             reads: Default::default(),
             replayed_roots: HashMap::new(),
             absolute_scope: Default::default(),
-            probe_root: None,
         };
         for basis in [200.0, 400.0, 200.001] {
             let widths = engine.float_intrinsic_widths(&node, basis);

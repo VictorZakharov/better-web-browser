@@ -46,7 +46,6 @@ pub(super) fn append_top_layer<M: TextMeasurer>(
             reads: Default::default(),
             replayed_roots: HashMap::new(),
             absolute_scope: Default::default(),
-            probe_root: None,
             viewport: RectF {
                 x: 0.0,
                 y: 0.0,

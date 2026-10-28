@@ -32,12 +32,7 @@
 // output, emit no items and so retain nothing of their own. Geometry does not depend on whether a
 // layout paints, so a measuring layout replays the painted entry with the same arguments and takes
 // only its block size and floats. Without that, a grid probing an item whose subtree changed,
-// such as Wikipedia's page grids, laid out the item's entire subtree again. A probe in a painting
-// pass also lays out for painting, and retains, each subtree below the box it measures that would
-// be retained, so the final layout of the box replays it: otherwise content new in a pass, such as
-// the sections a parser step appended to an article inside those grids, was laid out once to be
-// measured and again to be painted. The measured box itself is measured, since its final layout is
-// usually stretched to its grid area and so has other arguments.
+// such as Wikipedia's page grids, laid out the item's entire subtree again.
 use super::layout_reads::LayoutReads;
 use super::reuse::{Inputs, LayoutReuse};
 use super::*;
@@ -125,8 +120,6 @@ pub(in crate::engine::layout) struct Capture {
     first_line: u64,
     flow_ranges: usize,
     floats: usize,
-    /// Laid out for painting inside a measuring probe (`begin_layout_capture`).
-    painted_in_probe: bool,
 }
 
 impl LayoutReuse {
@@ -252,34 +245,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             first_line: self.output.fragments.next_line,
             flow_ranges: self.positioned_flow_scopes.last().map_or(0, Vec::len),
             floats: self.floats.len(),
-            painted_in_probe: false,
         })
-    }
-
-    /// Starts recording a layout of `node` as `begin_capture` does, and in a block-size probe of
-    /// a painting pass switches a layout that would be retained to painting (see the module
-    /// comment); pair with `finish_capture`.
-    pub(in crate::engine::layout) fn begin_layout_capture(
-        &mut self,
-        key: SubtreeKey,
-        node: &NodeRef,
-        x: f32,
-        y: f32,
-    ) -> Option<Capture> {
-        if self.emit_paint || self.probe_root.is_none_or(|root| root == node.id()) {
-            return self.begin_capture(key, node, x, y);
-        }
-        // A relatively positioned root reports its stacking level to its parent's flow scope,
-        // which a measuring probe does not keep.
-        self.positioned_flow_scopes.push(Vec::new());
-        let Some(mut capture) = self.begin_capture(key.painted(), node, x, y) else {
-            self.positioned_flow_scopes.pop();
-            return None;
-        };
-        capture.painted_in_probe = true;
-        self.emit_paint = true;
-        self.retain_fragments = true;
-        Some(capture)
     }
 
     pub(in crate::engine::layout) fn finish_capture(
@@ -288,16 +254,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         node: &NodeRef,
         metrics: BlockMetrics,
     ) {
-        let painted_in_probe = capture.painted_in_probe;
-        self.retain_capture(capture, node, metrics);
-        if painted_in_probe {
-            self.emit_paint = false;
-            self.retain_fragments = false;
-            self.positioned_flow_scopes.pop();
-        }
-    }
-
-    fn retain_capture(&mut self, capture: Capture, node: &NodeRef, metrics: BlockMetrics) {
         let frame = self.close_reads();
         // Absolutely positioned boxes placed against a containing block outside the subtree
         // would move with a copy of it.

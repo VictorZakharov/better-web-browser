@@ -30,7 +30,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if measured {
             self.begin_reads();
         }
-        let capture = self.begin_layout_capture(key, node, x, y);
+        let capture = self.begin_capture(key, node, x, y);
         let metrics =
             self.layout_block_with_gutters(node, x, y, width, height, used_width, used_height);
         if let Some(capture) = capture {
@@ -110,10 +110,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     }
 
     fn commit_scroll_offset(&self, node: &NodeRef) {
-        // Intermediate gutter retries, CSSOM geometry probes and block-size probes that paint
-        // must not clamp away a position that is reachable in the final layout.
+        // Intermediate gutter retries and CSSOM geometry probes must not clamp
+        // away a position that is reachable in the final layout.
         if self.emit_paint
-            && self.probe_root.is_none()
             && let Some(scroll) = self.output.scroll_boxes.get(&node.id())
         {
             node.scroll_offset.set((scroll.offset_x, scroll.offset_y));
