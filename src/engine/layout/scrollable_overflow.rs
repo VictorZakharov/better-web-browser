@@ -82,7 +82,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let mut reuse = self.page.layout_reuse.borrow_mut();
         let retained = match reuse.overflow.get(&node.id()) {
             Some(extent) => Some(*extent),
-            None => reuse.from_source(|source, _| source.overflow.get(&node.id()).copied()),
+            None => reuse.lookup_in_source(|source, _| source.overflow.get(&node.id()).copied()),
         };
         drop(reuse);
         if let Some(extent) = retained

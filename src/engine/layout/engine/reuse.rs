@@ -13,7 +13,7 @@
 //   canvas policy, fullscreen root and text measurer epoch match the pass that computed it.
 //
 // A script layout snapshot of the page also uses the page's results, read-only: its probes and
-// widths (`from_source`) and, in geometry passes, its painted subtrees (`subtree_replay::append`).
+// widths (`lookup_in_source`) and, in geometry passes, its painted subtrees (`subtree_replay::append`).
 //
 // Nodes inside shadow trees are not reused: their composed subtree can include slotted light
 // DOM whose mutations do not advance the shadow-tree node's version. Results for nodes a
@@ -74,7 +74,7 @@ pub(crate) struct LayoutReuse {
     pub(super) pass: u64,
     /// Reads already confirmed this pass; see `LayoutReads::hold`.
     pub(super) held: layout_reads::HeldReads,
-    /// The results of the page a script layout snapshot copies; see `from_source`.
+    /// The results of the page a script layout snapshot copies; see `lookup_in_source`.
     pub(super) source: Weak<RefCell<LayoutReuse>>,
 }
 
@@ -124,7 +124,7 @@ impl LayoutReuse {
 
     /// Looks a result up among those of the page a script layout snapshot copies, when they
     /// hold for this pass's environment. The lookup validates reads against this pass.
-    pub(in crate::engine::layout) fn from_source<T>(
+    pub(in crate::engine::layout) fn lookup_in_source<T>(
         &mut self,
         lookup: impl FnOnce(&Self, &mut layout_reads::HeldReads) -> Option<T>,
     ) -> Option<T> {

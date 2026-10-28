@@ -30,7 +30,7 @@ impl LayoutReuse {
         styles: &StyleSet,
     ) -> Option<((f32, f32), LayoutReads)> {
         let Some(entry) = self.widths.get(&key) else {
-            return self.from_source(|source, held| {
+            return self.lookup_in_source(|source, held| {
                 let entry = source.widths.get(&key)?;
                 (entry.inputs == inputs && entry.reads.hold(page, styles, held))
                     .then(|| (entry.widths, entry.reads.clone()))
