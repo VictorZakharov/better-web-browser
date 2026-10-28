@@ -191,7 +191,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         floats: Default::default(),
         reads: Default::default(),
         replayed_roots: HashMap::new(),
-        absolute_containing_block: None,
+        absolute_scope: Default::default(),
         subgrid_rows: HashMap::new(),
         viewport: RectF {
             x: 0.0,
@@ -320,8 +320,8 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) reads: std::cell::RefCell<layout_reads::ReadFrames>,
     /// Subtree roots whose final placement in this output replays a retained entry, by serial.
     pub(super) replayed_roots: HashMap<NodeId, u64>,
-    /// Padding box of the nearest box that contains absolute descendants; `None` is the ICB.
-    pub(super) absolute_containing_block: Option<RectF>,
+    /// The containing block of absolutely positioned descendants.
+    pub(super) absolute_scope: block::AbsoluteScope,
     /// Rows a parent grid resolved for the row subgrids it is laying out.
     pub(super) subgrid_rows: HashMap<NodeId, super::grid::SubgridRows>,
 }

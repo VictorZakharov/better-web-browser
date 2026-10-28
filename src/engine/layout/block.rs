@@ -6,6 +6,7 @@ pub(super) mod floats;
 pub(super) mod margins;
 pub(super) mod paint_order;
 mod positioned;
+pub(super) use positioned::AbsoluteScope;
 mod positioned_width;
 mod replaced;
 mod sizing;
@@ -333,13 +334,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             width: (border_box_width - borders.horizontal() - gutter_right).max(0.0),
             height: padding.top + content_height + padding.bottom,
         };
-        let ancestor_box = self.exit_absolute_scope(absolute_scope);
+        let (ancestor_box, positioning_depth) = self.exit_absolute_scope(absolute_scope);
         let positioning_box = positioned::containing_box(&style, padding_rect, ancestor_box);
         // A replaced element's children (an object's hidden fallback) generate no boxes.
         if block_image.is_none() {
             self.layout_positioned_children(
                 node,
-                positioning_box,
+                (positioning_box, positioning_depth),
                 (content_x, content_y),
                 in_flow_paint_start,
                 in_flow_node_start,

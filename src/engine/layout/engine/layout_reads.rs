@@ -156,6 +156,11 @@ pub(in crate::engine::layout) struct ReadFrames {
 struct OpenFrame {
     start: usize,
     retained_items: usize,
+    /// The containing-block depth (`AbsoluteScope`) where the frame opened.
+    depth: usize,
+    /// The shallowest containing block an absolutely positioned box inside the frame resolved
+    /// against.
+    shallowest: usize,
 }
 
 /// A closed frame; its reads stay readable until the next outermost frame opens.
@@ -163,6 +168,9 @@ pub(in crate::engine::layout) struct ReadFrame {
     reads: std::ops::Range<usize>,
     /// The most display items any retained result inside the frame holds.
     pub(in crate::engine::layout) retained_items: usize,
+    /// An absolutely positioned box inside the frame resolved against a containing block
+    /// established outside it.
+    pub(in crate::engine::layout) outside_containing_block: bool,
 }
 
 impl ReadFrames {
@@ -254,6 +262,8 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
         reads.frames.push(OpenFrame {
             start,
             retained_items: 0,
+            depth: self.absolute_scope.depth(),
+            shallowest: usize::MAX,
         });
     }
 
@@ -268,9 +278,13 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
         let mut reads = self.reads.borrow_mut();
         let frame = reads.frames.pop().expect("layout read frames are balanced");
         reads.note_retained(frame.retained_items);
+        if let Some(enclosing) = reads.frames.last_mut() {
+            enclosing.shallowest = enclosing.shallowest.min(frame.shallowest);
+        }
         ReadFrame {
             reads: frame.start..reads.log.len(),
             retained_items: frame.retained_items,
+            outside_containing_block: frame.shallowest <= frame.depth,
         }
     }
 
@@ -342,6 +356,14 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
     /// Tells the enclosing frame that a retained result of `items` display items lies inside it.
     pub(in crate::engine::layout) fn retained_items(&self, items: usize) {
         self.reads.borrow_mut().note_retained(items);
+    }
+
+    /// Records that an absolutely positioned box resolved against the containing block at
+    /// `depth`, which lies outside every open frame that opened at that depth or deeper.
+    pub(in crate::engine::layout) fn note_containing_block(&self, depth: usize) {
+        if let Some(frame) = self.reads.borrow_mut().frames.last_mut() {
+            frame.shallowest = frame.shallowest.min(depth);
+        }
     }
 
     /// Accounts a cache hit's reads to the result being computed now.

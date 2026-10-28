@@ -45,7 +45,7 @@ pub(super) fn append_top_layer<M: TextMeasurer>(
             floats: Default::default(),
             reads: Default::default(),
             replayed_roots: HashMap::new(),
-            absolute_containing_block: None,
+            absolute_scope: Default::default(),
             subgrid_rows: HashMap::new(),
             viewport: RectF {
                 x: 0.0,
