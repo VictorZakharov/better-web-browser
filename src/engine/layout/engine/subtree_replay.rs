@@ -1,9 +1,10 @@
 //! Replays a block subtree's retained layout instead of laying it out again.
 //
 // A block in normal flow (or relatively positioned) lays out from its arguments and the floats
-// of its formatting context: its absolutely positioned descendants resolve against boxes inside
-// it or against its own containing area, and nothing it emits depends on where it is placed
-// except by translation. A block that establishes its own formatting context starts with no
+// of its formatting context, and nothing it emits depends on where it is placed except by
+// translation, unless one of its absolutely positioned descendants resolves against a
+// containing block established outside it: such a box is placed against that block and must not
+// move with the subtree, so the subtree is not retained. A block that establishes its own formatting context starts with no
 // floats. Any other block shares its parent's float context, so it is retained only when every
 // float already in that context ends above all of its boxes, and replayed only when that holds
 // again at the new position; the floats it adds itself are retained and added back. Its output
@@ -254,6 +255,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         metrics: BlockMetrics,
     ) {
         let frame = self.close_reads();
+        // Absolutely positioned boxes placed against a containing block outside the subtree
+        // would move with a copy of it.
+        if frame.outside_containing_block {
+            return;
+        }
         let items = &self.output.items[capture.item_start..];
         // Around a retained descendant holding most of the items, laying the block out again
         // costs little more than replaying it; retaining both would copy those items twice.
