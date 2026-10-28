@@ -92,6 +92,23 @@ pub struct AccessibilityUpdate {
 }
 
 impl AccessibilityUpdate {
+    /// A delta that changes nothing, which a document publishes while no assistive technology
+    /// reads it; before its first full tree it means the document has no tree yet.
+    pub fn unchanged(root: DocumentNodeId, focus: DocumentNodeId) -> Self {
+        Self {
+            full: false,
+            root,
+            focus,
+            nodes: Vec::new(),
+            added: Vec::new(),
+            removed: Vec::new(),
+        }
+    }
+
+    pub fn is_unchanged(&self) -> bool {
+        !self.full && self.nodes.is_empty() && self.added.is_empty() && self.removed.is_empty()
+    }
+
     pub fn full_root(root: DocumentNodeId, name: impl Into<String>, bounds: RectF) -> Self {
         Self {
             full: true,

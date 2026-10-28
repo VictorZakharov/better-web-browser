@@ -230,7 +230,7 @@ fn within_depth_budget(parent: &NodeRef, child: &NodeRef) -> bool {
         <= MAX_DOM_DEPTH
 }
 
-fn subtree_height(root: &NodeRef) -> usize {
+pub(super) fn subtree_height(root: &NodeRef) -> usize {
     let mut maximum = 0_usize;
     let mut stack = vec![(root.clone(), 0_usize)];
     while let Some((node, depth)) = stack.pop() {

@@ -39,7 +39,7 @@ fn invalid_transform_suppresses_the_whole_subtree_not_just_its_boundary() {
             ],
             ..Default::default()
         };
-        let result = sanitize(layout);
+        let result = sanitize(&layout);
         assert_eq!(result.items.len(), 2);
         assert!(
             result
@@ -52,7 +52,7 @@ fn invalid_transform_suppresses_the_whole_subtree_not_just_its_boundary() {
 
 #[test]
 fn singular_matrices_are_valid_css_values_and_remain_balanced_over_ipc() {
-    let result = sanitize(LayoutOutput {
+    let result = sanitize(&LayoutOutput {
         items: vec![
             DisplayItem::BeginTransform {
                 bounds: rect(),

@@ -26,12 +26,12 @@ fn delayed_serialized_presentation_can_be_reconciled_without_renderer_or_dom() {
     );
     page.dom.document.scroll_offset.set((0.0, 900.0));
     let old = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
-    let mut browser = PresentedLayout::from_layout(old).into_layout();
+    let mut browser = PresentedLayout::from_layout(&old).into_layout();
     for y in [0.0, 500.0, 1500.0, 300.0, 0.0] {
         browser.update_scroll_position(0.0, y);
         page.dom.document.scroll_offset.set((0.0, y));
         let fresh =
-            PresentedLayout::from_layout(layout_page(&page, 800.0, 600.0, &mut FixedMeasurer));
+            PresentedLayout::from_layout(&layout_page(&page, 800.0, 600.0, &mut FixedMeasurer));
         assert_paint_close(&browser.items, &fresh.items);
     }
 }

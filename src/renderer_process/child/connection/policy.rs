@@ -1,6 +1,23 @@
 use super::*;
 
 impl ChildConnection {
+    pub(in crate::renderer_process::child) fn accessibility_enabled(&self) -> bool {
+        self.accessibility_enabled
+    }
+
+    pub(super) fn accessibility_policy(&mut self, enabled: bool) -> Result<(), String> {
+        self.accessibility_enabled = enabled;
+        let Some(runtime) = self.document.as_mut() else {
+            return Ok(());
+        };
+        if runtime.set_accessibility_enabled(enabled) {
+            // Publish the document's first full tree without waiting for its next change.
+            let document = runtime.id();
+            self.advance_document_with_clock(document, 0, 1, false)?;
+        }
+        Ok(())
+    }
+
     pub(super) fn gpu_canvas_policy(
         &mut self,
         document: DocumentId,

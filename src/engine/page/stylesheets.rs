@@ -99,7 +99,12 @@ impl Page {
             .collect();
         let mut discovered = Vec::new();
         let mut truncated = false;
-        for node in Node::shadow_including_descendants(&self.dom.document).filter(is_stylesheet) {
+        let elements = self.resource_elements();
+        for node in elements
+            .iter()
+            .filter_map(ResourceElement::node)
+            .filter(is_stylesheet)
+        {
             if node.attr("disabled").is_some() {
                 continue;
             }

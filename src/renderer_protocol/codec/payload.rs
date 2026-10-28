@@ -5,12 +5,12 @@ mod document;
 mod fetch;
 mod file_picker;
 mod geolocation;
-mod gpu;
 mod input;
 mod media_capture;
 mod media_devices;
 mod notification;
 mod permission;
+mod policy;
 mod protocol_handler;
 mod sensor;
 mod speech;
@@ -86,7 +86,10 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
     let mut payload = Vec::new();
     let kind = match message {
         BrowserMessage::GpuCanvasPolicy { document, enabled } => {
-            return gpu::encode(*document, *enabled);
+            return policy::encode_gpu_canvas(*document, *enabled);
+        }
+        BrowserMessage::AccessibilityPolicy { enabled } => {
+            return policy::encode_accessibility(*enabled);
         }
         BrowserMessage::Hello {
             nonce,
@@ -180,7 +183,8 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
 
 pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage, ProtocolError> {
     match kind {
-        0x0251 => gpu::decode(payload),
+        policy::GPU_CANVAS => policy::decode_gpu_canvas(payload),
+        policy::ACCESSIBILITY => policy::decode_accessibility(payload),
         1 => {
             require_length(payload, NONCE_LENGTH + 20)?;
             let nonce = nonce_from(&payload[..NONCE_LENGTH])?;

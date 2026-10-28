@@ -74,6 +74,9 @@ pub fn layout_geometry_with_style_viewport<M: TextMeasurer>(
     // geometry caller cannot consume. TextMeasurer::shape defaults to these same measurements.
     struct MetricsOnly<'a, M>(&'a mut M);
     impl<M: TextMeasurer> TextMeasurer for MetricsOnly<'_, M> {
+        fn normal_line_height(&mut self, font: &FontSpec) -> f32 {
+            self.0.normal_line_height(font)
+        }
         fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32) {
             self.0.measure(text, font)
         }
@@ -188,7 +191,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         floats: Default::default(),
         reads: Default::default(),
         replayed_roots: HashMap::new(),
-        absolute_containing_block: None,
+        absolute_scope: Default::default(),
         viewport: RectF {
             x: 0.0,
             y: 0.0,
@@ -316,8 +319,8 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) reads: std::cell::RefCell<layout_reads::ReadFrames>,
     /// Subtree roots whose final placement in this output replays a retained entry, by serial.
     pub(super) replayed_roots: HashMap<NodeId, u64>,
-    /// Padding box of the nearest box that contains absolute descendants; `None` is the ICB.
-    pub(super) absolute_containing_block: Option<RectF>,
+    /// The containing block of absolutely positioned descendants.
+    pub(super) absolute_scope: block::AbsoluteScope,
 }
 
 pub(super) struct InFlowPaintRange {

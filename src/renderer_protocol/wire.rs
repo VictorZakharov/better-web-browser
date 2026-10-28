@@ -4,19 +4,44 @@ use super::ProtocolError;
 
 pub(super) struct WireWriter {
     bytes: Vec<u8>,
+    /// For a writer that only measures (`counting`), the length of what it was given.
+    counted: Option<usize>,
 }
 
 impl WireWriter {
     pub(super) fn new() -> Self {
-        Self { bytes: Vec::new() }
+        Self {
+            bytes: Vec::new(),
+            counted: None,
+        }
+    }
+
+    /// A writer that keeps nothing but the length of the payload it is given, to size a payload
+    /// without building it.
+    pub(super) fn counting() -> Self {
+        Self {
+            bytes: Vec::new(),
+            counted: Some(0),
+        }
     }
 
     pub(super) fn finish(self) -> Vec<u8> {
         self.bytes
     }
 
+    pub(super) fn len(&self) -> usize {
+        self.counted.unwrap_or(self.bytes.len())
+    }
+
+    fn put(&mut self, value: &[u8]) {
+        match &mut self.counted {
+            Some(length) => *length += value.len(),
+            None => self.bytes.extend_from_slice(value),
+        }
+    }
+
     pub(super) fn u8(&mut self, value: u8) {
-        self.bytes.push(value);
+        self.put(&[value]);
     }
 
     pub(super) fn bool(&mut self, value: bool) {
@@ -24,11 +49,11 @@ impl WireWriter {
     }
 
     pub(super) fn u16(&mut self, value: u16) {
-        self.bytes.extend_from_slice(&value.to_le_bytes());
+        self.put(&value.to_le_bytes());
     }
 
     pub(super) fn u32(&mut self, value: u32) {
-        self.bytes.extend_from_slice(&value.to_le_bytes());
+        self.put(&value.to_le_bytes());
     }
 
     pub(super) fn i32(&mut self, value: i32) {
@@ -36,11 +61,11 @@ impl WireWriter {
     }
 
     pub(super) fn u64(&mut self, value: u64) {
-        self.bytes.extend_from_slice(&value.to_le_bytes());
+        self.put(&value.to_le_bytes());
     }
 
     pub(super) fn u128(&mut self, value: u128) {
-        self.bytes.extend_from_slice(&value.to_le_bytes());
+        self.put(&value.to_le_bytes());
     }
 
     pub(super) fn f32(&mut self, value: f32) {
@@ -51,7 +76,7 @@ impl WireWriter {
         let length = u32::try_from(value.len())
             .map_err(|_| ProtocolError::InvalidPayload("wire string length"))?;
         self.u32(length);
-        self.bytes.extend_from_slice(value.as_bytes());
+        self.put(value.as_bytes());
         Ok(())
     }
 
@@ -59,7 +84,7 @@ impl WireWriter {
         let length = u32::try_from(value.len())
             .map_err(|_| ProtocolError::InvalidPayload("wire byte length"))?;
         self.u32(length);
-        self.bytes.extend_from_slice(value);
+        self.put(value);
         Ok(())
     }
 

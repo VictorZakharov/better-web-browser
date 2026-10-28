@@ -74,13 +74,8 @@ impl Page {
         self.base_url = self.document_base_url();
         self.title = self.dom.title();
         self.hide_scripted_noscript();
-        let resources = resources::discover_non_script_resources(
-            &self.dom,
-            &self.source_url,
-            &self.base_url,
-            self.media_environment,
-        );
-        for resource in resources {
+        // Media elements' resources come from `refresh_media_sources` below.
+        for resource in self.discover_link_and_image_resources() {
             if !matches!(
                 resource,
                 PageResource::Script { .. } | PageResource::Media { .. }

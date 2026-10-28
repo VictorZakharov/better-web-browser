@@ -25,11 +25,7 @@ impl StyleSet {
             && !invalidation.is_empty()
             && !invalidation.roots.contains(&dom.document.id())
         {
-            let mut roots = invalidation
-                .roots
-                .iter()
-                .filter_map(|id| dom.find_node(*id))
-                .collect::<Vec<_>>();
+            let mut roots = dom.find_nodes_in_order(&invalidation.roots);
             let mut elements = Vec::new();
             let fallbacks = self.resolve_attribute_changes(
                 dom,
@@ -68,11 +64,7 @@ impl StyleSet {
         {
             // Resolve class changes against the outgoing rules too: a removed rule may have
             // matched through a token that changed in the same checkpoint.
-            let mut roots = invalidation
-                .roots
-                .iter()
-                .filter_map(|id| dom.find_node(*id))
-                .collect::<Vec<_>>();
+            let mut roots = dom.find_nodes_in_order(&invalidation.roots);
             let mut elements = Vec::new();
             let outgoing = self.resolve_attribute_changes(
                 dom,

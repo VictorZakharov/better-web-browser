@@ -29,7 +29,13 @@ impl LayoutReuse {
         page: &Page,
         styles: &StyleSet,
     ) -> Option<((f32, f32), LayoutReads)> {
-        let entry = self.widths.get(&key)?;
+        let Some(entry) = self.widths.get(&key) else {
+            return self.lookup_in_source(|source, held| {
+                let entry = source.widths.get(&key)?;
+                (entry.inputs == inputs && entry.reads.hold(page, styles, held))
+                    .then(|| (entry.widths, entry.reads.clone()))
+            });
+        };
         if entry.inputs != inputs || !entry.reads.hold(page, styles, &mut self.held) {
             self.widths.remove(&key);
             return None;

@@ -22,8 +22,10 @@ impl Page {
     /// Creates the narrow page snapshot used by synchronous CSSOM View layout flushes.
     ///
     /// The DOM clone retains the same node graph and mutation identity. Resource and stylesheet
-    /// state is copied at rendering checkpoints, while derived style/layout caches are rebuilt so
-    /// script geometry observes mutations made in the current task.
+    /// state is copied at rendering checkpoints, while styles are refreshed separately so script
+    /// geometry observes mutations made in the current task. The snapshot shares the page's
+    /// retained box tree and post-layout index, which validate themselves against the DOM and
+    /// either page's styles, and replays the page's retained layouts wherever they still hold.
     pub(crate) fn layout_snapshot(&self) -> Self {
         Self {
             dom: self.dom.clone(),
@@ -57,16 +59,20 @@ impl Page {
             layout_viewport: self.layout_viewport,
             resource_profile: Default::default(),
             document_base: Default::default(),
+            resource_elements: Default::default(),
             style_images_pending: false,
-            layout_reuse: Default::default(),
-            layout_box_tree: Default::default(),
+            layout_reuse: std::rc::Rc::new(std::cell::RefCell::new(
+                crate::engine::layout::engine::reuse::LayoutReuse::replaying(&self.layout_reuse),
+            )),
+            layout_box_tree: std::rc::Rc::clone(&self.layout_box_tree),
             layout_stats: Default::default(),
-            layout_index: Default::default(),
+            layout_index: std::rc::Rc::clone(&self.layout_index),
             layout_image_reads: Default::default(),
         }
     }
 
-    /// Copies source and resource state while retaining the snapshot's independent style cache.
+    /// Copies source and resource state. The snapshot keeps its independent styles only while
+    /// the page has none describing the current document to seed it with.
     pub(crate) fn synchronize_layout_snapshot(&mut self, source: &Self) {
         let style_sources_changed = self.source_url != source.source_url
             || self.stylesheet_sources != source.stylesheet_sources
@@ -87,10 +93,19 @@ impl Page {
             .clone_from(&source.hidden_media_video);
         self.media_environment = source.media_environment;
         self.layout_viewport = source.layout_viewport;
-        if style_sources_changed {
-            self.cached_styles = None;
-        }
+        self.layout_reuse
+            .borrow_mut()
+            .replay_from(&source.layout_reuse);
+        self.layout_box_tree = std::rc::Rc::clone(&source.layout_box_tree);
+        self.layout_index = std::rc::Rc::clone(&source.layout_index);
         self.style_seed = source.style_seed_for_snapshot();
+        // Styles this snapshot refreshed itself drift from the page's: both restyle the same
+        // changes with distinct layout generations, so the page's retained layouts of every
+        // subtree changed since the fork stop matching. A current page reseeds them instead.
+        if style_sources_changed || self.style_seed.is_some() {
+            self.cached_styles = None;
+            self.previous_styles = None;
+        }
     }
 
     /// The page's styles, when they describe the document exactly as it is now.

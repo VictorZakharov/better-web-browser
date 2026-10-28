@@ -347,8 +347,10 @@ impl StyleSet {
         elements: &mut Vec<NodeRef>,
     ) -> InvalidationFallbacks {
         let mut fallbacks = InvalidationFallbacks::default();
+        let ids = changes.iter().map(|change| change.node).collect::<Vec<_>>();
+        let nodes = dom.find_nodes(&ids);
         for change in changes {
-            let Some(node) = dom.find_node(change.node) else {
+            let Some(node) = nodes.get(&change.node).cloned() else {
                 continue;
             };
             match self
