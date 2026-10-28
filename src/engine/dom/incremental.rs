@@ -88,6 +88,7 @@ impl HtmlParser {
             parser_render_changes: Default::default(),
             parser_elements: Default::default(),
             parser_csp_meta: Default::default(),
+            parser_depth_check: std::cell::Cell::new(false),
         };
         parser.parser = driver::Driver::new(dom, true);
         parser
@@ -183,7 +184,16 @@ impl HtmlParser {
         ParserStep::End
     }
 
+    /// Enforces the node and depth budgets on the whole tree. Walking a large document after
+    /// every chunk made parsing quadratic in its size, so the walk runs only when an insertion
+    /// may have exceeded the depth budget (`Dom::parser_insert`) or once the allocator has
+    /// reached the node budget, which the tree cannot exceed before then.
     fn enforce_limits(&self) -> bool {
+        if !self.dom().parser_depth_check.replace(false)
+            && self.dom().identity.allocated_nodes() < MAX_DOM_NODES
+        {
+            return false;
+        }
         let report = budget::enforce(self.dom());
         if report.removed_nodes > 0 || report.depth_limited {
             let message = format!(
@@ -198,6 +208,9 @@ impl HtmlParser {
         report.removed_nodes > 0 || report.depth_limited
     }
 }
+
+#[cfg(test)]
+mod budget_tests;
 
 #[cfg(test)]
 mod tests {
