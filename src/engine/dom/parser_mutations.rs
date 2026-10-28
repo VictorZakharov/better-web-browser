@@ -2,6 +2,7 @@
 //! Capture ancestry and siblings at mutation time: foster parenting/adoption can move them
 //! again before JavaScript resumes. Records live in Dom, not the allocator, avoiding Rc cycles.
 use super::super::{Dom, Node, NodeRef};
+use crate::limits::MAX_DOM_DEPTH;
 #[cfg(test)]
 #[path = "parser_mutations_tests.rs"]
 mod tests;
@@ -138,6 +139,9 @@ impl Dom {
         self.parser_render_inserted(parent, &child, appended);
         child.parent.set(Some(std::rc::Rc::downgrade(parent)));
         parent.children.borrow_mut().insert(index, child.clone());
+        if !self.parser_depth_check.get() && !self.within_parser_depth_budget(parent, &child) {
+            self.parser_depth_check.set(true);
+        }
         Node::checkable_subtree_inserted(&child);
         Node::control_subtree_inserted(&child);
         Node::control_child_changed(parent);
@@ -153,6 +157,31 @@ impl Dom {
             self.parser_csp_meta.borrow_mut().push_back(child.clone());
         }
         self.queue_parser_record(record);
+    }
+
+    /// Whether `child`, just inserted under `parent`, keeps every node of its subtree within the
+    /// document depth budget. Template contents and shadow trees have their own roots, so their
+    /// depth below the document is not visible here and they always ask for the full check.
+    fn within_parser_depth_budget(&self, parent: &NodeRef, child: &NodeRef) -> bool {
+        let mut depth = 1_usize;
+        let mut root = parent.clone();
+        while let Some(next) = root.parent() {
+            depth += 1;
+            if depth > MAX_DOM_DEPTH {
+                return false;
+            }
+            root = next;
+        }
+        let leaf = child.children.borrow().is_empty()
+            && child
+                .element()
+                .is_none_or(|element| element.template_contents.borrow().is_none());
+        let height = if leaf {
+            0
+        } else {
+            super::super::mutation::subtree_height(child)
+        };
+        root.id() == self.document.id() && depth.saturating_add(height) <= MAX_DOM_DEPTH
     }
 
     pub(crate) fn pending_parser_csp_meta(&self) -> Option<NodeRef> {

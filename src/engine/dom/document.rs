@@ -38,6 +38,9 @@ pub struct Dom {
     pub(super) parser_render_changes: Rc<parser_render_changes::ParserRenderJournal>,
     pub(super) parser_elements: Rc<parser_custom_elements::ParserElements>,
     pub(super) parser_csp_meta: RefCell<VecDeque<NodeRef>>,
+    /// Set by a parser insertion that may exceed the depth budget, so that the parser walks the
+    /// tree to enforce it (`HtmlParser::enforce_limits`) only after such an insertion.
+    pub(super) parser_depth_check: Cell<bool>,
 }
 
 impl Default for Dom {
@@ -62,6 +65,7 @@ impl Dom {
             parser_render_changes: Default::default(),
             parser_elements: Default::default(),
             parser_csp_meta: Default::default(),
+            parser_depth_check: Cell::new(false),
         }
     }
 
@@ -79,6 +83,7 @@ impl Dom {
             parser_render_changes: Default::default(),
             parser_elements: Default::default(),
             parser_csp_meta: Default::default(),
+            parser_depth_check: Cell::new(false),
         }
     }
 }
