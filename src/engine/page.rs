@@ -19,6 +19,8 @@ mod preload;
 mod refresh;
 mod render_visibility;
 mod rendering;
+mod resource_elements;
+pub(crate) use resource_elements::ResourceElement;
 mod resource_events;
 mod resource_hints;
 mod resource_types;
@@ -110,6 +112,7 @@ pub struct Page {
     resource_profile: refresh::profile::Profile,
     /// The document base URL with the DOM mutation version and source URL it was found for.
     document_base: std::cell::RefCell<Option<(u64, String, String)>>,
+    resource_elements: resource_elements::ResourceElements,
     /// The last style-image discovery stopped at its per-pass limit.
     style_images_pending: bool,
     /// Layout results reused across passes; see `layout::engine::reuse`. Shared with the script
@@ -202,6 +205,7 @@ impl Page {
             layout_viewport: (1280.0, 720.0),
             resource_profile: Default::default(),
             document_base: Default::default(),
+            resource_elements: Default::default(),
             style_images_pending: false,
             layout_reuse: Default::default(),
             layout_box_tree: Default::default(),

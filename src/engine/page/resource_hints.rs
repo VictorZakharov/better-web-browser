@@ -8,15 +8,17 @@
 //! https://html.spec.whatwg.org/multipage/links.html#link-type-preconnect
 //! https://html.spec.whatwg.org/multipage/links.html#link-type-prefetch
 
-use super::PageResource;
-use crate::engine::dom::{Node, NodeRef};
+use super::{PageResource, ResourceElement};
+use crate::engine::dom::NodeRef;
 use crate::engine::script::{ScriptFetchOptions, ScriptKind};
 use crate::navigation::{ParsedUrl, resolve_url};
 use std::collections::HashSet;
 
 impl super::Page {
     pub(crate) fn current_network_hints(&self) -> HashSet<PageResource> {
-        Node::shadow_including_descendants(&self.dom.document)
+        self.resource_elements()
+            .iter()
+            .filter_map(ResourceElement::node)
             .filter(|node| node.tag_name() == Some("link"))
             .flat_map(|node| discover_link_hints(&node, &self.source_url, &self.base_url))
             .collect()
