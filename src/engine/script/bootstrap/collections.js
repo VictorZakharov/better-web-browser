@@ -173,5 +173,18 @@
     const liveNodeList = (resolve, constructor = NodeList) =>
         liveIndexedCollection(resolve, constructor, false);
 
-    const selectorCollection = (root, selector) =>
-        liveHtmlCollection(() => list(host('queryAll', nodeId(root), selector)));
+    // A selector collection resolves its tree again only after the tree changed, as engines
+    // cache collections between mutations: Array.prototype.values reads the length and an
+    // index per step, so iterating a collection walked the whole tree twice per element.
+    const selectorCollection = (root, selector) => {
+        let version = null;
+        let items = null;
+        return liveHtmlCollection(() => {
+            const current = host('treeVersion', nodeId(root));
+            if (items === null || current !== version) {
+                items = list(host('queryAll', nodeId(root), selector));
+                version = current;
+            }
+            return items;
+        });
+    };

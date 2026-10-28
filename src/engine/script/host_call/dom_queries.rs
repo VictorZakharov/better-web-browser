@@ -85,6 +85,13 @@ pub(super) fn dispatch(
                 .and_then(|root| query_selector(&root, &selector));
             JsValue::from(node.map(|node| state.id_for(&node)).unwrap_or_default())
         }
+        // Advances with every change to the node's tree, so script can keep what it derived
+        // from the tree until then.
+        "treeVersion" => JsValue::Number(
+            state
+                .node(argument_id(args, 1))
+                .map_or(0.0, |node| node.document_mutation_version() as f64),
+        ),
         "queryAll" => {
             let selector = argument_string(args, 2)?;
             let nodes = state
