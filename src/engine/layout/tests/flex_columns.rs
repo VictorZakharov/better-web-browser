@@ -97,3 +97,25 @@ fn zoomed_column_distributes_in_physical_coordinates() {
         (200.0, 280.0, 20.0)
     );
 }
+
+#[test]
+fn absolute_row_fits_a_column_flex_item_to_its_longest_line() {
+    let page = Page::parse(
+        r#"<style>body{margin:0}
+          header{position:absolute;left:10px;top:10px;display:flex;align-items:center;gap:18px}
+          aside{width:150px;flex:none;height:20px}
+          section{display:flex;flex-direction:column;gap:3px;padding-left:18px;border-left:1px solid}
+          h1{margin:0;font:700 26px serif;letter-spacing:5px;text-transform:uppercase}
+          button{align-self:flex-start;padding:0;border:0}</style>
+        <header><aside></aside>
+          <section><h1>Choose your hero</h1><button>Save slot 1</button></section>
+        </header>"#,
+        "https://example.test/",
+    );
+    let output = layout_page(&page, 1000.0, 600.0, &mut FixedMeasurer);
+    let heading = page.dom.elements_named("h1").next().unwrap();
+    // One line of 16 characters, at 13px each from the measurer.
+    let bounds = output.node_bounds[&heading.id()];
+    assert_eq!(bounds.height, 31.2, "{bounds:?}");
+    assert_eq!(bounds.width, 16.0 * 13.0, "{bounds:?}");
+}
