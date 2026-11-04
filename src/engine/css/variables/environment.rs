@@ -64,7 +64,10 @@ mod tests {
             ("env(safe-area-inset-left, 9px)", "0px"),
             ("env(safe-area-max-inset-bottom)", "0px"),
             ("ENV(safe-area-inset-right)", "0px"),
-            ("calc(1px + env(safe-area-inset-top, 9px))", "calc(1px + 0px)"),
+            (
+                "calc(1px + env(safe-area-inset-top, 9px))",
+                "calc(1px + 0px)",
+            ),
         ] {
             assert_eq!(substitute(value).as_deref(), Some(expected), "{value}");
         }
@@ -120,10 +123,7 @@ mod tests {
 
     #[test]
     fn replacements_keep_their_tokens_separate_from_neighboring_components() {
-        assert_eq!(
-            substitute("env(unknown,25)%").as_deref(),
-            Some("25/**/%")
-        );
+        assert_eq!(substitute("env(unknown,25)%").as_deref(), Some("25/**/%"));
     }
 
     fn styled_div(css: &str) -> ComputedStyle {
@@ -137,7 +137,9 @@ mod tests {
     fn calc_with_an_inset_keeps_a_positioned_box_on_the_side_it_names() {
         // The hero screen of a game anchors its panel with exactly this shape; an unresolved
         // env() there made the whole declaration invalid and moved the panel to the far side.
-        let style = styled_div("div{--gut:22px;position:absolute;right:calc(var(--gut) + env(safe-area-inset-right, 0px))}");
+        let style = styled_div(
+            "div{--gut:22px;position:absolute;right:calc(var(--gut) + env(safe-area-inset-right, 0px))}",
+        );
         assert_eq!(
             styled_div("div{position:absolute;right:22px}").right,
             style.right
