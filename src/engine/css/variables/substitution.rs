@@ -71,7 +71,12 @@ fn components<'i>(
             continue;
         }
         let current = token.serialization_type();
-        let variable = matches!(&token, Token::Function(name) if name.eq_ignore_ascii_case("var"));
+        let environment = matches!(
+            &token,
+            Token::Function(name) if environment::is_environment_function(name)
+        );
+        let variable = environment
+            || matches!(&token, Token::Function(name) if name.eq_ignore_ascii_case("var"));
         if !variable && previous.needs_separator_when_before(current) {
             // Removing comments must not turn separate tokens into a dimension,
             // percentage, function, identifier, or operator. A comment separator
@@ -83,10 +88,32 @@ fn components<'i>(
             previous = current;
         }
         match &token {
-            Token::Function(name) if name.eq_ignore_ascii_case("var") => {
+            Token::Function(_) if variable => {
                 let custom_properties = custom_properties?;
                 let replacement = parser
                     .parse_nested_block(|nested| -> Result<String, cssparser::ParseError<'i, ()>> {
+                        if environment {
+                            let value = environment::parse_reference(nested)?;
+                            let has_fallback = !nested.is_exhausted();
+                            if has_fallback {
+                                nested.expect_comma()?;
+                            }
+                            return match value {
+                                Some(value) => {
+                                    consume_component_values(nested)?;
+                                    Ok(value.to_owned())
+                                }
+                                None if has_fallback => components(
+                                    nested,
+                                    Some(custom_properties),
+                                    stack,
+                                    depth + 1,
+                                    budget,
+                                )
+                                .ok_or_else(|| nested.new_custom_error(())),
+                                None => Err(nested.new_custom_error(())),
+                            };
+                        }
                         let name = nested.expect_ident_cloned()?.to_string();
                         if !name.starts_with("--") {
                             return Err(nested.new_custom_error(()));

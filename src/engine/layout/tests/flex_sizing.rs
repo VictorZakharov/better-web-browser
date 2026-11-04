@@ -152,3 +152,45 @@ fn keeps_subpixel_equal_share_flex_items_on_the_same_line() {
     assert_eq!(second.y, third.y);
     assert!(first.x < second.x && second.x < third.x);
 }
+
+#[test]
+fn growing_row_items_stop_at_their_maximum_and_pass_on_the_rest() {
+    let page = Page::parse(
+        r#"<style>body{margin:0}main{display:flex;width:300px;gap:10px}
+          i{display:block;flex:1;height:5px}.capped{max-width:40px}</style>
+          <main><i class="capped"></i><i class="capped"></i><i></i></main>"#,
+        "https://example.test/",
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let widths = page
+        .dom
+        .elements_named("i")
+        .map(|node| output.node_bounds[&node.id()].width)
+        .collect::<Vec<_>>();
+    assert_eq!(widths, [40.0, 40.0, 200.0]);
+}
+
+#[test]
+fn capped_row_items_leave_their_free_space_unused() {
+    let page = Page::parse(
+        r#"<style>body{margin:0}main{display:flex;width:300px}
+          i{display:block;flex:1;height:5px;max-width:40px}</style>
+          <main><i></i><i></i></main>"#,
+        "https://example.test/",
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let last = page.dom.elements_named("i").last().unwrap();
+    assert_eq!(output.node_bounds[&last.id()].x, 40.0);
+}
+
+#[test]
+fn a_fractional_grow_sum_takes_only_that_share_of_the_free_space() {
+    let page = Page::parse(
+        r#"<style>body{margin:0}main{display:flex;width:300px}
+          i{display:block;flex:.5 0 100px;height:5px}</style><main><i></i></main>"#,
+        "https://example.test/",
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let item = page.dom.elements_named("i").next().unwrap();
+    assert_eq!(output.node_bounds[&item.id()].width, 200.0);
+}

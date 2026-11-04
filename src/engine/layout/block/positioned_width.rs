@@ -18,7 +18,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if left.is_some() && right.is_some() {
             return available;
         }
-        let (minimum, preferred) = self.intrinsic_content_widths(node, Some(basis));
+        // Shrink-to-fit uses the box's own formatting context: a flex row sums its items.
+        // https://drafts.csswg.org/css-flexbox-1/#intrinsic-main-sizes
+        let (minimum, preferred) = if matches!(style.display, Display::Flex | Display::InlineFlex) {
+            (
+                self.flex_container_min_content_width(node, style, Some(basis)),
+                self.flex_container_intrinsic_width(node, style, Some(basis)),
+            )
+        } else {
+            self.intrinsic_content_widths(node, Some(basis))
+        };
         // Constraints are applied afterward by the shared used-width resolver, including
         // the two-inset stretch case. The containing block can be narrower than min-content.
         (preferred + insets).min(available.max(minimum + insets))

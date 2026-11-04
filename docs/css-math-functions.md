@@ -303,8 +303,8 @@ general implicit-column placement remain incomplete. The source-size and
 nested-token budgets remain in force.
 
 Named line tokens can be retained in declarations, but named-line placement,
-automatic repetition, subgrid, `fit-content()` intrinsic clamping and calculations
-in `fr` values are not advertised by feature queries. These are not represented
+automatic repetition, column subgrids, `fit-content()` intrinsic clamping and
+calculations in `fr` values are not advertised by feature queries. These are not represented
 as successful fixed-track approximations. The existing named-area shorthand
 still routes quoted rows to its separate rectangular-area parser. General Grid
 placement and intrinsic sizing remain incomplete.

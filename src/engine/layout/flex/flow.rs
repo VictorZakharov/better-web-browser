@@ -1,6 +1,7 @@
 //! Main-axis ordering, line construction, and flex-line placement.
 
 use super::super::*;
+use super::flexible_lengths::{self, FlexibleSize};
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     #[allow(clippy::too_many_arguments)]
@@ -84,6 +85,27 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         cursor_y
     }
 
+    /// The most an item's margin box may grow to, never below its flex base size.
+    fn flex_row_item_maximum(&self, item: &FlexItem, width: f32) -> f32 {
+        let Some(node) = &item.node else {
+            return f32::INFINITY;
+        };
+        let style = self.styles.get(node);
+        let border = table::resolved_table_borders(node, style, width);
+        let padding = style.padding.resolve(width, style.font_size);
+        let margin = style.margin.resolve(width, style.font_size);
+        resolve_outer_size(
+            style.max_width.clone(),
+            width,
+            style.font_size,
+            border.horizontal() + padding.horizontal(),
+            style.box_sizing,
+        )
+        .map_or(f32::INFINITY, |maximum| {
+            (maximum + margin.horizontal()).max(item.basis)
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn layout_flex_row_line(
         &mut self,
@@ -101,11 +123,20 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let basis_sum = sizes.iter().sum::<f32>();
         let free = width - gap_width - basis_sum;
         if free > 0.0 {
-            let total_grow = items.iter().map(|item| item.grow).sum::<f32>();
-            if total_grow > 0.0 {
-                for (size, item) in sizes.iter_mut().zip(items) {
-                    *size += free * item.grow / total_grow;
-                }
+            if items.iter().any(|item| item.grow > 0.0) {
+                // Growing stops at each item's maximum, and the rest goes to the other items.
+                // https://drafts.csswg.org/css-flexbox-1/#resolve-flexible-lengths
+                let flexible = items
+                    .iter()
+                    .map(|item| FlexibleSize {
+                        base: item.basis,
+                        minimum: 0.0,
+                        maximum: self.flex_row_item_maximum(item, width),
+                        grow: item.grow,
+                        shrink: item.shrink,
+                    })
+                    .collect::<Vec<_>>();
+                sizes = flexible_lengths::resolve(&flexible, Some(width - gap_width));
             }
         } else if free < 0.0 {
             let total_shrink = items

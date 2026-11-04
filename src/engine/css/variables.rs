@@ -1,6 +1,7 @@
-//! Custom-property cascade and var() substitution.
+//! Custom-property cascade and var() and env() substitution.
 
 use super::*;
+mod environment;
 mod memo;
 mod substitution;
 use memo::Substitution;
@@ -134,12 +135,13 @@ pub(super) fn substitute_variables(
     substitute_variable_references(value, custom_properties, &mut Vec::new(), 0)
 }
 
-/// Returns true when a declaration value contains at least one syntactically valid `var()`.
+/// Returns true when a declaration value contains at least one syntactically valid `var()` or
+/// `env()`.
 ///
-/// A declaration containing a custom-property reference is valid at parse time even when the
-/// referenced property is absent or its eventual substitution would not match the property's
-/// grammar. CSS Conditional Rules therefore needs syntax validation without resolving the
-/// reference. See CSS Variables §3 and CSS Conditional Rules §6.
+/// A declaration containing such a reference is valid at parse time even when the referenced
+/// variable is absent or its eventual substitution would not match the property's grammar. CSS
+/// Conditional Rules therefore needs syntax validation without resolving the reference. See CSS
+/// Variables §3, CSS Environment Variables §2 and CSS Conditional Rules §6.
 pub(super) fn contains_valid_variable_reference(value: &str) -> bool {
     let mut input = ParserInput::new(value);
     let mut parser = Parser::new(&mut input);
@@ -166,6 +168,17 @@ fn validate_variable_references<'i, 't>(
                         return Err(nested.new_custom_error(()));
                     }
                     nested.skip_whitespace();
+                    if nested.is_exhausted() {
+                        return Ok(());
+                    }
+                    nested.expect_comma()?;
+                    validate_variable_references(nested, found, depth + 1)
+                })?;
+            }
+            Token::Function(name) if environment::is_environment_function(name) => {
+                *found = true;
+                parser.parse_nested_block(|nested| {
+                    environment::parse_reference(nested)?;
                     if nested.is_exhausted() {
                         return Ok(());
                     }

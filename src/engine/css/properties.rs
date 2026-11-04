@@ -338,6 +338,9 @@ pub(super) fn apply_declaration(
         "grid-template-rows" | "-ms-grid-rows" if parse_grid_track_list(value).is_some() => {
             style.grid_template_rows = value.to_string();
         }
+        "grid-template-rows" if value.trim().eq_ignore_ascii_case("subgrid") => {
+            style.grid_template_rows = value.to_string();
+        }
         "grid-template-areas" => style.grid_template_areas = value.to_string(),
         "grid-template" => assign_grid_template(style, value),
         "grid-auto-columns" if values::grid_auto::tracks_valid(value) => {

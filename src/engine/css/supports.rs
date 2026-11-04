@@ -253,6 +253,7 @@ fn declaration(property: &str, value: &str, preserve_unclassified: bool) -> bool
         "object-position" => ObjectPosition::parse(&value).is_some(),
         "text-transform" => TextTransform::parse(&value).is_some(),
         "aspect-ratio" => values::scalars::RatioValue::parse(&value).is_some(),
+        "grid-template-rows" if value.trim().eq_ignore_ascii_case("subgrid") => true,
         "grid-template-columns" | "grid-template-rows" | "-ms-grid-columns" | "-ms-grid-rows" => {
             // Named-line placement and fit-content clamping remain unsupported.
             // Admission does not claim those unfinished layout contracts.
