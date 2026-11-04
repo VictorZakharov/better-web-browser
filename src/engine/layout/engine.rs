@@ -189,6 +189,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         reads: Default::default(),
         replayed_roots: HashMap::new(),
         absolute_containing_block: None,
+        subgrid_rows: HashMap::new(),
         viewport: RectF {
             x: 0.0,
             y: 0.0,
@@ -318,6 +319,8 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) replayed_roots: HashMap<NodeId, u64>,
     /// Padding box of the nearest box that contains absolute descendants; `None` is the ICB.
     pub(super) absolute_containing_block: Option<RectF>,
+    /// Rows a parent grid resolved for the row subgrids it is laying out.
+    pub(super) subgrid_rows: HashMap<NodeId, super::grid::SubgridRows>,
 }
 
 pub(super) struct InFlowPaintRange {

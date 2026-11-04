@@ -15,6 +15,18 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         used_height: Option<f32>,
     ) -> BlockMetrics {
         let height = self.read_height_basis(node, height);
+        // A subgrid's result depends on rows its parent resolved, which the replay keys omit.
+        if self.subgrid_rows.contains_key(&node.id()) {
+            return self.layout_block_with_gutters(
+                node,
+                x,
+                y,
+                width,
+                height,
+                used_width,
+                used_height,
+            );
+        }
         // An unchanged subtree replays the layout an earlier pass retained.
         let key = self.subtree_key(node, width, height, used_width, used_height);
         if let Some(metrics) = self.replay_subtree(&key, node, x, y) {
