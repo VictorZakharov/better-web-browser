@@ -27,6 +27,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         basis.filter(|_| !self.ignores_height_basis(node))
     }
 
+    /// This runs for every block laid out, so it reads a retained list without copying it.
+    fn no_box_child_is_absolute(&self, node: &NodeRef) -> bool {
+        let not_absolute = |child: &NodeRef| self.styles.get(child).position != Position::Absolute;
+        match self.styles.retained_children(node) {
+            Some(_) if self.styles.get(node).display == Display::None => true,
+            Some(_) if node.tag_name() == Some("select") => true,
+            Some(children) => children.iter().all(not_absolute),
+            None => self.box_children(node).iter().all(not_absolute),
+        }
+    }
+
     fn ignores_height_basis(&self, node: &NodeRef) -> bool {
         let style = self.styles.get(node);
         matches!(
@@ -57,10 +68,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         | "embed"
                 )
             )
-            && self
-                .box_children(node)
-                .iter()
-                .all(|child| self.styles.get(child).position != Position::Absolute)
+            && self.no_box_child_is_absolute(node)
     }
 }
 

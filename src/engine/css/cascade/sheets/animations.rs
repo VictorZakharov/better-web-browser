@@ -151,9 +151,13 @@ pub(super) fn rule_indices(rules: &[Rule]) -> Vec<usize> {
         .iter()
         .enumerate()
         .filter(|(_, rule)| {
+            // Other animation properties do nothing without a name, which is not inherited unless
+            // a declaration of these says so.
             rule.declarations.iter().any(|declaration| {
-                declaration.name == "all"
-                    || crate::engine::css::values::animations::supported_property(&declaration.name)
+                matches!(
+                    declaration.name.as_ref(),
+                    "all" | "animation" | "animation-name"
+                )
             })
         })
         .map(|(index, _)| index)

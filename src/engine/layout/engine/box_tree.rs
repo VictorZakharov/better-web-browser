@@ -155,7 +155,10 @@ impl<'a> BoxTree<'a> {
         let mut result = Vec::new();
         let mut stack = vec![node.clone()];
         while let Some(node) = stack.pop() {
-            stack.extend(self.children(&node).into_iter().rev());
+            match self.retained_children(&node) {
+                Some(children) => stack.extend(children.iter().rev().cloned()),
+                None => stack.extend(self.children(&node).into_iter().rev()),
+            }
             result.push(node);
         }
         result

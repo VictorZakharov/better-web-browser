@@ -5,16 +5,29 @@ use super::*;
 
 /// A compact, renderer-local copy of the geometry needed for script hit testing.
 /// Display items and glyphs stay with the painter.
+///
+/// A snapshot is taken for every presentation and few pages query points, so the walk of the
+/// document that finds its nodes waits for the first query. Hosts rebuild the snapshot when the
+/// document changes before querying it (`flush_hit_test_if_needed`), so that walk sees the same
+/// document the layout came from.
 #[derive(Debug, Clone, Default)]
 pub struct HitTestSnapshot {
     layout: LayoutOutput,
-    paint_nodes: Vec<NodeRef>,
-    inline_nodes: Vec<NodeRef>,
+    document: Option<NodeRef>,
+    nodes: std::cell::OnceCell<HitTestNodes>,
 }
 
-impl HitTestSnapshot {
-    pub fn from_layout(layout: &LayoutOutput, document: &NodeRef) -> Self {
-        let ordered_nodes = Node::shadow_including_descendants(document).collect::<Vec<_>>();
+#[derive(Debug, Clone)]
+struct HitTestNodes {
+    paint: Vec<NodeRef>,
+    inline: Vec<NodeRef>,
+}
+
+impl HitTestNodes {
+    fn find(layout: &LayoutOutput, document: Option<&NodeRef>) -> Self {
+        let ordered_nodes = document.map_or_else(Vec::new, |root| {
+            Node::shadow_including_descendants(root).collect()
+        });
         let nodes: HashMap<_, _> = ordered_nodes
             .iter()
             .cloned()
@@ -22,12 +35,12 @@ impl HitTestSnapshot {
             .collect();
         let painted: std::collections::HashSet<_> =
             layout.node_paint_order.iter().copied().collect();
-        let paint_nodes = layout
+        let paint = layout
             .node_paint_order
             .iter()
             .filter_map(|id| nodes.get(id).cloned())
             .collect();
-        let inline_nodes = ordered_nodes
+        let inline = ordered_nodes
             .into_iter()
             .filter(|node| {
                 node.element().is_some()
@@ -36,8 +49,15 @@ impl HitTestSnapshot {
                     && layout.fragments.element(node.id()).is_some()
             })
             .collect();
+        Self { paint, inline }
+    }
+}
+
+impl HitTestSnapshot {
+    pub fn from_layout(layout: &LayoutOutput, document: &NodeRef) -> Self {
         Self {
             layout: LayoutOutput {
+                node_paint_order: layout.node_paint_order.clone(),
                 transformed: layout.transformed.clone(),
                 fragments: layout.fragments.clone(),
                 node_bounds: layout.node_bounds.clone(),
@@ -47,16 +67,19 @@ impl HitTestSnapshot {
                 hit_excluded: layout.hit_excluded.clone(),
                 ..LayoutOutput::default()
             },
-            paint_nodes,
-            inline_nodes,
+            document: Some(document.clone()),
+            nodes: std::cell::OnceCell::new(),
         }
     }
 
     /// Topmost-first painted elements under a point in document coordinates.
     /// The caller handles viewport bounds and the root-element fallback.
     pub fn elements_at(&self, x: f32, y: f32) -> Vec<NodeRef> {
-        let mut hits = self
-            .paint_nodes
+        let nodes = self
+            .nodes
+            .get_or_init(|| HitTestNodes::find(&self.layout, self.document.as_ref()));
+        let mut hits = nodes
+            .paint
             .iter()
             .rev()
             .filter(|node| {
@@ -79,7 +102,7 @@ impl HitTestSnapshot {
         // list, but its fragment is a hit-testable box. Insert such fragments
         // just above their nearest painted ancestor, retaining stacked boxes'
         // paint order. Reverse tree order makes later overlapping siblings win.
-        for node in self.inline_nodes.iter().rev() {
+        for node in nodes.inline.iter().rev() {
             if self.layout.hit_excluded.contains(&node.id())
                 || !self.layout.point_in_scroll_clips(node, x, y)
                 || !self.layout.point_in_transformed_box(node, x, y)

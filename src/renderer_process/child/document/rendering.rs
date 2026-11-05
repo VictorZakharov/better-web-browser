@@ -50,8 +50,13 @@ impl DocumentRuntime {
             })
     }
     pub(super) fn stylesheet_nodes(&self) -> Vec<NodeRef> {
-        Node::descendants(&self.page.dom.document)
+        let document = self.page.dom.document.id();
+        self.page
+            .resource_elements()
+            .iter()
+            .filter_map(|element| element.node())
             .filter(crate::engine::page::is_stylesheet)
+            .filter(|node| Node::tree_root(node).id() == document)
             .collect()
     }
     pub(super) fn record_parser_stylesheets(&mut self, previous: &[(NodeId, u64)]) {

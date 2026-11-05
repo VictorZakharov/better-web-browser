@@ -32,6 +32,7 @@ pub(super) struct ResourceElements(RefCell<Option<Collected>>);
 struct Collected {
     state: State,
     elements: Rc<[ResourceElement]>,
+    inline_svgs: Rc<[Weak<Node>]>,
 }
 
 /// Everything a resource event key depends on.
@@ -57,6 +58,18 @@ impl Page {
     /// The document's links, images, inputs, style, audio and video elements in shadow-including
     /// tree order.
     pub(crate) fn resource_elements(&self) -> Rc<[ResourceElement]> {
+        self.collect_resource_elements(|collected| Rc::clone(&collected.elements))
+    }
+
+    /// The document's `svg` elements in shadow-including tree order.
+    pub(super) fn inline_svg_elements(&self) -> Vec<NodeRef> {
+        self.collect_resource_elements(|collected| Rc::clone(&collected.inline_svgs))
+            .iter()
+            .filter_map(Weak::upgrade)
+            .collect()
+    }
+
+    fn collect_resource_elements<T>(&self, read: impl FnOnce(&Collected) -> T) -> T {
         let state = State {
             document: self.dom.document.id(),
             version: self.dom.document.document_mutation_version(),
@@ -66,20 +79,25 @@ impl Page {
         };
         let mut collected = self.resource_elements.0.borrow_mut();
         if let Some(collected) = collected.as_ref().filter(|found| found.state == state) {
-            return Rc::clone(&collected.elements);
+            return read(collected);
         }
-        let elements = Node::shadow_including_descendants(&self.dom.document)
-            .filter(names_resources)
-            .map(|node| ResourceElement {
-                key: self.resource_event_key(&node),
-                node: Rc::downgrade(&node),
-            })
-            .collect::<Rc<[_]>>();
-        *collected = Some(Collected {
+        let mut elements = Vec::new();
+        let mut inline_svgs = Vec::new();
+        for node in Node::shadow_including_descendants(&self.dom.document) {
+            if node.tag_name() == Some("svg") {
+                inline_svgs.push(Rc::downgrade(&node));
+            } else if names_resources(&node) {
+                elements.push(ResourceElement {
+                    key: self.resource_event_key(&node),
+                    node: Rc::downgrade(&node),
+                });
+            }
+        }
+        read(collected.insert(Collected {
             state,
-            elements: Rc::clone(&elements),
-        });
-        elements
+            elements: elements.into(),
+            inline_svgs: inline_svgs.into(),
+        }))
     }
 
     /// `resources::discover_link_and_image_resources` for this page's document, read from the

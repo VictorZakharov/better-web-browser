@@ -12,6 +12,9 @@ pub(super) fn append_top_layer<M: TextMeasurer>(
     measurer: &mut M,
     emit_paint: bool,
 ) {
+    if !Node::has_opened_popover(&page.dom.document) {
+        return;
+    }
     let mut popovers = Node::shadow_including_descendants(&page.dom.document)
         .filter(|node| node.is_popover_open() && node.attr("popover").is_some())
         .filter(|node| {

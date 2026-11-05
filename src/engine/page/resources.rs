@@ -7,8 +7,7 @@ use crate::navigation::{resolve_resource_url, resolve_url};
 use std::collections::HashSet;
 
 pub(super) fn document_base_url(dom: &Dom, source_url: &str) -> String {
-    dom.elements_named("base")
-        .find_map(|node| node.attr("href"))
+    Node::first_base_href(&dom.document)
         .and_then(|href| resolve_url(source_url, &href))
         .unwrap_or_else(|| source_url.to_string())
 }
