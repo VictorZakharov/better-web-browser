@@ -238,6 +238,7 @@ impl DocumentRuntime {
         self.rendering.dirty = false;
         self.rendering.frame_delayed = false;
         self.rendering.script_frame_delayed = false;
+        self.rendering.frame_requested = false;
         self.rendering.last_frame = Some((
             Instant::now(),
             Duration::from_micros(load.style_micros + load.layout_micros),

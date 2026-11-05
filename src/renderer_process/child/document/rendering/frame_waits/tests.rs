@@ -94,9 +94,13 @@ fn script_frames_wait_for_the_last_frame_cost_only_while_loading() {
         // A loaded page keeps its animation rate.
         assert_eq!(remaining(start + ms(10), frame, Loaded, arrivals), None);
     }
-    // Cheap frames still wait for a display refresh.
+    // Frames cheaper than 50 ms never wait.
     assert_eq!(
-        remaining(start + ms(10), (start, ms(1)), Loading, PARSED),
-        Some(ms(6))
+        remaining(start + ms(1), (start, ms(49)), Loading, PARSED),
+        None
+    );
+    assert_eq!(
+        remaining(start + ms(1), (start, ms(50)), Loading, PARSED),
+        Some(ms(49))
     );
 }

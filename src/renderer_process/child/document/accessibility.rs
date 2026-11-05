@@ -37,6 +37,7 @@ impl DocumentRuntime {
         self.accessibility.enabled = enabled;
         if publish {
             self.rendering.dirty = true;
+            self.rendering.frame_requested = true;
         }
         publish
     }

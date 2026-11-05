@@ -22,6 +22,8 @@ pub(super) struct RenderBlocking {
     pub(super) frame_delayed: bool,
     /// The skipped frame has script work to show, not only arrived resources.
     pub(super) script_frame_delayed: bool,
+    /// The browser asked for the next frame now, as for an assistive technology's first tree.
+    pub(super) frame_requested: bool,
     /// When the parser last received streamed document input, while more is expected.
     pub(super) parser_input: Option<Instant>,
 }
@@ -36,6 +38,7 @@ impl Default for RenderBlocking {
             last_frame: None,
             frame_delayed: false,
             script_frame_delayed: false,
+            frame_requested: false,
             parser_input: None,
         }
     }
@@ -194,7 +197,7 @@ impl DocumentRuntime {
         self.background_frame_remaining(arrivals).is_some()
     }
     fn background_frame_remaining(&self, arrivals: FrameArrivals) -> Option<Duration> {
-        if self.rendering_is_blocked() {
+        if self.rendering_is_blocked() || self.rendering.frame_requested {
             return None;
         }
         let streaming = self

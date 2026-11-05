@@ -13,8 +13,9 @@
 // a document's bytes are cheap to parse and the page's scripts wait for them. Until the load
 // event, script tasks follow each other closely, and laying out after every one of them
 // (jQuery's ready chain alone is dozens of timers) takes far longer than the tasks do, so a frame
-// after script work waits for as long as the last frame took. Once loaded, script-driven frames
-// never wait, so animations keep their rate. Input and viewport changes present through their
+// after script work waits for as long as the last frame took when that was at least
+// `HEAVY_FRAME`; cheaper frames never wait. Once loaded, script-driven frames never wait, so
+// animations keep their rate. Input and viewport changes present through their
 // own paths and never wait.
 // https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
 use std::time::{Duration, Instant};
@@ -24,7 +25,7 @@ const MIN_FRAME_SPACING: Duration = Duration::from_millis(50);
 const PARSER_STALL: Duration = Duration::from_millis(250);
 const MAX_PARSER_FRAME_DELAY: Duration = Duration::from_secs(1);
 const RESOURCE_INPUT_QUIET: Duration = Duration::from_millis(50);
-const MIN_LOADING_FRAME_SPACING: Duration = Duration::from_millis(16);
+const HEAVY_FRAME: Duration = Duration::from_millis(50);
 
 /// What a rendering checkpoint would present.
 #[derive(Clone, Copy)]
@@ -70,7 +71,8 @@ pub(super) fn remaining(
             Some(remaining(MAX_PARSER_FRAME_DELAY, presented)?.min(remaining(PARSER_STALL, input)?))
         }
         _ if arrivals.resources && arrivals.only => spacing,
-        LoadPhase::Loading => remaining(cost.max(MIN_LOADING_FRAME_SPACING), presented),
+        LoadPhase::Loading if cost >= HEAVY_FRAME => remaining(cost, presented),
+        LoadPhase::Loading => None,
         LoadPhase::Loaded => None,
     }
 }
