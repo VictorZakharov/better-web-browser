@@ -3,8 +3,8 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `80b0c82fe93cad570eca697e89bba7a09a0bb50a58bbe88de25e1338b5242ce5`
-- Third-party packages: 309
+- Cargo.lock SHA-256: `61a7b1a940a043e55122e967336316bb497bdbe07a2e1008e9a003c83d43bfd1`
+- Third-party packages: 311
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
@@ -145,6 +145,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `libc` | 0.2.189 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/libc) |
 | `libloading` | 0.8.9 | ISC | [upstream](https://github.com/nagisa/rust_libloading/) |
 | `libm` | 0.2.16 | MIT | [upstream](https://github.com/rust-lang/compiler-builtins) |
+| `libmimalloc-sys` | 0.1.49 | MIT | [upstream](https://github.com/purpleprotocol/mimalloc_rust/tree/master/libmimalloc-sys) |
 | `libz-sys` | 1.1.31 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/libz-sys) |
 | `linebender_resource_handle` | 0.1.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/raw_resource_handle) |
 | `litemap` | 0.8.2 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
@@ -154,6 +155,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `md-5` | 0.10.6 | MIT OR Apache-2.0 | [upstream](https://github.com/RustCrypto/hashes) |
 | `memchr` | 2.8.3 | Unlicense OR MIT | [upstream](https://github.com/BurntSushi/memchr) |
 | `memmap2` | 0.9.11 | MIT OR Apache-2.0 | [upstream](https://github.com/RazrFalcon/memmap2-rs) |
+| `mimalloc` | 0.1.52 | MIT | [upstream](https://github.com/purpleprotocol/mimalloc_rust) |
 | `minimal-lexical` | 0.2.1 | MIT/Apache-2.0 | [upstream](https://github.com/Alexhuszagh/minimal-lexical) |
 | `miniz_oxide` | 0.8.9 | MIT OR Zlib OR Apache-2.0 | [upstream](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide) |
 | `moxcms` | 0.8.1 | BSD-3-Clause OR Apache-2.0 | [upstream](https://github.com/awxkee/moxcms.git) |

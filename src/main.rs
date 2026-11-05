@@ -1,5 +1,11 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+// Page layout, style and parsing allocate constantly, and the Windows heap took about 10% of the
+// renderer's busy time on a large article. mimalloc cuts its CPU by about 16% for about 25% more
+// memory. Its `secure` mode gives that whole gain back, so it stays off.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[cfg(target_os = "windows")]
 mod windows_app;
 
