@@ -3,6 +3,7 @@ use std::fmt;
 use url::{Host, Url, form_urlencoded};
 
 pub mod request;
+mod resolved_urls;
 mod web_url;
 pub use web_url::{
     can_rewrite_history_url, parse_web_url, resolve_web_url, set_web_url_component, web_url_parts,
@@ -153,16 +154,18 @@ pub fn resolve_url(base: &str, reference: &str) -> Option<String> {
     {
         return None;
     }
-    let base = Url::parse(base).ok()?;
-    let resolved = base.join(reference).ok()?;
-    if !matches!(resolved.scheme(), "http" | "https")
-        || !resolved.username().is_empty()
-        || resolved.password().is_some()
-    {
-        return None;
-    }
-    let serialized = resolved.to_string();
-    (serialized.len() <= MAX_URL_BYTES).then_some(serialized)
+    resolved_urls::get_or_resolve(base, reference, || {
+        let base = Url::parse(base).ok()?;
+        let resolved = base.join(reference).ok()?;
+        if !matches!(resolved.scheme(), "http" | "https")
+            || !resolved.username().is_empty()
+            || resolved.password().is_some()
+        {
+            return None;
+        }
+        let serialized = resolved.to_string();
+        (serialized.len() <= MAX_URL_BYTES).then_some(serialized)
+    })
 }
 
 /// Resolves an HTML hyperlink without granting its scheme network-fetch rights.

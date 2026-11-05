@@ -49,7 +49,7 @@ impl std::hash::Hash for ReadNode {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::engine::layout) enum LayoutRead {
     ImageUrl(ReadNode, Option<Rc<str>>),
     DecodedSize(Rc<str>, Option<(u32, u32)>),
@@ -57,6 +57,20 @@ pub(in crate::engine::layout) enum LayoutRead {
     ScrollOffset(ReadNode, (u32, u32)),
     InheritedLink(ReadNode, Option<(Rc<str>, NodeId)>),
     Backdrop(ReadNode, (u8, u8, u8, u8)),
+}
+
+/// Reads of one node or URL in one pass almost always agree, so its value is left out of the hash.
+impl std::hash::Hash for LayoutRead {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::ImageUrl(node, _)
+            | Self::ScrollOffset(node, _)
+            | Self::InheritedLink(node, _)
+            | Self::Backdrop(node, _) => node.hash(state),
+            Self::DecodedSize(url, _) | Self::LayoutDimensions(url, _) => url.hash(state),
+        }
+    }
 }
 
 impl LayoutRead {
