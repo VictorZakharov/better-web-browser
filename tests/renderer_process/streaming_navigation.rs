@@ -321,6 +321,7 @@ fn a_resize_while_a_parsing_frame_waits_styles_the_parsed_content() {
             document,
             PresentedViewport {
                 width: 640.0,
+                overflow_width: 640.0,
                 style_width: 640.0,
                 ..document_start(document, 0).viewport
             },

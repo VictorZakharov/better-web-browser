@@ -125,6 +125,7 @@ impl DocumentRuntime {
     }
 
     pub(super) fn sync_script_layout_page(&mut self) {
+        self.guess_viewport_overflow();
         self.script_layout_viewport.set(self.viewport);
         let mut snapshot = self.script_layout_page.borrow_mut();
         snapshot.synchronize_layout_snapshot(&self.page);
@@ -305,6 +306,9 @@ impl DocumentRuntime {
             );
         }
         drop(text);
+        if self.withdraw_refuted_overflow_guess() {
+            return self.rebuild_layout_for_invalidation(None);
+        }
         self.page.prepare_css_images(&mut self.layout);
         self.page.prepare_inline_svg_images(&self.layout);
         self.compose_embedded_frames();

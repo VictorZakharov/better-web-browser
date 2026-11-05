@@ -88,6 +88,7 @@ fn html_css_and_javascript_produce_a_real_renderer_presentation() {
                 scroll_restoration: ScrollRestorationMode::Auto,
                 viewport: PresentedViewport {
                     width: 640.0,
+                    overflow_width: 640.0,
                     height: 480.0,
                     style_width: 640.0,
                     dpi: 96,

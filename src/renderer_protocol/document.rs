@@ -24,6 +24,8 @@ impl DocumentId {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PresentedViewport {
     pub width: f32,
+    /// `width` once a vertical scrollbar shows: lower only while none is showing yet.
+    pub overflow_width: f32,
     pub height: f32,
     pub style_width: f32,
     pub dpi: u32,
@@ -65,10 +67,16 @@ impl ScrollRestorationMode {
 
 impl PresentedViewport {
     pub fn validate(self) -> Result<Self, ProtocolError> {
-        let dimensions = [self.width, self.height, self.style_width];
+        let dimensions = [
+            self.width,
+            self.overflow_width,
+            self.height,
+            self.style_width,
+        ];
         if dimensions
             .iter()
             .any(|value| !value.is_finite() || !(1.0..=32_768.0).contains(value))
+            || self.overflow_width > self.width
             || !(48..=768).contains(&self.dpi)
         {
             return Err(ProtocolError::InvalidPayload("viewport"));

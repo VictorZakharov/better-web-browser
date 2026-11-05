@@ -102,6 +102,7 @@ impl DocumentRuntime {
             reader,
             script_runtime: None,
             viewport: start.viewport,
+            overflow_guess: Default::default(),
             text,
             script_layout_page,
             script_layout_viewport,

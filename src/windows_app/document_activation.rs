@@ -132,8 +132,18 @@ impl BrowserState {
         GetClientRect(self.window, &mut client);
         let scale = self.page_scale();
         let width = client.right.max(1) as f32 / scale;
+        const SM_CXVSCROLL: i32 = 2;
+        let scrollbar_absent = !self.fullscreen.is_active()
+            && GetWindowLongPtrW(self.window, GWL_STYLE) as u32 & WS_VSCROLL == 0;
+        let overflow_width = if scrollbar_absent {
+            let scrollbar = GetSystemMetricsForDpi(SM_CXVSCROLL, self.dpi);
+            (client.right - scrollbar).max(1) as f32 / scale
+        } else {
+            width
+        };
         PresentedViewport {
             width,
+            overflow_width: overflow_width.min(width),
             height: self.viewport_height().max(1) as f32 / scale,
             style_width: if self.media_viewport_width > 0.0 {
                 self.media_viewport_width

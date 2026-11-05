@@ -74,6 +74,7 @@ fn monitor_cadence_update_retimes_frames_without_resizing_or_repainting() {
             initial.document,
             PresentedViewport {
                 width: 800.0,
+                overflow_width: 800.0,
                 height: 600.0,
                 style_width: 800.0,
                 dpi: 96,
@@ -167,6 +168,7 @@ fn layout_only_viewport_change_keeps_styles_but_applies_resize_handlers() {
                 initial.document,
                 PresentedViewport {
                     width,
+                    overflow_width: width,
                     height: 600.0,
                     style_width,
                     dpi: 96,
