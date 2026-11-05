@@ -41,7 +41,11 @@ pub(super) fn collect(
                 let matches = nodes
                     .into_iter()
                     .take(MAX_MATCHES_PER_SELECTOR)
-                    .map(|node| node_details(page, layout, styles.get(&node), &node))
+                    .filter_map(|node| {
+                        // The document may have changed since `styles` were computed.
+                        let style = styles.style_if_computed(&node)?;
+                        Some(node_details(page, layout, style, &node))
+                    })
                     .collect::<Vec<_>>();
                 SelectorDiagnostics {
                     selector: selector.clone(),

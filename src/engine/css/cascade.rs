@@ -310,11 +310,17 @@ impl StyleSet {
     }
 
     pub fn get(&self, node: &NodeRef) -> &ComputedStyle {
+        self.style_if_computed(node)
+            .expect("style should exist for every DOM node")
+    }
+
+    /// `node`'s style in this set, for a caller walking a document that may have changed since
+    /// the set was computed: a node inserted later has none yet.
+    pub(crate) fn style_if_computed(&self, node: &NodeRef) -> Option<&ComputedStyle> {
         self.styles
             .get(&node_id(node))
             .map(Arc::as_ref)
             .or_else(|| self.generated_styles.get(&node_id(node)).map(Arc::as_ref))
-            .expect("style should exist for every DOM node")
     }
 
     /// Uses the engine selector parser for opt-in composed-page inspection. This deliberately
