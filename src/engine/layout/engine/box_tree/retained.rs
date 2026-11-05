@@ -24,15 +24,15 @@ pub(crate) struct RetainedBoxes {
     pub(super) root: Option<NodeId>,
     /// The last update applied zoom.
     pub(super) zoomed: bool,
-    pub(super) children: HashMap<NodeId, Vec<NodeRef>>,
-    pub(super) anonymous: HashMap<NodeId, Wrapper>,
-    pub(super) nodes: HashMap<NodeId, NodeRef>,
+    pub(super) children: crate::engine::dom::node::NodeMap<NodeId, Vec<NodeRef>>,
+    pub(super) anonymous: crate::engine::dom::node::NodeMap<NodeId, Wrapper>,
+    pub(super) nodes: crate::engine::dom::node::NodeMap<NodeId, NodeRef>,
     /// Box-tree parents that differ from the composed parent: anonymous boxes and their children.
-    pub(super) parents: HashMap<NodeId, NodeRef>,
+    pub(super) parents: crate::engine::dom::node::NodeMap<NodeId, NodeRef>,
     /// The box whose children list holds each node, which alone may remove it.
-    owners: HashMap<NodeId, NodeId>,
+    owners: crate::engine::dom::node::NodeMap<NodeId, NodeId>,
     /// What each node's children were built from; see the module comment.
-    inputs: HashMap<NodeId, (u64, u64)>,
+    inputs: crate::engine::dom::node::NodeMap<NodeId, (u64, u64)>,
 }
 
 pub(super) struct Wrapper {

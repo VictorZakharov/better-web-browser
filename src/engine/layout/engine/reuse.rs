@@ -23,7 +23,6 @@ use super::block_measure::MeasureKey;
 pub(crate) use super::box_tree::RetainedBoxes;
 use super::*;
 use std::cell::RefCell;
-use std::collections::HashSet;
 use std::rc::{Rc, Weak};
 
 /// Everything outside the DOM, styles and recorded reads that a retained result depends on.
@@ -60,17 +59,19 @@ pub(in crate::engine::layout) struct Inputs {
 #[derive(Debug, Default)]
 pub(crate) struct LayoutReuse {
     environment: Option<ReuseEnvironment>,
-    pub(super) probes: HashMap<MeasureKey, probe_cache::ProbeEntry>,
+    pub(super) probes: crate::engine::dom::node::NodeMap<MeasureKey, probe_cache::ProbeEntry>,
     pub(super) widths: HashMap<width_cache::WidthKey, width_cache::WidthEntry>,
-    pub(super) subtrees: HashMap<subtree_replay::SubtreeKey, subtree_replay::SubtreeEntry>,
+    pub(super) subtrees:
+        crate::engine::dom::node::NodeMap<subtree_replay::SubtreeKey, subtree_replay::SubtreeEntry>,
     /// Scrollable-overflow extents of replayed subtrees; see `scrollable_overflow`.
     pub(in crate::engine::layout) overflow: HashMap<NodeId, OverflowExtent>,
     /// Measuring layouts of this pass; see `measured`.
-    pub(super) measured: HashMap<subtree_replay::SubtreeKey, measured::Measured>,
-    pub(super) used: HashSet<NodeId>,
+    pub(super) measured:
+        crate::engine::dom::node::NodeMap<subtree_replay::SubtreeKey, measured::Measured>,
+    pub(super) used: crate::engine::dom::node::NodeSet<NodeId>,
     /// When and from what each node was last laid out as a subtree root; see `subtree_replay`.
     /// Unlike results, this survives an environment change.
-    pub(super) sighted: HashMap<NodeId, subtree_replay::Sighting>,
+    pub(super) sighted: crate::engine::dom::node::NodeMap<NodeId, subtree_replay::Sighting>,
     pub(super) pass: u64,
     /// Reads already confirmed this pass; see `LayoutReads::hold`.
     pub(super) held: layout_reads::HeldReads,

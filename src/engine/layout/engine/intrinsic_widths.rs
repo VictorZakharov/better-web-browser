@@ -159,7 +159,7 @@ mod tests {
             positioned_flow_scopes: Vec::new(),
             floats: Default::default(),
             reads: Default::default(),
-            replayed_roots: HashMap::new(),
+            replayed_roots: Default::default(),
             absolute_scope: Default::default(),
             subgrid_rows: HashMap::new(),
         };

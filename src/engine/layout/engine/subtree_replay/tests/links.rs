@@ -38,8 +38,9 @@ fn links_from_anchors_inside_a_subtree_stay_reads_of_their_content() {
     );
     page.refresh_resources_for_viewport(WIDTH, HEIGHT);
     settle(&page);
-    // The paragraphs under the anchor read its link; the one outside it shares the root's read.
-    assert_eq!(inherited_link_reads(&page, "anchored"), [3]);
+    // The paragraphs under the anchor share a read of their retained div, which sits below the
+    // anchor and so still reads its link; the one outside it shares the root's read.
+    assert_eq!(inherited_link_reads(&page, "anchored"), [2]);
     element(&page, "anchor").set_attr("href", "changed.html");
     page.refresh_resources_for_viewport(WIDTH, HEIGHT);
     let warm = assert_warm_matches_cold(&page);
