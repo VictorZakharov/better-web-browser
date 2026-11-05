@@ -212,6 +212,10 @@ impl BrowserState {
             report,
             "Frame intervals (ms, oldest to newest): {frame_intervals}"
         );
+        if let Some(load) = tab.incidents.load_report() {
+            report.push_str("\nLatest navigation (always recorded)\n");
+            report.push_str(&load);
+        }
         report.push_str("\nIncident history\n");
         report.push_str(&tab.incidents.report());
         crate::windows_app::clipboard::native::write_unicode_text(self.window, &report)

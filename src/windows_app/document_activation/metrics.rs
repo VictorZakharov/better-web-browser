@@ -23,6 +23,8 @@ impl BrowserState {
         first: bool,
     ) {
         self.incidents.presentations = self.incidents.presentations.saturating_add(1);
+        self.incidents
+            .load_presentation(presentation.revision, presentation.layout.items.len());
         self.incidents.record(
             "present",
             format!(

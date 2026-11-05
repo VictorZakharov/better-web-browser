@@ -70,6 +70,7 @@ impl BrowserState {
                     return;
                 }
                 self.incidents.record("navigation", completed);
+                self.incidents.load_headers();
                 self.submit_pending_renderer_document();
             }
             Ok(NavigationResult::Complete {
@@ -88,6 +89,7 @@ impl BrowserState {
                     benchmark.network_time = network_time;
                     benchmark.bytes = bytes;
                 }
+                self.incidents.load_network_complete();
                 self.incidents.record(
                     "navigation",
                     format!(
