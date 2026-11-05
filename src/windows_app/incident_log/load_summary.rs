@@ -6,6 +6,9 @@
 use std::fmt::Write;
 use std::time::{Duration, Instant};
 
+/// Enough presentations to cover a large page's load without growing for a long-lived one.
+const MAX_TIMELINE: usize = 48;
+
 pub(in crate::windows_app) struct LoadSummary {
     url: String,
     started: Instant,
@@ -15,6 +18,8 @@ pub(in crate::windows_app) struct LoadSummary {
     last_presentation: Option<(Duration, u64)>,
     largest_presentation: Option<(Duration, usize)>,
     presentations: u64,
+    /// The first presentations' times, revisions and display-item counts.
+    timeline: Vec<(Duration, u64, usize)>,
 }
 
 impl LoadSummary {
@@ -28,6 +33,7 @@ impl LoadSummary {
             last_presentation: None,
             largest_presentation: None,
             presentations: 0,
+            timeline: Vec::new(),
         }
     }
 
@@ -46,6 +52,9 @@ impl LoadSummary {
         self.presentations = self.presentations.saturating_add(1);
         self.first_presentation.get_or_insert(at);
         self.last_presentation = Some((at, revision));
+        if self.timeline.len() < MAX_TIMELINE {
+            self.timeline.push((at, revision, items));
+        }
         if self
             .largest_presentation
             .is_none_or(|(_, largest)| items > largest)
@@ -88,6 +97,13 @@ impl LoadSummary {
             )
         );
         let _ = writeln!(report, "Presentations: {}", self.presentations);
+        for (moment, revision, items) in &self.timeline {
+            let _ = writeln!(
+                report,
+                "  {}: revision {revision}, {items} items",
+                ms(*moment)
+            );
+        }
         report
     }
 }
@@ -116,6 +132,7 @@ mod tests {
             "Last presentation: 1500.0 ms (revision 4)",
             "Largest presentation: 2400 items at 900.0 ms",
             "Presentations: 3",
+            "  900.0 ms: revision 3, 2400 items",
         ] {
             assert!(report.contains(line), "{line:?} missing from {report}");
         }
