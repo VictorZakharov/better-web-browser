@@ -187,6 +187,7 @@ impl DocumentRuntime {
                 self.background_frame_remaining(FrameArrivals {
                     resources: self.resource_render_pending,
                     only: !self.rendering.script_frame_delayed,
+                    tasks_ready: false,
                 })
                 .unwrap_or_default(),
             )

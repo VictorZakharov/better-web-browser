@@ -14,7 +14,8 @@
 // event, script tasks follow each other closely, and laying out after every one of them
 // (jQuery's ready chain alone is dozens of timers) takes far longer than the tasks do, so a frame
 // after script work waits for as long as the last frame took when that was at least
-// `HEAVY_FRAME`; cheaper frames never wait. Once loaded, script-driven frames never wait, so
+// `HEAVY_FRAME`, or while further tasks are already due, for up to `MAX_PARSER_FRAME_DELAY`
+// after the last frame; cheaper frames never wait. Once loaded, script-driven frames never wait, so
 // animations keep their rate. Input and viewport changes present through their
 // own paths and never wait.
 // https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
@@ -34,6 +35,8 @@ pub(in crate::renderer_process::child::document) struct FrameArrivals {
     pub(in crate::renderer_process::child::document) resources: bool,
     /// Nothing else needs a frame: no script, media, scroll or observer work.
     pub(in crate::renderer_process::child::document) only: bool,
+    /// Script tasks are due now, so the page is still changing.
+    pub(in crate::renderer_process::child::document) tasks_ready: bool,
 }
 
 /// How far the document's load has come.
@@ -71,6 +74,10 @@ pub(super) fn remaining(
             Some(remaining(MAX_PARSER_FRAME_DELAY, presented)?.min(remaining(PARSER_STALL, input)?))
         }
         _ if arrivals.resources && arrivals.only => spacing,
+        // A page that is still running its tasks finishes them first, for up to a second.
+        LoadPhase::Loading if cost >= HEAVY_FRAME && arrivals.tasks_ready => {
+            remaining(MAX_PARSER_FRAME_DELAY, presented)
+        }
         LoadPhase::Loading if cost >= HEAVY_FRAME => remaining(cost, presented),
         LoadPhase::Loading => None,
         LoadPhase::Loaded => None,

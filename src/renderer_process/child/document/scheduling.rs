@@ -285,9 +285,15 @@ impl DocumentRuntime {
             && !media_changed
             && !scroll_event
             && !self.has_pending_geometry_observers();
+        // Nested zero-delay timers are clamped to 4 ms, so count what falls due within a frame.
+        let tasks_ready = self
+            .script_runtime
+            .as_ref()
+            .is_some_and(|runtime| runtime.has_task_due_within(Duration::from_millis(16)));
         let arrivals = super::rendering::FrameArrivals {
             resources: resources_changed,
             only: resources_only,
+            tasks_ready,
         };
         if wants_frame && self.background_frame_waits(arrivals) {
             self.start_presentational_preloads(connection)?;

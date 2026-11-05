@@ -276,3 +276,21 @@ fn idle_timeout_is_decided_when_the_callback_runs_not_when_registered() {
         Some("true:0")
     );
 }
+
+#[test]
+fn only_timers_due_within_the_horizon_count_as_due_tasks() {
+    let (_dom, mut runtime) =
+        start("requestIdleCallback(() => {}); setTimeout(() => setTimeout(() => {}, 100), 4);");
+    tick(&mut runtime, 0);
+    let frame = Duration::from_millis(16);
+    assert!(
+        runtime.has_task_due_within(frame),
+        "a clamped timer is due within a frame"
+    );
+    assert!(!runtime.has_task_due_within(Duration::ZERO));
+    tick(&mut runtime, 4);
+    // Only the idle callback and a timer 100 ms away remain.
+    assert!(!runtime.has_task_due_within(frame));
+    tick(&mut runtime, 90);
+    assert!(runtime.has_task_due_within(frame));
+}

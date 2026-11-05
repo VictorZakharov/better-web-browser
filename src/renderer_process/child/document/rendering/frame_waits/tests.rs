@@ -4,14 +4,17 @@ use LoadPhase::{Loaded, Loading, Streaming};
 const PARSED: FrameArrivals = FrameArrivals {
     resources: false,
     only: false,
+    tasks_ready: false,
 };
 const IMAGES: FrameArrivals = FrameArrivals {
     resources: true,
     only: true,
+    tasks_ready: false,
 };
 const IMAGES_AND_SCRIPT: FrameArrivals = FrameArrivals {
     resources: true,
     only: false,
+    tasks_ready: false,
 };
 
 fn ms(value: u64) -> Duration {
@@ -103,4 +106,25 @@ fn script_frames_wait_for_the_last_frame_cost_only_while_loading() {
         remaining(start + ms(1), (start, ms(50)), Loading, PARSED),
         Some(ms(49))
     );
+}
+
+#[test]
+fn due_tasks_hold_an_expensive_frame_for_up_to_a_second_while_loading() {
+    let start = Instant::now();
+    let frame = (start, ms(100));
+    let busy = FrameArrivals {
+        tasks_ready: true,
+        ..PARSED
+    };
+    assert_eq!(
+        remaining(start + ms(400), frame, Loading, busy),
+        Some(ms(600))
+    );
+    assert_eq!(remaining(start + ms(1000), frame, Loading, busy), None);
+    // Cheap frames and loaded pages do not wait for tasks.
+    assert_eq!(
+        remaining(start + ms(1), (start, ms(10)), Loading, busy),
+        None
+    );
+    assert_eq!(remaining(start + ms(400), frame, Loaded, busy), None);
 }

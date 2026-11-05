@@ -37,6 +37,19 @@ impl ScriptRuntime {
             .min()
     }
 
+    /// Whether a document task is ready or a timer is due within `horizon`. Idle callbacks and
+    /// requested renders do not count: they wait for the page to be idle or for its next frame.
+    pub fn has_task_due_within(&self, horizon: Duration) -> bool {
+        if self.has_ready_document_task() {
+            return true;
+        }
+        let mut host = self.host.borrow_mut();
+        let now = host.timers.now();
+        host.timers
+            .next_due_time()
+            .is_some_and(|due| due <= now.saturating_add(horizon))
+    }
+
     /// Advances the realm clock without selecting a timer task for execution.
     pub fn elapse_time(&mut self, advance: Duration) {
         self.elapse_child_time(advance);
