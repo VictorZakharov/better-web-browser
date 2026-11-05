@@ -29,7 +29,7 @@ pub(super) const MAX_QUEUED_DATABASE_RESPONSE_BYTES: usize =
 pub struct FetchResponseSink {
     document: DocumentId,
     responses: responses::ResponseSender,
-    stylesheets: mpsc::SyncSender<FetchStreamEvent>,
+    priority: mpsc::SyncSender<FetchStreamEvent>,
     wake: super::wake::BrokerWake,
     flow: Arc<super::flow::FetchFlow>,
 }
@@ -224,14 +224,14 @@ impl FetchResponseSink {
     pub(super) fn new(
         document: DocumentId,
         responses: responses::ResponseSender,
-        stylesheets: mpsc::SyncSender<FetchStreamEvent>,
+        priority: mpsc::SyncSender<FetchStreamEvent>,
         wake: super::wake::BrokerWake,
         flow: Arc<super::flow::FetchFlow>,
     ) -> Self {
         Self {
             document,
             responses,
-            stylesheets,
+            priority,
             wake,
             flow,
         }
@@ -284,7 +284,7 @@ impl FetchResponseSink {
         if chunk.bytes.is_empty() || chunk.bytes.len() > MAX_FETCH_STREAM_CHUNK_BYTES {
             return Err("Fetch response chunk exceeded its contract".into());
         }
-        if !self.flow.is_stylesheet(self.document, chunk.transfer_id)
+        if !self.flow.is_prioritized(self.document, chunk.transfer_id)
             && !self.responses.has_room(chunk.bytes.len())
         {
             return Ok(Some(chunk));
@@ -311,19 +311,19 @@ impl FetchResponseSink {
         })
     }
 
-    /// Stylesheet responses use their own bounded lane, which the broker drains first: the
-    /// network delivers responses in parallel, but a render-blocking stylesheet waiting for a
-    /// slot behind dozens of image responses keeps the page blank while the renderer handles
-    /// them. Browsers likewise load stylesheets at the highest priority. Other responses use the
-    /// byte-bounded lane in `responses`. A response always uses one lane, so its own events stay
-    /// in order.
+    /// Stylesheet and script responses use their own bounded lane, which the broker drains
+    /// first: the network delivers responses in parallel, but the renderer decodes each image it
+    /// receives, so a render-blocking stylesheet or a script the page waits for would queue behind
+    /// dozens of images. Browsers likewise load these at a higher priority than images. Other
+    /// responses use the byte-bounded lane in `responses`. A response always uses one lane, so
+    /// its own events stay in order.
     fn send(&self, event: FetchStreamEvent) -> Result<(), String> {
-        let stylesheet = event
+        let prioritized = event
             .request_id()
-            .is_some_and(|id| self.flow.is_stylesheet(self.document, id));
+            .is_some_and(|id| self.flow.is_prioritized(self.document, id));
         self.wake.notify();
-        let result = if stylesheet {
-            self.stylesheets
+        let result = if prioritized {
+            self.priority
                 .send(event)
                 .map_err(|_| "renderer Fetch stream is no longer available".to_string())
         } else {

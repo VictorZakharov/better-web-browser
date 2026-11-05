@@ -104,3 +104,12 @@ fn aggregate_credit_is_bounded_and_navigation_releases_all_producers() {
     thread.join().unwrap();
     assert_eq!(flow.state.lock().unwrap().in_flight, 0);
 }
+
+#[test]
+fn only_stylesheets_and_scripts_skip_the_response_queue() {
+    use super::uses_priority_lane;
+    assert!(uses_priority_lane(ResourceDestination::Style));
+    assert!(uses_priority_lane(ResourceDestination::Script));
+    assert!(!uses_priority_lane(ResourceDestination::Image));
+    assert!(!uses_priority_lane(ResourceDestination::Fetch));
+}

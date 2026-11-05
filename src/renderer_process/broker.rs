@@ -61,7 +61,7 @@ pub struct RendererSession {
     lifecycle: mpsc::Sender<worker::LifecycleCommand>,
     fetch_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
     fetch_responses: stream::responses::ResponseSender,
-    stylesheet_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
+    priority_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
     database_events: mpsc::SyncSender<crate::renderer_protocol::DatabaseEvent>,
     database_queued_bytes: Arc<std::sync::atomic::AtomicUsize>,
     database_overflow: Arc<std::sync::atomic::AtomicBool>,
@@ -192,8 +192,8 @@ impl RendererSession {
         let (fetch_stream_tx, fetch_stream_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS);
         let (fetch_responses_tx, fetch_responses_rx) = stream::responses::lane();
-        // Render-blocking stylesheets cannot wait for slots behind image and script responses.
-        let (stylesheet_stream_tx, stylesheet_stream_rx) =
+        // Stylesheet and script responses cannot wait for slots behind image responses.
+        let (priority_stream_tx, priority_stream_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS);
         // Required database replies cannot wait behind Fetch body chunks.
         let (database_events_tx, database_events_rx) =
@@ -262,7 +262,7 @@ impl RendererSession {
                     lifecycle: lifecycle_rx,
                     fetch_stream: fetch_stream_rx,
                     fetch_responses: fetch_responses_rx,
-                    stylesheet_stream: stylesheet_stream_rx,
+                    priority_stream: priority_stream_rx,
                     database_events: database_events_rx,
                     database_queued_bytes: worker_database_queued_bytes,
                     database_overflow: worker_database_overflow,
@@ -301,7 +301,7 @@ impl RendererSession {
             lifecycle: lifecycle_tx,
             fetch_stream: fetch_stream_tx,
             fetch_responses: fetch_responses_tx,
-            stylesheet_stream: stylesheet_stream_tx,
+            priority_stream: priority_stream_tx,
             database_events: database_events_tx,
             database_queued_bytes,
             database_overflow,

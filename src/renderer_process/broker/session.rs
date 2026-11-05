@@ -110,7 +110,7 @@ impl RendererSession {
         FetchResponseSink::new(
             document,
             self.fetch_responses.clone(),
-            self.stylesheet_stream.clone(),
+            self.priority_stream.clone(),
             self.wake.clone(),
             Arc::clone(&self.fetch_flow),
         )

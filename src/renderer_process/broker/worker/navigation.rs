@@ -60,8 +60,8 @@ impl Broker {
     /// chunk waits for the writer to drain, as stream messages do, and the two take turns: up
     /// to `FETCH_EVENTS_PER_DOCUMENT_CHUNK` stream messages go before each document chunk, so
     /// responses already on hand are not queued behind the rest of a long document, and a burst
-    /// of response bytes cannot stall parsing. Stylesheet responses do not use up the turn:
-    /// the first frame waits for them, and browsers load stylesheets at the highest priority.
+    /// of response bytes cannot stall parsing. Stylesheet and script responses do not use up
+    /// the turn: the first frame and the page's scripts wait for them.
     pub(super) fn process_streams(&mut self) {
         if self.fetch_turn > 0 {
             self.process_fetch_stream();
