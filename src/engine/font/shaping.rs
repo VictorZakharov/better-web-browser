@@ -6,4 +6,4 @@ mod presentation;
 mod shape;
 
 pub(crate) use catalog::{FontCatalog, FontInstanceKey, SelectedFont};
-pub(crate) use shape::{ShapeOptions, TextShaper};
+pub(crate) use shape::{ShapeOptions, ShapedGlyph, TextShaper};

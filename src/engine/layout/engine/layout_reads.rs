@@ -361,12 +361,23 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
                 lift(read).map_or(std::borrow::Cow::Borrowed(read), std::borrow::Cow::Owned)
             })
             .collect::<Vec<_>>();
-        let mut seen = HashSet::new();
-        let distinct = lifted
-            .iter()
-            .filter(|read| seen.insert(&***read))
-            .map(|read| read.as_ref().clone())
-            .collect::<Vec<_>>();
+        // Most frames read very little, so scanning beats building a set.
+        let distinct = if lifted.len() <= 8 {
+            let mut distinct: Vec<LayoutRead> = Vec::with_capacity(lifted.len());
+            for read in &lifted {
+                if !distinct.contains(read.as_ref()) {
+                    distinct.push(read.as_ref().clone());
+                }
+            }
+            distinct
+        } else {
+            let mut seen = HashSet::new();
+            lifted
+                .iter()
+                .filter(|read| seen.insert(&***read))
+                .map(|read| read.as_ref().clone())
+                .collect::<Vec<_>>()
+        };
         reads.compact(frame.reads.clone(), &distinct);
         // Layout does not mutate the document, so every read made in this pass holds now.
         LayoutReads(Some(Rc::new(ReadSet {

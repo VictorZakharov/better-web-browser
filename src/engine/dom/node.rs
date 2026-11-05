@@ -250,6 +250,9 @@ impl Node {
     }
 
     pub(super) fn new_in(identity: Rc<NodeIdAllocator>, data: NodeData) -> NodeRef {
+        if let NodeData::Element(element) = &data {
+            document_base::note_element_created(element);
+        }
         let id = identity.allocate();
         Rc::new(Self {
             id,
