@@ -15,11 +15,6 @@
         if (!nodeOrder.has(node)) nodeOrder.set(node, ++nextNodeOrder);
         return nodeOrder.get(node);
     };
-    const nodeAncestors = node => {
-        const nodes = [];
-        for (; node; node = node.parentNode) nodes.push(node);
-        return nodes;
-    };
     Node.prototype.compareDocumentPosition = function(other) {
         if (!isNode(other)) throw new TypeError('compareDocumentPosition requires a Node');
         if (this === other) return 0;
@@ -35,24 +30,26 @@
                     return documentPosition.IMPLEMENTATION_SPECIFIC | documentPosition.FOLLOWING;
             }
         }
-        if (!first || !second || first.getRootNode() !== second.getRootNode()) {
+        if (first && first === second) {
+            if (secondAttribute) return documentPosition.PRECEDING | documentPosition.CONTAINS;
+            if (firstAttribute) return documentPosition.FOLLOWING | documentPosition.CONTAINED_BY;
+        }
+        // One native call walks both ancestor chains: jQuery sorts selector results with this
+        // method, and per-step `parentNode` and `childNodes` calls made it thousands of calls.
+        // 0 means the nodes are in different trees.
+        const position = first && second ? host('treePosition', nodeId(first), nodeId(second)) : 0;
+        if (!position) {
             const direction = stableNodeOrder(other) < stableNodeOrder(this)
                 ? documentPosition.PRECEDING : documentPosition.FOLLOWING;
             return documentPosition.DISCONNECTED | documentPosition.IMPLEMENTATION_SPECIFIC | direction;
         }
-        if ((first !== second && first.contains(second) && !firstAttribute) ||
-            (first === second && secondAttribute))
-            return documentPosition.PRECEDING | documentPosition.CONTAINS;
-        if ((first !== second && second.contains(first) && !secondAttribute) ||
-            (first === second && firstAttribute))
-            return documentPosition.FOLLOWING | documentPosition.CONTAINED_BY;
-        const firstPath = nodeAncestors(first).reverse();
-        const secondPath = nodeAncestors(second).reverse();
-        let depth = 0;
-        while (depth < firstPath.length && firstPath[depth] === secondPath[depth]) depth++;
-        const siblings = Array.from(firstPath[depth - 1].childNodes);
-        return siblings.indexOf(firstPath[depth]) < siblings.indexOf(secondPath[depth])
-            ? documentPosition.PRECEDING : documentPosition.FOLLOWING;
+        // An attribute's element is not its ancestor: an element containing the other node
+        // through its attribute only precedes it (and the reverse only follows it).
+        if (position === (documentPosition.PRECEDING | documentPosition.CONTAINS) && firstAttribute)
+            return documentPosition.PRECEDING;
+        if (position === (documentPosition.FOLLOWING | documentPosition.CONTAINED_BY) && secondAttribute)
+            return documentPosition.FOLLOWING;
+        return position;
     };
     const nodeXmlNamespace = 'http://www.w3.org/XML/1998/namespace';
     const nodeXmlnsNamespace = 'http://www.w3.org/2000/xmlns/';

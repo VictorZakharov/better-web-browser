@@ -34,6 +34,27 @@ pub(super) fn dispatch(
                 .and_then(|node| node.parent());
             JsValue::from(parent.map(|node| state.id_for(&node)).unwrap_or_default())
         }
+        "isInclusiveAncestor" => {
+            let ancestor = state.node(argument_id(args, 1)).map(|node| node.id());
+            let mut current = state
+                .node(argument_id(args, 2))
+                .filter(|_| ancestor.is_some());
+            let mut found = false;
+            while let Some(node) = current {
+                if Some(node.id()) == ancestor {
+                    found = true;
+                    break;
+                }
+                current = node.parent();
+            }
+            JsValue::Boolean(found)
+        }
+        "treePosition" => JsValue::from(
+            state
+                .node(argument_id(args, 1))
+                .zip(state.node(argument_id(args, 2)))
+                .map_or(0, |(first, second)| tree_position(&first, &second)),
+        ),
         "firstChild" => {
             let child = state
                 .node(argument_id(args, 1))
@@ -152,4 +173,48 @@ pub(super) fn dispatch(
         _ => return Ok(None),
     };
     Ok(Some(value))
+}
+
+/// The `compareDocumentPosition` bits of `first` relative to `second` (DOM Standard steps 7-10)
+/// for two distinct nodes of one tree, or 0 when their roots differ. Walks the same parent
+/// chains as the script's `parentNode`; the caller handles attributes and disconnected order.
+/// https://dom.spec.whatwg.org/#dom-node-comparedocumentposition
+fn tree_position(first: &NodeRef, second: &NodeRef) -> u32 {
+    const PRECEDING: u32 = 2;
+    const FOLLOWING: u32 = 4;
+    const CONTAINS: u32 = 8;
+    const CONTAINED_BY: u32 = 16;
+    if Node::tree_root(first).id() != Node::tree_root(second).id() {
+        return 0;
+    }
+    let path = |node: &NodeRef| {
+        let mut nodes = vec![node.clone()];
+        while let Some(parent) = nodes.last().and_then(|node| node.parent()) {
+            nodes.push(parent);
+        }
+        nodes.reverse();
+        nodes
+    };
+    let (first_path, second_path) = (path(first), path(second));
+    let depth = first_path
+        .iter()
+        .zip(&second_path)
+        .take_while(|(left, right)| left.id() == right.id())
+        .count();
+    if depth == 0 {
+        return 0;
+    }
+    if depth == first_path.len() {
+        return PRECEDING | CONTAINS;
+    }
+    if depth == second_path.len() {
+        return FOLLOWING | CONTAINED_BY;
+    }
+    let children = first_path[depth - 1].children.borrow();
+    let index = |node: &NodeRef| children.iter().position(|child| child.id() == node.id());
+    if index(&first_path[depth]) < index(&second_path[depth]) {
+        PRECEDING
+    } else {
+        FOLLOWING
+    }
 }
