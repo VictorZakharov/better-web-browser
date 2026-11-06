@@ -10,14 +10,16 @@
 // recalculated alone, with their subtree following only when their own style changes.
 // A keyless subject (`.a > :not(.b)`) reached only through child combinators is bounded by its
 // depth below the element, so only the elements at that depth are restyled.
-// Sibling combinators, `:has()` and nested complex selectors keep the parent-subtree scope.
+// A use followed by a sibling combinator restyles the element's later siblings or its own
+// subtree (see `siblings`). `:has()` and nested complex selectors keep the parent-subtree scope.
 // An attribute selector on `class` (`[class*=x]`) can match differently after any token change,
 // so it counts as a use of every changed token at its position; inside a complex nested
 // selector it keeps the parent-subtree scope for every change.
 // An attribute name is indexed like a class token: `[data-state=open] h2` bounds a `data-state`
 // change to the element and its `h2` descendants, and a name no selector mentions restyles the
 // element alone, since only `attr()` and its own style can read it. Entering or leaving `:hover`
-// is indexed the same way under `invalidation::HOVER_STATE`. These are the descendant
+// is indexed the same way under `invalidation::HOVER_STATE`, and so is `hidden`, whose
+// presentational `display: none` is part of the element's own style. These are the descendant
 // invalidation sets of Blink's style invalidation.
 // https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/renderer/core/css/style-invalidation.md
 // https://drafts.csswg.org/selectors-4/#combinators
@@ -28,6 +30,7 @@ use crate::engine::css::selector_model::Combinator;
 use std::collections::{HashMap, HashSet};
 
 mod features;
+mod siblings;
 #[cfg(test)]
 mod tests;
 
@@ -35,6 +38,7 @@ use features::{
     Feature, guarded_use, nested_complex_class_attribute, nested_simple_features,
     simple_class_attribute, use_of,
 };
+use siblings::{SiblingPath, later_element_siblings};
 
 /// Positions in which rules use one class token.
 #[derive(Debug, Default)]
@@ -44,6 +48,12 @@ struct ClassUse {
     descendant_subjects: Vec<SubjectKey>,
     /// Depths below the element of keyless subjects reached only through child combinators.
     keyless_child_depths: Vec<usize>,
+    /// Whether a rule follows the token with a sibling combinator (see `siblings`).
+    siblings: bool,
+    /// Subject keys of rules that reach the element's later siblings from the token.
+    later_sibling_subjects: Vec<SubjectKey>,
+    /// Whether one of those rules also moves down from a later sibling.
+    later_sibling_descendants: bool,
     /// Why the token's effect is not bounded by the element and its descendants.
     parent_scope: Option<Fallback>,
 }
@@ -51,7 +61,6 @@ struct ClassUse {
 /// Why a change keeps the parent-subtree scope.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Fallback {
-    Siblings,
     Nested,
     Unbounded,
 }
@@ -74,6 +83,10 @@ pub(super) struct ClassInvalidation {
 struct ClassChangeRoots {
     subtrees: Vec<NodeRef>,
     elements: Vec<NodeRef>,
+    /// Whole subtrees restyled for keyless descendant subjects.
+    keyless_subtrees: usize,
+    /// Whether a sibling-combinator use widened the scope beyond the element.
+    siblings: bool,
 }
 
 impl ClassInvalidation {
@@ -92,12 +105,7 @@ impl ClassInvalidation {
         let last = selector.compounds.len().saturating_sub(1);
         let subject = &selector.compounds[last];
         for (position, compound) in selector.compounds.iter().enumerate() {
-            let siblings = selector.combinators[position..].iter().any(|combinator| {
-                matches!(
-                    combinator,
-                    Combinator::AdjacentSibling | Combinator::GeneralSibling
-                )
-            });
+            let siblings = SiblingPath::of(&selector.combinators[position..]);
             let mut tokens = Feature::Class.of(compound);
             let mut nested_complex = Vec::new();
             nested_simple_features(compound, Feature::Class, &mut tokens, &mut nested_complex);
@@ -110,8 +118,16 @@ impl ClassInvalidation {
                 &mut nested_complex_names,
             );
             let record = |class_use: &mut ClassUse| {
-                if siblings {
-                    class_use.parent_scope.get_or_insert(Fallback::Siblings);
+                if let Some(path) = siblings {
+                    class_use.siblings = true;
+                    let key = SubjectKey::of(subject);
+                    match path {
+                        SiblingPath::Down => class_use.descendant_subjects.push(key),
+                        SiblingPath::Later { descends } => {
+                            class_use.later_sibling_subjects.push(key);
+                            class_use.later_sibling_descendants |= descends;
+                        }
+                    }
                 } else if position == last {
                     class_use.subject = true;
                 } else {
@@ -163,6 +179,9 @@ impl ClassInvalidation {
         }
         let mut keys = HashSet::new();
         let mut depths = HashSet::new();
+        let mut later_keys = HashSet::new();
+        let mut later_descendants = false;
+        let mut siblings = false;
         let token_uses = tokens
             .iter()
             .filter_map(|token| self.uses.get(&*ascii_lowercase(token)));
@@ -179,16 +198,24 @@ impl ClassInvalidation {
             if let Some(fallback) = class_use.parent_scope {
                 return Err(fallback);
             }
+            siblings |= class_use.siblings;
+            later_keys.extend(class_use.later_sibling_subjects.iter());
+            later_descendants |= class_use.later_sibling_descendants;
             keys.extend(class_use.descendant_subjects.iter());
             depths.extend(class_use.keyless_child_depths.iter().copied());
         }
         // `attr(class)` and presentational state still read the element's own attribute.
         let mut roots = ClassChangeRoots {
             elements: vec![node.clone()],
+            siblings,
             ..ClassChangeRoots::default()
         };
+        if !later_keys.is_empty() {
+            later_sibling_roots(node, later_keys, later_descendants, &mut roots);
+        }
         if keys.iter().any(|key| key.matches_any()) {
             roots.subtrees.push(node.clone());
+            roots.keyless_subtrees += 1;
             return Ok(roots);
         }
         let mut level = vec![node.clone()];
@@ -220,6 +247,35 @@ impl ClassInvalidation {
     }
 }
 
+/// Adds the later siblings of `node` (and their descendants when `descendants`) that can match
+/// one of `keys` as element roots; a keyless subject takes them all, as whole subtrees when the
+/// rule also moves down.
+fn later_sibling_roots(
+    node: &NodeRef,
+    keys: HashSet<&SubjectKey>,
+    descendants: bool,
+    roots: &mut ClassChangeRoots,
+) {
+    let keyless = keys.iter().any(|key| key.matches_any());
+    let index = KeyIndex::new(keys);
+    for sibling in later_element_siblings(node) {
+        if keyless && descendants {
+            roots.subtrees.push(sibling);
+            continue;
+        }
+        if keyless || index.may_match(&sibling) {
+            roots.elements.push(sibling.clone());
+        }
+        if descendants {
+            roots.elements.extend(
+                Node::descendants(&sibling)
+                    .skip(1)
+                    .filter(|descendant| index.may_match(descendant)),
+            );
+        }
+    }
+}
+
 impl StyleSet {
     /// Converts class and attribute changes into subtree roots and early-cutoff element roots. A change that
     /// cannot be bounded keeps its parent subtree (or the document for the root element); the
@@ -244,13 +300,13 @@ impl StyleSet {
                 .roots(&node, &change.tokens, &change.attributes)
             {
                 Ok(roots) => {
-                    fallbacks.keyless_descendant += roots.subtrees.len() as u64;
+                    fallbacks.keyless_descendant += roots.keyless_subtrees as u64;
+                    fallbacks.sibling_combinator += u64::from(roots.siblings);
                     subtrees.extend(roots.subtrees);
                     elements.extend(roots.elements);
                 }
                 Err(fallback) => {
                     *match fallback {
-                        Fallback::Siblings => &mut fallbacks.sibling_combinator,
                         Fallback::Nested => &mut fallbacks.nested_selector,
                         Fallback::Unbounded => &mut fallbacks.unbounded_rules,
                     } += 1;

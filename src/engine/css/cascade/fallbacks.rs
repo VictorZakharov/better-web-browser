@@ -6,7 +6,7 @@
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct InvalidationFallbacks {
     /// A class or attribute change used by a rule with a sibling combinator after it: the
-    /// change's parent subtree.
+    /// element's later siblings, or its own subtree (`class_invalidation/siblings.rs`).
     pub sibling_combinator: u64,
     /// A class or attribute change used inside `:has()`, `:nth-child(of S)` or a complex
     /// `:is()`/`:where()`/`:not()` argument: the change's parent subtree.

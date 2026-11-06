@@ -7,7 +7,9 @@ use crate::engine::page::Page;
 
 mod attributes;
 mod fallbacks;
+mod hidden;
 mod hover;
+mod siblings;
 
 /// Changes `#target`'s class, refreshes only the class-change roots, and asserts every element
 /// matches a from-scratch cascade of the final document.
