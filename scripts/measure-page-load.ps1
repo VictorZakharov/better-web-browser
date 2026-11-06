@@ -18,13 +18,17 @@ param(
     [int] $FilmstripDurationMs = 8000,
     [int] $SettleMs = 7000,
     # Runs that start or end above this total CPU load are marked busy in the report.
-    [int] $BusyPercent = 40
+    [int] $BusyPercent = 40,
+    # Give each build its own profile, primed by one unmeasured visit, as a returning user has:
+    # site-written cookies and storage (preferences such as appearance) and a warm HTTP cache.
+    [switch] $WarmProfile
 )
 
 # Rotated page-load comparison of saved Breeze executables under the conditions a user sees.
 #
 # Each run goes through run-hidden-benchmark.ps1 (hidden, fail-closed automation guard) with a
-# fresh profile and a filmstrip. The report adds what a single benchmark run does not show:
+# fresh profile, or with -WarmProfile a primed per-build profile, and a filmstrip. The report
+# adds what a single benchmark run does not show:
 # - machine CPU load before and after the run, because on a shared machine a page's load time
 #   follows the renderer's CPU time and an idle-machine number understates what users see;
 # - when the page, and optionally one region of it, stops changing: the first filmstrip frame
@@ -77,6 +81,34 @@ $benchmark = Join-Path $PSScriptRoot 'run-hidden-benchmark.ps1'
 $scale = $DeviceScaleFactor
 $rows = [Collections.Generic.List[object]]::new()
 
+function Get-ProfileArguments([int] $Index) {
+    if (-not $WarmProfile) { return @('-FreshProfile') }
+    @('-ProfileDirectory', (Join-Path $outputRoot "profile-$($labels[$Index])"))
+}
+
+function Get-SizeArguments {
+    @('-WindowWidth', $WindowWidth, '-WindowHeight', $WindowHeight,
+        '-DeviceScaleFactor', $scale.ToString([Globalization.CultureInfo]::InvariantCulture))
+}
+
+if ($WarmProfile) {
+    foreach ($index in 0..($executables.Count - 1)) {
+        $profileDirectory = (Get-ProfileArguments $index)[1]
+        Remove-Item -LiteralPath $profileDirectory -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force -Path $profileDirectory | Out-Null
+        $name = "$($labels[$index])-prime"
+        $arguments = @(
+            '-NoProfile', '-File', $benchmark, '-Url', $Url, '-Browser', (Resolve-Path -LiteralPath $executables[$index]).Path,
+            '-Output', (Join-Path $outputRoot "$name.json"), '-SettleMs', $SettleMs
+        ) + (Get-ProfileArguments $index) + (Get-SizeArguments)
+        & pwsh @arguments *> (Join-Path $outputRoot "$name.log")
+        if ($LASTEXITCODE -ne 0) {
+            throw "Priming visit $name failed with exit code $LASTEXITCODE; see $(Join-Path $outputRoot "$name.log")."
+        }
+        "$name primed $profileDirectory"
+    }
+}
+
 foreach ($round in 1..$Rounds) {
     # Alternate the order so neither build always runs first on a warming machine.
     $order = if ($round % 2) { 0..($executables.Count - 1) } else { ($executables.Count - 1)..0 }
@@ -88,12 +120,10 @@ foreach ($round in 1..$Rounds) {
         $cpuBefore = Get-CpuLoad
         $arguments = @(
             '-NoProfile', '-File', $benchmark, '-Url', $Url, '-Browser', (Resolve-Path -LiteralPath $executables[$index]).Path,
-            '-Output', $json, '-FreshProfile', '-SettleMs', $SettleMs,
-            '-WindowWidth', $WindowWidth, '-WindowHeight', $WindowHeight,
-            '-DeviceScaleFactor', $scale.ToString([Globalization.CultureInfo]::InvariantCulture),
+            '-Output', $json, '-SettleMs', $SettleMs,
             '-FilmstripDirectory', $film, '-FilmstripIntervalMs', $FilmstripIntervalMs,
             '-FilmstripDurationMs', $FilmstripDurationMs
-        )
+        ) + (Get-ProfileArguments $index) + (Get-SizeArguments)
         & pwsh @arguments *> (Join-Path $outputRoot "$name.log")
         $exitCode = $LASTEXITCODE
         $cpuAfter = Get-CpuLoad

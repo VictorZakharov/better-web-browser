@@ -80,7 +80,7 @@ Breeze page-ready is its first owned layout and paint. Chromium page-ready is `P
     -Region '1248,312,48,352' -OutputDirectory <task folder>
 ```
 
-The region is a CSS-pixel rectangle (`x,y,width,height`), here Wikipedia's Appearance panel radios at that window size. A region counts as complete at the first filmstrip frame after which every frame matches the final one.
+The region is a CSS-pixel rectangle (`x,y,width,height`), here Wikipedia's Appearance panel radios at that window size. A region counts as complete at the first filmstrip frame after which every frame matches the final one. `-WarmProfile` gives each build its own profile primed by one unmeasured visit, so measured loads see what a returning visitor has: site-written cookies and storage and a warm HTTP cache.
 
 ## Opt-in live evidence
 
