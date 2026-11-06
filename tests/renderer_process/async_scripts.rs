@@ -295,9 +295,11 @@ impl Driver {
     }
 
     fn advance(&self) {
-        self.session
-            .advance_time(self.document, Duration::from_millis(1), 1)
-            .unwrap();
+        self.advance_by(Duration::from_millis(1));
+    }
+
+    fn advance_by(&self, delay: Duration) {
+        self.session.advance_time(self.document, delay, 1).unwrap();
     }
 
     fn until_idle(&mut self) {
@@ -314,10 +316,15 @@ impl Driver {
                 }
                 event => panic!("unexpected event while waiting for idle: {event:?}"),
             };
-            if next.is_none() {
+            let Some(next) = next else {
                 return;
-            }
-            self.advance();
+            };
+            // A frame may wait while the document loads (see `frame_waits`), for as long as
+            // the last frame took. That wait runs on the wall clock and depends on the
+            // machine, so let it pass; only timers that keep coming back count as polling.
+            let delay = Duration::from_micros(next).min(Duration::from_secs(1));
+            std::thread::sleep(delay);
+            self.advance_by(delay.max(Duration::from_millis(1)));
         }
         panic!("pending async downloads must not cause clock polling");
     }
