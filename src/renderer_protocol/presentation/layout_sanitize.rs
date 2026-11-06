@@ -3,15 +3,18 @@
 use super::PresentedLayout;
 use crate::engine::{ControlSpec, DisplayItem, FontSpec, LayoutOutput, PositionedGlyph, RectF};
 use crate::limits::{MAX_PRESENTATION_COORDINATE, MAX_URL_BYTES};
+use std::sync::Arc;
 #[cfg(test)]
 mod affine_tests;
+#[cfg(test)]
+mod tests;
 
-pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
+pub(super) fn sanitize(layout: &LayoutOutput) -> PresentedLayout {
     let mut offsets = Vec::with_capacity(layout.items.len() + 1);
     let mut items = Vec::with_capacity(layout.items.len());
     let mut dropped_paint = false;
     let mut invalid_transform_depth = 0usize;
-    for item in layout.items {
+    for item in &layout.items {
         offsets.push(items.len());
         if invalid_transform_depth > 0 {
             match item {
@@ -22,7 +25,7 @@ pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
             dropped_paint = true;
             continue;
         }
-        if let DisplayItem::BeginTransform { bounds, matrix } = &item
+        if let DisplayItem::BeginTransform { bounds, matrix } = item
             && (!super::layout::affine::valid(*matrix) || sanitize_rect(*bounds).is_none())
         {
             invalid_transform_depth = 1;
@@ -33,7 +36,7 @@ pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
             item,
             DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. }
         );
-        if let Some(item) = sanitize_item(item) {
+        if let Some(item) = sanitize_item(item.clone()) {
             items.push(item);
         } else if !local {
             dropped_paint = true;
@@ -42,7 +45,7 @@ pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
     offsets.push(items.len());
     let before_groups = items.len();
     retain_balanced_display_groups(&mut items);
-    let mut sticky_layers = layout.sticky_layers;
+    let mut sticky_layers = layout.sticky_layers.clone();
     if dropped_paint
         || items.len() != before_groups
         || super::layout::sticky::validate(&sticky_layers, offsets.len() - 1).is_err()
@@ -71,7 +74,7 @@ pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
         sticky_layers,
         content_height,
         background: layout.background,
-        forms: layout.forms.into_values().collect(),
+        forms: layout.forms.values().cloned().collect(),
     }
 }
 
@@ -153,7 +156,7 @@ fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
             node_id,
             color_owner,
             raster_run_id,
-            glyphs: glyphs.iter().cloned().filter_map(sanitize_glyph).collect(),
+            glyphs: sanitize_glyphs(glyphs),
         },
         DisplayItem::Image {
             rect,
@@ -215,6 +218,18 @@ fn sanitize_font(mut font: FontSpec) -> FontSpec {
     font.letter_spacing = finite_or(font.letter_spacing, 0.0).clamp(-768.0, 768.0);
     font.word_spacing = finite_or(font.word_spacing, 0.0).clamp(-768.0, 768.0);
     font
+}
+
+/// Keeps a run's glyphs shared when sanitizing changes none of them, as for the runs layout
+/// produces, so presenting a layout copies no glyph lists.
+fn sanitize_glyphs(glyphs: Arc<[PositionedGlyph]>) -> Arc<[PositionedGlyph]> {
+    if glyphs
+        .iter()
+        .all(|glyph| sanitize_glyph(*glyph).as_ref() == Some(glyph))
+    {
+        return glyphs;
+    }
+    glyphs.iter().copied().filter_map(sanitize_glyph).collect()
 }
 
 fn sanitize_glyph(mut glyph: PositionedGlyph) -> Option<PositionedGlyph> {
@@ -317,86 +332,4 @@ fn nonnegative(value: f32) -> f32 {
 
 fn finite_or(value: f32, fallback: f32) -> f32 {
     if value.is_finite() { value } else { fallback }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::engine::css::Color;
-
-    #[test]
-    fn page_derived_presentation_geometry_is_sanitized_before_ipc() {
-        let layout = LayoutOutput {
-            items: vec![
-                DisplayItem::SolidRect {
-                    rect: RectF {
-                        x: f32::INFINITY,
-                        y: 0.0,
-                        width: 10.0,
-                        height: 10.0,
-                    },
-                    color: Color::default(),
-                    radius: 0.0,
-                },
-                DisplayItem::SolidRect {
-                    rect: RectF {
-                        x: MAX_PRESENTATION_COORDINATE * 2.0,
-                        y: -MAX_PRESENTATION_COORDINATE * 2.0,
-                        width: -2.0,
-                        height: MAX_PRESENTATION_COORDINATE * 2.0,
-                    },
-                    color: Color::default(),
-                    radius: f32::NAN,
-                },
-            ],
-            content_height: f32::INFINITY,
-            ..LayoutOutput::default()
-        };
-
-        let presented = sanitize(layout);
-        assert_eq!(presented.items.len(), 1);
-        let DisplayItem::SolidRect { rect, radius, .. } = presented.items[0] else {
-            panic!("expected retained rectangle");
-        };
-        assert_eq!(rect.x, MAX_PRESENTATION_COORDINATE);
-        assert_eq!(rect.y, -MAX_PRESENTATION_COORDINATE);
-        assert_eq!(rect.width, 0.0);
-        assert_eq!(rect.height, MAX_PRESENTATION_COORDINATE);
-        assert_eq!(radius, 0.0);
-        assert_eq!(presented.content_height, 0.0);
-    }
-
-    #[test]
-    fn overlong_image_resource_key_does_not_invalidate_the_document() {
-        let layout = LayoutOutput {
-            items: vec![
-                DisplayItem::Image {
-                    rect: RectF {
-                        x: 0.0,
-                        y: 0.0,
-                        width: 20.0,
-                        height: 20.0,
-                    },
-                    clip: None,
-                    url: format!("data:image/svg+xml,{}", "a".repeat(MAX_URL_BYTES)),
-                    alt: String::new(),
-                    tint: None,
-                },
-                DisplayItem::SolidRect {
-                    rect: RectF {
-                        x: 20.0,
-                        y: 0.0,
-                        width: 20.0,
-                        height: 20.0,
-                    },
-                    color: Color::default(),
-                    radius: 0.0,
-                },
-            ],
-            ..LayoutOutput::default()
-        };
-        let presented = sanitize(layout);
-        assert_eq!(presented.items.len(), 1);
-        assert!(matches!(presented.items[0], DisplayItem::SolidRect { .. }));
-    }
 }

@@ -41,12 +41,12 @@ pub(crate) struct TextFragment {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FragmentGeometry {
-    layout_boxes: HashMap<NodeId, RectF>,
-    transforms: HashMap<NodeId, crate::engine::affine::Affine2D>,
+    layout_boxes: crate::engine::dom::node::NodeMap<NodeId, RectF>,
+    transforms: crate::engine::dom::node::NodeMap<NodeId, crate::engine::affine::Affine2D>,
     /// Each node's fragments are shared with the retained subtree layouts that hold them, so
     /// replaying a subtree copies none of its text geometry unless it moves to other lines.
-    pub(crate) elements: HashMap<NodeId, Arc<Vec<InlineFragment>>>,
-    pub(crate) text: HashMap<NodeId, Arc<Vec<TextFragment>>>,
+    pub(crate) elements: crate::engine::dom::node::NodeMap<NodeId, Arc<Vec<InlineFragment>>>,
+    pub(crate) text: crate::engine::dom::node::NodeMap<NodeId, Arc<Vec<TextFragment>>>,
     pub(crate) next_line: u64,
 }
 

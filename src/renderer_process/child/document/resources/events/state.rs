@@ -1,5 +1,5 @@
 //! Completion belongs to each element even when bytes are shared by URL.
-use crate::engine::dom::{Node, NodeId, NodeRef};
+use crate::engine::dom::{NodeId, NodeRef};
 use crate::engine::{Page, PageResource};
 use std::collections::{HashMap, HashSet};
 
@@ -18,10 +18,15 @@ pub(super) enum Owner {
 
 impl Owner {
     pub(super) fn for_node(page: &Page, node: &NodeRef) -> Option<Self> {
+        Self::with_key(node, || page.resource_event_key(node))
+    }
+
+    /// The owner of `node`, whose resource event key `key` computes.
+    fn with_key(node: &NodeRef, key: impl FnOnce() -> Option<PageResource>) -> Option<Self> {
         if node.tag_name() == Some("style") && crate::engine::page::is_stylesheet(node) {
             Some(Self::InlineStyle(node.text_content()))
         } else {
-            page.resource_event_key(node).map(Self::External)
+            key().map(Self::External)
         }
     }
     pub(super) fn is_stylesheet(&self) -> bool {
@@ -54,9 +59,13 @@ impl ResourceEvents {
         self.scanned_version = Some(version);
         let mut live = HashSet::new();
         let mut events = Vec::new();
-        // One DOM walk per changed checkpoint, not one walk per cached resource.
-        for node in Node::shadow_including_descendants(&page.dom.document) {
-            let Some(owner) = Owner::for_node(page, &node) else {
+        // One pass over the document's resource elements per changed checkpoint, not one per
+        // cached resource.
+        for element in page.resource_elements().iter() {
+            let Some(node) = element.node() else {
+                continue;
+            };
+            let Some(owner) = Owner::with_key(&node, || element.key.clone()) else {
                 continue;
             };
             live.insert(node.id());
@@ -114,6 +123,7 @@ impl ResourceEvents {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::dom::Node;
 
     #[test]
     fn parent_completion_waits_for_nested_imports_and_propagates_failure_once() {

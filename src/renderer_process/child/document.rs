@@ -74,6 +74,7 @@ pub(super) struct DocumentRuntime {
     reader: crate::document::Document,
     script_runtime: Option<ScriptRuntime>,
     viewport: crate::renderer_protocol::PresentedViewport,
+    overflow_guess: viewport::OverflowGuess,
     text: Rc<RefCell<RendererTextSystem>>,
     script_layout_page: Rc<RefCell<Page>>,
     script_layout_viewport: Rc<Cell<crate::renderer_protocol::PresentedViewport>>,
@@ -236,6 +237,8 @@ impl DocumentRuntime {
         }
         self.rendering.dirty = false;
         self.rendering.frame_delayed = false;
+        self.rendering.script_frame_delayed = false;
+        self.rendering.frame_requested = false;
         self.rendering.last_frame = Some((
             Instant::now(),
             Duration::from_micros(load.style_micros + load.layout_micros),
@@ -339,7 +342,7 @@ impl DocumentRuntime {
             status: self.status,
             character_set: self.page.character_set.clone(),
             reader: self.reader.clone(),
-            layout: PresentedLayout::from_layout(self.layout.clone()),
+            layout: PresentedLayout::from_layout(&self.layout),
             images: Vec::new(),
             gpu_canvases: self
                 .page

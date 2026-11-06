@@ -128,6 +128,43 @@ fn stable_identity_survives_detach_and_reinsertion_without_aliasing() {
 }
 
 #[test]
+fn batch_lookup_finds_what_single_lookups_find_in_requested_order() {
+    let dom = parse("<main><span></span><template><i></i></template><u></u></main>");
+    let host = dom.elements_named("span").next().unwrap();
+    let shadow = Node::attach_shadow(&host, ShadowRootMode::Open, false, false, false).unwrap();
+    let in_shadow = Node::create_element_for(&dom.document, "s");
+    assert!(Node::append_child(&shadow, in_shadow.clone()));
+    let template = dom.elements_named("template").next().unwrap();
+    let in_template = template
+        .element()
+        .and_then(|element| element.template_contents.borrow().clone())
+        .and_then(|contents| contents.children.borrow().first().cloned())
+        .unwrap();
+    let last = dom.elements_named("u").next().unwrap();
+    let detached = Node::create_element_for(&dom.document, "p");
+    let wanted = [
+        last.id(),
+        detached.id(),
+        in_template.id(),
+        in_shadow.id(),
+        last.id(),
+    ];
+    let found = dom.find_nodes(&wanted);
+    for id in wanted {
+        assert_eq!(
+            found.get(&id).map(|node| node.id()),
+            dom.find_node(id).map(|node| node.id())
+        );
+    }
+    let ordered = dom
+        .find_nodes_in_order(&wanted)
+        .iter()
+        .map(|node| node.id())
+        .collect::<Vec<_>>();
+    assert_eq!(ordered, [last.id(), in_template.id(), in_shadow.id()]);
+}
+
+#[test]
 fn replacement_documents_use_distinct_serializable_namespaces() {
     let first = parse("<p>first</p>");
     let second = parse("<p>second</p>");

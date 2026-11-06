@@ -8,15 +8,17 @@
 //! https://html.spec.whatwg.org/multipage/links.html#link-type-preconnect
 //! https://html.spec.whatwg.org/multipage/links.html#link-type-prefetch
 
-use super::PageResource;
-use crate::engine::dom::{Node, NodeRef};
+use super::{PageResource, ResourceElement};
+use crate::engine::dom::NodeRef;
 use crate::engine::script::{ScriptFetchOptions, ScriptKind};
 use crate::navigation::{ParsedUrl, resolve_url};
 use std::collections::HashSet;
 
 impl super::Page {
     pub(crate) fn current_network_hints(&self) -> HashSet<PageResource> {
-        Node::shadow_including_descendants(&self.dom.document)
+        self.resource_elements()
+            .iter()
+            .filter_map(ResourceElement::node)
             .filter(|node| node.tag_name() == Some("link"))
             .flat_map(|node| discover_link_hints(&node, &self.source_url, &self.base_url))
             .collect()
@@ -28,12 +30,21 @@ pub(super) fn discover_link_hints(
     document_url: &str,
     base_url: &str,
 ) -> Vec<PageResource> {
-    if ParsedUrl::parse(document_url).is_err() {
-        return Vec::new();
-    }
     let Some(rel) = link.attr("rel") else {
         return Vec::new();
     };
+    // Most links are style sheets, and this runs for each link after every document change.
+    let tokens = rel.split_ascii_whitespace().collect::<Vec<_>>();
+    let names_hint = |names: &[&str]| {
+        tokens
+            .iter()
+            .any(|token| names.iter().any(|name| token.eq_ignore_ascii_case(name)))
+    };
+    let origin_hint = names_hint(&["dns-prefetch", "preconnect"]);
+    let prefetch = names_hint(&["prefetch"]);
+    if (!origin_hint && !prefetch) || ParsedUrl::parse(document_url).is_err() {
+        return Vec::new();
+    }
     let Some(href) = link.attr("href").filter(|value| !value.trim().is_empty()) else {
         return Vec::new();
     };
@@ -43,11 +54,8 @@ pub(super) fn discover_link_hints(
     let Ok(target) = ParsedUrl::parse(&url) else {
         return Vec::new();
     };
-    let tokens = rel.split_ascii_whitespace().collect::<Vec<_>>();
     let mut hints = Vec::new();
-    if tokens.iter().any(|token| {
-        token.eq_ignore_ascii_case("dns-prefetch") || token.eq_ignore_ascii_case("preconnect")
-    }) {
+    if origin_hint {
         hints.push(PageResource::OriginHint {
             origin: target.origin(),
         });
@@ -55,9 +63,7 @@ pub(super) fn discover_link_hints(
     // HTML's link request has an empty destination for prefetch. `as` does not turn it into a
     // preload, and `type` is advisory rather than a destination or MIME gate. Potential-CORS
     // mode and credentials do depend on `crossorigin`.
-    if tokens
-        .iter()
-        .any(|token| token.eq_ignore_ascii_case("prefetch"))
+    if prefetch
         // The nonconforming integrity attribute requires a separate SRI-aware cache path.
         && link
             .attr("integrity")

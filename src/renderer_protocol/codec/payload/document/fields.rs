@@ -89,6 +89,7 @@ pub(super) fn decode_document_start(
 
 pub(super) fn encode_viewport(writer: &mut WireWriter, viewport: PresentedViewport) {
     writer.f32(viewport.width);
+    writer.f32(viewport.overflow_width);
     writer.f32(viewport.height);
     writer.f32(viewport.style_width);
     writer.u32(viewport.dpi);
@@ -102,6 +103,7 @@ pub(super) fn decode_viewport(
 ) -> Result<PresentedViewport, ProtocolError> {
     PresentedViewport {
         width: reader.f32()?,
+        overflow_width: reader.f32()?,
         height: reader.f32()?,
         style_width: reader.f32()?,
         dpi: reader.u32()?,

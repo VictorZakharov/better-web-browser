@@ -9,8 +9,15 @@
 // waiting for a blocking script makes no progress, so its frame does not wait (the caller
 // passes no streaming input then). Arrived resources need a frame sooner: such a checkpoint,
 // and after parsing one that only installs resources, waits until `FRAME_SPACING` times the
-// last frame's style and layout time has passed. Input and viewport changes present through
-// their own paths and never wait.
+// last frame's style and layout time has passed, though not ahead of input that keeps flowing:
+// a document's bytes are cheap to parse and the page's scripts wait for them. Until the load
+// event, script tasks follow each other closely, and laying out after every one of them
+// (jQuery's ready chain alone is dozens of timers) takes far longer than the tasks do, so a frame
+// after script work waits for as long as the last frame took when that was at least
+// `HEAVY_FRAME`, or while further tasks are already due, for up to `MAX_PARSER_FRAME_DELAY`
+// after the last frame; cheaper frames never wait. Once loaded, script-driven frames never wait, so
+// animations keep their rate. Input and viewport changes present through their
+// own paths and never wait.
 // https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
 use std::time::{Duration, Instant};
 
@@ -18,6 +25,8 @@ const FRAME_SPACING: u32 = 2;
 const MIN_FRAME_SPACING: Duration = Duration::from_millis(50);
 const PARSER_STALL: Duration = Duration::from_millis(250);
 const MAX_PARSER_FRAME_DELAY: Duration = Duration::from_secs(1);
+const RESOURCE_INPUT_QUIET: Duration = Duration::from_millis(50);
+const HEAVY_FRAME: Duration = Duration::from_millis(50);
 
 /// What a rendering checkpoint would present.
 #[derive(Clone, Copy)]
@@ -26,15 +35,26 @@ pub(in crate::renderer_process::child::document) struct FrameArrivals {
     pub(in crate::renderer_process::child::document) resources: bool,
     /// Nothing else needs a frame: no script, media, scroll or observer work.
     pub(in crate::renderer_process::child::document) only: bool,
+    /// Script tasks are due now, so the page is still changing.
+    pub(in crate::renderer_process::child::document) tasks_ready: bool,
+}
+
+/// How far the document's load has come.
+#[derive(Clone, Copy)]
+pub(super) enum LoadPhase {
+    /// The parser last received streamed input at this time, and more is expected.
+    Streaming(Instant),
+    /// The load event has not fired yet.
+    Loading,
+    Loaded,
 }
 
 /// How much longer a checkpoint at `now` skips its frame, given when the last frame was
-/// presented and what its style and layout cost, and when streamed input last arrived while
-/// more is expected. `None` presents now.
+/// presented and what its style and layout cost. `None` presents now.
 pub(super) fn remaining(
     now: Instant,
     (presented, cost): (Instant, Duration),
-    streaming_input: Option<Instant>,
+    load: LoadPhase,
     arrivals: FrameArrivals,
 ) -> Option<Duration> {
     let remaining = |wait: Duration, since: Instant| {
@@ -42,15 +62,25 @@ pub(super) fn remaining(
             .filter(|remaining| !remaining.is_zero())
     };
     let spacing = remaining((cost * FRAME_SPACING).max(MIN_FRAME_SPACING), presented);
-    match streaming_input {
+    match load {
         // Arrived images and fonts show up as soon as the spacing allows, not only after
         // the whole document has streamed in.
-        Some(_) if arrivals.resources => spacing,
-        Some(input) => {
+        LoadPhase::Streaming(input) if arrivals.resources => {
+            let flowing = remaining(MAX_PARSER_FRAME_DELAY, presented)
+                .and(remaining(RESOURCE_INPUT_QUIET, input));
+            spacing.max(flowing)
+        }
+        LoadPhase::Streaming(input) => {
             Some(remaining(MAX_PARSER_FRAME_DELAY, presented)?.min(remaining(PARSER_STALL, input)?))
         }
-        None if arrivals.resources && arrivals.only => spacing,
-        None => None,
+        _ if arrivals.resources && arrivals.only => spacing,
+        // A page that is still running its tasks finishes them first, for up to a second.
+        LoadPhase::Loading if cost >= HEAVY_FRAME && arrivals.tasks_ready => {
+            remaining(MAX_PARSER_FRAME_DELAY, presented)
+        }
+        LoadPhase::Loading if cost >= HEAVY_FRAME => remaining(cost, presented),
+        LoadPhase::Loading => None,
+        LoadPhase::Loaded => None,
     }
 }
 

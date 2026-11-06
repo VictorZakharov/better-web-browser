@@ -58,6 +58,8 @@ mod media_devices;
 mod native_diagnostics;
 #[path = "renderer_process/notifications.rs"]
 mod notifications;
+#[path = "renderer_process/overflow_guess.rs"]
+mod overflow_guess;
 #[path = "renderer_process/pointer_buttons.rs"]
 mod pointer_buttons;
 #[path = "renderer_process/pointer_lock.rs"]

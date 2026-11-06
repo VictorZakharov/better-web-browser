@@ -323,6 +323,7 @@ fn newest_viewport_survives_a_saturated_ordinary_command_queue() {
                 initial.document,
                 PresentedViewport {
                     width,
+                    overflow_width: width,
                     height: 500.0,
                     style_width: width,
                     dpi: 96,

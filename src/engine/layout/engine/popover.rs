@@ -12,6 +12,9 @@ pub(super) fn append_top_layer<M: TextMeasurer>(
     measurer: &mut M,
     emit_paint: bool,
 ) {
+    if !Node::has_opened_popover(&page.dom.document) {
+        return;
+    }
     let mut popovers = Node::shadow_including_descendants(&page.dom.document)
         .filter(|node| node.is_popover_open() && node.attr("popover").is_some())
         .filter(|node| {
@@ -44,8 +47,8 @@ pub(super) fn append_top_layer<M: TextMeasurer>(
             positioned_flow_scopes: Vec::new(),
             floats: Default::default(),
             reads: Default::default(),
-            replayed_roots: HashMap::new(),
-            absolute_containing_block: None,
+            replayed_roots: Default::default(),
+            absolute_scope: Default::default(),
             subgrid_rows: HashMap::new(),
             viewport: RectF {
                 x: 0.0,

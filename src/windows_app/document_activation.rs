@@ -70,6 +70,7 @@ impl BrowserState {
                     return;
                 }
                 self.incidents.record("navigation", completed);
+                self.incidents.load_headers();
                 self.submit_pending_renderer_document();
             }
             Ok(NavigationResult::Complete {
@@ -88,6 +89,7 @@ impl BrowserState {
                     benchmark.network_time = network_time;
                     benchmark.bytes = bytes;
                 }
+                self.incidents.load_network_complete();
                 self.incidents.record(
                     "navigation",
                     format!(
@@ -132,8 +134,18 @@ impl BrowserState {
         GetClientRect(self.window, &mut client);
         let scale = self.page_scale();
         let width = client.right.max(1) as f32 / scale;
+        const SM_CXVSCROLL: i32 = 2;
+        let scrollbar_absent = !self.fullscreen.is_active()
+            && GetWindowLongPtrW(self.window, GWL_STYLE) as u32 & WS_VSCROLL == 0;
+        let overflow_width = if scrollbar_absent {
+            let scrollbar = GetSystemMetricsForDpi(SM_CXVSCROLL, self.dpi);
+            (client.right - scrollbar).max(1) as f32 / scale
+        } else {
+            width
+        };
         PresentedViewport {
             width,
+            overflow_width: overflow_width.min(width),
             height: self.viewport_height().max(1) as f32 / scale,
             style_width: if self.media_viewport_width > 0.0 {
                 self.media_viewport_width
@@ -161,6 +173,7 @@ impl BrowserState {
             // History actions emitted by parser scripts belong to the new document.
             // The shell may still hold the outgoing document's scroll offset here.
             self.scroll_y = 0;
+            self.send_accessibility_policy();
         }
         let presentation_install_started = Instant::now();
         let mut installation_timing = benchmark::InstallationTiming::start(

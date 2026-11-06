@@ -41,6 +41,22 @@ fn descendant_universal_does_not_admit_unrelated_elements() {
 }
 
 #[test]
+fn only_declarations_that_can_name_an_animation_admit_an_element() {
+    let dom = dom::parse(
+        "<style>p{animation-duration:1s;animation-delay:2s;animation-fill-mode:both}
+        i{animation-name:inherit} b{animation:fade 1s} u{all:inherit}</style><p></p><i></i><b></b><u></u>",
+    );
+    let styles = styles(&dom.document);
+    assert!(!styles.may_have_css_animation(&dom.elements_named("p").next().unwrap()));
+    for tag in ["i", "b", "u"] {
+        assert!(
+            styles.may_have_css_animation(&dom.elements_named(tag).next().unwrap()),
+            "{tag}"
+        );
+    }
+}
+
+#[test]
 fn functional_attribute_and_sibling_conditions_use_the_full_matcher() {
     let dom = dom::parse(
         "<style>[data-state=on] :is(p,b){animation:fade 1s} .before + p{animation:slide 2s} main:has(> .trigger) > b{animation:move 1s}</style><main data-state=off><i></i><p></p><b></b></main>",

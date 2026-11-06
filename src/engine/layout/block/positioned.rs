@@ -18,6 +18,22 @@ fn establishes_containing_block(style: &ComputedStyle) -> bool {
     style.position != Position::Static || style.has_transform()
 }
 
+/// The containing block of absolutely positioned descendants: the padding box of the nearest
+/// ancestor that establishes one, or the initial containing block when `block` is `None`.
+/// `depth` counts those ancestors, which tells a retained subtree whether the containing block
+/// of a box inside it was established inside it (`note_containing_block`).
+#[derive(Clone, Copy, Debug, Default)]
+pub(in crate::engine::layout) struct AbsoluteScope {
+    block: Option<RectF>,
+    depth: usize,
+}
+
+impl AbsoluteScope {
+    pub(in crate::engine::layout) fn depth(self) -> usize {
+        self.depth
+    }
+}
+
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     /// CSS 2.1 §10.1: absolute descendants of static boxes use the nearest positioned
     /// ancestor's padding box, or the initial containing block. Descendants are laid out
@@ -27,18 +43,24 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         &mut self,
         style: &ComputedStyle,
         padding_box: RectF,
-    ) -> Option<RectF> {
-        let previous = self.absolute_containing_block;
+    ) -> AbsoluteScope {
+        let previous = self.absolute_scope;
         if establishes_containing_block(style) {
-            self.absolute_containing_block = Some(padding_box);
+            self.absolute_scope = AbsoluteScope {
+                block: Some(padding_box),
+                depth: previous.depth + 1,
+            };
         }
         previous
     }
 
-    /// Restores the enclosing scope and returns its containing block.
-    pub(super) fn exit_absolute_scope(&mut self, previous: Option<RectF>) -> RectF {
-        self.absolute_containing_block = previous;
-        previous.unwrap_or(self.viewport)
+    /// Restores the enclosing scope. Returns its containing block, and the depth of the one this
+    /// box's absolutely positioned children resolve against: the innermost scope, whether this
+    /// box established it or not.
+    pub(super) fn exit_absolute_scope(&mut self, previous: AbsoluteScope) -> (RectF, usize) {
+        let depth = self.absolute_scope.depth;
+        self.absolute_scope = previous;
+        (previous.block.unwrap_or(self.viewport), depth)
     }
 
     pub(super) fn finish_positioned_flow_scope(
@@ -64,10 +86,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
     }
 
+    /// Lays out `node`'s absolutely positioned children against `containing_block`, the scope
+    /// at the given depth (`AbsoluteScope`).
     pub(in crate::engine::layout) fn layout_positioned_children(
         &mut self,
         node: &NodeRef,
-        containing_block: RectF,
+        (containing_block, containing_depth): (RectF, usize),
         static_position: (f32, f32),
         in_flow_paint_start: usize,
         in_flow_node_start: usize,
@@ -106,6 +130,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 let containing_block = if child_style.position == Position::Fixed {
                     self.viewport
                 } else {
+                    self.note_containing_block(containing_depth);
                     containing_block
                 };
                 self.layout_block(

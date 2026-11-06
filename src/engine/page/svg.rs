@@ -1,6 +1,8 @@
 use super::{DecodedImage, MAX_INLINE_SVGS, Page, bounded_utf8_prefix};
 use crate::engine::css::StyleSet;
-use crate::engine::dom::{Node, NodeId, NodeRef};
+#[cfg(test)]
+use crate::engine::dom::Node;
+use crate::engine::dom::{NodeId, NodeRef};
 use crate::limits::MAX_SVG_SOURCE_BYTES;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
@@ -45,10 +47,8 @@ impl Page {
     }
 
     pub(super) fn refresh_inline_svgs(&mut self) {
-        let svgs = Node::shadow_including_descendants(&self.dom.document)
-            .filter(|node| node.tag_name() == Some("svg"))
-            .take(MAX_INLINE_SVGS)
-            .collect::<Vec<_>>();
+        let mut svgs = self.inline_svg_elements();
+        svgs.truncate(MAX_INLINE_SVGS);
         let active_ids = svgs.iter().map(|svg| svg.id()).collect::<HashSet<_>>();
         let active_keys = svgs.iter().map(inline_svg_key).collect::<HashSet<_>>();
         self.inline_svgs.retain(&active_ids, &active_keys);

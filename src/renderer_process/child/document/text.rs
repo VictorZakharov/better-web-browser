@@ -7,7 +7,7 @@
 mod features_tests;
 mod raster;
 use self::raster::{GlyphRasterCache, RasterizedGlyph};
-use crate::engine::font::shaping::{FontCatalog, TextShaper};
+use crate::engine::font::shaping::{FontCatalog, ShapedGlyph, TextShaper};
 use crate::engine::layout::{TextCluster, TextGeometry};
 use crate::engine::{FontSpec, PositionedGlyph, ShapedText, TextMeasurer, WebFont};
 use crate::renderer_protocol::{PageLoadReport, PresentedGlyphRaster};
@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 const MAX_SHAPE_CACHE_ENTRIES: usize = 16_384;
 const MAX_SHAPE_CACHE_BYTES: usize = 32 * 1024 * 1024;
-const MAX_MEASUREMENT_CACHE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_MEASUREMENT_CACHE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_CACHED_TEXT_BYTES: usize = 4 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -35,13 +35,22 @@ struct ShapeKey<'a> {
     variants: crate::engine::css::FontVariants,
 }
 
+/// Shaped text that has not been rasterized. Layout measures text before it paints, so the
+/// glyphs wait here for `shape_text`, which would otherwise shape the same text again. Shaping was
+/// about 4% of the renderer's work loading a long article, half of it this repetition.
+struct Measurement {
+    size: (f32, f32),
+    geometry: TextGeometry,
+    glyphs: Vec<ShapedGlyph>,
+}
+
 pub(in crate::renderer_process::child) struct RendererTextSystem {
     catalog: FontCatalog,
     shaper: TextShaper,
     rasters: GlyphRasterCache,
     shapes: HashMap<ShapeKey<'static>, ShapedText>,
     shape_cache_bytes: usize,
-    measurements: HashMap<ShapeKey<'static>, ((f32, f32), TextGeometry)>,
+    measurements: HashMap<ShapeKey<'static>, Measurement>,
     measurement_cache_bytes: usize,
     dpi: u32,
     glyph_epoch: u64,
@@ -173,20 +182,31 @@ impl RendererTextSystem {
         self.shape_cache_misses = self.shape_cache_misses.saturating_add(1);
 
         let font_size = spec.size.clamp(1.0, 768.0);
-        let output = self.shaper.shape(&mut self.catalog, text, spec);
-        self.font_select_time += output.font_select_time;
-        self.open_type_time += output.open_type_time;
+        // A mutable map cannot be asked with a borrowed key, so only a hit copies it.
+        let measured_key = self
+            .measurements
+            .contains_key(&key)
+            .then(|| key.clone().into_owned());
+        let measurement = match measured_key.and_then(|key| self.measurements.remove(&key)) {
+            Some(measurement) => {
+                self.measurement_cache_bytes = self
+                    .measurement_cache_bytes
+                    .saturating_sub(measurement_entry_bytes(&key, &measurement));
+                measurement
+            }
+            None => self.shape_unrasterized(text, spec),
+        };
         let scale = self.dpi as f32 / 96.0;
         let mut shaped = ShapedText {
             raster_run_id: self.allocate_raster_run_id(),
-            width: output.width,
-            height: output.height,
-            geometry: output.geometry,
+            width: measurement.size.0,
+            height: measurement.size.1,
+            geometry: measurement.geometry,
             ..ShapedText::default()
         };
         let raster_started = Instant::now();
-        let mut glyphs = Vec::with_capacity(output.glyphs.len());
-        for glyph in output.glyphs {
+        let mut glyphs = Vec::with_capacity(measurement.glyphs.len());
+        for glyph in measurement.glyphs {
             let Some(raster) = self.rasters.get_or_insert(
                 &glyph.font,
                 glyph.glyph_id,
@@ -219,6 +239,17 @@ impl RendererTextSystem {
         shaped
     }
 
+    fn shape_unrasterized(&mut self, text: &str, spec: &FontSpec) -> Measurement {
+        let output = self.shaper.shape(&mut self.catalog, text, spec);
+        self.font_select_time += output.font_select_time;
+        self.open_type_time += output.open_type_time;
+        Measurement {
+            size: (output.width, output.height),
+            geometry: output.geometry,
+            glyphs: output.glyphs,
+        }
+    }
+
     fn measure_text(&mut self, text: &str, spec: &FontSpec) -> ((f32, f32), TextGeometry) {
         self.measure_calls = self.measure_calls.saturating_add(1);
         let key = ShapeKey::new(text, spec);
@@ -226,18 +257,16 @@ impl RendererTextSystem {
             return ((shaped.width, shaped.height), shaped.geometry.clone());
         }
         if let Some(measurement) = self.measurements.get(&key) {
-            return measurement.clone();
+            return (measurement.size, measurement.geometry.clone());
         }
 
         // CSSOM View geometry needs shaped advances, not pixels. Keep HarfRust shaping so line
         // breaks and element rectangles match painted layout, but defer glyph rasterization until
         // a real presentation asks for `shape`.
-        let output = self.shaper.shape(&mut self.catalog, text, spec);
-        self.font_select_time += output.font_select_time;
-        self.open_type_time += output.open_type_time;
-        let measurement = ((output.width, output.height), output.geometry);
+        let measurement = self.shape_unrasterized(text, spec);
+        let measured = (measurement.size, measurement.geometry.clone());
         if text.len() <= MAX_CACHED_TEXT_BYTES {
-            let cached_bytes = measurement_cache_entry_bytes(&key) + geometry_bytes(&measurement.1);
+            let cached_bytes = measurement_entry_bytes(&key, &measurement);
             if cached_bytes <= MAX_MEASUREMENT_CACHE_BYTES {
                 if self.measurement_cache_bytes.saturating_add(cached_bytes)
                     > MAX_MEASUREMENT_CACHE_BYTES
@@ -246,11 +275,10 @@ impl RendererTextSystem {
                     self.measurement_cache_bytes = 0;
                 }
                 self.measurement_cache_bytes += cached_bytes;
-                self.measurements
-                    .insert(key.into_owned(), measurement.clone());
+                self.measurements.insert(key.into_owned(), measurement);
             }
         }
-        measurement
+        measured
     }
 
     fn allocate_raster_run_id(&mut self) -> u64 {
@@ -278,12 +306,23 @@ fn shape_cache_entry_bytes(key: &ShapeKey, shaped: &ShapedText) -> usize {
         )
 }
 
+fn measurement_entry_bytes(key: &ShapeKey, measurement: &Measurement) -> usize {
+    measurement_cache_entry_bytes(key)
+        .saturating_add(geometry_bytes(&measurement.geometry))
+        .saturating_add(
+            measurement
+                .glyphs
+                .len()
+                .saturating_mul(std::mem::size_of::<ShapedGlyph>()),
+        )
+}
+
 fn measurement_cache_entry_bytes(key: &ShapeKey) -> usize {
     std::mem::size_of::<ShapeKey>()
         .saturating_add(key.text.len())
         .saturating_add(key.family.len())
         .saturating_add(std::mem::size_of_val(key.features.settings()))
-        .saturating_add(std::mem::size_of::<((f32, f32), TextGeometry)>())
+        .saturating_add(std::mem::size_of::<Measurement>())
 }
 
 fn geometry_bytes(geometry: &TextGeometry) -> usize {

@@ -1,13 +1,98 @@
 //! Viewport changes and display-only cadence updates for a retained document.
+//
+// A classic scrollbar takes its width from the layout viewport, and the browser shows it only
+// after a presentation overflows. A long document was therefore laid out completely at the width
+// it was about to lose, and every result retained from that layout depends on the viewport: on a
+// Wikipedia article that first layout was about 10% of the renderer's work up to its first useful
+// frame. A document this long is laid out at the width it will have with the scrollbar instead,
+// and the browser's scrollbar then changes nothing. If it does fit, it is laid out again at once,
+// before anything is presented, which costs little because it is short.
 use super::*;
 
+/// Nodes from which a document is assumed to overflow. A guess is only worth making when laying
+/// the document out twice would be expensive, and shorter ones can keep the observed behavior.
+const LONG_DOCUMENT_NODES: usize = 1024;
+
+/// A guess that the document overflows, made while the browser shows no scrollbar.
+#[derive(Debug, Default)]
+pub(super) struct OverflowGuess {
+    /// The width the browser reported, while layout uses its `overflow_width` instead.
+    received_width: Option<f32>,
+    /// The guess was refuted or overtaken by the browser's scrollbar.
+    settled: bool,
+}
+
 impl DocumentRuntime {
+    /// Lays a long document out as if its scrollbar already showed.
+    pub(super) fn guess_viewport_overflow(&mut self) {
+        if self.overflow_guess.settled || self.overflow_guess.received_width.is_some() {
+            return;
+        }
+        if self.viewport.width <= self.viewport.overflow_width {
+            self.overflow_guess.settled = true;
+            return;
+        }
+        let nodes = crate::engine::dom::Node::descendants(&self.page.dom.document)
+            .take(LONG_DOCUMENT_NODES)
+            .count();
+        if nodes == LONG_DOCUMENT_NODES {
+            self.overflow_guess.received_width = Some(self.viewport.width);
+            self.set_layout_width(self.viewport.overflow_width);
+        }
+    }
+
+    /// Whether the layout just computed refutes the guess, which has then been withdrawn and
+    /// calls for another layout. The browser shows a scrollbar for content over a physical pixel
+    /// taller than the viewport, so anything less must not wait for one.
+    pub(super) fn withdraw_refuted_overflow_guess(&mut self) -> bool {
+        let Some(width) = self.overflow_guess.received_width else {
+            return false;
+        };
+        let pixel = 96.0 / self.viewport.dpi as f32;
+        if self.layout.content_height > self.viewport.height + pixel {
+            return false;
+        }
+        self.overflow_guess = OverflowGuess {
+            received_width: None,
+            settled: true,
+        };
+        self.set_layout_width(width);
+        true
+    }
+
+    /// `viewport` from the browser with the standing guess applied.
+    fn with_overflow_guess(
+        &mut self,
+        mut viewport: crate::renderer_protocol::PresentedViewport,
+    ) -> crate::renderer_protocol::PresentedViewport {
+        if viewport.width <= viewport.overflow_width {
+            self.overflow_guess = OverflowGuess {
+                received_width: None,
+                settled: true,
+            };
+        } else if self.overflow_guess.received_width.is_some() {
+            self.overflow_guess.received_width = Some(viewport.width);
+            viewport.width = viewport.overflow_width;
+        }
+        viewport
+    }
+
+    fn set_layout_width(&mut self, width: f32) {
+        self.viewport.width = width;
+        let height = self.viewport.height;
+        self.page.set_layout_viewport(width, height);
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            runtime.set_layout_viewport(width, height);
+        }
+    }
+
     pub(in crate::renderer_process::child) fn resize(
         &mut self,
         viewport: crate::renderer_protocol::PresentedViewport,
         connection: &mut ChildConnection,
     ) -> Result<AdvanceResult, String> {
         let viewport = viewport.validate().map_err(|error| error.to_string())?;
+        let viewport = self.with_overflow_guess(viewport);
         let cadence_only = viewport.refresh_rate != self.viewport.refresh_rate
             && crate::renderer_protocol::PresentedViewport {
                 refresh_rate: viewport.refresh_rate,

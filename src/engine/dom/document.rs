@@ -1,7 +1,7 @@
 //! Document ownership, parsing entry points, and document-level queries.
 
 use super::budget::enforce;
-use super::node::{Node, NodeData, NodeId, NodeIdAllocator, NodeRef};
+use super::node::{Node, NodeData, NodeId, NodeIdAllocator, NodeMap, NodeRef, NodeSet};
 use crate::limits::{MAX_DOM_NODES, MAX_HTML_INPUT_BYTES, bounded_utf8_prefix};
 use html5ever::interface::tree_builder::QuirksMode;
 use std::cell::{Cell, RefCell};
@@ -38,6 +38,9 @@ pub struct Dom {
     pub(super) parser_render_changes: Rc<parser_render_changes::ParserRenderJournal>,
     pub(super) parser_elements: Rc<parser_custom_elements::ParserElements>,
     pub(super) parser_csp_meta: RefCell<VecDeque<NodeRef>>,
+    /// Set by a parser insertion that may exceed the depth budget, so that the parser walks the
+    /// tree to enforce it (`HtmlParser::enforce_limits`) only after such an insertion.
+    pub(super) parser_depth_check: Cell<bool>,
 }
 
 impl Default for Dom {
@@ -62,6 +65,7 @@ impl Dom {
             parser_render_changes: Default::default(),
             parser_elements: Default::default(),
             parser_csp_meta: Default::default(),
+            parser_depth_check: Cell::new(false),
         }
     }
 
@@ -79,6 +83,7 @@ impl Dom {
             parser_render_changes: Default::default(),
             parser_elements: Default::default(),
             parser_csp_meta: Default::default(),
+            parser_depth_check: Cell::new(false),
         }
     }
 }
@@ -159,10 +164,47 @@ impl Dom {
     /// Resolves an identifier only while its node remains in this document tree.
     /// Detached nodes retain their identity but are deliberately absent until reinserted.
     pub fn find_node(&self, wanted: NodeId) -> Option<NodeRef> {
+        let mut found = None;
+        self.walk_until(|node| {
+            let hit = node.id() == wanted;
+            if hit {
+                found = Some(node.clone());
+            }
+            hit
+        });
+        found
+    }
+
+    /// Resolves each of `wanted` as `find_node` does, in one walk of the tree. Invalidation
+    /// resolves hundreds of mutation roots per rendering checkpoint, and a walk per root cost
+    /// a large article tens of milliseconds.
+    pub fn find_nodes(&self, wanted: &[NodeId]) -> NodeMap<NodeId, NodeRef> {
+        let mut pending = wanted.iter().copied().collect::<NodeSet<_>>();
+        let mut found = NodeMap::default();
+        if !pending.is_empty() {
+            self.walk_until(|node| {
+                if pending.remove(&node.id()) {
+                    found.insert(node.id(), node.clone());
+                }
+                pending.is_empty()
+            });
+        }
+        found
+    }
+
+    /// `find_nodes` for `wanted` in its order, skipping nodes no longer in the tree.
+    pub fn find_nodes_in_order(&self, wanted: &[NodeId]) -> Vec<NodeRef> {
+        let mut found = self.find_nodes(wanted);
+        wanted.iter().filter_map(|id| found.remove(id)).collect()
+    }
+
+    /// Visits the tree, shadow trees and template contents in `find_node` order until
+    /// `stop` returns true.
+    fn walk_until(&self, mut stop: impl FnMut(&NodeRef) -> bool) {
         let mut stack = vec![self.document.clone()];
         while let Some(node) = stack.pop() {
-            if node.id() == wanted {
-                return Some(node);
+            if stop(&node) {
+                return;
             }
             stack.extend(node.children.borrow().iter().rev().cloned());
             if let Some(shadow) = node.shadow_root() {
@@ -175,7 +217,6 @@ impl Dom {
                 stack.push(contents);
             }
         }
-        None
     }
 
     pub fn title(&self) -> String {

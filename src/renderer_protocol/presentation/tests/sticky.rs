@@ -64,7 +64,7 @@ fn invalid_page_derived_constraints_are_contained_before_wire_encoding() {
         let mut source = sample().layout.into_layout();
         source.sticky_layers = vec![layer()];
         source.sticky_layers[0].insets[0] = Some(invalid);
-        let contained = PresentedLayout::from_layout(source);
+        let contained = PresentedLayout::from_layout(&source);
         assert!(contained.sticky_layers.is_empty());
         assert!(!contained.items.is_empty());
     }
@@ -72,7 +72,7 @@ fn invalid_page_derived_constraints_are_contained_before_wire_encoding() {
     source.sticky_layers = vec![layer()];
     source.sticky_layers[0].items = 0..usize::MAX;
     assert!(
-        PresentedLayout::from_layout(source)
+        PresentedLayout::from_layout(&source)
             .sticky_layers
             .is_empty()
     );

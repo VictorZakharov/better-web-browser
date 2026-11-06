@@ -373,8 +373,13 @@ impl Iterator for ComposedDescendants {
 
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.stack.pop()?;
-        self.stack
-            .extend(Node::composed_children(&node).into_iter().rev());
+        if node.shadow_root().is_some() || node.tag_name() == Some("slot") {
+            self.stack
+                .extend(Node::composed_children(&node).into_iter().rev());
+        } else {
+            self.stack
+                .extend(node.children.borrow().iter().rev().cloned());
+        }
         Some(node)
     }
 }

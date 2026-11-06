@@ -232,3 +232,21 @@ fn attribute_writes_to_a_probe_removed_in_the_same_task_do_not_root_its_parent()
     );
     assert_eq!(pending.take(1).roots, vec![parent.id()]);
 }
+
+#[test]
+fn hiding_a_row_records_a_bounded_change_not_its_table_body() {
+    let dom = dom::parse("<table><tbody><tr><td>a</td></tr><tr><td>b</td></tr></tbody></table>");
+    let row = dom.elements_named("tr").next().unwrap();
+    let mut pending = PendingInvalidation::default();
+    pending.record(&dom.document, Some(&row), MutationKind::Attribute("hidden"));
+    let invalidation = pending.snapshot(1);
+    assert!(invalidation.roots.is_empty(), "{invalidation:?}");
+    assert_eq!(invalidation.attribute_changes.len(), 1);
+    assert_eq!(invalidation.attribute_changes[0].node, row.id());
+    assert_eq!(invalidation.attribute_changes[0].attributes, vec!["hidden"]);
+    assert!(invalidation.impact.affects_layout());
+    // Other presentational attributes keep the parent-subtree scope.
+    pending.record(&dom.document, Some(&row), MutationKind::Attribute("align"));
+    let tbody = dom.elements_named("tbody").next().unwrap();
+    assert_eq!(pending.snapshot(2).roots, vec![tbody.id()]);
+}

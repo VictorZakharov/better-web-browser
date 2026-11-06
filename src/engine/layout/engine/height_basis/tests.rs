@@ -94,3 +94,36 @@ fn blocks_below_a_growing_stretched_item_replay_with_percentage_children_resized
         assert_eq!(warm.items.len(), cold.items.len());
     }
 }
+
+#[test]
+fn tables_flex_boxes_and_flow_roots_below_a_stretched_item_replay() {
+    let markup = MARKUP.replace(
+        "<div id=half class=half>halfword</div>",
+        "<table><tr><td>tableword one</td><td>tableword two</td></tr></table>\
+         <div style=display:flex><span>flexword one</span><span>flexword two</span></div>\
+         <div style=display:flow-root><p>rootword in its own context</p></div>\
+         <div id=transformed style=transform:scale(1)><div>\
+         <span id=pinned style=position:absolute;bottom:0>pinned</span></div></div>",
+    );
+    let mut page = Page::parse(&markup, "https://example.test/");
+    page.refresh_resources_for_viewport(WIDTH, HEIGHT);
+    layout(&page, &mut Recording::default());
+    layout(&page, &mut Recording::default());
+    append_paragraph(&mut page);
+    let mut measurer = Recording::default();
+    let warm = layout(&page, &mut measurer);
+    for word in ["tableword", "flexword", "rootword"] {
+        assert_eq!(measurer.measured(word), 0, "{word}: {:?}", measurer.texts);
+    }
+    // A transformed box is the containing block of absolutely positioned descendants at any
+    // depth, which are laid out against its height before it is known: the basis.
+    assert_eq!(
+        warm.node_bounds[&element(&page, "pinned").id()].bottom(),
+        warm.node_bounds[&element(&page, "transformed").id()].y + height(&page, &warm, "aside")
+    );
+    let retained = std::mem::take(&mut *page.layout_reuse.borrow_mut());
+    let cold = layout(&page, &mut Recording::default());
+    *page.layout_reuse.borrow_mut() = retained;
+    assert_eq!(warm.node_bounds, cold.node_bounds);
+    assert_eq!(warm.items.len(), cold.items.len());
+}

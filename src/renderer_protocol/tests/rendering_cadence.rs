@@ -6,6 +6,7 @@ fn update(rate: RefreshRate) -> BrowserMessage {
         document: DocumentId::new(17).unwrap(),
         viewport: PresentedViewport {
             width: 1536.0,
+            overflow_width: 1536.0,
             height: 694.4,
             style_width: 1536.0,
             dpi: 120,

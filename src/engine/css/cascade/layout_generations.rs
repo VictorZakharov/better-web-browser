@@ -6,10 +6,11 @@
 // derived only from that subtree's styles while the generation is unchanged.
 //
 // Generations come from one process-wide counter, so values recorded against one `StyleSet`
-// never match another. A new value is drawn only after layout has observed the current one,
+// never match another, except a fork's copies of the values it started from (`forked`). A new value is drawn only after layout has observed the current one,
 // which keeps an ancestor walk short (it stops at the first ancestor already carrying the
 // current value) without ever letting a recorded value survive a later change.
 use super::*;
+use crate::engine::dom::node::NodeSet;
 use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -56,24 +57,31 @@ impl LayoutGenerations {
         }
     }
 
-    /// A copy for another style set in which every known node carries one fresh generation, so
-    /// no value a layout recorded against this set matches the copy.
-    pub(super) fn renumbered(&self) -> Self {
+    /// A copy for a fork of this style set, whose values match this set's where both hold the
+    /// same styles, so a layout retained against one set can be replayed against the other.
+    ///
+    /// Nodes in `owned`, whose composed subtrees hold generated pseudo-element boxes that each
+    /// set creates separately, take one fresh generation instead: a layout of them refers to
+    /// one set's boxes. Both sets draw a new value for their next change, so a value either set
+    /// assigns after the fork is never shared.
+    pub(super) fn forked(&self, owned: &NodeSet<NodeId>) -> Self {
         let fresh = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
+        self.observed.set(true);
         let renumber = |generation: u64| if generation == 0 { 0 } else { fresh };
         Self {
             generations: self
                 .generations
                 .iter()
-                .map(|(&node, generations)| {
-                    let own = renumber(generations.own);
-                    (
-                        node,
+                .map(|(&node, &generations)| {
+                    let generations = if owned.contains(&node) {
                         Generations {
-                            own,
+                            own: renumber(generations.own),
                             subtree: renumber(generations.subtree),
-                        },
-                    )
+                        }
+                    } else {
+                        generations
+                    };
+                    (node, generations)
                 })
                 .collect(),
             current: Cell::new(fresh),

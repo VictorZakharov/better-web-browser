@@ -111,6 +111,14 @@ impl Broker {
                         self.protocol_failure(error.to_string());
                     }
                 }
+                BrokerCommand::AccessibilityPolicy(enabled) => {
+                    if let Err(error) = self
+                        .writer()
+                        .send_browser(&BrowserMessage::AccessibilityPolicy { enabled })
+                    {
+                        self.protocol_failure(error.to_string());
+                    }
+                }
                 BrokerCommand::ProbeRestrictions {
                     loopback_port,
                     reply,

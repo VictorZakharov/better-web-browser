@@ -151,6 +151,7 @@ impl BrowserState {
                 return;
             };
             tab.incidents.navigations = tab.incidents.navigations.saturating_add(1);
+            tab.incidents.begin_load(&url);
             tab.incidents
                 .record("navigation", format!("begin {history_mode:?}: {url}"));
             tab.document_fetch.abort();

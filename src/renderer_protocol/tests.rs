@@ -195,6 +195,7 @@ fn document_start_diagnostic_selectors_round_trip_and_are_bounded() {
         scroll_restoration: ScrollRestorationMode::Manual,
         viewport: PresentedViewport {
             width: 800.0,
+            overflow_width: 800.0,
             height: 600.0,
             style_width: 800.0,
             dpi: 96,

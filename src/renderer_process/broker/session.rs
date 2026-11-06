@@ -110,7 +110,7 @@ impl RendererSession {
         FetchResponseSink::new(
             document,
             self.fetch_responses.clone(),
-            self.stylesheet_stream.clone(),
+            self.priority_stream.clone(),
             self.wake.clone(),
             Arc::clone(&self.fetch_flow),
         )
@@ -274,6 +274,11 @@ impl RendererSession {
             false if coalescible => Ok(()),
             false => Err("renderer command queue is full".into()),
         }
+    }
+
+    /// Lets this renderer's documents build semantic trees; see `BrowserMessage::AccessibilityPolicy`.
+    pub fn set_accessibility_policy(&self, enabled: bool) -> Result<(), String> {
+        self.send_command(worker::BrokerCommand::AccessibilityPolicy(enabled))
     }
 
     pub fn set_gpu_canvas_policy(&self, document: DocumentId, enabled: bool) -> Result<(), String> {

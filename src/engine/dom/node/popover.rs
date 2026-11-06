@@ -16,8 +16,22 @@ impl Node {
         let Some(element) = self.element() else {
             return;
         };
+        if order != 0 {
+            let mut root = self.identity.clone();
+            let mut ancestor = self.shadow_including_parent();
+            while let Some(node) = ancestor {
+                root = node.identity.clone();
+                ancestor = node.shadow_including_parent();
+            }
+            root.popover_opened.set(true);
+        }
         if element.popover_order.replace(order) != order {
             self.mark_mutated();
         }
+    }
+
+    /// False until a popover of this document, the document node, has opened.
+    pub fn has_opened_popover(document: &NodeRef) -> bool {
+        document.identity.popover_opened.get()
     }
 }

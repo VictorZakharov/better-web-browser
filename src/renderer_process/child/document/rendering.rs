@@ -7,6 +7,7 @@ use crate::engine::dom::{Node, NodeId, NodeRef};
 mod frame_waits;
 mod image_arrivals;
 pub(super) use frame_waits::FrameArrivals;
+use frame_waits::LoadPhase;
 
 pub(super) struct RenderBlocking {
     links: HashMap<NodeId, NodeRef>,
@@ -19,6 +20,10 @@ pub(super) struct RenderBlocking {
     pub(super) last_frame: Option<(Instant, Duration)>,
     /// A background checkpoint skipped its frame; see `background_frame_waits`.
     pub(super) frame_delayed: bool,
+    /// The skipped frame has script work to show, not only arrived resources.
+    pub(super) script_frame_delayed: bool,
+    /// The browser asked for the next frame now, as for an assistive technology's first tree.
+    pub(super) frame_requested: bool,
     /// When the parser last received streamed document input, while more is expected.
     pub(super) parser_input: Option<Instant>,
 }
@@ -32,6 +37,8 @@ impl Default for RenderBlocking {
             styles_deferred: false,
             last_frame: None,
             frame_delayed: false,
+            script_frame_delayed: false,
+            frame_requested: false,
             parser_input: None,
         }
     }
@@ -50,8 +57,13 @@ impl DocumentRuntime {
             })
     }
     pub(super) fn stylesheet_nodes(&self) -> Vec<NodeRef> {
-        Node::descendants(&self.page.dom.document)
+        let document = self.page.dom.document.id();
+        self.page
+            .resource_elements()
+            .iter()
+            .filter_map(|element| element.node())
             .filter(crate::engine::page::is_stylesheet)
+            .filter(|node| Node::tree_root(node).id() == document)
             .collect()
     }
     pub(super) fn record_parser_stylesheets(&mut self, previous: &[(NodeId, u64)]) {
@@ -174,7 +186,8 @@ impl DocumentRuntime {
             micros(
                 self.background_frame_remaining(FrameArrivals {
                     resources: self.resource_render_pending,
-                    only: true,
+                    only: !self.rendering.script_frame_delayed,
+                    tasks_ready: false,
                 })
                 .unwrap_or_default(),
             )
@@ -185,19 +198,26 @@ impl DocumentRuntime {
         self.background_frame_remaining(arrivals).is_some()
     }
     fn background_frame_remaining(&self, arrivals: FrameArrivals) -> Option<Duration> {
-        if self.rendering_is_blocked() {
+        if self.rendering_is_blocked() || self.rendering.frame_requested {
             return None;
         }
         let streaming = self
             .rendering
             .parser_input
             .filter(|_| self.parser.is_some() && !self.parser_scripts.blocked());
-        frame_waits::remaining(
-            Instant::now(),
-            self.rendering.last_frame?,
-            streaming,
-            arrivals,
-        )
+        let load = match streaming {
+            Some(input) => LoadPhase::Streaming(input),
+            None if self.parser.is_some()
+                || self
+                    .script_runtime
+                    .as_ref()
+                    .is_some_and(|runtime| !runtime.document_load_finished()) =>
+            {
+                LoadPhase::Loading
+            }
+            None => LoadPhase::Loaded,
+        };
+        frame_waits::remaining(Instant::now(), self.rendering.last_frame?, load, arrivals)
     }
     /// Skips this checkpoint's frame (see `background_frame_waits`). Arrived resources and the
     /// style invalidation carry over to whichever path presents the next frame.
@@ -216,6 +236,7 @@ impl DocumentRuntime {
     }
     /// Carries a skipped frame's style invalidation and arrived resources to the next frame.
     fn defer_background_frame(&mut self, outcome: &ScriptOutcome, resources: [bool; 3]) {
+        self.rendering.script_frame_delayed |= outcome.render_requested;
         if outcome.render_requested || !outcome.invalidation.is_empty() {
             let (width, height) = (self.viewport.style_width, self.viewport.height);
             let invalidation = if outcome.invalidation.is_empty() {

@@ -8,9 +8,16 @@ use super::super::dom::{NodeId, NodeRef};
 pub struct AttributeChange {
     pub node: NodeId,
     pub tokens: Vec<String>,
-    /// ASCII-lowercase names of attributes for which `selector_only_attribute` holds.
+    /// ASCII-lowercase names of attributes for which `selector_only_attribute` holds, and
+    /// [`HOVER_STATE`] when the element entered or left `:hover`.
     pub attributes: Vec<String>,
 }
+
+/// The name under which an element's `:hover` designation change is recorded with its attribute
+/// changes. No attribute name starts with `:`, and like a selector-only attribute, `:hover`
+/// is read only by selectors: the cascade bounds the change by the rules that use it.
+/// https://drafts.csswg.org/selectors-4/#the-hover-pseudo
+pub(crate) const HOVER_STATE: &str = ":hover";
 
 /// Whether a change of attribute `name` can affect rendering only through selectors that name
 /// it (and `attr()` on the element itself). HTML gives `data-*`, `aria-*` and `role` no

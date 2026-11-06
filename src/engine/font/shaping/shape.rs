@@ -1,6 +1,7 @@
 //! Browser-focused bidi, script, fallback, and OpenType shaping.
 
 use super::catalog::{FontCatalog, SelectedFont};
+use super::plans::ShapePlans;
 use crate::engine::FontSpec;
 use crate::engine::layout::{RectF, TextCluster, TextGeometry};
 use harfrust::{Direction, ShaperData, ShaperInstance, UnicodeBuffer, Variation};
@@ -47,6 +48,7 @@ pub(crate) struct ShapeOutput {
 
 pub(crate) struct TextShaper {
     data: HashMap<(u64, u32), ShaperData>,
+    pub(super) plans: ShapePlans,
     buffer: Option<UnicodeBuffer>,
 }
 
@@ -54,6 +56,7 @@ impl Default for TextShaper {
     fn default() -> Self {
         Self {
             data: HashMap::new(),
+            plans: ShapePlans::default(),
             buffer: Some(UnicodeBuffer::new()),
         }
     }
@@ -62,6 +65,7 @@ impl Default for TextShaper {
 impl TextShaper {
     pub(crate) fn clear(&mut self) {
         self.data.clear();
+        self.plans.clear();
         self.buffer = Some(UnicodeBuffer::new());
     }
 
@@ -167,9 +171,10 @@ impl TextShaper {
         else {
             return;
         };
+        let face = (run.font.font.blob.id(), run.font.font.index);
         let data = self
             .data
-            .entry((run.font.font.blob.id(), run.font.font.index))
+            .entry(face)
             .or_insert_with(|| ShaperData::new(&font_ref));
         let variations = run
             .font
@@ -231,7 +236,8 @@ impl TextShaper {
         for (tag, value) in spec.features.settings() {
             features.push(harfrust::Feature::new(harfrust::Tag::new(tag), *value, ..));
         }
-        let glyph_buffer = shaper.shape(buffer, &features);
+        let plan = self.plans.get(face, &shaper, &instance, &buffer, &features);
+        let glyph_buffer = shaper.shape_with_plan(plan, buffer, &features);
         let scale = spec.size.clamp(1.0, 768.0) / shaper.units_per_em().max(1) as f32;
         let baseline = font_baseline(&run.font, spec.size, line_height);
         let infos = glyph_buffer.glyph_infos();

@@ -36,13 +36,8 @@ impl Page {
             // Do not refresh the cascade twice: that would erase the first
             // comparison's evidence (e.g. hiding a previously visible box).
             let started = self.resource_profile.start();
-            let resources = super::super::resources::discover_non_script_resources(
-                &self.dom,
-                &self.source_url,
-                &self.base_url,
-                self.media_environment,
-            );
-            for resource in resources {
+            // Media elements' resources come from `refresh_media_sources` below.
+            for resource in self.discover_link_and_image_resources() {
                 if !matches!(
                     resource,
                     PageResource::Script { .. } | PageResource::Media { .. }

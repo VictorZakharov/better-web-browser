@@ -158,3 +158,57 @@ fn normalize_removes_empty_text_but_never_merges_across_comments() {
         "yes"
     );
 }
+
+#[test]
+fn native_tree_position_and_contains_match_parent_walks_for_every_pair() {
+    // The reference is the parent-walk algorithm both methods replaced, over text, comments,
+    // a shadow tree, template contents, a fragment and a detached element.
+    let (dom, outcome) = execute_html(
+        r#"<main><p>a<b>b</b><!--c--></p><div id=host></div><template><i>t</i><u></u></template></main><output>no</output><script>
+            const main = document.querySelector('main');
+            const shadow = document.getElementById('host').attachShadow({mode: 'open'});
+            shadow.innerHTML = '<span><em>s</em></span><s></s>';
+            const fragment = document.createDocumentFragment();
+            fragment.append(document.createElement('q'), 'f');
+            const nodes = [document, document.documentElement, document.body, main, fragment,
+                document.createElement('detached'), shadow];
+            const collect = root => {
+                for (let node = root.firstChild; node; node = node.nextSibling) {
+                    nodes.push(node);
+                    collect(node);
+                }
+            };
+            [main, shadow, main.querySelector('template').content, fragment].forEach(collect);
+            const ancestors = node => {
+                const list = [];
+                for (; node; node = node.parentNode) list.push(node);
+                return list.reverse();
+            };
+            const reference = (self, other) => {
+                if (self === other) return 0;
+                const a = ancestors(other), b = ancestors(self);
+                if (a[0] !== b[0]) return -1;
+                if (b.includes(other)) return 10;
+                if (a.includes(self)) return 20;
+                let depth = 0;
+                while (a[depth] === b[depth]) depth++;
+                const siblings = Array.from(a[depth - 1].childNodes);
+                return siblings.indexOf(a[depth]) < siblings.indexOf(b[depth]) ? 2 : 4;
+            };
+            const failures = [];
+            for (const self of nodes) for (const other of nodes) {
+                const expected = reference(self, other);
+                const actual = self.compareDocumentPosition(other);
+                if (expected === -1 ? (actual & 33) !== 33 : actual !== expected)
+                    failures.push(`${self.nodeName}->${other.nodeName}: ${actual} vs ${expected}`);
+                if (self.contains(other) !== ancestors(other).includes(self))
+                    failures.push(`${self.nodeName} contains ${other.nodeName}`);
+            }
+            document.querySelector('output').textContent =
+                failures.length ? failures.slice(0, 5).join('; ') : `yes ${nodes.length}`;
+        </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let output = dom.elements_named("output").next().unwrap().text_content();
+    assert!(output.starts_with("yes "), "{output}");
+}

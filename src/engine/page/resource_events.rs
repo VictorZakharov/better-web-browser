@@ -20,7 +20,10 @@ impl Page {
             })
             .cloned()
             .collect::<std::collections::HashSet<_>>();
-        for node in Node::shadow_including_descendants(&self.dom.document) {
+        for element in self.resource_elements().iter() {
+            let Some(node) = element.node() else {
+                continue;
+            };
             if (matches!(node.tag_name(), Some("img" | "image"))
                 || node.tag_name() == Some("input")
                     && node
@@ -29,9 +32,9 @@ impl Page {
                 && !node
                     .attr("loading")
                     .is_some_and(|value| value.eq_ignore_ascii_case("lazy"))
-                && let Some(resource) = self.resource_event_key(&node)
+                && let Some(resource) = &element.key
             {
-                blockers.insert(resource);
+                blockers.insert(resource.clone());
             }
         }
         // Read only already-computed styles: tracking loading must not hydrate hidden trees.

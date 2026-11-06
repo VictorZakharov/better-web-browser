@@ -16,12 +16,28 @@ pub(super) fn encode(
     value: &RendererPresentation,
     base: Option<ItemBase<'_>>,
 ) -> Result<Vec<u8>, ProtocolError> {
+    let mut writer = WireWriter::new();
+    encode_into(&mut writer, value, base)?;
+    Ok(writer.finish())
+}
+
+/// The length of `encode(value, None)`, or its error, without building the payload.
+pub(super) fn encoded_len(value: &RendererPresentation) -> Result<usize, ProtocolError> {
+    let mut writer = WireWriter::counting();
+    encode_into(&mut writer, value, None)?;
+    Ok(writer.len())
+}
+
+fn encode_into(
+    writer: &mut WireWriter,
+    value: &RendererPresentation,
+    base: Option<ItemBase<'_>>,
+) -> Result<(), ProtocolError> {
     validate_glyph_rasters(value.glyph_epoch, &value.glyphs)?;
     validate_retired_keys(&value.retired_image_keys, &value.images)?;
     if value.images.len() > MAX_PRESENTED_IMAGES {
         return Err(ProtocolError::InvalidPayload("presented image count"));
     }
-    let mut writer = WireWriter::new();
     writer.u64(value.document.get());
     writer.u64(value.revision);
     writer.bool(value.clock_advanced);
@@ -29,17 +45,17 @@ pub(super) fn encode(
     writer.string(&value.final_url)?;
     writer.u16(value.status);
     writer.string(&value.character_set)?;
-    encode_reader(&mut writer, &value.reader)?;
-    encode_runtime(&mut writer, &value.runtime)?;
-    encode_style(&mut writer, value.style);
-    encode_load(&mut writer, value.load);
+    encode_reader(writer, &value.reader)?;
+    encode_runtime(writer, &value.runtime)?;
+    encode_style(writer, value.style);
+    encode_load(writer, value.load);
     writer.bytes(&encode_diagnostics(&value.page_diagnostics)?)?;
-    value.accessibility.encode_into(&mut writer)?;
+    value.accessibility.encode_into(writer)?;
     writer.bool(value.next_timer_micros.is_some());
     if let Some(delay) = value.next_timer_micros {
         writer.u64(delay);
     }
-    encode_layout(&mut writer, &value.layout, base)?;
+    encode_layout(writer, &value.layout, base)?;
     writer.u32(value.images.len() as u32);
     for image in &value.images {
         writer.string(&image.url)?;
@@ -60,12 +76,11 @@ pub(super) fn encode(
         writer.u32(glyph.image.height);
         writer.bytes(&glyph.image.bgra)?;
     }
-    super::super::gpu::encode(&mut writer, &value.gpu_canvases)?;
-    let bytes = writer.finish();
-    if bytes.len() > MAX_RENDERER_PRESENTATION_BYTES {
-        return Err(ProtocolError::PayloadTooLarge(bytes.len() as u32));
+    super::super::gpu::encode(writer, &value.gpu_canvases)?;
+    if writer.len() > MAX_RENDERER_PRESENTATION_BYTES {
+        return Err(ProtocolError::PayloadTooLarge(writer.len() as u32));
     }
-    Ok(bytes)
+    Ok(())
 }
 
 fn validate_retired_keys(keys: &[String], images: &[PresentedImage]) -> Result<(), ProtocolError> {

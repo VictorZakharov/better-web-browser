@@ -258,6 +258,9 @@
             return child;
         }
         contains(other) {
+            // One native ancestor walk instead of a `parentNode` call per level.
+            if (other instanceof Node && !(other instanceof Attr))
+                return host('isInclusiveAncestor', nodeId(this), nodeId(other));
             for (let node = other; node; node = node.parentNode) if (node === this) return true;
             return false;
         }

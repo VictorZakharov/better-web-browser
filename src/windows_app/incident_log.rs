@@ -5,12 +5,15 @@ use std::collections::VecDeque;
 use std::fmt::Write;
 use std::time::{Duration, Instant};
 
+mod load_summary;
+
 const MAX_INCIDENT_RECORDS: usize = 192;
 const MAX_INCIDENT_DETAIL_CHARS: usize = 512;
 
 pub(super) struct IncidentLog {
     started: Instant,
     records: VecDeque<IncidentRecord>,
+    load: Option<load_summary::LoadSummary>,
     pub(super) navigations: u64,
     pub(super) presentations: u64,
     pub(super) runtime_updates: u64,
@@ -30,6 +33,7 @@ impl Default for IncidentLog {
         Self {
             started: Instant::now(),
             records: VecDeque::new(),
+            load: None,
             navigations: 0,
             presentations: 0,
             runtime_updates: 0,
@@ -43,6 +47,34 @@ impl Default for IncidentLog {
 impl IncidentLog {
     pub(super) fn record_count(&self) -> usize {
         self.records.len()
+    }
+
+    /// Starts the load summary of a navigation; see `load_summary`.
+    pub(super) fn begin_load(&mut self, url: &str) {
+        self.load = Some(load_summary::LoadSummary::new(url, Instant::now()));
+    }
+
+    pub(super) fn load_headers(&mut self) {
+        if let Some(load) = self.load.as_mut() {
+            load.headers(Instant::now());
+        }
+    }
+
+    pub(super) fn load_network_complete(&mut self) {
+        if let Some(load) = self.load.as_mut() {
+            load.network_complete(Instant::now());
+        }
+    }
+
+    pub(super) fn load_presentation(&mut self, revision: u64, items: usize) {
+        if let Some(load) = self.load.as_mut() {
+            load.presentation(Instant::now(), revision, items);
+        }
+    }
+
+    /// The latest navigation's milestones, or `None` before the first navigation.
+    pub(super) fn load_report(&self) -> Option<String> {
+        self.load.as_ref().map(|load| load.report(Instant::now()))
     }
 
     pub(super) fn record_pointer(

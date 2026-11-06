@@ -77,3 +77,20 @@ fn counts_follow_the_work_each_pass_does() {
         "taking resets the sum"
     );
 }
+
+#[test]
+fn probing_a_nested_grid_does_not_lay_its_items_out_again() {
+    // The page grid probes its article item, which is itself a grid that probes and then lays out
+    // its own item at the row's size. Inside the probe that second layout would be discarded, so
+    // it is skipped: each block is laid out once to probe and once to paint, not three times.
+    // Floated figures, as in an encyclopedia article, keep those layouts from sharing results.
+    const BLOCKS: u64 = 100;
+    let markup = format!(
+        "<style>.grid{{display:grid;grid-template-columns:1fr}}         figure{{float:right;width:10px;height:5px;margin:0}}</style>         <div class=grid><div class=grid><article>{}</article></div></div>",
+        "<figure></figure><p>text</p>".repeat(BLOCKS as usize / 2)
+    );
+    let mut page = Page::parse(&markup, "https://example.test/");
+    page.refresh_resources_for_viewport(800.0, 600.0);
+    let (cold, _) = pass(&page);
+    assert!(cold.blocks_laid_out < BLOCKS * 5 / 2, "{cold:?}");
+}

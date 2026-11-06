@@ -119,7 +119,7 @@ impl DocumentRuntime {
         if let Some(runtime) = self.script_runtime.as_mut() {
             self.parser_scripts.prepare_modules(runtime);
         }
-        let live_hints = self.page.current_network_hints();
+        let live_hints = std::cell::OnceCell::new();
         let already_admitted = self
             .loaded_resources
             .iter()
@@ -164,7 +164,10 @@ impl DocumentRuntime {
                 if !is_network_hint(resource) {
                     return true;
                 }
-                if !live_hints.contains(resource) {
+                if !live_hints
+                    .get_or_init(|| self.page.current_network_hints())
+                    .contains(resource)
+                {
                     return false;
                 }
                 match resource {

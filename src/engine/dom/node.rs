@@ -13,6 +13,7 @@ pub(crate) mod control_temporal;
 pub(crate) mod control_validity;
 pub(crate) mod control_values;
 mod control_version;
+mod document_base;
 mod focus;
 mod node_map;
 mod popover;
@@ -91,6 +92,11 @@ pub(super) struct NodeIdAllocator {
     pub(super) parser_observers: Cell<usize>,
     pub(super) parser_old_text_observers: Cell<usize>,
     pub(super) custom_element_names: RefCell<std::collections::HashSet<String>>,
+    /// Whether any popover of this document has opened, which is rare: until then finding the
+    /// open ones takes no walk of the document.
+    pub(super) popover_opened: Cell<bool>,
+    /// `Node::first_base_href`'s last answer.
+    pub(super) base_href: RefCell<Option<document_base::BaseHref>>,
 }
 
 impl NodeIdAllocator {
@@ -108,6 +114,8 @@ impl NodeIdAllocator {
             parser_observers: Cell::new(0),
             parser_old_text_observers: Cell::new(0),
             custom_element_names: Default::default(),
+            popover_opened: Cell::new(false),
+            base_href: RefCell::default(),
         })
     }
 
@@ -242,6 +250,9 @@ impl Node {
     }
 
     pub(super) fn new_in(identity: Rc<NodeIdAllocator>, data: NodeData) -> NodeRef {
+        if let NodeData::Element(element) = &data {
+            document_base::note_element_created(element);
+        }
         let id = identity.allocate();
         Rc::new(Self {
             id,

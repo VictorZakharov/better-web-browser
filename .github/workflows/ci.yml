@@ -91,6 +91,9 @@ jobs:
       - name: Test bundled codec build policy
         shell: pwsh
         run: ./scripts/test-opus-build-policy.ps1
+      - name: Test filmstrip completion timing
+        shell: pwsh
+        run: ./scripts/test-filmstrip-completion.ps1
       - name: Check formatting
         run: cargo fmt --all -- --check
 

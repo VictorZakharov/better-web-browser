@@ -11,7 +11,15 @@ struct GeometryTextMeasurer<'a, M> {
 #[cfg(test)]
 mod tests;
 
+// Script geometry must measure exactly as rendering does, and identify its results the same
+// way: without the epoch, no forced layout reused anything, even the page's own retained layouts.
 impl<M: crate::engine::TextMeasurer> crate::engine::TextMeasurer for GeometryTextMeasurer<'_, M> {
+    fn normal_line_height(&mut self, font: &crate::engine::FontSpec) -> f32 {
+        self.inner.normal_line_height(font)
+    }
+    fn layout_cache_epoch(&self) -> Option<u64> {
+        self.inner.layout_cache_epoch()
+    }
     fn text_geometry(
         &mut self,
         text: &str,
@@ -117,6 +125,7 @@ impl DocumentRuntime {
     }
 
     pub(super) fn sync_script_layout_page(&mut self) {
+        self.guess_viewport_overflow();
         self.script_layout_viewport.set(self.viewport);
         let mut snapshot = self.script_layout_page.borrow_mut();
         snapshot.synchronize_layout_snapshot(&self.page);
@@ -297,6 +306,9 @@ impl DocumentRuntime {
             );
         }
         drop(text);
+        if self.withdraw_refuted_overflow_guess() {
+            return self.rebuild_layout_for_invalidation(None);
+        }
         self.page.prepare_css_images(&mut self.layout);
         self.page.prepare_inline_svg_images(&self.layout);
         self.compose_embedded_frames();

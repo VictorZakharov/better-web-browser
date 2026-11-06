@@ -75,4 +75,18 @@ foreach ($budget in @('', '2g', 'unlimited', 'GRAPHICS --benchmark')) {
     }
     if (-not $rejected) { throw "Unknown memory budget accepted: $budget" }
 }
+$resting = @(Get-RestingPointerActions '700, 500' 450)
+if (($resting -join '|') -ne 'move:700,500|pause:150|move:701,500|pause:150|move:700,500|pause:150|move:701,500') {
+    throw "Resting pointer actions changed: $($resting -join '|')"
+}
+if (@(Get-HiddenBenchmarkActionArguments -ActionSequence $resting).Count -ne 2 * $resting.Count) {
+    throw 'Resting pointer actions are not valid ordered actions.'
+}
+foreach ($point in @('', '1', '-1,2', '1,2,3', 'x,y', '1,2 --screenshot', '9999999999,1')) {
+    $rejected = $false
+    try { & $runner -Url 'about:blank' -Output 'G:\invalid-rest-unused.json' -Browser 'G:
+onexistent-hidden-browser.exe' -RestingPointer $point }
+    catch { $rejected = $_.Exception.Message -notmatch 'nonexistent-hidden-browser' }
+    if ($point -and -not $rejected) { throw "Malformed resting pointer accepted: $point" }
+}
 Write-Host 'Hidden wheel option validation passed without browser execution.'

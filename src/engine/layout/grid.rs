@@ -250,6 +250,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             row_gap,
             containing_height,
         );
+        let bottom =
+            y + row_heights.iter().sum::<f32>() + row_gap * row_count.saturating_sub(1) as f32;
+        // A block-size probe keeps only the block size, which the rows already fix: laying the
+        // items out again at their final size would be discarded. Nested grids probed this way
+        // laid each level's items out twice per enclosing probe (Wikipedia's page grids).
+        if !self.emit_paint && !self.retain_fragments {
+            return bottom;
+        }
         for (index, item_x, item_width, used_inline_size, natural_height) in laid_out {
             let item = &placements[index];
             let mut final_y =
@@ -316,6 +324,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 content_height,
             );
         }
-        y + row_heights.iter().sum::<f32>() + row_gap * row_count.saturating_sub(1) as f32
+        bottom
     }
 }

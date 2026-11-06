@@ -70,6 +70,18 @@ CPU and scrolling, plus live Wikipedia and failed modern DuckDuckGo evidence.
 
 Breeze page-ready is its first owned layout and paint. Chromium page-ready is `Page.loadEventFired`; its first-contentful-paint is recorded separately. Breeze scroll metrics measure owned repaint work, while Chromium scroll metrics measure two-animation-frame latency, so compare trends rather than treating unlike fields as identical instrumentation.
 
+## Comparing page loads as users see them
+
+`scripts/measure-page-load.ps1` runs rotated hidden loads of saved Breeze executables and reports, per run, when the page and one optional region stop changing in the filmstrip, together with machine CPU load before and after, network completion, renderer CPU time, phase totals and presentation count. It defaults to a 1536×864 CSS-pixel window at 125% scale (a 1920×1080 display), and marks runs above `-BusyPercent` total CPU as busy. On a shared machine a large page's load time follows the renderer's CPU time, so compare builds under the same load and report busy and quiet runs separately rather than quoting an idle-machine number.
+
+```powershell
+./scripts/measure-page-load.ps1 -Url https://en.wikipedia.org/wiki/The_Open_Championship `
+    -Browser 'reference.exe,candidate.exe' -Label 'reference,candidate' -Rounds 4 `
+    -Region '1248,312,48,352' -OutputDirectory <task folder>
+```
+
+The region is a CSS-pixel rectangle (`x,y,width,height`), here Wikipedia's Appearance panel radios at that window size. A region counts as complete at the first filmstrip frame after which every frame matches the final one. `-WarmProfile` gives each build its own profile primed by one unmeasured visit, so measured loads see what a returning visitor has: site-written cookies and storage and a warm HTTP cache.
+
 ## Opt-in live evidence
 
 For hidden control editing, `scripts/run-hidden-benchmark.ps1 -ControlValue

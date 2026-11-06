@@ -6,7 +6,6 @@ mod database;
 mod fetch;
 mod file_picker;
 mod geolocation;
-mod gpu;
 mod interaction;
 mod media;
 mod media_capture;
@@ -15,6 +14,7 @@ mod mutations;
 mod navigation;
 mod notification;
 mod permission;
+mod policy;
 mod protocol_handler;
 mod runtime;
 mod sensor;
@@ -50,6 +50,8 @@ pub(super) struct ChildConnection {
     writer: writer::SharedWriter,
     test_mode: bool,
     stopping: bool,
+    /// See `BrowserMessage::AccessibilityPolicy`; new documents start with it.
+    accessibility_enabled: bool,
     pending: VecDeque<BrowserMessage>,
     pending_fetch_deliveries: VecDeque<ScriptFetchDelivery>,
     fetches: FetchState,
@@ -85,6 +87,7 @@ impl ChildConnection {
             writer,
             test_mode,
             stopping: false,
+            accessibility_enabled: false,
             pending: VecDeque::new(),
             pending_fetch_deliveries: VecDeque::new(),
             fetches: FetchState::default(),
@@ -161,6 +164,7 @@ impl ChildConnection {
             BrowserMessage::GpuCanvasPolicy { document, enabled } => {
                 self.gpu_canvas_policy(document, enabled)
             }
+            BrowserMessage::AccessibilityPolicy { enabled } => self.accessibility_policy(enabled),
             BrowserMessage::Ping(token) => self
                 .writer
                 .send_renderer(&RendererMessage::Pong(token))

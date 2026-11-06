@@ -92,17 +92,17 @@ mod tests {
 
     fn sink(
         document: DocumentId,
-        stylesheets: mpsc::SyncSender<FetchStreamEvent>,
+        priority: mpsc::SyncSender<FetchStreamEvent>,
     ) -> (FetchResponseSink, ResponseReceiver) {
         let (responses, receiver) = lane();
         let flow = Arc::new(super::super::super::flow::FetchFlow::default());
         for id in 1..=3 {
             flow.register(document, id, false).unwrap();
         }
-        flow.mark_stylesheet(document, 2);
+        flow.mark_prioritized(document, 2);
         let wake = super::super::super::wake::BrokerWake::default();
         (
-            FetchResponseSink::new(document, responses, stylesheets, wake, flow),
+            FetchResponseSink::new(document, responses, priority, wake, flow),
             receiver,
         )
     }
@@ -152,10 +152,10 @@ mod tests {
     }
 
     #[test]
-    fn stylesheet_responses_use_their_own_lane_when_the_budget_is_full() {
+    fn prioritized_responses_use_their_own_lane_when_the_budget_is_full() {
         let document = DocumentId::new(1).unwrap();
-        let (stylesheets, stylesheet_receiver) = mpsc::sync_channel(MAX_QUEUED_FETCH_STREAM_CHUNKS);
-        let (sink, receiver) = sink(document, stylesheets);
+        let (priority, priority_receiver) = mpsc::sync_channel(MAX_QUEUED_FETCH_STREAM_CHUNKS);
+        let (sink, receiver) = sink(document, priority);
         let mut offset = 0;
         while sink
             .try_chunk(chunk(1, offset, MAX_FETCH_STREAM_CHUNK_BYTES))
@@ -167,11 +167,11 @@ mod tests {
         assert!(sink.try_chunk(chunk(2, 0, 3)).unwrap().is_none());
         sink.end(2, 3).unwrap();
         assert!(matches!(
-            stylesheet_receiver.try_recv(),
+            priority_receiver.try_recv(),
             Ok(FetchStreamEvent::Chunk { chunk, .. }) if chunk.transfer_id == 2
         ));
         assert!(matches!(
-            stylesheet_receiver.try_recv(),
+            priority_receiver.try_recv(),
             Ok(FetchStreamEvent::End { end, .. }) if end.request_id == 2
         ));
         assert!(receiver.try_recv().is_ok());

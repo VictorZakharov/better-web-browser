@@ -79,13 +79,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     fn replayed_overflow(&self, node: &NodeRef, bounds: Option<&RectF>) -> Option<f32> {
         let serial = *self.replayed_roots.get(&node.id())?;
         let rect = bounds?;
-        let retained = self
-            .page
-            .layout_reuse
-            .borrow()
-            .overflow
-            .get(&node.id())
-            .copied();
+        let mut reuse = self.page.layout_reuse.borrow_mut();
+        let retained = match reuse.overflow.get(&node.id()) {
+            Some(extent) => Some(*extent),
+            None => reuse.lookup_in_source(|source, _| source.overflow.get(&node.id()).copied()),
+        };
+        drop(reuse);
         if let Some(extent) = retained
             && extent.serial == serial
             && extent.x == rect.x

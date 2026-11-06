@@ -112,11 +112,30 @@ impl PendingInvalidation {
             // A stylesheet's text replacement keeps the old child-list scope;
             // rebuilding rules already clears local-content evidence above.
             MutationKind::TextChildren if rebuild_rules => target.clone(),
+            // `hidden` also maps to `display: none` on the element itself, which the bounded
+            // scope recomputes: it always restyles the element, and its subtree when that
+            // style changes. Collapsible tables hide rows one by one; the parent-subtree
+            // scope restyled the whole table body for each row.
+            // https://html.spec.whatwg.org/multipage/rendering.html#hidden-elements
             MutationKind::Attribute(name)
-                if crate::engine::invalidation::selector_only_attribute(name) =>
+                if crate::engine::invalidation::selector_only_attribute(name)
+                    || name.eq_ignore_ascii_case("hidden") =>
             {
                 self.record_bounded_change(document, target, |changes| {
                     crate::engine::invalidation::record_attribute_change(changes, target, name);
+                });
+                return;
+            }
+            // Designation flips only `:hover` matching, which the cascade bounds like a
+            // selector-only attribute; the parent-subtree scope made `<html>` entering the
+            // hover chain restyle the whole document.
+            MutationKind::PointerDesignation => {
+                self.record_bounded_change(document, target, |changes| {
+                    crate::engine::invalidation::record_attribute_change(
+                        changes,
+                        target,
+                        crate::engine::invalidation::HOVER_STATE,
+                    );
                 });
                 return;
             }
@@ -128,8 +147,7 @@ impl PendingInvalidation {
             MutationKind::Attribute(_)
             | MutationKind::CharacterData
             | MutationKind::TextChildren
-            | MutationKind::State
-            | MutationKind::PointerDesignation => target
+            | MutationKind::State => target
                 .shadow_including_parent()
                 .unwrap_or_else(|| target.clone()),
             // Keep the DOM mutation's scope even when rules may need rebuilding. The style

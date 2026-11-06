@@ -23,9 +23,7 @@ impl HostState {
         }
         // Cache against the connected document revision, not just the first base's
         // href: insertion/removal/reordering can change which base owns the URL.
-        let resolved = Node::descendants(&self.document)
-            .filter(|node| node.tag_name() == Some("base"))
-            .find_map(|node| node.attr("href"))
+        let resolved = Node::first_base_href(&self.document)
             .and_then(|href| crate::navigation::resolve_web_url(fallback, &href))
             .filter(|url| !url.starts_with("data:") && !url.starts_with("javascript:"))
             .filter(|url| self.policy.allows_url("base-uri", url, 0))

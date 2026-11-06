@@ -32,6 +32,38 @@ fn retained_advance_clusters_reuse_measurement_without_rasterizing() {
     );
 }
 
+#[test]
+fn painting_measured_text_rasterizes_without_shaping_it_again() {
+    let font = spec();
+    let content = "measured a🌠e\u{301} שלום";
+    let mut text = RendererTextSystem::new(96);
+    let measured = text.measure(content, &font);
+    let shaped_time = text.open_type_time;
+    assert_eq!(text.measurements.len(), 1);
+    let painted = text.shape(content, &font);
+    assert_eq!(text.open_type_time, shaped_time, "paint reuses the shaping");
+    assert!(text.measurements.is_empty(), "the shape cache now holds it");
+    assert_eq!(text.measurement_cache_bytes, 0);
+    assert_eq!((painted.width, painted.height), measured);
+
+    let mut fresh = RendererTextSystem::new(96);
+    let cold = fresh.shape(content, &font);
+    assert!(
+        fresh.open_type_time > Duration::ZERO,
+        "the first shape shapes"
+    );
+    assert_eq!(painted.geometry, cold.geometry);
+    assert_eq!(painted.glyphs.len(), cold.glyphs.len());
+    assert!(!painted.glyphs.is_empty());
+    assert!(
+        painted
+            .glyphs
+            .iter()
+            .zip(cold.glyphs.iter())
+            .all(|(warm, cold)| (warm.x, warm.y) == (cold.x, cold.y))
+    );
+}
+
 fn spec() -> FontSpec {
     FontSpec {
         family: "sans-serif".into(),

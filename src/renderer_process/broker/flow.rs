@@ -1,7 +1,7 @@
 //! Consumption credit spans the network producer, pipe, and JavaScript stream.
 //! Only network threads wait here; the broker continues handling input and cancellation.
 use crate::limits::{MAX_FETCH_STREAM_IN_FLIGHT_BYTES, MAX_FETCH_STREAM_WINDOW_BYTES};
-use crate::renderer_protocol::DocumentId;
+use crate::renderer_protocol::{DocumentId, ResourceDestination};
 use std::collections::HashMap;
 use std::sync::{Condvar, Mutex};
 
@@ -19,14 +19,22 @@ struct State {
 
 struct Credit {
     limited: bool,
-    /// Stylesheet responses travel in their own lane; see `FetchResponseSink::send`.
-    stylesheet: bool,
+    /// Stylesheet and script responses travel in their own lane; see `FetchResponseSink::send`.
+    prioritized: bool,
     reserved: u32,
     consumed: u32,
 }
 
 #[cfg(test)]
 mod tests;
+
+/// Whether a response may skip the queue of other responses; see `FetchResponseSink::send`.
+pub(super) fn uses_priority_lane(destination: ResourceDestination) -> bool {
+    matches!(
+        destination,
+        ResourceDestination::Style | ResourceDestination::Script
+    )
+}
 
 impl FetchFlow {
     pub(super) fn register(
@@ -43,7 +51,7 @@ impl FetchFlow {
             (document, id),
             Credit {
                 limited,
-                stylesheet: false,
+                prioritized: false,
                 reserved: 0,
                 consumed: 0,
             },
@@ -51,19 +59,19 @@ impl FetchFlow {
         Ok(())
     }
 
-    pub(super) fn mark_stylesheet(&self, document: DocumentId, id: u64) {
+    pub(super) fn mark_prioritized(&self, document: DocumentId, id: u64) {
         if let Some(credit) = self.state.lock().unwrap().requests.get_mut(&(document, id)) {
-            credit.stylesheet = true;
+            credit.prioritized = true;
         }
     }
 
-    pub(super) fn is_stylesheet(&self, document: DocumentId, id: u64) -> bool {
+    pub(super) fn is_prioritized(&self, document: DocumentId, id: u64) -> bool {
         self.state
             .lock()
             .unwrap()
             .requests
             .get(&(document, id))
-            .is_some_and(|credit| credit.stylesheet)
+            .is_some_and(|credit| credit.prioritized)
     }
 
     pub(super) fn reserve(

@@ -122,6 +122,7 @@ mod tests {
             document: DocumentId::new(document).unwrap(),
             viewport: PresentedViewport {
                 width,
+                overflow_width: width,
                 height: 600.0,
                 style_width: width,
                 dpi: 96,

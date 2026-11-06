@@ -6,14 +6,14 @@ pub(crate) use retained::RetainedBoxes;
 
 pub(in crate::engine::layout) struct BoxTree<'a> {
     base: &'a StyleSet,
-    zoomed: HashMap<NodeId, ComputedStyle>,
+    zoomed: crate::engine::dom::node::NodeMap<NodeId, ComputedStyle>,
     boxes: RetainedBoxes,
     /// Where `boxes` returns after the pass, when they outlive this tree.
     store: Option<&'a std::cell::RefCell<RetainedBoxes>>,
     /// Table-fixup boxes the parent being rebuilt had, by parent and first child.
-    pool: HashMap<(NodeId, NodeId), (Display, NodeRef)>,
+    pool: crate::engine::dom::node::NodeMap<(NodeId, NodeId), (Display, NodeRef)>,
     /// Children the parent being rebuilt placed, directly or in a wrapper.
-    placed: HashSet<NodeId>,
+    placed: crate::engine::dom::node::NodeSet<NodeId>,
     /// Nodes whose children this tree built rather than retained.
     pub(super) rebuilt: usize,
 }
@@ -64,11 +64,11 @@ impl<'a> BoxTree<'a> {
     ) -> Self {
         Self {
             base,
-            zoomed: HashMap::new(),
+            zoomed: Default::default(),
             boxes,
             store,
-            pool: HashMap::new(),
-            placed: HashSet::new(),
+            pool: Default::default(),
+            placed: Default::default(),
             rebuilt: 0,
         }
     }
@@ -155,7 +155,10 @@ impl<'a> BoxTree<'a> {
         let mut result = Vec::new();
         let mut stack = vec![node.clone()];
         while let Some(node) = stack.pop() {
-            stack.extend(self.children(&node).into_iter().rev());
+            match self.retained_children(&node) {
+                Some(children) => stack.extend(children.iter().rev().cloned()),
+                None => stack.extend(self.children(&node).into_iter().rev()),
+            }
             result.push(node);
         }
         result

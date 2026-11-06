@@ -9,7 +9,9 @@
 // Every result that a cache may return later is computed inside a frame. Reads land in one log
 // for the pass, and a frame is the part of the log written while it was open, so an enclosing
 // frame includes everything its nested frames read. A cache hit appends the hit's recorded reads
-// to the log. Only a result that is actually retained copies its frame's distinct reads.
+// to the log. Only a result that is actually retained copies its frame's distinct reads, which
+// then replace the frame's part of the log: an enclosing frame reads them as it would a cache
+// hit's, so each level of a deep tree sees its own distinct reads, not all its descendants' log.
 use super::*;
 use std::cell::Cell;
 use std::collections::HashSet;
@@ -47,14 +49,28 @@ impl std::hash::Hash for ReadNode {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::engine::layout) enum LayoutRead {
-    ImageUrl(ReadNode, Option<String>),
-    DecodedSize(String, Option<(u32, u32)>),
-    LayoutDimensions(String, Option<(u32, u32)>),
+    ImageUrl(ReadNode, Option<Rc<str>>),
+    DecodedSize(Rc<str>, Option<(u32, u32)>),
+    LayoutDimensions(Rc<str>, Option<(u32, u32)>),
     ScrollOffset(ReadNode, (u32, u32)),
-    InheritedLink(ReadNode, Option<(String, NodeId)>),
+    InheritedLink(ReadNode, Option<(Rc<str>, NodeId)>),
     Backdrop(ReadNode, (u8, u8, u8, u8)),
+}
+
+/// Reads of one node or URL in one pass almost always agree, so its value is left out of the hash.
+impl std::hash::Hash for LayoutRead {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::ImageUrl(node, _)
+            | Self::ScrollOffset(node, _)
+            | Self::InheritedLink(node, _)
+            | Self::Backdrop(node, _) => node.hash(state),
+            Self::DecodedSize(url, _) | Self::LayoutDimensions(url, _) => url.hash(state),
+        }
+    }
 }
 
 impl LayoutRead {
@@ -69,15 +85,17 @@ impl LayoutRead {
             Self::ScrollOffset(node, offset) => node
                 .get(page)
                 .is_some_and(|node| scroll_offset_bits(&node) == *offset),
-            Self::InheritedLink(node, link) => node
-                .get(page)
-                .is_some_and(|node| inherited_link(page, &node) == *link),
+            Self::InheritedLink(node, link) => node.get(page).is_some_and(|node| {
+                let current = inherited_link(page, &node);
+                current.as_ref().map(|(url, id)| (url.as_str(), *id))
+                    == link.as_ref().map(|(url, id)| (&**url, *id))
+            }),
             Self::Backdrop(node, color) => node
                 .get(page)
                 .is_some_and(|node| color_bits(effective_backdrop(styles, &node)) == *color),
             Self::ImageUrl(node, url) => node
                 .get(page)
-                .is_some_and(|node| page.image_url(&node) == *url),
+                .is_some_and(|node| page.image_url(&node).as_deref() == url.as_deref()),
             Self::DecodedSize(url, size) => decoded_size(page, url) == *size,
             Self::LayoutDimensions(key, dimensions) => {
                 page.layout_image_dimensions(key) == *dimensions
@@ -156,6 +174,11 @@ pub(in crate::engine::layout) struct ReadFrames {
 struct OpenFrame {
     start: usize,
     retained_items: usize,
+    /// The containing-block depth (`AbsoluteScope`) where the frame opened.
+    depth: usize,
+    /// The shallowest containing block an absolutely positioned box inside the frame resolved
+    /// against.
+    shallowest: usize,
 }
 
 /// A closed frame; its reads stay readable until the next outermost frame opens.
@@ -163,6 +186,9 @@ pub(in crate::engine::layout) struct ReadFrame {
     reads: std::ops::Range<usize>,
     /// The most display items any retained result inside the frame holds.
     pub(in crate::engine::layout) retained_items: usize,
+    /// An absolutely positioned box inside the frame resolved against a containing block
+    /// established outside it.
+    pub(in crate::engine::layout) outside_containing_block: bool,
 }
 
 impl ReadFrames {
@@ -175,6 +201,14 @@ impl ReadFrames {
     fn replay(&mut self, reads: &LayoutReads) {
         if !self.frames.is_empty() {
             self.log.extend_from_slice(reads.reads());
+        }
+    }
+
+    /// Replaces a closed frame's part of the log with its distinct reads. Only the frames
+    /// enclosing it read that part again, so with none open the log is left as it is.
+    fn compact(&mut self, frame: std::ops::Range<usize>, distinct: &[LayoutRead]) {
+        if !self.frames.is_empty() {
+            self.log.splice(frame, distinct.iter().cloned());
         }
     }
 
@@ -254,29 +288,30 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
         reads.frames.push(OpenFrame {
             start,
             retained_items: 0,
+            depth: self.absolute_scope.depth(),
+            shallowest: usize::MAX,
         });
     }
 
     /// Closes the innermost frame and returns its reads.
     pub(in crate::engine::layout) fn end_reads(&self) -> LayoutReads {
         let frame = self.close_reads();
-        self.frame_reads(&frame)
+        self.distinct_reads(&frame, |_| None)
     }
 
-    /// Closes the innermost frame without copying its reads; see `frame_reads`.
+    /// Closes the innermost frame without copying its reads; see `subtree_frame_reads`.
     pub(in crate::engine::layout) fn close_reads(&self) -> ReadFrame {
         let mut reads = self.reads.borrow_mut();
         let frame = reads.frames.pop().expect("layout read frames are balanced");
         reads.note_retained(frame.retained_items);
+        if let Some(enclosing) = reads.frames.last_mut() {
+            enclosing.shallowest = enclosing.shallowest.min(frame.shallowest);
+        }
         ReadFrame {
             reads: frame.start..reads.log.len(),
             retained_items: frame.retained_items,
+            outside_containing_block: frame.shallowest <= frame.depth,
         }
-    }
-
-    /// The distinct reads a closed frame made.
-    pub(in crate::engine::layout) fn frame_reads(&self, frame: &ReadFrame) -> LayoutReads {
-        self.distinct_reads(frame, |_| None)
     }
 
     /// The distinct reads a closed frame made while laying out `root`'s subtree, which a
@@ -309,13 +344,13 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
     }
 
     /// `frame`'s distinct reads, each replaced by `lift(read)` when that returns an
-    /// equivalent read.
+    /// equivalent read. These then replace the frame's reads in the log.
     fn distinct_reads(
         &self,
         frame: &ReadFrame,
         lift: impl Fn(&LayoutRead) -> Option<LayoutRead>,
     ) -> LayoutReads {
-        let reads = self.reads.borrow();
+        let mut reads = self.reads.borrow_mut();
         let log = &reads.log[frame.reads.clone()];
         if log.is_empty() {
             return LayoutReads::default();
@@ -326,12 +361,24 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
                 lift(read).map_or(std::borrow::Cow::Borrowed(read), std::borrow::Cow::Owned)
             })
             .collect::<Vec<_>>();
-        let mut seen = HashSet::new();
-        let distinct = lifted
-            .iter()
-            .filter(|read| seen.insert(&***read))
-            .map(|read| read.as_ref().clone())
-            .collect::<Vec<_>>();
+        // Most frames read very little, so scanning beats building a set.
+        let distinct = if lifted.len() <= 8 {
+            let mut distinct: Vec<LayoutRead> = Vec::with_capacity(lifted.len());
+            for read in &lifted {
+                if !distinct.contains(read.as_ref()) {
+                    distinct.push(read.as_ref().clone());
+                }
+            }
+            distinct
+        } else {
+            let mut seen = HashSet::new();
+            lifted
+                .iter()
+                .filter(|read| seen.insert(&***read))
+                .map(|read| read.as_ref().clone())
+                .collect::<Vec<_>>()
+        };
+        reads.compact(frame.reads.clone(), &distinct);
         // Layout does not mutate the document, so every read made in this pass holds now.
         LayoutReads(Some(Rc::new(ReadSet {
             reads: distinct.into(),
@@ -344,6 +391,14 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
         self.reads.borrow_mut().note_retained(items);
     }
 
+    /// Records that an absolutely positioned box resolved against the containing block at
+    /// `depth`, which lies outside every open frame that opened at that depth or deeper.
+    pub(in crate::engine::layout) fn note_containing_block(&self, depth: usize) {
+        if let Some(frame) = self.reads.borrow_mut().frames.last_mut() {
+            frame.shallowest = frame.shallowest.min(depth);
+        }
+    }
+
     /// Accounts a cache hit's reads to the result being computed now.
     pub(in crate::engine::layout) fn replay_reads(&self, reads: &LayoutReads) {
         self.reads.borrow_mut().replay(reads);
@@ -352,9 +407,10 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
     /// The URL an element displays (`Page::image_url`), recorded as a layout input.
     pub(in crate::engine::layout) fn image_url_for(&self, node: &NodeRef) -> Option<String> {
         let url = self.page.image_url(node);
-        self.reads
-            .borrow_mut()
-            .record(LayoutRead::ImageUrl(ReadNode::new(node), url.clone()));
+        self.reads.borrow_mut().record(LayoutRead::ImageUrl(
+            ReadNode::new(node),
+            url.as_deref().map(Rc::from),
+        ));
         url
     }
 
@@ -366,7 +422,7 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
         let image = self.page.images.get(url);
         self.page.note_layout_image_read(url);
         self.reads.borrow_mut().record(LayoutRead::DecodedSize(
-            url.to_string(),
+            Rc::from(url),
             image.map(|image| (image.width, image.height)),
         ));
         image
@@ -387,9 +443,10 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
         node: &NodeRef,
     ) -> Option<(String, NodeId)> {
         let link = inherited_link(self.page, node);
-        self.reads
-            .borrow_mut()
-            .record(LayoutRead::InheritedLink(ReadNode::new(node), link.clone()));
+        self.reads.borrow_mut().record(LayoutRead::InheritedLink(
+            ReadNode::new(node),
+            link.as_ref().map(|(url, id)| (Rc::from(url.as_str()), *id)),
+        ));
         link
     }
 
@@ -408,7 +465,10 @@ impl<'a, M: TextMeasurer> LayoutEngine<'a, M> {
         self.page.note_layout_image_read(key);
         self.reads
             .borrow_mut()
-            .record(LayoutRead::LayoutDimensions(key.to_string(), dimensions));
+            .record(LayoutRead::LayoutDimensions(Rc::from(key), dimensions));
         dimensions
     }
 }
+
+#[cfg(test)]
+mod tests;

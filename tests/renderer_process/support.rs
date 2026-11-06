@@ -151,6 +151,7 @@ pub(super) fn document_start(document: DocumentId, body_length: usize) -> Docume
         scroll_restoration: better_web_browser::renderer_protocol::ScrollRestorationMode::Auto,
         viewport: PresentedViewport {
             width: 800.0,
+            overflow_width: 800.0,
             height: 600.0,
             style_width: 800.0,
             dpi: 96,

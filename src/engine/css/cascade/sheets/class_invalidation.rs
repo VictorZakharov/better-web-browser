@@ -10,25 +10,35 @@
 // recalculated alone, with their subtree following only when their own style changes.
 // A keyless subject (`.a > :not(.b)`) reached only through child combinators is bounded by its
 // depth below the element, so only the elements at that depth are restyled.
-// Sibling combinators, `:has()` and nested complex selectors keep the parent-subtree scope.
+// A use followed by a sibling combinator restyles the element's later siblings or its own
+// subtree (see `siblings`). `:has()` and nested complex selectors keep the parent-subtree scope.
 // An attribute selector on `class` (`[class*=x]`) can match differently after any token change,
 // so it counts as a use of every changed token at its position; inside a complex nested
 // selector it keeps the parent-subtree scope for every change.
 // An attribute name is indexed like a class token: `[data-state=open] h2` bounds a `data-state`
 // change to the element and its `h2` descendants, and a name no selector mentions restyles the
-// element alone, since only `attr()` and its own style can read it. These are the descendant
+// element alone, since only `attr()` and its own style can read it. Entering or leaving `:hover`
+// is indexed the same way under `invalidation::HOVER_STATE`, and so is `hidden`, whose
+// presentational `display: none` is part of the element's own style. These are the descendant
 // invalidation sets of Blink's style invalidation.
 // https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/renderer/core/css/style-invalidation.md
 // https://drafts.csswg.org/selectors-4/#combinators
 use super::subject_keys::{KeyIndex, SubjectKey, ascii_lowercase};
 use super::*;
 use crate::engine::css::cascade::InvalidationFallbacks;
-use crate::engine::css::selector_model::{Combinator, CompoundSelector};
-use std::borrow::Cow;
+use crate::engine::css::selector_model::Combinator;
 use std::collections::{HashMap, HashSet};
 
+mod features;
+mod siblings;
 #[cfg(test)]
 mod tests;
+
+use features::{
+    Feature, guarded_use, nested_complex_class_attribute, nested_simple_features,
+    simple_class_attribute, use_of,
+};
+use siblings::{SiblingPath, later_element_siblings};
 
 /// Positions in which rules use one class token.
 #[derive(Debug, Default)]
@@ -38,6 +48,12 @@ struct ClassUse {
     descendant_subjects: Vec<SubjectKey>,
     /// Depths below the element of keyless subjects reached only through child combinators.
     keyless_child_depths: Vec<usize>,
+    /// Whether a rule follows the token with a sibling combinator (see `siblings`).
+    siblings: bool,
+    /// Subject keys of rules that reach the element's later siblings from the token.
+    later_sibling_subjects: Vec<SubjectKey>,
+    /// Whether one of those rules also moves down from a later sibling.
+    later_sibling_descendants: bool,
     /// Why the token's effect is not bounded by the element and its descendants.
     parent_scope: Option<Fallback>,
 }
@@ -45,7 +61,6 @@ struct ClassUse {
 /// Why a change keeps the parent-subtree scope.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Fallback {
-    Siblings,
     Nested,
     Unbounded,
 }
@@ -53,8 +68,9 @@ enum Fallback {
 #[derive(Debug, Default)]
 pub(super) struct ClassInvalidation {
     uses: HashMap<String, ClassUse>,
-    /// Positions of attribute selectors other than `[class]`, by ASCII-lowercase name.
-    attribute_uses: HashMap<String, ClassUse>,
+    /// Positions of attribute selectors other than `[class]` (and of `:hover`), by ASCII-lowercase
+    /// name and then by the key of the compound that carries them.
+    attribute_uses: HashMap<String, HashMap<SubjectKey, ClassUse>>,
     /// Positions of `[class]` attribute selectors, which apply to every token.
     any_token: ClassUse,
     /// Nested complex `[class]` selectors or scoped/cross-tree rules: no token can be bounded.
@@ -67,6 +83,10 @@ pub(super) struct ClassInvalidation {
 struct ClassChangeRoots {
     subtrees: Vec<NodeRef>,
     elements: Vec<NodeRef>,
+    /// Whole subtrees restyled for keyless descendant subjects.
+    keyless_subtrees: usize,
+    /// Whether a sibling-combinator use widened the scope beyond the element.
+    siblings: bool,
 }
 
 impl ClassInvalidation {
@@ -85,12 +105,7 @@ impl ClassInvalidation {
         let last = selector.compounds.len().saturating_sub(1);
         let subject = &selector.compounds[last];
         for (position, compound) in selector.compounds.iter().enumerate() {
-            let siblings = selector.combinators[position..].iter().any(|combinator| {
-                matches!(
-                    combinator,
-                    Combinator::AdjacentSibling | Combinator::GeneralSibling
-                )
-            });
+            let siblings = SiblingPath::of(&selector.combinators[position..]);
             let mut tokens = Feature::Class.of(compound);
             let mut nested_complex = Vec::new();
             nested_simple_features(compound, Feature::Class, &mut tokens, &mut nested_complex);
@@ -103,8 +118,16 @@ impl ClassInvalidation {
                 &mut nested_complex_names,
             );
             let record = |class_use: &mut ClassUse| {
-                if siblings {
-                    class_use.parent_scope.get_or_insert(Fallback::Siblings);
+                if let Some(path) = siblings {
+                    class_use.siblings = true;
+                    let key = SubjectKey::of(subject);
+                    match path {
+                        SiblingPath::Down => class_use.descendant_subjects.push(key),
+                        SiblingPath::Later { descends } => {
+                            class_use.later_sibling_subjects.push(key);
+                            class_use.later_sibling_descendants |= descends;
+                        }
+                    }
                 } else if position == last {
                     class_use.subject = true;
                 } else {
@@ -122,11 +145,15 @@ impl ClassInvalidation {
             for token in tokens {
                 record(use_of(&mut self.uses, &ascii_lowercase(&token)));
             }
+            // An element that cannot match the compound's tag, ID and classes cannot change
+            // whether it matches, whatever its attribute or `:hover` state.
+            let guard = SubjectKey::of(compound);
             for name in names {
-                record(use_of(&mut self.attribute_uses, &name));
+                record(guarded_use(&mut self.attribute_uses, &name, &guard));
             }
             for name in nested_complex_names {
-                let class_use = use_of(&mut self.attribute_uses, &name);
+                let class_use =
+                    guarded_use(&mut self.attribute_uses, &name, &SubjectKey::default());
                 class_use.parent_scope.get_or_insert(Fallback::Nested);
             }
             if simple_class_attribute(compound) {
@@ -152,27 +179,43 @@ impl ClassInvalidation {
         }
         let mut keys = HashSet::new();
         let mut depths = HashSet::new();
+        let mut later_keys = HashSet::new();
+        let mut later_descendants = false;
+        let mut siblings = false;
         let token_uses = tokens
             .iter()
             .filter_map(|token| self.uses.get(&*ascii_lowercase(token)));
         let class_attribute = (!tokens.is_empty()).then_some(&self.any_token);
+        // Guards read the element's classes, so a class change in the same batch skips them.
+        let classes_changed = !tokens.is_empty();
         let attribute_uses = attributes
             .iter()
-            .filter_map(|name| self.attribute_uses.get(name));
+            .filter_map(|name| self.attribute_uses.get(name))
+            .flatten()
+            .filter(|(guard, _)| classes_changed || guard.may_match(node))
+            .map(|(_, class_use)| class_use);
         for class_use in token_uses.chain(class_attribute).chain(attribute_uses) {
             if let Some(fallback) = class_use.parent_scope {
                 return Err(fallback);
             }
+            siblings |= class_use.siblings;
+            later_keys.extend(class_use.later_sibling_subjects.iter());
+            later_descendants |= class_use.later_sibling_descendants;
             keys.extend(class_use.descendant_subjects.iter());
             depths.extend(class_use.keyless_child_depths.iter().copied());
         }
         // `attr(class)` and presentational state still read the element's own attribute.
         let mut roots = ClassChangeRoots {
             elements: vec![node.clone()],
+            siblings,
             ..ClassChangeRoots::default()
         };
+        if !later_keys.is_empty() {
+            later_sibling_roots(node, later_keys, later_descendants, &mut roots);
+        }
         if keys.iter().any(|key| key.matches_any()) {
             roots.subtrees.push(node.clone());
+            roots.keyless_subtrees += 1;
             return Ok(roots);
         }
         let mut level = vec![node.clone()];
@@ -204,133 +247,31 @@ impl ClassInvalidation {
     }
 }
 
-/// What a change names in selectors: a class token or an attribute name.
-#[derive(Clone, Copy)]
-enum Feature {
-    Class,
-    /// Attribute selectors other than `[class]`, which every token change affects.
-    Attribute,
-}
-
-impl Feature {
-    /// Borrowed from the selector where possible: most rules repeat names already indexed.
-    fn of(self, compound: &CompoundSelector) -> Vec<Cow<'_, str>> {
-        match self {
-            Self::Class => compound.classes.iter().map(|class| class.into()).collect(),
-            Self::Attribute => compound
-                .attributes
-                .iter()
-                .map(|attribute| ascii_lowercase(&attribute.name))
-                .filter(|name| name != "class")
-                .collect(),
-        }
-    }
-}
-
-/// The uses recorded for `name`, copying the name only when it is new.
-fn use_of<'a>(uses: &'a mut HashMap<String, ClassUse>, name: &str) -> &'a mut ClassUse {
-    if !uses.contains_key(name) {
-        uses.insert(name.to_owned(), ClassUse::default());
-    }
-    uses.get_mut(name).expect("inserted above")
-}
-
-/// Features inside `:is()`, `:where()` and `:not()` arguments that are single compounds describe
-/// the same element as `compound`. Any other nesting (complex arguments, `:has()`, `of S`) is
-/// collected as unbounded.
-fn nested_simple_features<'a>(
-    compound: &'a CompoundSelector,
-    feature: Feature,
-    simple: &mut Vec<Cow<'a, str>>,
-    complex: &mut Vec<Cow<'a, str>>,
+/// Adds the later siblings of `node` (and their descendants when `descendants`) that can match
+/// one of `keys` as element roots; a keyless subject takes them all, as whole subtrees when the
+/// rule also moves down.
+fn later_sibling_roots(
+    node: &NodeRef,
+    keys: HashSet<&SubjectKey>,
+    descendants: bool,
+    roots: &mut ClassChangeRoots,
 ) {
-    for functional in &compound.functional {
-        for selector in &functional.selectors {
-            if selector.compounds.len() == 1 {
-                simple.extend(feature.of(&selector.compounds[0]));
-                nested_simple_features(&selector.compounds[0], feature, simple, complex);
-            } else {
-                collect_all_features(selector, feature, complex);
-            }
+    let keyless = keys.iter().any(|key| key.matches_any());
+    let index = KeyIndex::new(keys);
+    for sibling in later_element_siblings(node) {
+        if keyless && descendants {
+            roots.subtrees.push(sibling);
+            continue;
         }
-    }
-    for relatives in &compound.has {
-        for relative in relatives {
-            collect_all_features(&relative.selector, feature, complex);
+        if keyless || index.may_match(&sibling) {
+            roots.elements.push(sibling.clone());
         }
-    }
-    for nth in &compound.nth {
-        for selector in &nth.filter {
-            collect_all_features(selector, feature, complex);
-        }
-    }
-}
-
-fn is_class_attribute(compound: &CompoundSelector) -> bool {
-    compound
-        .attributes
-        .iter()
-        .any(|attribute| attribute.name.eq_ignore_ascii_case("class"))
-}
-
-/// A `[class]` selector on this element, directly or in a single-compound nested argument.
-fn simple_class_attribute(compound: &CompoundSelector) -> bool {
-    is_class_attribute(compound)
-        || compound.functional.iter().any(|functional| {
-            functional.selectors.iter().any(|selector| {
-                selector.compounds.len() == 1 && simple_class_attribute(&selector.compounds[0])
-            })
-        })
-}
-
-/// A `[class]` selector inside a nested complex selector, `:has()` or `of S`.
-fn nested_complex_class_attribute(compound: &CompoundSelector) -> bool {
-    let anywhere = |selector: &Selector| {
-        selector.compounds.iter().any(|compound| {
-            simple_class_attribute(compound) || nested_complex_class_attribute(compound)
-        })
-    };
-    compound.functional.iter().any(|functional| {
-        functional.selectors.iter().any(|selector| {
-            if selector.compounds.len() == 1 {
-                nested_complex_class_attribute(&selector.compounds[0])
-            } else {
-                anywhere(selector)
-            }
-        })
-    }) || compound
-        .has
-        .iter()
-        .flatten()
-        .any(|relative| anywhere(&relative.selector))
-        || compound
-            .nth
-            .iter()
-            .flat_map(|nth| &nth.filter)
-            .any(anywhere)
-}
-
-fn collect_all_features<'a>(
-    selector: &'a Selector,
-    feature: Feature,
-    found: &mut Vec<Cow<'a, str>>,
-) {
-    for compound in selector.compounds.iter() {
-        found.extend(feature.of(compound));
-        for functional in &compound.functional {
-            for nested in &functional.selectors {
-                collect_all_features(nested, feature, found);
-            }
-        }
-        for relatives in &compound.has {
-            for relative in relatives {
-                collect_all_features(&relative.selector, feature, found);
-            }
-        }
-        for nth in &compound.nth {
-            for nested in &nth.filter {
-                collect_all_features(nested, feature, found);
-            }
+        if descendants {
+            roots.elements.extend(
+                Node::descendants(&sibling)
+                    .skip(1)
+                    .filter(|descendant| index.may_match(descendant)),
+            );
         }
     }
 }
@@ -347,8 +288,10 @@ impl StyleSet {
         elements: &mut Vec<NodeRef>,
     ) -> InvalidationFallbacks {
         let mut fallbacks = InvalidationFallbacks::default();
+        let ids = changes.iter().map(|change| change.node).collect::<Vec<_>>();
+        let nodes = dom.find_nodes(&ids);
         for change in changes {
-            let Some(node) = dom.find_node(change.node) else {
+            let Some(node) = nodes.get(&change.node).cloned() else {
                 continue;
             };
             match self
@@ -357,13 +300,13 @@ impl StyleSet {
                 .roots(&node, &change.tokens, &change.attributes)
             {
                 Ok(roots) => {
-                    fallbacks.keyless_descendant += roots.subtrees.len() as u64;
+                    fallbacks.keyless_descendant += roots.keyless_subtrees as u64;
+                    fallbacks.sibling_combinator += u64::from(roots.siblings);
                     subtrees.extend(roots.subtrees);
                     elements.extend(roots.elements);
                 }
                 Err(fallback) => {
                     *match fallback {
-                        Fallback::Siblings => &mut fallbacks.sibling_combinator,
                         Fallback::Nested => &mut fallbacks.nested_selector,
                         Fallback::Unbounded => &mut fallbacks.unbounded_rules,
                     } += 1;
