@@ -85,3 +85,17 @@ function Get-HiddenBenchmarkActionArguments {
     }
     $result.ToArray()
 }
+
+# A pointer resting at "x,y" from page ready: one move there, then a one-pixel move every 150 ms.
+function Get-RestingPointerActions {
+    param([string] $Point, [int] $DurationMs)
+    if ($Point -notmatch '^\s*(\d{1,9})\s*,\s*(\d{1,9})\s*$') {
+        throw '-RestingPointer must use non-negative x,y CSS document coordinates.'
+    }
+    $x, $y = [int] $Matches[1], [int] $Matches[2]
+    "move:$x,$y"
+    for ($step = 1; $step -le [Math]::Floor($DurationMs / 150); $step++) {
+        'pause:150'
+        "move:$($x + $step % 2),$y"
+    }
+}

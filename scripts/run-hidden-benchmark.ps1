@@ -46,6 +46,12 @@ param(
     [string[]] $WheelTarget = @(),
     # Appended after grouped targets; move uses document coordinates, wheel viewport coordinates.
     [string[]] $ActionSequence = @(),
+    # CSS document point "x,y" where the pointer rests from page ready, moving by one pixel every
+    # 150 ms for RestingPointerMs as a hand on a mouse does. Content that moves under a resting
+    # pointer changes :hover, which runs without any pointer never exercise.
+    [string] $RestingPointer,
+    [ValidateRange(150, 60000)]
+    [int] $RestingPointerMs = 4000,
     [ValidateRange(0, 60000)]
     [int] $NavigationDelayMs = 0,
     [ValidateRange(0, 60000)]
@@ -57,6 +63,9 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 . (Join-Path $PSScriptRoot 'hidden-benchmark-diagnostics.ps1')
 . (Join-Path $PSScriptRoot 'hidden-benchmark-actions.ps1')
 # Validate before touching artifacts/profiles or resolving/launching the executable.
+if ($RestingPointer) {
+    $ActionSequence = @($ActionSequence) + @(Get-RestingPointerActions $RestingPointer $RestingPointerMs)
+}
 $orderedActionArguments = @(Get-HiddenBenchmarkActionArguments -ActionSequence $ActionSequence)
 if ($PSBoundParameters.ContainsKey('RendererMemoryBudget') -and -not $FreshProfile) {
     throw '-RendererMemoryBudget requires -FreshProfile; existing profile settings are never changed.'

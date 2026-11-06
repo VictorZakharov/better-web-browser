@@ -21,7 +21,10 @@ param(
     [int] $BusyPercent = 40,
     # Give each build its own profile, primed by one unmeasured visit, as a returning user has:
     # site-written cookies and storage (preferences such as appearance) and a warm HTTP cache.
-    [switch] $WarmProfile
+    [switch] $WarmProfile,
+    # CSS document point "x,y" where the pointer rests during measured loads, as in a real window
+    # (see run-hidden-benchmark.ps1 -RestingPointer).
+    [string] $RestingPointer
 )
 
 # Rotated page-load comparison of saved Breeze executables under the conditions a user sees.
@@ -124,6 +127,7 @@ foreach ($round in 1..$Rounds) {
             '-FilmstripDirectory', $film, '-FilmstripIntervalMs', $FilmstripIntervalMs,
             '-FilmstripDurationMs', $FilmstripDurationMs
         ) + (Get-ProfileArguments $index) + (Get-SizeArguments)
+        if ($RestingPointer) { $arguments += @('-RestingPointer', $RestingPointer) }
         & pwsh @arguments *> (Join-Path $outputRoot "$name.log")
         $exitCode = $LASTEXITCODE
         $cpuAfter = Get-CpuLoad
