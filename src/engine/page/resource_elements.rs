@@ -26,7 +26,33 @@ impl ResourceElement {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct ResourceElements(RefCell<Option<Collected>>);
+pub(super) struct ResourceElements(
+    RefCell<Option<Collected>>,
+    RefCell<Option<(State, Rc<[ShownImage]>)>>,
+);
+
+/// An element that shows an image (`Page::image_url`), with the image when it follows from the
+/// document state alone.
+#[derive(Debug)]
+pub(crate) struct ShownImage {
+    node: Weak<Node>,
+    /// `None` for a video, whose frame or placeholder depends on decoding, not on the document.
+    url: Option<String>,
+}
+
+impl ShownImage {
+    pub(crate) fn node(&self) -> Option<NodeRef> {
+        self.node.upgrade()
+    }
+
+    /// Whether `node`, this element, shows `url` on `page`.
+    pub(crate) fn shows(&self, page: &Page, node: &NodeRef, url: &str) -> bool {
+        match &self.url {
+            Some(shown) => shown == url,
+            None => page.image_url(node).as_deref() == Some(url),
+        }
+    }
+}
 
 #[derive(Debug)]
 struct Collected {
@@ -69,14 +95,51 @@ impl Page {
             .collect()
     }
 
-    fn collect_resource_elements<T>(&self, read: impl FnOnce(&Collected) -> T) -> T {
-        let state = State {
+    /// The document's `img`, `input`, `video`, `object` and `embed` elements that show an image,
+    /// in tree order. Arrived-image checkpoints read them on every frame they skip; resolving
+    /// each image element's URL (`srcset`, `<picture>`) on a long article made that the larger
+    /// part of their cost.
+    pub(crate) fn shown_images(&self) -> Rc<[ShownImage]> {
+        let state = self.resource_state();
+        let mut cached = self.resource_elements.1.borrow_mut();
+        if let Some((_, images)) = cached.as_ref().filter(|(found, _)| *found == state) {
+            return Rc::clone(images);
+        }
+        let images: Rc<[ShownImage]> = Node::descendants(&self.dom.document)
+            .filter(|node| {
+                matches!(
+                    node.tag_name(),
+                    Some("img" | "input" | "video" | "object" | "embed")
+                )
+            })
+            .filter_map(|node| {
+                let url = if node.tag_name() == Some("video") {
+                    None
+                } else {
+                    Some(self.image_url(&node)?)
+                };
+                Some(ShownImage {
+                    node: Rc::downgrade(&node),
+                    url,
+                })
+            })
+            .collect();
+        *cached = Some((state, Rc::clone(&images)));
+        images
+    }
+
+    fn resource_state(&self) -> State {
+        State {
             document: self.dom.document.id(),
             version: self.dom.document.document_mutation_version(),
             source_url: self.source_url.clone(),
             base_url: self.base_url.clone(),
             environment: self.media_environment,
-        };
+        }
+    }
+
+    fn collect_resource_elements<T>(&self, read: impl FnOnce(&Collected) -> T) -> T {
+        let state = self.resource_state();
         let mut collected = self.resource_elements.0.borrow_mut();
         if let Some(collected) = collected.as_ref().filter(|found| found.state == state) {
             return read(collected);
@@ -125,6 +188,33 @@ impl Page {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shown_images_follow_source_changes() {
+        let page = Page::parse(
+            "<p>text</p><img src=one.png><object data=movie.swf></object><img>",
+            "https://example.test/dir/page",
+        );
+        let urls = |page: &Page| {
+            page.shown_images()
+                .iter()
+                .map(|shown| {
+                    let node = shown.node().unwrap();
+                    (
+                        node.tag_name().unwrap().to_string(),
+                        shown.shows(page, &node, "https://example.test/dir/one.png"),
+                        shown.shows(page, &node, "https://example.test/dir/two.png"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let before = urls(&page);
+        assert_eq!(before[0], ("img".into(), true, false));
+        assert!(before.iter().skip(1).all(|(_, one, two)| !one && !two));
+        let image = page.dom.elements_named("img").next().unwrap();
+        image.set_attr("src", "two.png");
+        assert_eq!(urls(&page)[0], ("img".into(), false, true));
+    }
 
     #[test]
     fn elements_follow_document_changes_in_tree_order() {

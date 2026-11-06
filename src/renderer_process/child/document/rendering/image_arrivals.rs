@@ -8,7 +8,6 @@
 // known without waiting for layout. Arrived images whose boxes do not fit wait for that frame.
 use super::*;
 use crate::engine::css::StyleSet;
-use crate::engine::dom::Node;
 use crate::engine::{DecodedImage, DisplayItem, Page};
 
 impl DocumentRuntime {
@@ -138,17 +137,14 @@ fn boxes_following_image_ratios<'a>(
     urls: &[&'a str],
 ) -> HashSet<&'a str> {
     let mut follows = HashMap::<&str, bool>::new();
-    for node in Node::descendants(&page.dom.document) {
-        if !matches!(
-            node.tag_name(),
-            Some("img" | "input" | "video" | "object" | "embed")
-        ) {
-            continue;
-        }
-        let Some(url) = page.image_url(&node) else {
+    for shown in page.shown_images().iter() {
+        let Some(node) = shown.node() else {
             continue;
         };
-        let Some(&url) = urls.iter().find(|candidate| **candidate == url) else {
+        let Some(&url) = urls
+            .iter()
+            .find(|candidate| shown.shows(page, &node, candidate))
+        else {
             continue;
         };
         let image = &page.images[url];
@@ -170,7 +166,7 @@ fn boxes_following_image_ratios<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::DecodedImage;
+    use crate::engine::dom::Node;
 
     const URL: &str = "https://example.test/a.png";
 
