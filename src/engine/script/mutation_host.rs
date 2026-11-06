@@ -323,8 +323,45 @@ fn child_list_kind(root: &NodeRef) -> MutationKind<'static> {
     }
 }
 
+/// Whether moving `root` can add, remove or reorder style sheets: it contains a `<style>`, a
+/// `<link>` whose `rel` names `stylesheet` (only those create sheets; MediaWiki puts a
+/// `rel=mw-deduplicated-inline-style` link in every templated table cell), or a shadow root
+/// with adopted sheets. A later `rel` change rebuilds rules as an attribute mutation.
+/// https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 pub(in crate::engine::script) fn subtree_contains_style(root: &NodeRef) -> bool {
     Node::shadow_including_descendants(root).any(|node| {
-        matches!(node.tag_name(), Some("style" | "link")) || !node.adopted_stylesheets().is_empty()
+        let creates_sheet = match node.tag_name() {
+            Some("style") => true,
+            Some("link") => node.attr("rel").is_some_and(|rel| {
+                rel.split_ascii_whitespace()
+                    .any(|token| token.eq_ignore_ascii_case("stylesheet"))
+            }),
+            _ => false,
+        };
+        creates_sheet || !node.adopted_stylesheets().is_empty()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_sheet_creating_links_make_a_move_a_stylesheet_mutation() {
+        let dom = crate::engine::dom::parse(
+            "<table><tr id=dedup><td><link rel=mw-deduplicated-inline-style href=mw-data:x>\
+             </td></tr><tr id=icon><td><link rel=icon href=i.png></td></tr>\
+             <tr id=sheet><td><link rel='alternate StyleSheet' href=s.css></td></tr>\
+             <tr id=style><td><style>td{color:red}</style></td></tr></table>",
+        );
+        let row = |id: &str| {
+            Node::descendants(&dom.document)
+                .find(|node| node.attr("id").as_deref() == Some(id))
+                .expect("row")
+        };
+        assert_eq!(child_list_kind(&row("dedup")), MutationKind::ChildList);
+        assert_eq!(child_list_kind(&row("icon")), MutationKind::ChildList);
+        assert_eq!(child_list_kind(&row("sheet")), MutationKind::Stylesheet);
+        assert_eq!(child_list_kind(&row("style")), MutationKind::Stylesheet);
+    }
 }
