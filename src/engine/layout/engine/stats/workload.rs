@@ -1,5 +1,5 @@
 //! An offline workload shaped like a long encyclopedia article: ~17k elements in a three-column
-//! grid with sticky side menus, floated figures, tables, many links and a few hundred rules. The
+//! grid whose article column is itself a grid (as in Wikipedia's skin), with sticky side menus, floated figures, tables, many links and a few hundred rules. The
 //! page is generated (original text, fixed seed), so runs are reproducible without network
 //! access or third-party content. The ignored test prints each pass's `LayoutStats` for a full
 //! layout and for the small changes that dominate a settling page, and for script geometry reads
@@ -149,6 +149,7 @@ fn markup() -> String {
         body{{margin:0;font:14px/1.6 sans-serif;color:#202122}}
         header{{height:50px;border-bottom:1px solid #ccc;display:flex;align-items:center;gap:16px}}
         .page{{display:grid;grid-template-columns:200px 1fr 180px;gap:24px;max-width:1400px;margin:0 auto}}
+        main{{display:grid;grid-template-rows:auto 1fr}}
         .toc,.tools{{position:sticky;top:0;align-self:start;max-height:100vh;overflow:auto}}
         .toc ul,.tools ul{{list-style:none;margin:0;padding:0}}
         .toc li.active > a{{font-weight:bold}}
