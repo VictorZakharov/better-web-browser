@@ -2,6 +2,7 @@
 
 mod catalog;
 mod geometry;
+mod plans;
 mod presentation;
 mod shape;
 
