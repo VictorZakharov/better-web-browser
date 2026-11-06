@@ -9,7 +9,7 @@
 use super::*;
 use crate::engine::css::StyleSet;
 use crate::engine::dom::Node;
-use crate::engine::{DisplayItem, Page};
+use crate::engine::{DecodedImage, DisplayItem, Page};
 
 impl DocumentRuntime {
     /// The arrived images to withhold when presenting the others without the style and layout
@@ -17,26 +17,22 @@ impl DocumentRuntime {
     pub(in crate::renderer_process::child::document) fn paint_only_image_arrivals(
         &self,
     ) -> Option<HashSet<String>> {
-        if self
-            .page
-            .images
-            .keys()
-            .all(|url| self.sent_images.contains(url))
-        {
-            return None;
-        }
+        let arrived = PendingImages::new(
+            self.page
+                .images
+                .iter()
+                .filter(|(url, _)| !self.sent_images.contains(*url))
+                .map(|(url, image)| (url.as_str(), image)),
+        )?;
         // Arrived images the display list shows, and whether every box keeps their proportions.
         let mut fits = HashMap::<&str, bool>::new();
         for item in &self.layout.items {
             let DisplayItem::Image { rect, url, .. } = item else {
                 continue;
             };
-            let Some(image) = self.page.images.get(url) else {
+            let Some((url, image)) = arrived.get(url) else {
                 continue;
             };
-            if self.sent_images.contains(url) {
-                continue;
-            }
             let proportional = rect.width > 0.0
                 && rect.height > 0.0
                 && ((rect.width * image.height as f32) / (rect.height * image.width as f32) - 1.0)
@@ -103,6 +99,35 @@ impl DocumentRuntime {
     }
 }
 
+/// Arrived images not yet presented. A checkpoint asks this of every image item in the display
+/// list, which a long article has thousands of, while usually only a few images are new; hashing
+/// each item's URL twice made this scan a measurable share of a page load's later checkpoints.
+enum PendingImages<'a> {
+    Few(Vec<(&'a str, &'a DecodedImage)>),
+    Many(HashMap<&'a str, &'a DecodedImage>),
+}
+
+impl<'a> PendingImages<'a> {
+    /// Up to this many, comparing URLs (most differ in length) beats hashing them.
+    const FEW: usize = 16;
+
+    fn new(images: impl Iterator<Item = (&'a str, &'a DecodedImage)>) -> Option<Self> {
+        let images = images.collect::<Vec<_>>();
+        match images.len() {
+            0 => None,
+            count if count <= Self::FEW => Some(Self::Few(images)),
+            _ => Some(Self::Many(images.into_iter().collect())),
+        }
+    }
+
+    fn get(&self, url: &str) -> Option<(&'a str, &'a DecodedImage)> {
+        match self {
+            Self::Few(images) => images.iter().copied().find(|(pending, _)| *pending == url),
+            Self::Many(images) => images.get_key_value(url).map(|(url, image)| (*url, *image)),
+        }
+    }
+}
+
 /// Those of `urls` that only images show, each with a box that follows its ratio. `styles` are
 /// the last frame's and the document may have changed since: this checkpoint skipped its style
 /// refresh. An element that has no style yet has no box either, so what it shows waits for the
@@ -164,6 +189,31 @@ mod tests {
         );
         page.refresh_resources_for_viewport(800.0, 600.0);
         page
+    }
+
+    #[test]
+    fn pending_images_find_each_arrival_whether_few_or_many() {
+        let image = DecodedImage {
+            width: 1,
+            height: 1,
+            bgra: vec![0; 4].into(),
+        };
+        assert!(PendingImages::new(std::iter::empty()).is_none());
+        for count in [1, PendingImages::FEW, PendingImages::FEW + 1, 200] {
+            let urls = (0..count)
+                .map(|index| format!("https://example.test/{index}.png"))
+                .collect::<Vec<_>>();
+            let pending =
+                PendingImages::new(urls.iter().map(|url| (url.as_str(), &image))).unwrap();
+            assert_eq!(
+                matches!(pending, PendingImages::Few(_)),
+                count <= PendingImages::FEW
+            );
+            for url in &urls {
+                assert_eq!(pending.get(url).map(|(found, _)| found), Some(url.as_str()));
+            }
+            assert!(pending.get("https://example.test/other.png").is_none());
+        }
     }
 
     #[test]
