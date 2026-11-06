@@ -27,7 +27,8 @@ mod attribute_changes;
 mod attributes;
 pub use attribute_changes::AttributeChange;
 pub(crate) use attribute_changes::{
-    changed_class_tokens, record_attribute_change, record_class_change, selector_only_attribute,
+    HOVER_STATE, changed_class_tokens, record_attribute_change, record_class_change,
+    selector_only_attribute,
 };
 pub(crate) use attributes::is_local_graphics_attribute;
 

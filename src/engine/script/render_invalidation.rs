@@ -120,6 +120,19 @@ impl PendingInvalidation {
                 });
                 return;
             }
+            // Designation flips only `:hover` matching, which the cascade bounds like a
+            // selector-only attribute; the parent-subtree scope made `<html>` entering the
+            // hover chain restyle the whole document.
+            MutationKind::PointerDesignation => {
+                self.record_bounded_change(document, target, |changes| {
+                    crate::engine::invalidation::record_attribute_change(
+                        changes,
+                        target,
+                        crate::engine::invalidation::HOVER_STATE,
+                    );
+                });
+                return;
+            }
             MutationKind::Attribute(_) if target.shadow_including_parent().is_some() => {
                 self.extend_attribute_target(document, target);
                 self.extend_validation_dependents(document, target, kind);
@@ -128,8 +141,7 @@ impl PendingInvalidation {
             MutationKind::Attribute(_)
             | MutationKind::CharacterData
             | MutationKind::TextChildren
-            | MutationKind::State
-            | MutationKind::PointerDesignation => target
+            | MutationKind::State => target
                 .shadow_including_parent()
                 .unwrap_or_else(|| target.clone()),
             // Keep the DOM mutation's scope even when rules may need rebuilding. The style

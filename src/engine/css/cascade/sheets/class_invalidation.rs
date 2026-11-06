@@ -16,19 +16,25 @@
 // selector it keeps the parent-subtree scope for every change.
 // An attribute name is indexed like a class token: `[data-state=open] h2` bounds a `data-state`
 // change to the element and its `h2` descendants, and a name no selector mentions restyles the
-// element alone, since only `attr()` and its own style can read it. These are the descendant
+// element alone, since only `attr()` and its own style can read it. Entering or leaving `:hover`
+// is indexed the same way under `invalidation::HOVER_STATE`. These are the descendant
 // invalidation sets of Blink's style invalidation.
 // https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/renderer/core/css/style-invalidation.md
 // https://drafts.csswg.org/selectors-4/#combinators
 use super::subject_keys::{KeyIndex, SubjectKey, ascii_lowercase};
 use super::*;
 use crate::engine::css::cascade::InvalidationFallbacks;
-use crate::engine::css::selector_model::{Combinator, CompoundSelector};
-use std::borrow::Cow;
+use crate::engine::css::selector_model::Combinator;
 use std::collections::{HashMap, HashSet};
 
+mod features;
 #[cfg(test)]
 mod tests;
+
+use features::{
+    Feature, guarded_use, nested_complex_class_attribute, nested_simple_features,
+    simple_class_attribute, use_of,
+};
 
 /// Positions in which rules use one class token.
 #[derive(Debug, Default)]
@@ -53,8 +59,9 @@ enum Fallback {
 #[derive(Debug, Default)]
 pub(super) struct ClassInvalidation {
     uses: HashMap<String, ClassUse>,
-    /// Positions of attribute selectors other than `[class]`, by ASCII-lowercase name.
-    attribute_uses: HashMap<String, ClassUse>,
+    /// Positions of attribute selectors other than `[class]` (and of `:hover`), by ASCII-lowercase
+    /// name and then by the key of the compound that carries them.
+    attribute_uses: HashMap<String, HashMap<SubjectKey, ClassUse>>,
     /// Positions of `[class]` attribute selectors, which apply to every token.
     any_token: ClassUse,
     /// Nested complex `[class]` selectors or scoped/cross-tree rules: no token can be bounded.
@@ -122,11 +129,15 @@ impl ClassInvalidation {
             for token in tokens {
                 record(use_of(&mut self.uses, &ascii_lowercase(&token)));
             }
+            // An element that cannot match the compound's tag, ID and classes cannot change
+            // whether it matches, whatever its attribute or `:hover` state.
+            let guard = SubjectKey::of(compound);
             for name in names {
-                record(use_of(&mut self.attribute_uses, &name));
+                record(guarded_use(&mut self.attribute_uses, &name, &guard));
             }
             for name in nested_complex_names {
-                let class_use = use_of(&mut self.attribute_uses, &name);
+                let class_use =
+                    guarded_use(&mut self.attribute_uses, &name, &SubjectKey::default());
                 class_use.parent_scope.get_or_insert(Fallback::Nested);
             }
             if simple_class_attribute(compound) {
@@ -156,9 +167,14 @@ impl ClassInvalidation {
             .iter()
             .filter_map(|token| self.uses.get(&*ascii_lowercase(token)));
         let class_attribute = (!tokens.is_empty()).then_some(&self.any_token);
+        // Guards read the element's classes, so a class change in the same batch skips them.
+        let classes_changed = !tokens.is_empty();
         let attribute_uses = attributes
             .iter()
-            .filter_map(|name| self.attribute_uses.get(name));
+            .filter_map(|name| self.attribute_uses.get(name))
+            .flatten()
+            .filter(|(guard, _)| classes_changed || guard.may_match(node))
+            .map(|(_, class_use)| class_use);
         for class_use in token_uses.chain(class_attribute).chain(attribute_uses) {
             if let Some(fallback) = class_use.parent_scope {
                 return Err(fallback);
@@ -201,137 +217,6 @@ impl ClassInvalidation {
                 !at_depth.contains(&descendant.id()) && index.may_match(descendant)
             }));
         Ok(roots)
-    }
-}
-
-/// What a change names in selectors: a class token or an attribute name.
-#[derive(Clone, Copy)]
-enum Feature {
-    Class,
-    /// Attribute selectors other than `[class]`, which every token change affects.
-    Attribute,
-}
-
-impl Feature {
-    /// Borrowed from the selector where possible: most rules repeat names already indexed.
-    fn of(self, compound: &CompoundSelector) -> Vec<Cow<'_, str>> {
-        match self {
-            Self::Class => compound.classes.iter().map(|class| class.into()).collect(),
-            Self::Attribute => compound
-                .attributes
-                .iter()
-                .map(|attribute| ascii_lowercase(&attribute.name))
-                .filter(|name| name != "class")
-                .collect(),
-        }
-    }
-}
-
-/// The uses recorded for `name`, copying the name only when it is new.
-fn use_of<'a>(uses: &'a mut HashMap<String, ClassUse>, name: &str) -> &'a mut ClassUse {
-    if !uses.contains_key(name) {
-        uses.insert(name.to_owned(), ClassUse::default());
-    }
-    uses.get_mut(name).expect("inserted above")
-}
-
-/// Features inside `:is()`, `:where()` and `:not()` arguments that are single compounds describe
-/// the same element as `compound`. Any other nesting (complex arguments, `:has()`, `of S`) is
-/// collected as unbounded.
-fn nested_simple_features<'a>(
-    compound: &'a CompoundSelector,
-    feature: Feature,
-    simple: &mut Vec<Cow<'a, str>>,
-    complex: &mut Vec<Cow<'a, str>>,
-) {
-    for functional in &compound.functional {
-        for selector in &functional.selectors {
-            if selector.compounds.len() == 1 {
-                simple.extend(feature.of(&selector.compounds[0]));
-                nested_simple_features(&selector.compounds[0], feature, simple, complex);
-            } else {
-                collect_all_features(selector, feature, complex);
-            }
-        }
-    }
-    for relatives in &compound.has {
-        for relative in relatives {
-            collect_all_features(&relative.selector, feature, complex);
-        }
-    }
-    for nth in &compound.nth {
-        for selector in &nth.filter {
-            collect_all_features(selector, feature, complex);
-        }
-    }
-}
-
-fn is_class_attribute(compound: &CompoundSelector) -> bool {
-    compound
-        .attributes
-        .iter()
-        .any(|attribute| attribute.name.eq_ignore_ascii_case("class"))
-}
-
-/// A `[class]` selector on this element, directly or in a single-compound nested argument.
-fn simple_class_attribute(compound: &CompoundSelector) -> bool {
-    is_class_attribute(compound)
-        || compound.functional.iter().any(|functional| {
-            functional.selectors.iter().any(|selector| {
-                selector.compounds.len() == 1 && simple_class_attribute(&selector.compounds[0])
-            })
-        })
-}
-
-/// A `[class]` selector inside a nested complex selector, `:has()` or `of S`.
-fn nested_complex_class_attribute(compound: &CompoundSelector) -> bool {
-    let anywhere = |selector: &Selector| {
-        selector.compounds.iter().any(|compound| {
-            simple_class_attribute(compound) || nested_complex_class_attribute(compound)
-        })
-    };
-    compound.functional.iter().any(|functional| {
-        functional.selectors.iter().any(|selector| {
-            if selector.compounds.len() == 1 {
-                nested_complex_class_attribute(&selector.compounds[0])
-            } else {
-                anywhere(selector)
-            }
-        })
-    }) || compound
-        .has
-        .iter()
-        .flatten()
-        .any(|relative| anywhere(&relative.selector))
-        || compound
-            .nth
-            .iter()
-            .flat_map(|nth| &nth.filter)
-            .any(anywhere)
-}
-
-fn collect_all_features<'a>(
-    selector: &'a Selector,
-    feature: Feature,
-    found: &mut Vec<Cow<'a, str>>,
-) {
-    for compound in selector.compounds.iter() {
-        found.extend(feature.of(compound));
-        for functional in &compound.functional {
-            for nested in &functional.selectors {
-                collect_all_features(nested, feature, found);
-            }
-        }
-        for relatives in &compound.has {
-            for relative in relatives {
-                collect_all_features(&relative.selector, feature, found);
-            }
-        }
-        for nth in &compound.nth {
-            for nested in &nth.filter {
-                collect_all_features(nested, feature, found);
-            }
-        }
     }
 }
 

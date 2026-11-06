@@ -99,15 +99,25 @@ impl DocumentRuntime {
                 target.as_ref().map(|target| target.node.clone()),
             );
             if !boundary.entering.is_empty() || !boundary.leaving.is_empty() {
+                // Like the scripted path, the cascade bounds each designation change by the
+                // rules that use `:hover`.
+                let mut attribute_changes = Vec::new();
+                for node in boundary.leaving.iter().chain(&boundary.entering) {
+                    crate::engine::invalidation::record_attribute_change(
+                        &mut attribute_changes,
+                        node,
+                        crate::engine::invalidation::HOVER_STATE,
+                    );
+                }
                 outcome.request_full_render();
                 outcome.invalidation = crate::engine::invalidation::RenderInvalidation {
-                    roots: vec![self.page.dom.document.id()],
+                    roots: Vec::new(),
                     impact: crate::engine::invalidation::MutationKind::PointerDesignation.impact(),
                     mutation_count: 0,
                     rebuild_style_rules: false,
                     removed_nodes: Vec::new(),
                     removals_are_local: false,
-                    attribute_changes: Vec::new(),
+                    attribute_changes,
                     child_list_roots: Vec::new(),
                     element_roots: Vec::new(),
                 };
