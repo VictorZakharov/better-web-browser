@@ -155,6 +155,11 @@ jobs:
       - name: Require notices to match the locked Windows release graph
         shell: pwsh
         run: ./scripts/generate-third-party-notices.ps1 -Check
+      # The weekly fuzz workflow builds with fuzz/Cargo.lock under --locked. Check it with every
+      # dependency change, so a browser dependency update cannot leave it stale until Sunday.
+      - name: Require the fuzz lock to follow the browser's locked versions
+        shell: pwsh
+        run: ./scripts/test-fuzz-dependencies.ps1
   windows:
     name: windows
     if: ${{ always() }}
